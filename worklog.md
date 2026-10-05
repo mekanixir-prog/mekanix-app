@@ -5192,3 +5192,156 @@ Stage Summary:
   3. ✅ Security tests — 7 security domains, 42 tests covering Job BOLA, ServiceBooking BOLA (participant + assigned-technician), Vehicle BOLA, Notification BOLA, Wallet BOLA, State Machine Security (role gates + terminal state protection), Mass Assignment Protection (FORBIDDEN_FIELDS + sanitizeInput), OTP Crypto Security (CSPRNG uniqueness + SHA-256 hash properties)
 - Test philosophy: every test is MEANINGFUL — no `expect(true).toBe(true)` placeholders. Each test verifies real behavior by either: (a) invoking actual library code with mocked deps, (b) calling real route handlers (/api/health, /api/ready) with mocked DB, or (c) exercising pure functions (state machine, OTP crypto, schema validation) without mocks
 - Adaptations documented above (jobToService fixture shape, technician mock coordinates, create-return-value mocks) preserve the existing implementation contract — no source code was modified
+
+---
+Task ID: HARDENING-11-20
+Agent: general-purpose (Playwright E2E + ZAP + backup/restore test + monitoring + rollback docs)
+Task: Steps 14-20 of the production hardening release-candidate pipeline — Playwright E2E suite, OWASP ZAP baseline scan, backup/restore verification, uptime monitor, rollback test procedure
+
+Work Log:
+- Read worklog.md (5110+ lines of prior work history) for context. Verified current state:
+  * Steps 01-10 merged: Docker hardening, safety gates, staging secrets already on main
+  * Steps 11-13 done in prior tasks: business-flow.test.ts (47 tests), failure-scenarios.test.ts (28 tests), bola-idor.test.ts (42 tests), 333 vitest tests total, all green
+  * `@playwright/test` was NOT installed; no `tests/browser/` directory
+  * No `playwright.config.ts`, no `test:e2e` script in package.json
+  * No `scripts/zap-scan.sh`, no `scripts/test-backup-restore.sh`, no `scripts/monitor.sh`
+  * No `docs/ROLLBACK-TEST.md` (only `docs/ROLLBACK.md` from prior task)
+  * Existing /api/health, /api/ready, /api/care/packages, /api/exchange-rate endpoints already implemented and verified working against the dev server
+
+- Task 1 — Playwright E2E Test Setup (Step 14):
+  * `bun add -d @playwright/test` → installed @playwright/test@1.63.0 (3 packages, 1.6s)
+  * `bunx playwright install chromium` → already had chromium-1200/1243 cached from python playwright install; reused
+  * Created `/home/z/my-project/playwright.config.ts` (~45 lines):
+    - testDir: "./tests/browser" (separate from vitest's tests/**/*.test.ts pattern — no overlap)
+    - fullyParallel: true; forbidOnly: !!process.env.CI; retries: CI ? 2 : 0; workers: CI ? 1 : undefined
+    - reporter: "html"; timeout: 60s; expect timeout: 10s
+    - use: baseURL http://localhost:3000, trace "on-first-retry", screenshot "only-on-failure", locale "fa-IR" (Persian), actionTimeout 15s, navigationTimeout 30s
+    - projects: [chromium] using devices["Desktop Chrome"]
+    - webServer: `bun run dev`, reuseExistingServer: !CI, timeout 120s, stdout: ignore, stderr: pipe
+    - NOTE: Rewrote the JSDoc comment block to remove `tests/browser/**/*.spec.ts` because the `*/` substring inside `**/*` was prematurely closing the comment and breaking tsc
+  * Created 4 test files in `tests/browser/` (24 tests, all passing):
+
+    **`tests/browser/login.spec.ts`** (7 tests):
+    1. page loads with title containing 'مکانیکس' (regex matches "مکانیکس | تعمیر و نگهداری...")
+    2. primary 'ورود با شماره موبایل' button is visible + enabled
+    3. 'ادامه به عنوان مهمان' button is visible + enabled
+    4. clicking 'ورود با شماره موبایل' reveals the phone input form (label 'شماره موبایل', placeholder '912 345 6789', 'ارسال کد تأیید' button)
+    5. country selector opens and lists multiple country codes (Radix Select combobox + role="option" elements)
+    6. guest login navigates past splash to the mode-select screen (heading 'امروز چه چیزی نیاز به سرویس دارد؟' appears)
+    7. mechanic portal entry is reachable from splash ('ورود مکانیک‌ها' button → phone stage shows 'ورود مکانیک' heading)
+    - beforeEach: addInitScript removes 'mekanix-app' localStorage key to guarantee a fresh boot from splash
+
+    **`tests/browser/home.spec.ts`** (5 tests):
+    1. mode-select screen shows heading 'امروز چه چیزی نیاز به سرویس دارد؟'
+    2. both 'خودروی سواری' and 'ماشین‌آلات سنگین' mode cards are visible (regex match)
+    3. selecting passenger mode boots the customer app home — waits for 'مکانیک متخصص' hero
+    4. selecting heavy mode boots the customer app home — same hero check
+    5. machine-mode switch button in top bar toggles between heavy and passenger — captures switchBtn text before/after click, asserts they differ
+    - Shared helper `gotoModeSelect(page)` clears localStorage, clicks guest login, waits for mode-select heading
+
+    **`tests/browser/navigation.spec.ts`** (6 tests):
+    1. all primary nav items are present in the sidebar (desktop viewport 1280x800) — asserts 11 nav items visible: خانه، ناوگان من، MEKANIX CARE، داشبورد ناوگان، نگهداری، عضویت VIP، بیمه، دعوت و درآمد، پشتیبانی، اعلان‌ها، تنظیمات
+    2. clicking 'ناوگان من' navigates to the fleet view — verifies 'خودروها و ماشین‌آلات ثبت‌شده در حساب شما' subtitle appears
+    3. clicking 'MEKANIX CARE' navigates to the care dashboard — verifies <h1>MEKANIX CARE</h1> appears in <main>
+    4. clicking 'نگهداری' navigates to the maintenance schedule view — verifies 'زمان‌بندی نگهداری' heading appears
+    5. clicking 'پشتیبانی' navigates to the support view — verifies 'مرکز پشتیبانی' heading appears
+    6. clicking 'خانه' returns to the home view — navigates away to vehicles first, then back home, asserts 'مکانیک متخصص' hero reappears
+    - Adaptations from task spec: replaced the broad labels in the spec ('ناوگان', 'تعمیر و نگهداری', 'هشدارها', 'معرفی به دوستان') with the ACTUAL translation strings from src/lib/i18n.ts (nav.maintenance='نگهداری', nav.alerts='اعلان‌ها', nav.referral='دعوت و درآمد', fleet.title='داشبورد ناوگان'); used `page.locator("main").getByText(...).first()` to avoid strict-mode violations when text appears in multiple places (sidebar + page content)
+
+    **`tests/browser/health.spec.ts`** (6 tests):
+    1. GET /api/health returns 200 with ok:true — verifies ok=true, services defined, uptime is number, timestamp truthy
+    2. GET /api/ready returns 200 or 503 — verifies body has `checks` and `errors` array properties
+    3. GET /api/care/packages returns 200 with an array body
+    4. GET /api/exchange-rate returns 200 with a numeric rate > 0 and source truthy
+    5. /api/ready body reports database check as a boolean
+    6. /api/health body reports each service status (database, redis, sms, eta) as a string
+    - Uses Playwright's `request` fixture (no browser) — fastest tests in the suite (~5s total)
+
+  * Updated `package.json` scripts: added `"test:e2e": "playwright test"` and `"test:e2e:ui": "playwright test --ui"`
+  * Verified dev server boots and all 4 API endpoints return 200 (or 503 for /api/ready in dev mode without prod safety gates)
+  * Seeded dev DB via `bun run prisma/seed.ts` (14 users, 8 technicians, 10 vehicles, 14 jobs, 9 invoices) — without this, /api/auth/demo returns null users and CustomerApp renders the EmptyState instead of CustomerHome
+  * Final E2E run: 24/24 tests passed in 33.9s
+  * Test artifacts (test-results/, playwright-report/) gitignored and removed after run
+
+- Task 2 — OWASP ZAP Baseline Scan Script (Step 16):
+  * Created `/home/z/my-project/scripts/zap-scan.sh` (~70 lines):
+    - `set -euo pipefail` shell safety
+    - TARGET_URL from $1 (required)
+    - REPORT_DIR defaults to ./zap-reports
+    - Runs `docker run -t --rm -v "$REPORT_DIR:/zap/wrk" owasp/zap2docker-stable zap-baseline.py -t $TARGET_URL -g gen.conf -r HTML -J JSON -x XML`
+    - `|| true` so ZAP's non-zero exit on findings doesn't abort the script
+    - Python3 summary parser reads the JSON report, counts alerts by riskcode (3=high, 2=medium, 1=low, 0=info)
+    - HIGH findings printed with ❌ + "(BLOCKER for release)"; MEDIUM with ⚠️ "(review before release)"; otherwise ✅
+    - Final line prints the path to the full HTML report
+  * chmod +x'd; bash syntax verified with `bash -n`
+
+- Task 3 — Backup/Restore Test Script (Steps 17-18):
+  * Created `/home/z/my-project/scripts/test-backup-restore.sh` (~75 lines):
+    - Requires DATABASE_URL (production PostgreSQL URL) and TEST_DB_URL (temporary test PostgreSQL URL)
+    - Step 1: `pg_dump $PROD_URL | gzip > /tmp/mekanix-backup-test-<epoch>.sql.gz`; verifies backup is non-empty; prints size via `du -h`
+    - Step 2: counts User + Vehicle records in production via `psql -t -c "SELECT count(*) FROM \"User\""` (xargs strips whitespace)
+    - Step 3: drops public schema on test DB (`DROP SCHEMA public CASCADE; CREATE SCHEMA public;`), then `gunzip -c backup.sql.gz | psql $TEST_URL`
+    - Step 4: counts User + Vehicle in restored test DB, compares with production counts
+    - PASS → cleans up backup file + drops test schema; exit 0
+    - FAIL → keeps backup for investigation; exit 1
+  * chmod +x'd; bash syntax verified
+
+- Task 4 — Monitoring Script (Step 19):
+  * Created `/home/z/my-project/scripts/monitor.sh` (~85 lines):
+    - Parses positional <url> + optional `--once` flag (bug fix from spec: the spec's `URL="${1:-http://localhost:3000}/api/health"` would have set URL to `--once/api/health` when called with `--once`. Rewrote to use a for-loop arg parser that separates the URL from the `--once` flag)
+    - `check_health()` does `curl -s -w "\n%{http_code}" --connect-timeout 5 --max-time 10 $URL`:
+      - 200 + body.ok=True → "✅ HEALTHY"
+      - 200 + body.ok=False → "⚠️ WARNING: returned 200 but ok=false" + alert webhook
+      - 503 → "❌ CRITICAL: 503 (service unavailable)" + alert webhook
+      - other status → "❌ CRITICAL: HTTP $status" + alert webhook
+      - curl failure (timeout/refused) → "❌ CRITICAL: Cannot connect" + alert webhook
+    - `send_alert()` posts JSON `{"text":"🚨 MEKANIX Alert: ..."}` to ALERT_WEBHOOK env var (Slack/Discord compatible) if set
+    - `--once` mode: single check + exit (for cron); default mode: continuous loop with 60s sleep
+    - Tested live: `bash scripts/monitor.sh --once` → `[2026-10-05 06:53:06] ✅ HEALTHY: http://localhost:3000/api/health` (exit 0)
+  * chmod +x'd; bash syntax verified; smoke-tested against running dev server
+
+- Task 5 — Rollback Test Documentation (Step 20):
+  * Created `/home/z/my-project/docs/ROLLBACK-TEST.md` (~55 lines):
+    - Prerequisites: prod deployment running, previous Docker image/git tag available, backup-db.sh works
+    - 5 test steps:
+      1. Simulate a Bad Deployment (echo "BROKEN" > src/app/page.tsx; bash scripts/deploy.sh; verify /api/health)
+      2. Initiate Rollback — Option A: git checkout v1.0.0 + redeploy; Option B: docker tag previous:latest + compose down/up
+      3. Verify Recovery — /api/health (ok:true), /api/ready (200), /api/care/packages (200)
+      4. Database Rollback (only if bad deploy modified DB) — `bash scripts/restore-db.sh /backups/mekanix_YYYYMMDD_HHMMSS.sql.gz` + count users
+      5. Document Results — rollback time, data loss (should be 0), user impact (downtime duration)
+    - Pass Criteria checklist: app recovered within 60s, no data loss, all API endpoints responding, health check returns ok=true
+
+- Verification — all checks pass:
+  * `bun run lint` → 0 errors, 0 warnings (exit 0)
+  * `bunx tsc --noEmit` → 0 errors (exit 0) — including the 4 new .spec.ts files (Playwright types resolve cleanly)
+  * `bun run test` → 13 test files, 333 vitest tests passed (exit 0) — no overlap with Playwright because vitest include pattern is `tests/**/*.test.ts` + `*.test.tsx`; Playwright tests use `.spec.ts` extension
+  * `bunx playwright test` → 24/24 tests passed in 33.9s (exit 0):
+    - login.spec.ts: 7 tests
+    - home.spec.ts: 5 tests
+    - navigation.spec.ts: 6 tests
+    - health.spec.ts: 6 tests
+  * `bash scripts/check-hygiene.sh` → "✅ Repository hygiene is clean."
+  * `bash scripts/security-audit.sh` → 0 issues, 2 warnings (unchanged from prior task — Browserslist CVE in transitive dep + NODE_ENV debug guard in /api/health which is by design)
+  * `bash scripts/monitor.sh --once` → smoke-tested against running dev server, returned ✅ HEALTHY (exit 0)
+  * Existing functionality preserved: 333 prior vitest tests still pass, no source code changes, no schema changes, no breaking API changes
+
+Stage Summary:
+- Files created (9):
+  1. playwright.config.ts — Playwright config with auto-start dev server, chromium project, fa-IR locale
+  2. tests/browser/login.spec.ts — 7 tests for splash/OTP/guest-login flow
+  3. tests/browser/home.spec.ts — 5 tests for mode-select + customer home boot
+  4. tests/browser/navigation.spec.ts — 6 tests for sidebar nav items + view navigation
+  5. tests/browser/health.spec.ts — 6 tests for /api/health, /api/ready, /api/care/packages, /api/exchange-rate
+  6. scripts/zap-scan.sh — OWASP ZAP baseline scan via Docker, Python3 summary parser
+  7. scripts/test-backup-restore.sh — pg_dump → gunzip → psql + record-count verification
+  8. scripts/monitor.sh — 60s uptime monitor with Slack/Discord webhook alerts, --once mode for cron
+  9. docs/ROLLBACK-TEST.md — 5-step rollback test procedure with pass criteria checklist
+- Files modified (1): package.json — added `"test:e2e": "playwright test"` + `"test:e2e:ui": "playwright test --ui"` scripts; @playwright/test@^1.63.0 added to devDependencies
+- Lint: 0 errors. TypeScript: 0 errors. Vitest: 333/333 passed. Playwright E2E: 24/24 passed. Hygiene: clean. Security audit: 0 issues.
+- All 5 tasks completed:
+  1. ✅ Playwright E2E Test Setup (Step 14) — 24 browser tests across login/home/navigation/health, all passing against the live dev server
+  2. ✅ OWASP ZAP Baseline Scan Script (Step 16) — Docker-based ZAP scan with HTML/JSON/XML reports + Python summary parser
+  3. ✅ Backup/Restore Test Script (Steps 17-18) — pg_dump/gunzip/psql round-trip with User+Vehicle count verification
+  4. ✅ Monitoring Script (Step 19) — 60s curl-based health check with webhook alerts, --once flag for cron, tested live
+  5. ✅ Rollback Test Documentation (Step 20) — 5-step procedure with pass criteria checklist
+- Existing functionality preserved: all 333 prior vitest tests pass unchanged, no source code modified (only additive — new test files + new scripts + new docs), no schema changes, no breaking API contract changes
