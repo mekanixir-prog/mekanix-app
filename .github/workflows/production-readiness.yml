@@ -9,7 +9,7 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -17,7 +17,17 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - run: bunx prisma generate
-      - run: bun run check:repo
-      - run: bun run build
+      - name: Repository hygiene
+        run: bash scripts/check-hygiene.sh
+      - name: ESLint
+        run: bun run lint
+      - name: TypeScript
+        run: bunx tsc --noEmit
+      - name: Unit + integration tests
+        run: bun run test
+      - name: Security audit
+        run: bash scripts/security-audit.sh
+      - name: Build
+        run: bun run build
         env:
           DATABASE_URL: "file:./test.db"
