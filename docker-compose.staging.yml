@@ -1,10 +1,9 @@
 # MEKANIX — Staging Environment
 # 
-# Same as production but with:
-#   - Separate database (mekanix_staging)
-#   - Shorter TTLs
-#   - Debug logging enabled
-#   - No real SMS/Payment (simulator mode)
+# Same security as production:
+# - DB and Redis NOT exposed to host
+# - Redis password required
+# - App on 127.0.0.1:3001 only
 
 services:
   migrate:
@@ -21,15 +20,14 @@ services:
   app:
     build: .
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     environment:
       - DATABASE_URL=postgresql://mekanix:${DB_PASSWORD}@db:5432/mekanix_staging
       - NODE_ENV=production
       - JWT_SECRET=${JWT_SECRET}
-      - REDIS_URL=redis://redis:6379/1
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
       - SMS_PROVIDER=console
       - PAYMENT_PROVIDER=simulator
-      - ETA_PROVIDER=default
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -57,12 +55,15 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    # No ports — internal only
 
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
     volumes:
       - redisdata_staging:/data
     restart: unless-stopped
+    # No ports — internal only
 
 volumes:
   pgdata_staging:

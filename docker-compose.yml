@@ -1,7 +1,15 @@
+# MEKANIX — Production Docker Compose
+#
+# Security hardening:
+# - PostgreSQL and Redis are NOT exposed to host (internal network only)
+# - Redis requires password authentication
+# - App binds to 127.0.0.1 only (use Caddy/nginx as reverse proxy for HTTPS)
+# - Migrations run as a separate one-shot service before app starts
+
 services:
   # Migration runner — runs once before app starts
   migrate:
-    build: 
+    build:
       context: .
       target: migrator
     environment:
@@ -14,7 +22,7 @@ services:
   app:
     build: .
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - DATABASE_URL=postgresql://mekanix:${DB_PASSWORD}@db:5432/mekanix
       - NODE_ENV=production
@@ -22,7 +30,7 @@ services:
       - ADMIN_BOOTSTRAP_PASSWORD=${ADMIN_BOOTSTRAP_PASSWORD:-}
       - ADMIN_BOOTSTRAP_USERNAME=${ADMIN_BOOTSTRAP_USERNAME:-admin}
       - ADMIN_BOOTSTRAP_EMAIL=${ADMIN_BOOTSTRAP_EMAIL:-admin@mekanix.ir}
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
       - SMS_PROVIDER=${SMS_PROVIDER:-console}
       - KAVENEGAR_API_KEY=${KAVENEGAR_API_KEY:-}
       - KAVENEGAR_TEMPLATE=${KAVENEGAR_TEMPLATE:-}
@@ -32,6 +40,9 @@ services:
       - FARAPAYAMAK_USERNAME=${FARAPAYAMAK_USERNAME:-}
       - FARAPAYAMAK_PASSWORD=${FARAPAYAMAK_PASSWORD:-}
       - FARAPAYAMAK_SENDER=${FARAPAYAMAK_SENDER:-}
+      - PAYMENT_PROVIDER=${PAYMENT_PROVIDER:-simulator}
+      - ZARINPAL_MERCHANT_ID=${ZARINPAL_MERCHANT_ID:-}
+      - IDPAY_API_KEY=${IDPAY_API_KEY:-}
       - NESHAN_API_KEY=${NESHAN_API_KEY:-}
       - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
       - OSRM_API_URL=${OSRM_API_URL:-}
@@ -56,22 +67,21 @@ services:
       - POSTGRES_DB=mekanix
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mekanix"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    # No ports: — PostgreSQL is NOT exposed to host
 
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
     volumes:
       - redisdata:/data
-    ports:
-      - "6379:6379"
     restart: unless-stopped
+    # No ports: — Redis is NOT exposed to host
 
 volumes:
   pgdata:

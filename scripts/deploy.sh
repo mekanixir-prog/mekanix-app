@@ -31,6 +31,8 @@ fi
 if [ -z "${JWT_SECRET:-}" ]; then
   echo "❌ JWT_SECRET not set"
   MISSING=1
+  echo "❌ JWT_SECRET not set"
+  MISSING=1
 fi
 if [ "$MISSING" = "1" ]; then
   echo ""

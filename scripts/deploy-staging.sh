@@ -2,6 +2,11 @@
 # MEKANIX — Staging Deployment
 # Deploys to staging environment (port 3001, separate DB)
 #
+# Required env vars (NO fallbacks — must be set explicitly):
+#   DB_PASSWORD     — PostgreSQL password
+#   JWT_SECRET      — JWT signing secret
+#   REDIS_PASSWORD  — Redis password
+#
 # Usage: bash scripts/deploy-staging.sh
 
 set -euo pipefail
@@ -9,14 +14,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-export DB_PASSWORD="${DB_PASSWORD:-staging_password}"
-export JWT_SECRET="${JWT_SECRET:-staging_secret}"
+# ─── Validate required env vars (NO defaults) ───
+: "${DB_PASSWORD:?DB_PASSWORD is required for staging}"
+: "${JWT_SECRET:?JWT_SECRET is required for staging}"
+: "${REDIS_PASSWORD:?REDIS_PASSWORD is required for staging}"
 
 echo "🚀 MEKANIX Staging Deployment"
 echo "   Port: 3001"
 echo "   DB: mekanix_staging"
+echo "   Repo: $REPO_DIR"
 echo ""
 
+# ─── Create temporary build context ───
 BUILD_CTX="$(mktemp -d /tmp/mekanix-staging.XXXXXX)"
 trap 'rm -rf "$BUILD_CTX"' EXIT
 
@@ -37,13 +46,16 @@ cd "$BUILD_CTX"
 docker compose -f docker-compose.staging.yml up -d --build
 
 echo "⏳ Waiting for staging to be healthy..."
-for i in $(seq 1 60); do
+for i in $(seq 1 90); do
   if curl -s http://localhost:3001/api/health | grep -q '"ok":true'; then
     echo "✅ Staging is healthy!"
-    echo "   URL: http://localhost:3001"
+    echo ""
+    echo "   URL:    http://localhost:3001"
+    echo "   Health: http://localhost:3001/api/health"
+    echo "   Ready:  http://localhost:3001/api/ready"
     exit 0
   fi
-  echo "   Waiting... ($i/60)"
+  echo "   Waiting... ($i/90)"
   sleep 2
 done
 echo "❌ Staging did not become healthy"
