@@ -10,7 +10,7 @@ const devClient = globalForPrisma.prisma ?? new PrismaClient({ log: ["error", "w
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = devClient;
 
 // Get Cloudflare context (set by OpenNext)
-function getD1Binding(): D1Database | null {
+function getD1Binding(): any {
   try {
     const ctx = (globalThis as any)[Symbol.for("__cloudflare-context__")];
     return ctx?.env?.DB ?? null;
