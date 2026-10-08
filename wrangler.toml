@@ -1,12 +1,12 @@
-# MEKANIX — Cloudflare Pages Configuration
-# D1 database ID: f8dbaaf3-4c6b-40d5-9dce-ecaa839780e2
+# MEKANIX — Cloudflare Workers Configuration
+# Deploy as a Worker (not Pages) for Next.js + API routes
 
 name = "mekanix"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
-# Pages build output directory (OpenNext outputs to .open-next)
-pages_build_output_dir = ".open-next"
+# Worker entry point (OpenNext outputs worker.js)
+main = ".open-next/worker.js"
 
 # D1 Database binding
 [[d1_databases]]
@@ -14,10 +14,16 @@ binding = "DB"
 database_name = "mekanix"
 database_id = "f8dbaaf3-4c6b-40d5-9dce-ecaa839780e2"
 
-# Environment variables (non-secret)
+# Assets (static files from Next.js)
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
+
+# Environment variables
 [vars]
 SMS_PROVIDER = "console"
 PAYMENT_PROVIDER = "simulator"
+NODE_ENV = "production"
 
 # Observability
 [observability]
