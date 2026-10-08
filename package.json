@@ -27,6 +27,8 @@
     "@gsap/react": "^2.1.2",
     "@hookform/resolvers": "^5.1.1",
     "@mdxeditor/editor": "^3.39.1",
+    "@opennextjs/cloudflare": "^1.20.9",
+    "@prisma/adapter-d1": "^7.10.0",
     "@prisma/client": "^6.11.1",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",

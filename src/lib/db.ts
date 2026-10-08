@@ -1,3 +1,8 @@
+// MEKANIX — Prisma Client
+//
+// On Cloudflare Workers: D1 adapter is initialized per-request.
+// In local development: standard SQLite Prisma Client.
+
 import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as {

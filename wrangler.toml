@@ -1,0 +1,48 @@
+# MEKANIX — Cloudflare Workers Configuration
+# 
+# This configures the Cloudflare Workers deployment.
+# D1 database ID: f8dbaaf3-4c6b-40d5-9dce-ecaa839780e2
+
+name = "mekanix"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# Main entry point (OpenNext will generate this)
+main = ".open-next/worker.js"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "mekanix"
+database_id = "f8dbaaf3-4c6b-40d5-9dce-ecaa839780e2"
+
+# R2 bucket for file uploads (Phase 2)
+# [[r2_buckets]]
+# binding = "UPLOADS"
+# bucket_name = "mekanix-uploads"
+
+# Environment variables (non-secret)
+[vars]
+NODE_ENV = "production"
+SMS_PROVIDER = "console"
+PAYMENT_PROVIDER = "simulator"
+
+# Secrets (set via: wrangler secret put <NAME>)
+# JWT_SECRET
+# ADMIN_BOOTSTRAP_PASSWORD
+# KAVENEGAR_API_KEY
+# ZARINPAL_MERCHANT_ID
+# NESHAN_API_KEY
+
+# Cron Triggers (Phase 2)
+# [triggers]
+# crons = ["0 * * * *", "0 2 * * *"]
+
+# Observability
+[observability]
+enabled = true
+
+# Limits
+# CPU: 10ms per invocation (Free)
+# Memory: 128MB
+# Subrequests: 50 per request

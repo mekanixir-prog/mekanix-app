@@ -10,7 +10,7 @@
 // The password field is NOT used for login and should be ignored.
 
 import { SignJWT, jwtVerify } from "jose";
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { db } from "./db";
 import { kvGet, kvSet } from "./redis";

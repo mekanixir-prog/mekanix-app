@@ -1330,3 +1330,25 @@ model CareReminder {
 
   @@index([vehicleId, status])
 }
+
+// ──────────── Cloudflare D1: Rate Limiting (replaces Redis) ────────────
+model RateLimit {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  count     Int      @default(1)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([key, expiresAt])
+}
+
+// ──────────── Cloudflare D1: Idempotency Keys (replaces Redis) ────────────
+model IdempotencyKey {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  response  String   // JSON serialized response
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([key, expiresAt])
+}
