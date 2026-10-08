@@ -1,5 +1,10 @@
 // MEKANIX — Service Worker
-// Provides offline caching for PWA install + basic offline support.
+// PWA offline support with security-conscious caching.
+//
+// Cache strategy:
+//   - Static assets (/, /manifest.json, /logo.png, /offline.html): cache-first
+//   - API routes (/api/*): NO CACHE (no-store) — prevents leaking user data
+//   - Navigation: network-first, fallback to offline page
 
 const CACHE_NAME = 'mekanix-v1.0.0';
 const STATIC_ASSETS = [
@@ -10,7 +15,6 @@ const STATIC_ASSETS = [
   '/offline.html',
 ];
 
-// Install: cache static assets
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
@@ -18,10 +22,9 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// Activate: clean up old caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((names) => 
+    caches.keys().then((names) =>
       Promise.all(names.map((name) => {
         if (name !== CACHE_NAME) return caches.delete(name);
       }))
@@ -30,22 +33,22 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch: network-first for API, cache-first for static
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  
-  // Skip non-GET requests
   if (event.request.method !== 'GET') return;
-  
-  // Skip Chrome extension requests
   if (url.protocol === 'chrome-extension:') return;
-  
-  // API requests: network-first (no stale data for financial/booking)
+
+  // API routes: NEVER cache — prevents user data leakage
   if (url.pathname.startsWith('/api/')) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
+  // Navigation: network-first, offline fallback
+  if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          // Cache successful API responses
           if (response.ok) {
             const clone = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
@@ -53,10 +56,11 @@ self.addEventListener('fetch', (event) => {
           return response;
         })
         .catch(() => caches.match(event.request))
+        .then((cached) => cached || caches.match('/offline.html'))
     );
     return;
   }
-  
+
   // Static assets: cache-first
   event.respondWith(
     caches.match(event.request).then((cached) => {
@@ -69,12 +73,6 @@ self.addEventListener('fetch', (event) => {
           }
           return response;
         })
-        .catch(() => {
-          // If navigation request fails, show offline page
-          if (event.request.mode === 'navigate') {
-            return caches.match('/offline.html');
-          }
-        });
     })
   );
 });
