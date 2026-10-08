@@ -78,4 +78,4 @@ agent-ctx/
 
 # Temporary runtime scripts
 run-mek.sh
-*.pid
+*.pid.open-next/
