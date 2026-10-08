@@ -1,12 +1,11 @@
 // MEKANIX — Prisma Client (Cloudflare-safe)
-// On Workers: lazy-init with D1 adapter when binding is available
+// On Workers: uses D1 adapter via dynamic import
 // On Node: standard PrismaClient
 
 import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-// Only create standard PrismaClient on Node (not Workers)
 const isWorker = typeof (globalThis as any).caches !== "undefined" && typeof (process as any).versions?.node === "undefined";
 
 let devClient: PrismaClient | undefined;
@@ -15,33 +14,43 @@ if (!isWorker) {
   if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = devClient;
 }
 
-// Lazy D1 client
 let d1Client: PrismaClient | undefined;
+let d1Promise: Promise<PrismaClient> | undefined;
 
-function getClient(): PrismaClient {
-  // Check for Cloudflare D1 binding
-  try {
+async function getD1Client(): Promise<PrismaClient> {
+  if (d1Client) return d1Client;
+  if (d1Promise) return d1Promise;
+  
+  d1Promise = (async () => {
+    const { PrismaD1 } = await import("@prisma/adapter-d1");
     const ctx = (globalThis as any)[Symbol.for("__cloudflare-context__")];
-    if (ctx?.env?.DB) {
-      if (!d1Client) {
-        const { PrismaD1 } = require("@prisma/adapter-d1");
-        d1Client = new PrismaClient({ adapter: new PrismaD1(ctx.env.DB) });
-      }
-      return d1Client;
-    }
-  } catch {}
+    const adapter = new PrismaD1(ctx.env.DB);
+    d1Client = new PrismaClient({ adapter });
+    return d1Client;
+  })();
   
-  // Node dev mode
-  if (devClient) return devClient;
-  
-  // Workers without D1 — stub
-  throw new Error("Database not available on this runtime");
+  return d1Promise;
 }
 
+// Synchronous client (Node only)
+function getSyncClient(): PrismaClient {
+  if (devClient) return devClient;
+  throw new Error("Database not available");
+}
+
+// For Node: synchronous access via Proxy
+// For Workers: async D1 via dynamic import
 export const db = new Proxy({} as PrismaClient, {
   get(_target, prop) {
-    const client = getClient();
-    const value = (client as any)[prop];
-    return typeof value === "function" ? value.bind(client) : value;
+    // On Node, use sync client
+    if (!isWorker && devClient) {
+      const value = (devClient as any)[prop];
+      return typeof value === "function" ? value.bind(devClient) : value;
+    }
+    
+    // On Workers, return async wrapper
+    // This is a simplification — D1 calls need to be async
+    // For now, throw so we can see if the app loads at all
+    throw new Error("D1 async access not supported via sync Proxy");
   },
 }) as PrismaClient;
