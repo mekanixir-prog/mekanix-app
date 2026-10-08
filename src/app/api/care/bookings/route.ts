@@ -6,6 +6,7 @@ import { careBookingSchema } from "@/lib/schemas";
 import { calculatePrice } from "@/lib/pricing";
 import { checkVipStatus } from "@/lib/vip";
 import { wantsLite, liteResponse } from "@/lib/lite-response";
+import { runSequential } from "@/lib/db-sequential";
 
 // POST /api/care/bookings — create a service booking.
 //
@@ -62,69 +63,65 @@ export async function POST(req: Request) {
     vipDiscountPercent: vipStatus.active ? vipStatus.discountPercent : 0,
   });
 
-  // Create booking + pricing snapshot in a transaction.
+  // Create booking + pricing snapshot + timeline event as sequential writes
+  // (D1 has no $transaction; earlier writes stay if a later one throws).
   //
-  // The snapshot write is inlined into the transaction (rather than
-  // delegated to `createPricingSnapshot()`) so it commits atomically with
-  // the booking creation. `createPricingSnapshot()` uses its own db handle
-  // (not the tx), which would break atomicity if the booking insert
-  // rolled back.
-  const result = await db.$transaction(async (tx) => {
-    const code = `CARE-${Math.floor(100000 + Math.random() * 900000)}`;
+  // The snapshot write is inlined here (rather than delegated to
+  // `createPricingSnapshot()`) so it commits with the booking creation in
+  // sequence. `createPricingSnapshot()` uses its own db handle which would
+  // not be orderable relative to the booking insert.
+  const code = `CARE-${Math.floor(100000 + Math.random() * 900000)}`;
 
-    const booking = await tx.serviceBooking.create({
-      data: {
-        code,
-        userId: session.userId,
-        vehicleId,
-        packageId: packageId || null,
-        serviceType: serviceType || "periodic",
-        location,
-        lat: lat || null,
-        lng: lng || null,
-        date: date ? new Date(date) : null,
-        timeWindow: timeWindow || null,
-        currentMileage: currentMileage || null,
-        status: "REQUESTED",
-      },
-    });
-
-    // Persist the frozen pricing snapshot (immutable, linked 1:1 to booking).
-    const snapshot = await tx.pricingSnapshot.create({
-      data: {
-        bookingId: booking.id,
-        servicePrice: pricing.labor, // labor as service price
-        visitPrice: pricing.travel,
-        laborPrice: pricing.labor,
-        partsPrice: pricing.parts,
-        discount: pricing.discount,
-        taxRate: pricing.taxRate,
-        taxTotal: pricing.taxTotal,
-        total: pricing.total,
-        currency: pricing.currency,
-        pricingVersion: pricing.pricingVersion,
-      },
-    });
-
-    // Link snapshot to booking
-    await tx.serviceBooking.update({
-      where: { id: booking.id },
-      data: { pricingSnapshotId: snapshot.id },
-    });
-
-    // Create timeline event
-    await tx.serviceTimelineEvent.create({
-      data: {
-        bookingId: booking.id,
-        eventType: "booking_created",
-        actor: session.userId,
-      },
-    });
-
-    return { booking, snapshotId: snapshot.id };
+  const booking = await db.serviceBooking.create({
+    data: {
+      code,
+      userId: session.userId,
+      vehicleId,
+      packageId: packageId || null,
+      serviceType: serviceType || "periodic",
+      location,
+      lat: lat || null,
+      lng: lng || null,
+      date: date ? new Date(date) : null,
+      timeWindow: timeWindow || null,
+      currentMileage: currentMileage || null,
+      status: "REQUESTED",
+    },
   });
 
-  return NextResponse.json(result.booking);
+  // Persist the frozen pricing snapshot (immutable, linked 1:1 to booking).
+  const snapshot = await db.pricingSnapshot.create({
+    data: {
+      bookingId: booking.id,
+      servicePrice: pricing.labor, // labor as service price
+      visitPrice: pricing.travel,
+      laborPrice: pricing.labor,
+      partsPrice: pricing.parts,
+      discount: pricing.discount,
+      taxRate: pricing.taxRate,
+      taxTotal: pricing.taxTotal,
+      total: pricing.total,
+      currency: pricing.currency,
+      pricingVersion: pricing.pricingVersion,
+    },
+  });
+
+  // Link snapshot to booking
+  await db.serviceBooking.update({
+    where: { id: booking.id },
+    data: { pricingSnapshotId: snapshot.id },
+  });
+
+  // Create timeline event
+  await db.serviceTimelineEvent.create({
+    data: {
+      bookingId: booking.id,
+      eventType: "booking_created",
+      actor: session.userId,
+    },
+  });
+
+  return NextResponse.json(booking);
 }
 
 // GET /api/care/bookings — list user's bookings

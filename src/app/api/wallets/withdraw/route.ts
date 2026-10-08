@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
+import { runSequential } from "@/lib/db-sequential";
 
 export async function POST(req: Request) {
   const session = await requireAuth(req);
@@ -48,68 +49,66 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "موجودی کافی نیست" }, { status: 400 });
   }
 
-  // ATOMIC TRANSACTION — all or nothing
+  // Sequential writes (D1-compatible: no $transaction wrapper).
+  // If an error occurs midway, earlier writes stay — acceptable for D1
+  // (D1 batch() would be better but isn't exposed through Prisma yet).
   try {
-    const result = await db.$transaction(async (tx) => {
-      // 1. Re-check balance inside transaction (prevent race condition)
-      const lockedWallet = await tx.wallet.findUnique({ where: { id: wallet.id } });
-      if (!lockedWallet || Number(lockedWallet.balance) < amount) {
-        throw new Error("موجودی کافی نیست");
-      }
+    // 1. Re-check balance (best-effort race-condition guard; no DB lock in D1)
+    const lockedWallet = await db.wallet.findUnique({ where: { id: wallet.id } });
+    if (!lockedWallet || Number(lockedWallet.balance) < amount) {
+      throw new Error("موجودی کافی نیست");
+    }
 
-      const balanceBefore = Number(lockedWallet.balance);
-      const balanceAfter = balanceBefore - amount;
+    const balanceBefore = Number(lockedWallet.balance);
+    const balanceAfter = balanceBefore - amount;
 
-      // 2. Create withdrawal request
-      const withdrawal = await tx.withdrawalRequest.create({
-        data: {
-          code: `WD-${Math.floor(100000 + Math.random() * 900000)}`,
-          walletId: wallet.id,
-          amount,
-          method: method || "card",
-          cardNumber: cardNumber?.replace(/.(?=.{4})/g, "*"),
-          bankName,
-          shebaNumber,
-          status: "REQUESTED",
-        },
-      });
-
-      // 3. Deduct balance
-      await tx.wallet.update({
-        where: { id: wallet.id },
-        data: { balance: balanceAfter },
-      });
-
-      // 4. Create ledger entry
-      await tx.walletLedger.create({
-        data: {
-          walletId: wallet.id,
-          type: "WITHDRAWAL",
-          amount: -amount,
-          balanceBefore,
-          balanceAfter,
-          referenceType: "Withdrawal",
-          referenceId: withdrawal.id,
-          description: `Withdrawal request ${withdrawal.code}`,
-        },
-      });
-
-      // 5. Create notification
-      await tx.notification.create({
-        data: {
-          userId: session.userId,
-          type: "withdrawal_requested",
-          title: `درخواست برداشت ${amount} ثبت شد`,
-          body: `درخواست برداشت شما ثبت شد و در انتظار تأیید است.`,
-          category: "payment",
-          link: "technician/earnings",
-        },
-      });
-
-      return { withdrawal, newBalance: balanceAfter };
+    // 2. Create withdrawal request
+    const withdrawal = await db.withdrawalRequest.create({
+      data: {
+        code: `WD-${Math.floor(100000 + Math.random() * 900000)}`,
+        walletId: wallet.id,
+        amount,
+        method: method || "card",
+        cardNumber: cardNumber?.replace(/.(?=.{4})/g, "*"),
+        bankName,
+        shebaNumber,
+        status: "REQUESTED",
+      },
     });
 
-    return NextResponse.json(result);
+    // 3. Deduct balance
+    await db.wallet.update({
+      where: { id: wallet.id },
+      data: { balance: balanceAfter },
+    });
+
+    // 4. Create ledger entry
+    await db.walletLedger.create({
+      data: {
+        walletId: wallet.id,
+        type: "WITHDRAWAL",
+        amount: -amount,
+        balanceBefore,
+        balanceAfter,
+        referenceType: "Withdrawal",
+        referenceId: withdrawal.id,
+        description: `Withdrawal request ${withdrawal.code}`,
+      },
+    });
+
+    // 5. Create notification
+    await db.notification.create({
+      data: {
+        userId: session.userId,
+        type: "withdrawal_requested",
+        title: `درخواست برداشت ${amount} ثبت شد`,
+        body: `درخواست برداشت شما ثبت شد و در انتظار تأیید است.`,
+        category: "payment",
+        link: "technician/earnings",
+      },
+    });
+
+    return NextResponse.json({ withdrawal, newBalance: balanceAfter });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || "خطا در پردازش برداشت" }, { status: 400 });
   }

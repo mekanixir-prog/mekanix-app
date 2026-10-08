@@ -11,6 +11,7 @@ import {
   requireAssignedTechnician,
   validateTransition,
 } from "@/lib/care-auth";
+import { runSequential } from "@/lib/db-sequential";
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await requireAuth(req);
@@ -73,25 +74,24 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
   // Optimistic concurrency: only update if status hasn't changed since we read it.
   // If count === 0, another request beat us to it → 409 Conflict.
+  // (D1 has no $transaction; the updateMany + timeline create are sequential.)
   try {
-    const updated = await db.$transaction(async (tx) => {
-      const result = await tx.serviceBooking.updateMany({
-        where: { id, status: existing.status },
-        data: { status },
-      });
-      if (result.count === 0) {
-        // Status changed concurrently — abort transaction.
-        throw new Error("__CONCURRENT_STATUS_CHANGE__");
-      }
-      await tx.serviceTimelineEvent.create({
-        data: {
-          bookingId: id,
-          eventType: status.toLowerCase(),
-          actor: session.userId,
-        },
-      });
-      return tx.serviceBooking.findUnique({ where: { id } });
+    const result = await db.serviceBooking.updateMany({
+      where: { id, status: existing.status },
+      data: { status },
     });
+    if (result.count === 0) {
+      // Status changed concurrently — abort.
+      throw new Error("__CONCURRENT_STATUS_CHANGE__");
+    }
+    await db.serviceTimelineEvent.create({
+      data: {
+        bookingId: id,
+        eventType: status.toLowerCase(),
+        actor: session.userId,
+      },
+    });
+    const updated = await db.serviceBooking.findUnique({ where: { id } });
     return NextResponse.json(updated);
   } catch (err) {
     if (err instanceof Error && err.message === "__CONCURRENT_STATUS_CHANGE__") {

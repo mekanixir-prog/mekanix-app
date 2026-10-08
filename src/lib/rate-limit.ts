@@ -1,9 +1,13 @@
-// MEKANIX — Rate Limiting (Redis-backed with in-memory fallback)
+// MEKANIX — Rate Limiting (D1-backed with in-memory fallback)
 //
-// When REDIS_URL is set, rate limiting is distributed across all instances.
-// Otherwise, falls back to in-memory (single-instance dev mode).
+// On Cloudflare Workers: uses the D1 `RateLimit` table (distributed across all
+// isolates that share the D1 database).
+// In local development without D1: falls back to in-memory (single-instance).
+//
+// The synchronous `rateLimit()` function is kept for backward compat with
+// callers that don't want to await — it uses the in-memory store only.
 
-import { kvIncr } from "./redis";
+import { db } from "./db";
 
 // ──────────── Rate limit configuration ────────────
 
@@ -27,7 +31,7 @@ export function getClientId(req: Request, userId?: string): string {
 }
 
 // ──────────── In-memory store (fast path) ────────────
-// Used when Redis is not available (dev mode).
+// Used when D1 is not available (dev mode without DB) — single-instance only.
 
 const memStore = new Map<string, { count: number; resetAt: number }>();
 
@@ -56,20 +60,42 @@ export function rateLimit(key: string, max: number, windowMs: number): { success
   return memRateLimit(key, max, windowMs);
 }
 
-// Async version that uses Redis when available.
-// New callers should use this for distributed rate limiting.
+// Async version that uses D1 `RateLimit` table when available.
+// Falls back to in-memory on any error (dev mode without DB).
+//
+// The D1 table stores: { key, count, expiresAt }.
+// Each request increments count; if count > max → deny.
+// On window expiry, the row is reset (upsert with count=1).
 
 export async function rateLimitAsync(key: string, max: number, windowMs: number): Promise<{ success: boolean; resetMs: number }> {
-  // Try Redis first
-  const redisKey = `rl:${key}`;
+  const d1Key = `rl:${key}`;
+  const now = Date.now();
+
+  // Try D1 RateLimit table (works on Cloudflare + local SQLite via Prisma)
   try {
-    const count = await kvIncr(redisKey, windowMs);
-    if (count > max) {
-      return { success: false, resetMs: windowMs };
+    const existing = await db.rateLimit.findUnique({ where: { key: d1Key } });
+
+    if (!existing || existing.expiresAt.getTime() < now) {
+      // Window expired (or first ever request) — start a fresh window.
+      await db.rateLimit.upsert({
+        where: { key: d1Key },
+        create: { key: d1Key, count: 1, expiresAt: new Date(now + windowMs) },
+        update: { count: 1, expiresAt: new Date(now + windowMs) },
+      });
+      return { success: true, resetMs: windowMs };
     }
-    return { success: true, resetMs: windowMs };
+
+    if (existing.count >= max) {
+      return { success: false, resetMs: existing.expiresAt.getTime() - now };
+    }
+
+    await db.rateLimit.update({
+      where: { key: d1Key },
+      data: { count: { increment: 1 } },
+    });
+    return { success: true, resetMs: existing.expiresAt.getTime() - now };
   } catch {
-    // Fall back to in-memory
+    // Fall back to in-memory (dev mode without DB)
     return memRateLimit(key, max, windowMs);
   }
 }

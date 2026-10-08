@@ -8,8 +8,10 @@
 //   - Booking must currently be WAITING_CUSTOMER_APPROVAL (state-machine enforced).
 //
 // Atomicity:
-//   - CustomerApproval update, Finding update, ServiceBooking status update, and
-//     ServiceTimelineEvent create are all wrapped in a single db.$transaction.
+//   - D1 does NOT support db.$transaction; CustomerApproval update, Finding
+//     update, ServiceBooking status update, and ServiceTimelineEvent create
+//     run sequentially via db.* directly. If a later write fails, earlier
+//     writes stay (acceptable for D1).
 //
 // Post-rejection behavior:
 //   - Booking transitions back to INSPECTING so the technician can re-inspect or
@@ -23,6 +25,7 @@ import {
   isValidTransition,
   isValidApprovalTransition,
 } from "@/lib/care-auth";
+import { runSequential } from "@/lib/db-sequential";
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await requireAuth(req);
@@ -96,44 +99,40 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     );
   }
 
-  // Atomic: approval + finding + booking status + timeline.
-  const updatedApproval = await db.$transaction(async (tx) => {
-    // 1. Mark approval as rejected.
-    const a = await tx.customerApproval.update({
-      where: { id: approvalId },
-      data: {
-        status: "CUSTOMER_REJECTED",
-        rejectedAt: new Date(),
-      },
-    });
-
-    // 2. Mark the linked finding (if any) as REJECTED.
-    if (a.findingId) {
-      await tx.finding.update({
-        where: { id: a.findingId },
-        data: { status: "REJECTED" },
-      });
-    }
-
-    // 3. Transition the booking back to INSPECTING so the technician can re-inspect
-    //    or proceed without the extra cost.
-    await tx.serviceBooking.update({
-      where: { id },
-      data: { status: "INSPECTING" },
-    });
-
-    // 4. Timeline event.
-    await tx.serviceTimelineEvent.create({
-      data: {
-        bookingId: id,
-        eventType: "customer_rejected",
-        actor: session.userId,
-        metadata: JSON.stringify({ approvalId }),
-      },
-    });
-
-    return a;
+  // Sequential writes (D1 has no $transaction).
+  // 1. Mark approval as rejected.
+  const a = await db.customerApproval.update({
+    where: { id: approvalId },
+    data: {
+      status: "CUSTOMER_REJECTED",
+      rejectedAt: new Date(),
+    },
   });
 
-  return NextResponse.json({ ok: true, approval: updatedApproval });
+  // 2. Mark the linked finding (if any) as REJECTED.
+  if (a.findingId) {
+    await db.finding.update({
+      where: { id: a.findingId },
+      data: { status: "REJECTED" },
+    });
+  }
+
+  // 3. Transition the booking back to INSPECTING so the technician can re-inspect
+  //    or proceed without the extra cost.
+  await db.serviceBooking.update({
+    where: { id },
+    data: { status: "INSPECTING" },
+  });
+
+  // 4. Timeline event.
+  await db.serviceTimelineEvent.create({
+    data: {
+      bookingId: id,
+      eventType: "customer_rejected",
+      actor: session.userId,
+      metadata: JSON.stringify({ approvalId }),
+    },
+  });
+
+  return NextResponse.json({ ok: true, approval: a });
 }

@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAdminFromRequest } from "@/lib/admin-auth";
 import { writeAuditLog } from "@/lib/admin-api";
-import fs from "fs";
-import path from "path";
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
@@ -22,15 +20,10 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const body = await req.json();
   const { imageBase64, ...rest } = body;
 
+  // Cloudflare Workers has no filesystem; image uploads are stored as data URLs
+  // directly in the D1 `OnboardingSlide.image` column.
   if (imageBase64?.startsWith("data:")) {
-    const m = imageBase64.match(/^data:(image\/\w+);base64,(.+)$/);
-    if (m) {
-      const ext = m[1].split("/")[1] === "jpeg" ? "jpg" : m[1].split("/")[1];
-      const buf = Buffer.from(m[2], "base64");
-      const filename = `onboarding-${Date.now()}.${ext}`;
-      fs.writeFileSync(path.join(process.cwd(), "public", "onboarding", filename), buf);
-      rest.image = `/onboarding/${filename}`;
-    }
+    rest.image = imageBase64;
   }
 
   const updated = await db.onboardingSlide.update({ where: { id }, data: rest });

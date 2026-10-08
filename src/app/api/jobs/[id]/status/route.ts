@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
+import { runSequential } from "@/lib/db-sequential";
 
 const include = {
   request: { include: { customer: { include: { user: true } }, vehicle: true } },
@@ -166,38 +167,36 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const cust = job.request.customer.user;
   const tech = job.technician.user;
 
-  // When job is COMPLETED, wrap all post-completion operations in a transaction
-  // so they're atomic — if any step fails, everything rolls back.
+  // When job is COMPLETED, run all post-completion side effects sequentially
+  // (D1 has no $transaction; earlier writes stay if a later one throws).
   if (status === "COMPLETED") {
-    await db.$transaction(async (tx) => {
-      // Start 12-hour hold countdown on PENDING prepay transactions
-      const holdUntil = new Date(Date.now() + HOLD_HOURS * 60 * 60 * 1000);
-      await tx.walletTransaction.updateMany({
-        where: { jobId: job.id, status: "PENDING" },
-        data: { holdUntil },
-      });
+    // Start 12-hour hold countdown on PENDING prepay transactions
+    const holdUntil = new Date(Date.now() + HOLD_HOURS * 60 * 60 * 1000);
+    await db.walletTransaction.updateMany({
+      where: { jobId: job.id, status: "PENDING" },
+      data: { holdUntil },
+    });
 
-      // Create completion notification
-      await tx.notification.create({
-        data: {
-          userId: cust.id,
-          type: "job_completed",
-          title: "کار تکمیل شد",
-          body: `${tech.name} کار را تکمیل کرد. فاکتور آماده بررسی است.`,
-          category: "job",
-          link: "customer/invoice",
-        },
-      });
+    // Create completion notification
+    await db.notification.create({
+      data: {
+        userId: cust.id,
+        type: "job_completed",
+        title: "کار تکمیل شد",
+        body: `${tech.name} کار را تکمیل کرد. فاکتور آماده بررسی است.`,
+        category: "job",
+        link: "customer/invoice",
+      },
+    });
 
-      // Create system message in chat
-      await tx.message.create({
-        data: {
-          jobId: job.id,
-          fromUserId: tech.id,
-          kind: "system",
-          body: `کار تکمیل شد — ${job.code}`,
-        },
-      });
+    // Create system message in chat
+    await db.message.create({
+      data: {
+        jobId: job.id,
+        fromUserId: tech.id,
+        kind: "system",
+        body: `کار تکمیل شد — ${job.code}`,
+      },
     });
   } else {
     // Side-effects: notifications + system messages

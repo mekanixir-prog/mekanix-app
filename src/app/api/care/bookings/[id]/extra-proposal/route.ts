@@ -7,9 +7,11 @@
 //   - Transition to WAITING_CUSTOMER_APPROVAL is validated via the state machine in care-auth.
 //
 // Atomicity:
-//   - All side effects (Finding create, CustomerApproval create, ServiceBooking status update,
-//     ServiceTimelineEvent create, Notification create) are wrapped in a single db.$transaction.
-//   - If any step fails, the whole operation rolls back — no partial state, no orphan notifications.
+//   - D1 does NOT support db.$transaction; all side effects (Finding create,
+//     CustomerApproval create, ServiceBooking status update,
+//     ServiceTimelineEvent create, Notification create) run sequentially via
+//     db.* directly. If a later write fails, earlier writes stay (acceptable
+//     for D1 — true batch transactions are not yet exposed through Prisma).
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
@@ -18,6 +20,7 @@ import {
   requireAssignedTechnician,
   isValidTransition,
 } from "@/lib/care-auth";
+import { runSequential } from "@/lib/db-sequential";
 
 // Booking states in which a technician may propose an extra cost.
 // Any other state means the proposal is out-of-context for the current workflow.
@@ -72,77 +75,73 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     );
   }
 
-  // All side effects in one transaction — atomic.
-  const approval = await db.$transaction(async (tx) => {
-    // 1. Optionally create (or reuse) a Finding for this proposal.
-    let findingId = body.findingId;
-    if (!findingId && body.finding) {
-      const f = await tx.finding.create({
-        data: {
-          bookingId: id,
-          category: body.finding.category || "general",
-          title: body.finding.title,
-          description: body.finding.description,
-          severity: body.finding.severity || "MEDIUM",
-        },
-      });
-      findingId = f.id;
-    }
-
-    // 2. Create the CustomerApproval record (status: PROPOSED).
-    const newApproval = await tx.customerApproval.create({
+  // All side effects run sequentially (D1 has no $transaction).
+  // 1. Optionally create (or reuse) a Finding for this proposal.
+  let findingId = body.findingId;
+  if (!findingId && body.finding) {
+    const f = await db.finding.create({
       data: {
         bookingId: id,
-        findingId: findingId || null,
-        proposedItem: body.proposedItem,
-        description: body.description || null,
-        partName: body.partName || null,
-        partBrand: body.partBrand || null,
-        partNumber: body.partNumber || null,
-        partType: body.partType || "OEM",
-        quantity: body.quantity || 1,
-        partPrice: body.partPrice || 0,
-        laborPrice: body.laborPrice || 0,
-        totalPrice:
-          (body.partPrice || 0) * (body.quantity || 1) + (body.laborPrice || 0),
-        imageUrl: body.imageUrl || null,
-        technicianNote: body.technicianNote || null,
-        status: "PROPOSED",
+        category: body.finding.category || "general",
+        title: body.finding.title,
+        description: body.finding.description,
+        severity: body.finding.severity || "MEDIUM",
       },
     });
+    findingId = f.id;
+  }
 
-    // 3. Transition booking → WAITING_CUSTOMER_APPROVAL.
-    await tx.serviceBooking.update({
-      where: { id },
-      data: { status: "WAITING_CUSTOMER_APPROVAL" },
-    });
-
-    // 4. Timeline event.
-    await tx.serviceTimelineEvent.create({
-      data: {
-        bookingId: id,
-        eventType: "extra_proposal",
-        actor: session.userId,
-        metadata: JSON.stringify({ approvalId: newApproval.id }),
-      },
-    });
-
-    // 5. Notify the customer.
-    await tx.notification.create({
-      data: {
-        userId: booking.userId,
-        type: "extra_proposal",
-        title: "پیشنهاد هزینه اضافه",
-        body: `${body.proposedItem} — ${
-          (body.partPrice || 0) * (body.quantity || 1) + (body.laborPrice || 0)
-        } تومان`,
-        category: "job",
-        link: "care-detail",
-      },
-    });
-
-    return newApproval;
+  // 2. Create the CustomerApproval record (status: PROPOSED).
+  const newApproval = await db.customerApproval.create({
+    data: {
+      bookingId: id,
+      findingId: findingId || null,
+      proposedItem: body.proposedItem,
+      description: body.description || null,
+      partName: body.partName || null,
+      partBrand: body.partBrand || null,
+      partNumber: body.partNumber || null,
+      partType: body.partType || "OEM",
+      quantity: body.quantity || 1,
+      partPrice: body.partPrice || 0,
+      laborPrice: body.laborPrice || 0,
+      totalPrice:
+        (body.partPrice || 0) * (body.quantity || 1) + (body.laborPrice || 0),
+      imageUrl: body.imageUrl || null,
+      technicianNote: body.technicianNote || null,
+      status: "PROPOSED",
+    },
   });
 
-  return NextResponse.json(approval);
+  // 3. Transition booking → WAITING_CUSTOMER_APPROVAL.
+  await db.serviceBooking.update({
+    where: { id },
+    data: { status: "WAITING_CUSTOMER_APPROVAL" },
+  });
+
+  // 4. Timeline event.
+  await db.serviceTimelineEvent.create({
+    data: {
+      bookingId: id,
+      eventType: "extra_proposal",
+      actor: session.userId,
+      metadata: JSON.stringify({ approvalId: newApproval.id }),
+    },
+  });
+
+  // 5. Notify the customer.
+  await db.notification.create({
+    data: {
+      userId: booking.userId,
+      type: "extra_proposal",
+      title: "پیشنهاد هزینه اضافه",
+      body: `${body.proposedItem} — ${
+        (body.partPrice || 0) * (body.quantity || 1) + (body.laborPrice || 0)
+      } تومان`,
+      category: "job",
+      link: "care-detail",
+    },
+  });
+
+  return NextResponse.json(newApproval);
 }

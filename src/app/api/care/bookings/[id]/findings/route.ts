@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireBookingParticipant, requireAssignedTechnician } from "@/lib/care-auth";
+import { runSequential } from "@/lib/db-sequential";
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await requireAuth(req);
@@ -27,29 +28,27 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const body = await req.json();
 
-  // Atomic: create finding + timeline event together
-  const finding = await db.$transaction(async (tx) => {
-    const created = await tx.finding.create({
-      data: {
-        bookingId: id,
-        category: body.category,
-        title: body.title,
-        description: body.description,
-        severity: body.severity || "MEDIUM",
-        evidence: JSON.stringify(body.evidence || {}),
-        recommendedAction: body.recommendedAction || null,
-      },
-    });
-    await tx.serviceTimelineEvent.create({
-      data: {
-        bookingId: id,
-        eventType: "extra_proposal",
-        actor: session.userId,
-        metadata: JSON.stringify({ findingId: created.id }),
-      },
-    });
-    return created;
+  // Create finding + timeline event sequentially
+  // (D1 has no $transaction; earlier writes stay if a later one throws).
+  const created = await db.finding.create({
+    data: {
+      bookingId: id,
+      category: body.category,
+      title: body.title,
+      description: body.description,
+      severity: body.severity || "MEDIUM",
+      evidence: JSON.stringify(body.evidence || {}),
+      recommendedAction: body.recommendedAction || null,
+    },
+  });
+  await db.serviceTimelineEvent.create({
+    data: {
+      bookingId: id,
+      eventType: "extra_proposal",
+      actor: session.userId,
+      metadata: JSON.stringify({ findingId: created.id }),
+    },
   });
 
-  return NextResponse.json(finding);
+  return NextResponse.json(created);
 }

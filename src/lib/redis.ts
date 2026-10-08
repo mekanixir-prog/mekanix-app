@@ -1,13 +1,21 @@
-// MEKANIX — Redis adapter with in-memory fallback
-// 
-// When REDIS_URL is set, uses Redis for distributed state.
-// Otherwise, falls back to in-memory (single-instance dev mode).
+// MEKANIX — Redis adapter (in-memory stub — Cloudflare D1 migration)
 //
-// Used by: rate-limit.ts, auth.ts (idempotency), sync-engine.ts
+// Previously this module bridged to a real Redis via `ioredis` when REDIS_URL
+// was set, with an in-memory fallback. As of the Cloudflare migration, the
+// app uses D1 tables (`RateLimit`, `IdempotencyKey`) for distributed state
+// that previously lived in Redis — see `src/lib/rate-limit.ts` and
+// `src/lib/auth.ts#withIdempotency`.
+//
+// This module is retained as an in-memory-only stub so existing imports
+// (`isRedisAvailable` from /api/health, the test mocks for kvGet/kvSet/kvDel/
+// kvIncr) keep resolving. It no longer pulls in `ioredis`, so the dependency
+// could be dropped from package.json.
+//
+// All operations hit a process-local Map. On Cloudflare Workers each isolate
+// has its own Map (effectively per-request) — but the only live caller is
+// /api/health, which just reports `isRedisAvailable() → false`.
 
-import type { LRUCache } from "lru-cache";
-
-// ──────────── In-memory store (fallback) ────────────
+// ──────────── In-memory store ────────────
 const memStore = new Map<string, { value: string; expiresAt: number }>();
 
 function memGet(key: string): string | null {
@@ -35,103 +43,32 @@ function memIncr(key: string, ttlMs: number): number {
   return next;
 }
 
-// ──────────── Redis client (lazy-loaded) ────────────
-let redisClient: any = null;
-let redisAvailable = false;
-
-async function getRedisClient(): Promise<any | null> {
-  if (redisClient !== null) return redisClient;
-  
-  const redisUrl = process.env.REDIS_URL;
-  if (!redisUrl) {
-    redisAvailable = false;
-    return null;
-  }
-
-  try {
-    // Dynamic import so the dependency is optional
-    const { Redis } = await import("ioredis");
-    redisClient = new Redis(redisUrl, {
-      maxRetriesPerRequest: 1,
-      enableOfflineQueue: false,
-    });
-    
-    // Test connection
-    await redisClient.ping();
-    redisAvailable = true;
-    console.log("✅ Redis connected for distributed state");
-    return redisClient;
-  } catch (e) {
-    console.warn("⚠️  Redis unavailable, falling back to in-memory:", (e as Error).message);
-    redisAvailable = false;
-    return null;
-  }
-}
-
 // ──────────── Unified key-value interface ────────────
-// Works with Redis (distributed) or in-memory (single instance).
+// All operations hit the in-memory Map. There is no Redis connection anymore.
 
 export async function kvGet(key: string): Promise<string | null> {
-  const client = await getRedisClient();
-  if (client) {
-    try {
-      return await client.get(key);
-    } catch {
-      return memGet(key);
-    }
-  }
   return memGet(key);
 }
 
 export async function kvSet(key: string, value: string, ttlMs: number): Promise<void> {
-  const client = await getRedisClient();
-  if (client) {
-    try {
-      await client.set(key, value, "PX", ttlMs);
-      return;
-    } catch {
-      // fall through to in-memory
-    }
-  }
   memSet(key, value, ttlMs);
 }
 
 export async function kvDel(key: string): Promise<void> {
-  const client = await getRedisClient();
-  if (client) {
-    try {
-      await client.del(key);
-      return;
-    } catch {
-      // fall through
-    }
-  }
   memDel(key);
 }
 
 export async function kvIncr(key: string, ttlMs: number): Promise<number> {
-  const client = await getRedisClient();
-  if (client) {
-    try {
-      const multi = client.multi();
-      multi.incr(key);
-      multi.pexpire(key, ttlMs);
-      const results = await multi.exec();
-      return results[0][1] as number;
-    } catch {
-      return memIncr(key, ttlMs);
-    }
-  }
   return memIncr(key, ttlMs);
 }
 
-// Check if Redis is available (for health checks)
+// Redis is no longer wired up — always returns false so /api/health reports
+// the in-memory fallback state honestly.
 export async function isRedisAvailable(): Promise<boolean> {
-  const client = await getRedisClient();
-  return client !== null && redisAvailable;
+  return false;
 }
 
-// Clean up in-memory store periodically (every 5 min)
+// Clean up in-memory store periodically (every 5 min) — same as the old impl.
 setInterval(() => {
   const now = Date.now();
   for (const [key, entry] of memStore.entries()) {

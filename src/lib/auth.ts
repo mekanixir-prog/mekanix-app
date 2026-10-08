@@ -13,7 +13,6 @@ import { SignJWT, jwtVerify } from "jose";
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { db } from "./db";
-import { kvGet, kvSet } from "./redis";
 
 // ──────────── JWT ────────────
 
@@ -387,21 +386,26 @@ export function apiError(message: string, status: number = 400, requestId?: stri
 
 // ──────────── Idempotency ────────────
 //
-// Cached in Redis (when REDIS_URL is set) so the same idempotency-key returns
-// the same response across ALL instances in a deployed fleet. Falls back to
-// in-memory (single-instance dev mode) when Redis is unavailable.
-//
-// Redis TTL handles expiry natively — there is no manual cleanup interval
-// (the old in-memory `idempotencyStore` Map + 24h sweep is gone).
+// Cached in the D1 `IdempotencyKey` table (when the DB is reachable) so the
+// same idempotency-key returns the same response across all isolates that
+// share the D1 database. Falls back to an in-memory Map (single-instance
+// dev mode) when D1 is unavailable.
 //
 // Key shape: `idem:<key>` so idempotency entries live in their own namespace
 // and are easy to inspect / flush independently of rate-limit counters.
+//
+// TTL is 24h — expired entries should be swept by a periodic cleanup job
+// (or just left to accumulate; the table is small and indexed by expiresAt).
 
 export function getIdempotencyKey(req: Request): string | null {
   return req.headers.get("x-idempotency-key") || req.headers.get("Idempotency-Key");
 }
 
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+
+// In-memory fallback store (used when D1 is unavailable — dev mode without DB).
+// Each entry: { response: string, expiresAt: number }.
+const idemMemStore = new Map<string, { response: string; expiresAt: number }>();
 
 export async function withIdempotency<T>(
   req: Request,
@@ -410,20 +414,49 @@ export async function withIdempotency<T>(
   const key = getIdempotencyKey(req);
   if (!key) return null;
 
-  // Check Redis first (distributed — works across instances).
-  const redisKey = `idem:${key}`;
-  const cached = await kvGet(redisKey);
-  if (cached) {
-    try {
-      return { cached: true, data: JSON.parse(cached) as T };
-    } catch {
-      // Corrupt cache entry — fall through and re-execute so the caller
-      // gets a fresh response and we overwrite the bad value below.
-    }
-  }
+  const d1Key = `idem:${key}`;
+  const now = Date.now();
 
-  // Execute and cache. Redis TTL (PX) handles expiry natively — no manual sweep.
-  const result = await fn();
-  await kvSet(redisKey, JSON.stringify(result), IDEMPOTENCY_TTL_MS);
-  return { cached: false, data: result };
+  // Try D1 IdempotencyKey table (works on Cloudflare + local SQLite via Prisma)
+  try {
+    const existing = await db.idempotencyKey.findUnique({ where: { key: d1Key } });
+
+    if (existing && existing.expiresAt.getTime() > now) {
+      return { cached: true, data: JSON.parse(existing.response) as T };
+    }
+
+    // Execute and cache. D1 has no transaction — best-effort write.
+    const result = await fn();
+    const expiresAt = new Date(now + IDEMPOTENCY_TTL_MS);
+    await db.idempotencyKey.upsert({
+      where: { key: d1Key },
+      create: {
+        key: d1Key,
+        response: JSON.stringify(result),
+        expiresAt,
+      },
+      update: {
+        response: JSON.stringify(result),
+        expiresAt,
+      },
+    });
+    return { cached: false, data: result };
+  } catch {
+    // Fall back to in-memory (dev mode without DB)
+    const cached = idemMemStore.get(d1Key);
+    if (cached && cached.expiresAt > now) {
+      try {
+        return { cached: true, data: JSON.parse(cached.response) as T };
+      } catch {
+        // Corrupt cache entry — fall through and re-execute.
+      }
+    }
+
+    const result = await fn();
+    idemMemStore.set(d1Key, {
+      response: JSON.stringify(result),
+      expiresAt: now + IDEMPOTENCY_TTL_MS,
+    });
+    return { cached: false, data: result };
+  }
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireBookingParticipant, requireAssignedTechnician } from "@/lib/care-auth";
+import { runSequential } from "@/lib/db-sequential";
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const session = await requireAuth(req);
@@ -30,35 +31,32 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const body = await req.json();
 
-  // Atomic: upsert inspection + create timeline event together
-  const inspection = await db.$transaction(async (tx) => {
-    const upserted = await tx.inspection.upsert({
-      where: { bookingId: id },
-      create: {
-        bookingId: id,
-        results: JSON.stringify(body.results || {}),
-        measurements: JSON.stringify(body.measurements || {}),
-        images: JSON.stringify(body.images || []),
-        technicianNotes: body.notes || null,
-      },
-      update: {
-        results: JSON.stringify(body.results || {}),
-        measurements: JSON.stringify(body.measurements || {}),
-        images: JSON.stringify(body.images || []),
-        technicianNotes: body.notes || null,
-      },
-    });
-
-    await tx.serviceTimelineEvent.create({
-      data: {
-        bookingId: id,
-        eventType: "inspection_started",
-        actor: session.userId,
-      },
-    });
-
-    return upserted;
+  // Upsert inspection + create timeline event sequentially
+  // (D1 has no $transaction; earlier writes stay if a later one throws).
+  const upserted = await db.inspection.upsert({
+    where: { bookingId: id },
+    create: {
+      bookingId: id,
+      results: JSON.stringify(body.results || {}),
+      measurements: JSON.stringify(body.measurements || {}),
+      images: JSON.stringify(body.images || []),
+      technicianNotes: body.notes || null,
+    },
+    update: {
+      results: JSON.stringify(body.results || {}),
+      measurements: JSON.stringify(body.measurements || {}),
+      images: JSON.stringify(body.images || []),
+      technicianNotes: body.notes || null,
+    },
   });
 
-  return NextResponse.json(inspection);
+  await db.serviceTimelineEvent.create({
+    data: {
+      bookingId: id,
+      eventType: "inspection_started",
+      actor: session.userId,
+    },
+  });
+
+  return NextResponse.json(upserted);
 }
