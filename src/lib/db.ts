@@ -4,23 +4,21 @@
 
 import { PrismaClient } from "@prisma/client";
 
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined };
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 // Only create standard PrismaClient on Node (not Workers)
-const isWorker = typeof (globalThis as any).caches !== "undefined" && typeof process.versions?.node === "undefined";
+const isWorker = typeof (globalThis as any).caches !== "undefined" && typeof (process as any).versions?.node === "undefined";
 
-const devClient = (!isWorker && globalForPrisma.prisma) 
-  ? globalForPrisma.prisma 
-  : (!isWorker ? new PrismaClient({ log: ["error", "warn"] }) : null);
-
-if (!isWorker && process.env.NODE_ENV !== "production" && !globalForPrisma.prisma) {
-  globalForPrisma.prisma = devClient;
+let devClient: PrismaClient | undefined;
+if (!isWorker) {
+  devClient = globalForPrisma.prisma ?? new PrismaClient({ log: ["error", "warn"] });
+  if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = devClient;
 }
 
 // Lazy D1 client
-let d1Client: any = null;
+let d1Client: PrismaClient | undefined;
 
-function getClient(): any {
+function getClient(): PrismaClient {
   // Check for Cloudflare D1 binding
   try {
     const ctx = (globalThis as any)[Symbol.for("__cloudflare-context__")];
@@ -36,16 +34,14 @@ function getClient(): any {
   // Node dev mode
   if (devClient) return devClient;
   
-  // Workers without D1 — return a stub that throws on use
-  return new Proxy({}, {
-    get: () => () => { throw new Error("D1 binding not available"); }
-  });
+  // Workers without D1 — stub
+  throw new Error("Database not available on this runtime");
 }
 
 export const db = new Proxy({} as PrismaClient, {
   get(_target, prop) {
     const client = getClient();
-    const value = client[prop];
+    const value = (client as any)[prop];
     return typeof value === "function" ? value.bind(client) : value;
   },
 }) as PrismaClient;
