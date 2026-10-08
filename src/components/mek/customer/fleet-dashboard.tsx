@@ -57,12 +57,7 @@ export function CustomerFleetDashboard({ customer }: { customer: DemoUser }) {
   const [schedules, setSchedules] = useState<Schedule[] | null>(null);
 
   useEffect(() => {
-    if (!customer.customer) {
-      setVehicles([]);
-      setJobs([]);
-      setSchedules([]);
-      return;
-    }
+    if (!customer.customer) return;
     const cid = customer.customer.id;
     api.listVehicles(cid).then(setVehicles).catch(() => setVehicles([]));
     api.listJobs({ customerId: cid }).then(setJobs).catch(() => setJobs([]));
