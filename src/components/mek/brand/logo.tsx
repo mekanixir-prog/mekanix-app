@@ -1,6 +1,6 @@
 "use client";
 import { cn } from "@/lib/utils";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/components/mek/theme-provider";
 
 export function Logo({
   className,

@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Bell, Sun, Moon, Menu, X, RefreshCw, ShieldCheck, User as UserIcon, Wrench, LogOut, ArrowLeftRight, Car, Truck, Languages,
 } from "lucide-react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/components/mek/theme-provider";
 import { Logo } from "./brand/logo";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";

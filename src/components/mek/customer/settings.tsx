@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { User as UserIcon, Globe, Bell, Shield } from "lucide-react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/components/mek/theme-provider";
 import { useT } from "@/lib/use-t";
 import { toast } from "sonner";
 

@@ -1,14 +1,13 @@
-# MEKANIX — Cloudflare Pages Configuration
-# This file configures the Pages project with D1 binding + nodejs_compat
-
 name = "mekanix"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
-# Pages output directory (OpenNext outputs here)
-pages_build_output_dir = ".open-next"
+main = ".open-next/worker.js"
 
-# D1 Database binding
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "mekanix"

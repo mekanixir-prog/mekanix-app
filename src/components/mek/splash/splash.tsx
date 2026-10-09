@@ -311,7 +311,10 @@ export function Splash() {
   );
 }
 
-// ─── Hero logo: real brand mark, inverted to light via CSS filter on pure black ───
+// ─── Hero logo: 2D brand mark (the original, before 3D) ───
+// logo.webp is a black-on-white combination mark (M icon + "MEKANIX" wordmark
+// + "REPAIR / MAINTAIN / CONNECT" tagline). On the dark splash we invert it
+// via CSS so it reads as white-on-dark.
 function HeroLogo() {
   return (
     <motion.div
@@ -319,27 +322,26 @@ function HeroLogo() {
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
       className="relative mx-auto grid place-items-center"
-      style={{ width: 240, height: 160 }}
+      style={{ width: 240, height: 220 }}
     >
       {/* Subtle amber ambient glow behind the mark */}
       <div
         className="pointer-events-none absolute rounded-full"
         style={{
-          width: 200, height: 200,
-          background: "radial-gradient(circle, oklch(0.74 0.16 68 / 0.1), transparent 60%)",
+          width: 220, height: 220,
+          background: "radial-gradient(circle, oklch(0.74 0.16 68 / 0.15), transparent 65%)",
         }}
       />
 
-      {/* The real logo — inverted to light via CSS filter (logo is dark-colored on transparent bg) */}
+      {/* 2D Logo — the original brand mark, inverted for dark background */}
       <motion.img
         src="/logo.webp"
         alt="MEKANIX"
         className="relative z-10 select-none object-contain"
-        style={{ width: 180, height: "auto", filter: "invert(1) hue-rotate(180deg) brightness(1.1)" }}
+        style={{ width: 200, height: "auto", filter: "invert(1) hue-rotate(180deg) brightness(1.1)" }}
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2, duration: 0.6 }}
-        onError={(e) => { (e.target as HTMLImageElement).src = "/logo.png"; (e.target as HTMLImageElement).onerror = null; }}
       />
     </motion.div>
   );

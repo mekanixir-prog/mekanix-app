@@ -5,6 +5,7 @@ import "leaflet/dist/leaflet.css";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/mek/theme-provider";
+import { ServiceWorkerRegistrar } from "@/components/mek/service-worker-registrar";
 
 const vazirmatn = Vazirmatn({
   subsets: ["arabic", "latin"],
@@ -44,14 +45,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fa" dir="rtl" suppressHydrationWarning>
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js').catch(()=>{})})}`
-          }}
-        />
-      </head>
       <body className={`${vazirmatn.variable} font-sans antialiased bg-background text-foreground`}>
+        <ServiceWorkerRegistrar />
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
           {children}
           <Toaster />

@@ -1,78 +1,48 @@
-// MEKANIX — Service Worker
-// PWA offline support with security-conscious caching.
+// MEKANIX — Service Worker (self-destruct by default)
 //
-// Cache strategy:
-//   - Static assets (/, /manifest.json, /logo.png, /offline.html): cache-first
-//   - API routes (/api/*): NO CACHE (no-store) — prevents leaking user data
-//   - Navigation: network-first, fallback to offline page
+// Why: This app is under active development. The dev server (Next.js 16
+// Turbopack) regenerates JS chunks on every code change, but a cache-first
+// SW would serve stale chunks from cache and crash the app with
+// "module factory is not available" errors.
+//
+// Until we ship a production build, this SW unconditionally unregisters
+// itself and clears all caches on install + activate. Once we ship prod,
+// we'll gate this on a `IS_PROD` flag and add proper cache strategies.
 
-const CACHE_NAME = 'mekanix-v1.0.0';
-const STATIC_ASSETS = [
-  '/',
-  '/manifest.json',
-  '/logo.png',
-  '/logo.webp',
-  '/offline.html',
-];
-
-self.addEventListener('install', (event) => {
+self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+    (async () => {
+      try {
+        const names = await caches.keys();
+        await Promise.all(names.map((n) => caches.delete(n)));
+      } catch {}
+      await self.skipWaiting();
+    })()
   );
-  self.skipWaiting();
 });
 
-self.addEventListener('activate', (event) => {
+self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((names) =>
-      Promise.all(names.map((name) => {
-        if (name !== CACHE_NAME) return caches.delete(name);
-      }))
-    )
-  );
-  self.clients.claim();
-});
-
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-  if (event.request.method !== 'GET') return;
-  if (url.protocol === 'chrome-extension:') return;
-
-  // API routes: NEVER cache — prevents user data leakage
-  if (url.pathname.startsWith('/api/')) {
-    event.respondWith(fetch(event.request));
-    return;
-  }
-
-  // Navigation: network-first, offline fallback
-  if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          if (response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        })
-        .catch(() => caches.match(event.request))
-        .then((cached) => cached || caches.match('/offline.html'))
-    );
-    return;
-  }
-
-  // Static assets: cache-first
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request)
-        .then((response) => {
-          if (response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        })
-    })
+    (async () => {
+      try {
+        // Unregister ourselves.
+        await self.registration.unregister();
+        // Nuke every cache we can find.
+        const names = await caches.keys();
+        await Promise.all(names.map((n) => caches.delete(n)));
+        // Force every controlled client to navigate (reload) so they pick up
+        // the new SW-less state.
+        const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        clients.forEach((c) => {
+          try {
+            c.navigate(c.url);
+          } catch {}
+        });
+      } catch {}
+      return self.clients.claim();
+    })()
   );
 });
+
+// Never intercept fetches — pass everything straight through to the network.
+self.addEventListener("fetch", () => {});

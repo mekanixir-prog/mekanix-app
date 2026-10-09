@@ -79,3 +79,9 @@ agent-ctx/
 # Temporary runtime scripts
 run-mek.sh
 *.pid.open-next/
+
+# Build artifacts / junk
+*.bak
+playwright-report/
+test-results/
+zap-reports/
