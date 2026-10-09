@@ -85,3 +85,8 @@ run-mek.sh
 playwright-report/
 test-results/
 zap-reports/
+
+# Cloudflare build output + wrangler local state (NEVER commit these)
+.open-next/
+.wrangler/
+.next/
