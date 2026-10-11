@@ -5,11 +5,12 @@
 // IMPORTANT: ServiceBooking.technicianId references Technician.id (NOT User.id).
 // We must resolve the Technician record via getTechnicianFromSession before filtering.
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
 
 export async function GET(req: Request) {
+  const db = await getDbForLib();
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 

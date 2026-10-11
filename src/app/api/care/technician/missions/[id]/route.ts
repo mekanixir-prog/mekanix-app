@@ -4,16 +4,16 @@
 // GET    : ADMIN | booking customer | assigned technician
 // PATCH  : ADMIN | assigned technician (state-machine validated, optimistic concurrency)
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import {
   requireBookingParticipant,
   requireAssignedTechnician,
   validateTransition,
 } from "@/lib/care-auth";
-import { runSequential } from "@/lib/db-sequential";
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const db = await getDbForLib();
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
   const { id } = await ctx.params;
@@ -40,6 +40,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const db = await getDbForLib();
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
   const { id } = await ctx.params;
