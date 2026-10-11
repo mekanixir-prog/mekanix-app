@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { sanitizeInput, ALLOWED_FIELDS, requireVehicleOwner } from "@/lib/auth";
 
@@ -11,6 +11,7 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const vehicleId = url.searchParams.get("vehicleId");
+  const db = await getDbForLib();
 
   const where: any = {};
   if (session.role === "CUSTOMER") {
@@ -71,6 +72,7 @@ export async function POST(req: Request) {
     nextDueDate = new Date(Date.now() + safe.intervalDays * 24 * 60 * 60 * 1000);
   }
 
+  const db = await getDbForLib();
   const schedule = await db.maintenanceSchedule.create({
     data: {
       vehicleId: safe.vehicleId,
@@ -104,6 +106,8 @@ export async function PATCH(req: Request) {
   if (typeof id !== "string" || !id || action !== "markDone") {
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   }
+
+  const db = await getDbForLib();
 
   const existing = await db.maintenanceSchedule.findUnique({
     where: { id },
