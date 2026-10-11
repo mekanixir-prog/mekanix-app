@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { wantsLite, liteResponse } from "@/lib/lite-response";
 
@@ -10,6 +10,7 @@ export async function GET(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
+  const db = await getDbForLib();
   const list = await db.notification.findMany({
     where: { userId: session.userId },
     orderBy: { createdAt: "desc" },
@@ -24,6 +25,7 @@ export async function PATCH(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
+  const db = await getDbForLib();
   await db.notification.updateMany({
     where: { userId: session.userId },
     data: { read: true },
