@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
 
@@ -28,6 +28,7 @@ export async function GET(req: Request) {
   const access = await requireJobParticipant(session, jobId);
   if (access) return access;
 
+  const db = await getDbForLib();
   const inv = await db.invoice.findUnique({ where: { jobId }, include: FULL_INCLUDE });
   return NextResponse.json(inv);
 }
@@ -55,6 +56,7 @@ export async function POST(req: Request) {
   if (access) return access;
 
   // Only the assigned technician (or admin) can issue an invoice
+  const db = await getDbForLib();
   if (session.role === "TECHNICIAN") {
     const tech = await getTechnicianFromSession(session);
     const job = await db.job.findUnique({ where: { id: jobId }, select: { technicianId: true } });
