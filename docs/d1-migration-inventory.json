@@ -2,6 +2,7 @@
   {
     "file": "src/app/api/admin-panel/auth/login/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "adminUser": [
         "findFirst",
@@ -14,11 +15,13 @@
     "auth_deps": [],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 2
+    "total_calls": 2,
+    "migrated": false
   },
   {
     "file": "src/app/api/admin-panel/auth/me/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "adminUser": [
         "findUnique"
@@ -30,11 +33,13 @@
     "auth_deps": [],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 1
+    "total_calls": 1,
+    "migrated": false
   },
   {
     "file": "src/app/api/admin-panel/onboarding/[id]/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "onboardingSlide": [
         "findUnique",
@@ -50,11 +55,13 @@
     "auth_deps": [],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 5
+    "total_calls": 5,
+    "migrated": false
   },
   {
     "file": "src/app/api/admin-panel/onboarding/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "onboardingSlide": [
         "findMany",
@@ -69,11 +76,13 @@
     "auth_deps": [],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 3
+    "total_calls": 3,
+    "migrated": false
   },
   {
     "file": "src/app/api/admin/[resource]/[id]/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "customer": [
         "findUnique",
@@ -99,15 +108,18 @@
       "PATCH"
     ],
     "auth_deps": [
-      "requireAuth"
+      "requireAuth",
+      "requireRole"
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 7
+    "total_calls": 7,
+    "migrated": false
   },
   {
     "file": "src/app/api/admin/[resource]/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "customer": [
         "findMany"
@@ -138,15 +150,18 @@
       "GET"
     ],
     "auth_deps": [
-      "requireAuth"
+      "requireAuth",
+      "requireRole"
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 8
+    "total_calls": 8,
+    "migrated": false
   },
   {
     "file": "src/app/api/auth/demo/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "user": [
         "findFirst"
@@ -158,11 +173,13 @@
     "auth_deps": [],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 3
+    "total_calls": 3,
+    "migrated": true
   },
   {
     "file": "src/app/api/auth/otp/send/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "otpCode": [
         "update",
@@ -173,16 +190,17 @@
       "POST"
     ],
     "auth_deps": [
-      "rateLimitAsync",
-      "rateLimit"
+      "rateLimitAsync"
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 2
+    "total_calls": 2,
+    "migrated": true
   },
   {
     "file": "src/app/api/auth/otp/verify/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "customer": [
         "create"
@@ -203,17 +221,17 @@
     ],
     "auth_deps": [
       "requireAuth",
-      "createSession",
-      "rateLimitAsync",
-      "rateLimit"
+      "rateLimitAsync"
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 12
+    "total_calls": 12,
+    "migrated": true
   },
   {
     "file": "src/app/api/auth/session/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "customer": [
         "create"
@@ -226,16 +244,16 @@
       "POST",
       "GET"
     ],
-    "auth_deps": [
-      "getSessionFromRequest"
-    ],
+    "auth_deps": [],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 4
+    "total_calls": 4,
+    "migrated": true
   },
   {
     "file": "src/app/api/care/admin/packages/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "servicePackage": [
         "findMany",
@@ -247,15 +265,18 @@
       "POST"
     ],
     "auth_deps": [
-      "requireAuth"
+      "requireAuth",
+      "requireRole"
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 2
+    "total_calls": 2,
+    "migrated": true
   },
   {
     "file": "src/app/api/care/admin/rules/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "maintenanceRule": [
         "findMany",
@@ -267,15 +288,18 @@
       "POST"
     ],
     "auth_deps": [
-      "requireAuth"
+      "requireAuth",
+      "requireRole"
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 2
+    "total_calls": 2,
+    "migrated": true
   },
   {
     "file": "src/app/api/care/bookings/[id]/approve-extra/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "customerApproval": [
         "findUnique",
@@ -300,11 +324,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": true,
-    "total_calls": 6
+    "total_calls": 6,
+    "migrated": true
   },
   {
     "file": "src/app/api/care/bookings/[id]/extra-proposal/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "customerApproval": [
         "create"
@@ -332,11 +358,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": true,
-    "total_calls": 6
+    "total_calls": 6,
+    "migrated": true
   },
   {
     "file": "src/app/api/care/bookings/[id]/findings/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "finding": [
         "findMany",
@@ -357,11 +385,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": true,
-    "total_calls": 3
+    "total_calls": 3,
+    "migrated": true
   },
   {
     "file": "src/app/api/care/bookings/[id]/health-report/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "serviceBooking": [
         "findUnique"
@@ -388,11 +418,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": true,
-    "total_calls": 5
+    "total_calls": 5,
+    "migrated": true
   },
   {
     "file": "src/app/api/care/bookings/[id]/inspection/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "inspection": [
         "findUnique",
@@ -413,11 +445,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": true,
-    "total_calls": 3
+    "total_calls": 3,
+    "migrated": true
   },
   {
     "file": "src/app/api/care/bookings/[id]/reject-extra/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "customerApproval": [
         "findUnique",
@@ -442,11 +476,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": true,
-    "total_calls": 6
+    "total_calls": 6,
+    "migrated": true
   },
   {
     "file": "src/app/api/care/bookings/[id]/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "pricingSnapshot": [
         "findUnique"
@@ -464,11 +500,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 2
+    "total_calls": 2,
+    "migrated": true
   },
   {
     "file": "src/app/api/care/bookings/[id]/timeline/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "serviceTimelineEvent": [
         "findMany"
@@ -482,11 +520,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 1
+    "total_calls": 1,
+    "migrated": true
   },
   {
     "file": "src/app/api/care/bookings/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "pricingSnapshot": [
         "create"
@@ -513,11 +553,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": true,
-    "total_calls": 6
+    "total_calls": 6,
+    "migrated": true
   },
   {
     "file": "src/app/api/care/packages/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "servicePackage": [
         "findMany"
@@ -529,11 +571,13 @@
     "auth_deps": [],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 1
+    "total_calls": 1,
+    "migrated": true
   },
   {
     "file": "src/app/api/care/technician/missions/[id]/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "serviceBooking": [
         "findUnique",
@@ -554,11 +598,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": true,
-    "total_calls": 5
+    "total_calls": 5,
+    "migrated": true
   },
   {
     "file": "src/app/api/care/technician/missions/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "serviceBooking": [
         "findMany"
@@ -573,11 +619,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 1
+    "total_calls": 1,
+    "migrated": true
   },
   {
     "file": "src/app/api/care/vehicles/[id]/health/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "vehicleCareProfile": [
         "findUnique"
@@ -590,15 +638,18 @@
       "GET"
     ],
     "auth_deps": [
-      "requireAuth"
+      "requireAuth",
+      "requireVehicleOwner"
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 2
+    "total_calls": 2,
+    "migrated": true
   },
   {
     "file": "src/app/api/care/vehicles/[id]/maintenance/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "careReminder": [
         "findMany"
@@ -626,15 +677,18 @@
       "GET"
     ],
     "auth_deps": [
-      "requireAuth"
+      "requireAuth",
+      "requireVehicleOwner"
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 7
+    "total_calls": 7,
+    "migrated": true
   },
   {
     "file": "src/app/api/dashboard/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "job": [
         "count",
@@ -665,11 +719,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 16
+    "total_calls": 16,
+    "migrated": true
   },
   {
     "file": "src/app/api/exchange-rate/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "platformSetting": [
         "findUnique"
@@ -681,11 +737,13 @@
     "auth_deps": [],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 3
+    "total_calls": 3,
+    "migrated": false
   },
   {
     "file": "src/app/api/gateway/initiate/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "paymentGatewayLog": [
         "create"
@@ -694,14 +752,18 @@
     "http_methods": [
       "POST"
     ],
-    "auth_deps": [],
+    "auth_deps": [
+      "requireAuth"
+    ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 1
+    "total_calls": 1,
+    "migrated": true
   },
   {
     "file": "src/app/api/gateway/verify/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "payment": [
         "create"
@@ -714,14 +776,18 @@
     "http_methods": [
       "POST"
     ],
-    "auth_deps": [],
+    "auth_deps": [
+      "requireAuth"
+    ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 4
+    "total_calls": 4,
+    "migrated": true
   },
   {
     "file": "src/app/api/health/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {},
     "http_methods": [
       "GET"
@@ -729,11 +795,13 @@
     "auth_deps": [],
     "uses_raw_sql": true,
     "uses_transaction": false,
-    "total_calls": 0
+    "total_calls": 0,
+    "migrated": false
   },
   {
     "file": "src/app/api/insurance/claim/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "customer": [
         "findUnique"
@@ -759,15 +827,18 @@
       "POST"
     ],
     "auth_deps": [
-      "requireAuth"
+      "requireAuth",
+      "requirePolicyOwner"
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 7
+    "total_calls": 7,
+    "migrated": false
   },
   {
     "file": "src/app/api/insurance/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "customer": [
         "findUnique"
@@ -790,11 +861,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 5
+    "total_calls": 5,
+    "migrated": false
   },
   {
     "file": "src/app/api/invoices/[id]/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "invoice": [
         "findUnique",
@@ -813,11 +886,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 4
+    "total_calls": 4,
+    "migrated": true
   },
   {
     "file": "src/app/api/invoices/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "invoice": [
         "findUnique",
@@ -847,11 +922,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 9
+    "total_calls": 9,
+    "migrated": true
   },
   {
     "file": "src/app/api/jobs/[id]/diagnosis/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "diagnosis": [
         "create"
@@ -871,17 +948,18 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 4
+    "total_calls": 4,
+    "migrated": true
   },
   {
     "file": "src/app/api/jobs/[id]/parts/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "job": [
         "findUnique"
       ],
       "part": [
-        "create",
         "findUnique",
         "delete"
       ]
@@ -897,11 +975,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 4
+    "total_calls": 3,
+    "migrated": true
   },
   {
     "file": "src/app/api/jobs/[id]/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "job": [
         "findUnique"
@@ -916,11 +996,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 1
+    "total_calls": 1,
+    "migrated": true
   },
   {
     "file": "src/app/api/jobs/[id]/status/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "invoice": [
         "create"
@@ -949,11 +1031,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": true,
-    "total_calls": 10
+    "total_calls": 10,
+    "migrated": true
   },
   {
     "file": "src/app/api/jobs/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "job": [
         "findMany"
@@ -969,11 +1053,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 1
+    "total_calls": 1,
+    "migrated": true
   },
   {
     "file": "src/app/api/maintenance/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "customer": [
         "findUnique"
@@ -997,15 +1083,18 @@
       "PATCH"
     ],
     "auth_deps": [
-      "requireAuth"
+      "requireAuth",
+      "requireVehicleOwner"
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 7
+    "total_calls": 7,
+    "migrated": false
   },
   {
     "file": "src/app/api/mechanic-applications/[id]/approve/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "mechanicApplication": [
         "findUnique",
@@ -1028,15 +1117,17 @@
       "POST"
     ],
     "auth_deps": [
-      "verifySession"
+      "requireRole"
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 8
+    "total_calls": 8,
+    "migrated": false
   },
   {
     "file": "src/app/api/mechanic-applications/[id]/reject/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "mechanicApplication": [
         "update"
@@ -1046,15 +1137,17 @@
       "POST"
     ],
     "auth_deps": [
-      "verifySession"
+      "requireRole"
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 1
+    "total_calls": 1,
+    "migrated": false
   },
   {
     "file": "src/app/api/mechanic-applications/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "mechanicApplication": [
         "findMany",
@@ -1072,15 +1165,18 @@
       "POST"
     ],
     "auth_deps": [
-      "requireAuth"
+      "requireAuth",
+      "requireRole"
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 4
+    "total_calls": 4,
+    "migrated": false
   },
   {
     "file": "src/app/api/messages/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "job": [
         "findUnique"
@@ -1103,11 +1199,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 4
+    "total_calls": 4,
+    "migrated": false
   },
   {
     "file": "src/app/api/notifications/[id]/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "notification": [
         "update"
@@ -1121,11 +1219,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 1
+    "total_calls": 1,
+    "migrated": false
   },
   {
     "file": "src/app/api/notifications/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "notification": [
         "findMany",
@@ -1141,11 +1241,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 2
+    "total_calls": 2,
+    "migrated": false
   },
   {
     "file": "src/app/api/onboarding/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "onboardingSlide": [
         "findMany"
@@ -1157,11 +1259,13 @@
     "auth_deps": [],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 1
+    "total_calls": 1,
+    "migrated": false
   },
   {
     "file": "src/app/api/payments/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "invoice": [
         "findUnique",
@@ -1187,16 +1291,17 @@
     ],
     "auth_deps": [
       "requireAuth",
-      "rateLimitAsync",
-      "rateLimit"
+      "rateLimitAsync"
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 12
+    "total_calls": 12,
+    "migrated": true
   },
   {
     "file": "src/app/api/prepay/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "job": [
         "findUnique",
@@ -1219,14 +1324,19 @@
     "http_methods": [
       "POST"
     ],
-    "auth_deps": [],
+    "auth_deps": [
+      "requireAuth",
+      "requireJobParticipant"
+    ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 9
+    "total_calls": 10,
+    "migrated": true
   },
   {
     "file": "src/app/api/ready/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {},
     "http_methods": [
       "GET"
@@ -1234,11 +1344,13 @@
     "auth_deps": [],
     "uses_raw_sql": true,
     "uses_transaction": false,
-    "total_calls": 0
+    "total_calls": 0,
+    "migrated": false
   },
   {
     "file": "src/app/api/referral/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "notification": [
         "create"
@@ -1264,11 +1376,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 7
+    "total_calls": 7,
+    "migrated": false
   },
   {
     "file": "src/app/api/reviews/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "job": [
         "findUnique"
@@ -1292,11 +1406,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 5
+    "total_calls": 5,
+    "migrated": false
   },
   {
     "file": "src/app/api/service-requests/[id]/assign/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "customer": [
         "findUnique"
@@ -1323,11 +1439,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 6
+    "total_calls": 6,
+    "migrated": true
   },
   {
     "file": "src/app/api/service-requests/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "notification": [
         "create"
@@ -1358,11 +1476,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 8
+    "total_calls": 8,
+    "migrated": true
   },
   {
     "file": "src/app/api/support/tickets/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "notification": [
         "create"
@@ -1384,15 +1504,16 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 5
+    "total_calls": 5,
+    "migrated": false
   },
   {
     "file": "src/app/api/technicians/[id]/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "technician": [
-        "findUnique",
-        "update"
+        "findUnique"
       ]
     },
     "http_methods": [
@@ -1404,14 +1525,15 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 3
+    "total_calls": 1,
+    "migrated": true
   },
   {
     "file": "src/app/api/technicians/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "technician": [
-        "findMany",
         "create"
       ]
     },
@@ -1420,15 +1542,18 @@
       "POST"
     ],
     "auth_deps": [
-      "requireAuth"
+      "requireAuth",
+      "requireRole"
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 2
+    "total_calls": 1,
+    "migrated": true
   },
   {
     "file": "src/app/api/vehicles/[id]/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "vehicle": [
         "delete",
@@ -1440,15 +1565,18 @@
       "PATCH"
     ],
     "auth_deps": [
-      "requireAuth"
+      "requireAuth",
+      "requireVehicleOwner"
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 2
+    "total_calls": 2,
+    "migrated": true
   },
   {
     "file": "src/app/api/vehicles/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "vehicle": [
         "findMany",
@@ -1465,11 +1593,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 3
+    "total_calls": 3,
+    "migrated": true
   },
   {
     "file": "src/app/api/vip/my/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "userVipSubscription": [
         "update",
@@ -1484,11 +1614,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 2
+    "total_calls": 2,
+    "migrated": false
   },
   {
     "file": "src/app/api/vip/plans/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "vipPlan": [
         "findMany"
@@ -1500,11 +1632,13 @@
     "auth_deps": [],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 1
+    "total_calls": 1,
+    "migrated": false
   },
   {
     "file": "src/app/api/vip/subscribe/route.ts",
     "type": "route",
+    "access_type": "db (sync)",
     "models": {
       "notification": [
         "create"
@@ -1523,11 +1657,13 @@
     "auth_deps": [],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 4
+    "total_calls": 4,
+    "migrated": false
   },
   {
     "file": "src/app/api/wallets/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "wallet": [
         "findUnique",
@@ -1547,11 +1683,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 5
+    "total_calls": 5,
+    "migrated": true
   },
   {
     "file": "src/app/api/wallets/withdraw/route.ts",
     "type": "route",
+    "access_type": "getDbForLib",
     "models": {
       "notification": [
         "create"
@@ -1573,16 +1711,17 @@
     "auth_deps": [
       "requireAuth",
       "getTechnicianFromSession",
-      "rateLimitAsync",
-      "rateLimit"
+      "rateLimitAsync"
     ],
     "uses_raw_sql": false,
     "uses_transaction": true,
-    "total_calls": 6
+    "total_calls": 6,
+    "migrated": true
   },
   {
     "file": "src/lib/admin-api.ts",
     "type": "lib",
+    "access_type": "db (sync)",
     "models": {
       "auditLog": [
         "create"
@@ -1592,11 +1731,13 @@
     "auth_deps": [],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 1
+    "total_calls": 1,
+    "migrated": false
   },
   {
     "file": "src/lib/admin-auth.ts",
     "type": "lib",
+    "access_type": "db (sync)",
     "models": {
       "adminUser": [
         "count",
@@ -1607,65 +1748,13 @@
     "auth_deps": [],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 3
-  },
-  {
-    "file": "src/lib/auth.ts",
-    "type": "lib",
-    "models": {
-      "customer": [
-        "findUnique"
-      ],
-      "idempotencyKey": [
-        "findUnique",
-        "upsert"
-      ],
-      "insurancePolicy": [
-        "findUnique"
-      ],
-      "job": [
-        "findUnique"
-      ],
-      "notification": [
-        "findUnique"
-      ],
-      "session": [
-        "create",
-        "findUnique",
-        "update"
-      ],
-      "supportTicket": [
-        "findUnique"
-      ],
-      "technician": [
-        "findUnique"
-      ],
-      "vehicle": [
-        "findUnique"
-      ],
-      "wallet": [
-        "findUnique"
-      ]
-    },
-    "http_methods": [],
-    "auth_deps": [
-      "requireAuth",
-      "requireJobParticipant",
-      "getTechnicianFromSession",
-      "getCustomerFromSession",
-      "createSession",
-      "verifySession",
-      "getSessionFromRequest",
-      "revokeSession",
-      "withIdempotency"
-    ],
-    "uses_raw_sql": false,
-    "uses_transaction": false,
-    "total_calls": 14
+    "total_calls": 3,
+    "migrated": false
   },
   {
     "file": "src/lib/care-auth.ts",
     "type": "lib",
+    "access_type": "db (sync)",
     "models": {
       "serviceBooking": [
         "findUnique"
@@ -1680,21 +1769,13 @@
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 3
-  },
-  {
-    "file": "src/lib/db-sequential.ts",
-    "type": "lib",
-    "models": {},
-    "http_methods": [],
-    "auth_deps": [],
-    "uses_raw_sql": false,
-    "uses_transaction": true,
-    "total_calls": 0
+    "total_calls": 3,
+    "migrated": false
   },
   {
     "file": "src/lib/dispatch.ts",
     "type": "lib",
+    "access_type": "db (sync)",
     "models": {
       "dispatchCandidate": [
         "create"
@@ -1707,11 +1788,13 @@
     "auth_deps": [],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 2
+    "total_calls": 2,
+    "migrated": false
   },
   {
     "file": "src/lib/notifications.ts",
     "type": "lib",
+    "access_type": "db (sync)",
     "models": {
       "notification": [
         "create"
@@ -1721,11 +1804,13 @@
     "auth_deps": [],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 2
+    "total_calls": 2,
+    "migrated": false
   },
   {
     "file": "src/lib/pricing.ts",
     "type": "lib",
+    "access_type": "db (sync)",
     "models": {
       "pricingSnapshot": [
         "create"
@@ -1738,30 +1823,13 @@
     "auth_deps": [],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 2
-  },
-  {
-    "file": "src/lib/rate-limit.ts",
-    "type": "lib",
-    "models": {
-      "rateLimit": [
-        "findUnique",
-        "upsert",
-        "update"
-      ]
-    },
-    "http_methods": [],
-    "auth_deps": [
-      "rateLimitAsync",
-      "rateLimit"
-    ],
-    "uses_raw_sql": false,
-    "uses_transaction": false,
-    "total_calls": 3
+    "total_calls": 2,
+    "migrated": false
   },
   {
     "file": "src/lib/service-unified.ts",
     "type": "lib",
+    "access_type": "db (sync)",
     "models": {
       "job": [
         "findMany",
@@ -1781,11 +1849,13 @@
     "auth_deps": [],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 11
+    "total_calls": 11,
+    "migrated": false
   },
   {
     "file": "src/lib/service-write.ts",
     "type": "lib",
+    "access_type": "db (sync)",
     "models": {
       "customer": [
         "findUnique"
@@ -1819,11 +1889,13 @@
     "auth_deps": [],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 15
+    "total_calls": 15,
+    "migrated": false
   },
   {
     "file": "src/lib/vip.ts",
     "type": "lib",
+    "access_type": "db (sync)",
     "models": {
       "userVipSubscription": [
         "update",
@@ -1838,6 +1910,7 @@
     "auth_deps": [],
     "uses_raw_sql": false,
     "uses_transaction": false,
-    "total_calls": 4
+    "total_calls": 4,
+    "migrated": false
   }
 ]
