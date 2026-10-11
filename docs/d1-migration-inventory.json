@@ -1,0 +1,1843 @@
+[
+  {
+    "file": "src/app/api/admin-panel/auth/login/route.ts",
+    "type": "route",
+    "models": {
+      "adminUser": [
+        "findFirst",
+        "update"
+      ]
+    },
+    "http_methods": [
+      "POST"
+    ],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 2
+  },
+  {
+    "file": "src/app/api/admin-panel/auth/me/route.ts",
+    "type": "route",
+    "models": {
+      "adminUser": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [
+      "GET"
+    ],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 1
+  },
+  {
+    "file": "src/app/api/admin-panel/onboarding/[id]/route.ts",
+    "type": "route",
+    "models": {
+      "onboardingSlide": [
+        "findUnique",
+        "update",
+        "delete"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "PATCH",
+      "DELETE"
+    ],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 5
+  },
+  {
+    "file": "src/app/api/admin-panel/onboarding/route.ts",
+    "type": "route",
+    "models": {
+      "onboardingSlide": [
+        "findMany",
+        "findFirst",
+        "create"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "POST"
+    ],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 3
+  },
+  {
+    "file": "src/app/api/admin/[resource]/[id]/route.ts",
+    "type": "route",
+    "models": {
+      "customer": [
+        "findUnique",
+        "update"
+      ],
+      "payment": [
+        "update"
+      ],
+      "review": [
+        "update"
+      ],
+      "serviceCategory": [
+        "update"
+      ],
+      "technician": [
+        "update"
+      ],
+      "user": [
+        "update"
+      ]
+    },
+    "http_methods": [
+      "PATCH"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 7
+  },
+  {
+    "file": "src/app/api/admin/[resource]/route.ts",
+    "type": "route",
+    "models": {
+      "customer": [
+        "findMany"
+      ],
+      "job": [
+        "findMany"
+      ],
+      "mechanicApplication": [
+        "findMany"
+      ],
+      "payment": [
+        "findMany"
+      ],
+      "review": [
+        "findMany"
+      ],
+      "serviceCategory": [
+        "findMany"
+      ],
+      "technician": [
+        "findMany"
+      ],
+      "vehicle": [
+        "findMany"
+      ]
+    },
+    "http_methods": [
+      "GET"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 8
+  },
+  {
+    "file": "src/app/api/auth/demo/route.ts",
+    "type": "route",
+    "models": {
+      "user": [
+        "findFirst"
+      ]
+    },
+    "http_methods": [
+      "GET"
+    ],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 3
+  },
+  {
+    "file": "src/app/api/auth/otp/send/route.ts",
+    "type": "route",
+    "models": {
+      "otpCode": [
+        "update",
+        "create"
+      ]
+    },
+    "http_methods": [
+      "POST"
+    ],
+    "auth_deps": [
+      "rateLimitAsync",
+      "rateLimit"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 2
+  },
+  {
+    "file": "src/app/api/auth/otp/verify/route.ts",
+    "type": "route",
+    "models": {
+      "customer": [
+        "create"
+      ],
+      "otpCode": [
+        "findFirst",
+        "update"
+      ],
+      "user": [
+        "findUnique",
+        "findMany",
+        "update",
+        "create"
+      ]
+    },
+    "http_methods": [
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "createSession",
+      "rateLimitAsync",
+      "rateLimit"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 12
+  },
+  {
+    "file": "src/app/api/auth/session/route.ts",
+    "type": "route",
+    "models": {
+      "customer": [
+        "create"
+      ],
+      "user": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [
+      "POST",
+      "GET"
+    ],
+    "auth_deps": [
+      "getSessionFromRequest"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 4
+  },
+  {
+    "file": "src/app/api/care/admin/packages/route.ts",
+    "type": "route",
+    "models": {
+      "servicePackage": [
+        "findMany",
+        "create"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 2
+  },
+  {
+    "file": "src/app/api/care/admin/rules/route.ts",
+    "type": "route",
+    "models": {
+      "maintenanceRule": [
+        "findMany",
+        "create"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 2
+  },
+  {
+    "file": "src/app/api/care/bookings/[id]/approve-extra/route.ts",
+    "type": "route",
+    "models": {
+      "customerApproval": [
+        "findUnique",
+        "update"
+      ],
+      "finding": [
+        "update"
+      ],
+      "serviceBooking": [
+        "findUnique",
+        "update"
+      ],
+      "serviceTimelineEvent": [
+        "create"
+      ]
+    },
+    "http_methods": [
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": true,
+    "total_calls": 6
+  },
+  {
+    "file": "src/app/api/care/bookings/[id]/extra-proposal/route.ts",
+    "type": "route",
+    "models": {
+      "customerApproval": [
+        "create"
+      ],
+      "finding": [
+        "create"
+      ],
+      "notification": [
+        "create"
+      ],
+      "serviceBooking": [
+        "findUnique",
+        "update"
+      ],
+      "serviceTimelineEvent": [
+        "create"
+      ]
+    },
+    "http_methods": [
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "requireAssignedTechnician"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": true,
+    "total_calls": 6
+  },
+  {
+    "file": "src/app/api/care/bookings/[id]/findings/route.ts",
+    "type": "route",
+    "models": {
+      "finding": [
+        "findMany",
+        "create"
+      ],
+      "serviceTimelineEvent": [
+        "create"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "requireBookingParticipant",
+      "requireAssignedTechnician"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": true,
+    "total_calls": 3
+  },
+  {
+    "file": "src/app/api/care/bookings/[id]/health-report/route.ts",
+    "type": "route",
+    "models": {
+      "serviceBooking": [
+        "findUnique"
+      ],
+      "serviceTimelineEvent": [
+        "create"
+      ],
+      "vehicleCareProfile": [
+        "update"
+      ],
+      "vehicleHealthReport": [
+        "findFirst",
+        "upsert"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "requireBookingParticipant",
+      "requireAssignedTechnician"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": true,
+    "total_calls": 5
+  },
+  {
+    "file": "src/app/api/care/bookings/[id]/inspection/route.ts",
+    "type": "route",
+    "models": {
+      "inspection": [
+        "findUnique",
+        "upsert"
+      ],
+      "serviceTimelineEvent": [
+        "create"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "requireBookingParticipant",
+      "requireAssignedTechnician"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": true,
+    "total_calls": 3
+  },
+  {
+    "file": "src/app/api/care/bookings/[id]/reject-extra/route.ts",
+    "type": "route",
+    "models": {
+      "customerApproval": [
+        "findUnique",
+        "update"
+      ],
+      "finding": [
+        "update"
+      ],
+      "serviceBooking": [
+        "findUnique",
+        "update"
+      ],
+      "serviceTimelineEvent": [
+        "create"
+      ]
+    },
+    "http_methods": [
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": true,
+    "total_calls": 6
+  },
+  {
+    "file": "src/app/api/care/bookings/[id]/route.ts",
+    "type": "route",
+    "models": {
+      "pricingSnapshot": [
+        "findUnique"
+      ],
+      "serviceBooking": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [
+      "GET"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "requireBookingParticipant"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 2
+  },
+  {
+    "file": "src/app/api/care/bookings/[id]/timeline/route.ts",
+    "type": "route",
+    "models": {
+      "serviceTimelineEvent": [
+        "findMany"
+      ]
+    },
+    "http_methods": [
+      "GET"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 1
+  },
+  {
+    "file": "src/app/api/care/bookings/route.ts",
+    "type": "route",
+    "models": {
+      "pricingSnapshot": [
+        "create"
+      ],
+      "serviceBooking": [
+        "create",
+        "update",
+        "findMany"
+      ],
+      "serviceTimelineEvent": [
+        "create"
+      ],
+      "vehicle": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [
+      "POST",
+      "GET"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "getCustomerFromSession"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": true,
+    "total_calls": 6
+  },
+  {
+    "file": "src/app/api/care/packages/route.ts",
+    "type": "route",
+    "models": {
+      "servicePackage": [
+        "findMany"
+      ]
+    },
+    "http_methods": [
+      "GET"
+    ],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 1
+  },
+  {
+    "file": "src/app/api/care/technician/missions/[id]/route.ts",
+    "type": "route",
+    "models": {
+      "serviceBooking": [
+        "findUnique",
+        "update"
+      ],
+      "serviceTimelineEvent": [
+        "create"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "PATCH"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "requireBookingParticipant",
+      "requireAssignedTechnician"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": true,
+    "total_calls": 5
+  },
+  {
+    "file": "src/app/api/care/technician/missions/route.ts",
+    "type": "route",
+    "models": {
+      "serviceBooking": [
+        "findMany"
+      ]
+    },
+    "http_methods": [
+      "GET"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "getTechnicianFromSession"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 1
+  },
+  {
+    "file": "src/app/api/care/vehicles/[id]/health/route.ts",
+    "type": "route",
+    "models": {
+      "vehicleCareProfile": [
+        "findUnique"
+      ],
+      "vehicleHealthReport": [
+        "findMany"
+      ]
+    },
+    "http_methods": [
+      "GET"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 2
+  },
+  {
+    "file": "src/app/api/care/vehicles/[id]/maintenance/route.ts",
+    "type": "route",
+    "models": {
+      "careReminder": [
+        "findMany"
+      ],
+      "maintenanceRule": [
+        "findMany"
+      ],
+      "maintenanceScheduleItem": [
+        "findMany"
+      ],
+      "serviceBooking": [
+        "findMany"
+      ],
+      "vehicle": [
+        "findUnique"
+      ],
+      "vehicleCareProfile": [
+        "findUnique"
+      ],
+      "vehicleHealthReport": [
+        "findFirst"
+      ]
+    },
+    "http_methods": [
+      "GET"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 7
+  },
+  {
+    "file": "src/app/api/dashboard/route.ts",
+    "type": "route",
+    "models": {
+      "job": [
+        "count",
+        "groupBy",
+        "findMany"
+      ],
+      "payment": [
+        "findMany"
+      ],
+      "review": [
+        "findMany"
+      ],
+      "serviceRequest": [
+        "count",
+        "groupBy",
+        "findMany"
+      ],
+      "technician": [
+        "count",
+        "findMany"
+      ]
+    },
+    "http_methods": [
+      "GET"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 16
+  },
+  {
+    "file": "src/app/api/exchange-rate/route.ts",
+    "type": "route",
+    "models": {
+      "platformSetting": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [
+      "GET"
+    ],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 3
+  },
+  {
+    "file": "src/app/api/gateway/initiate/route.ts",
+    "type": "route",
+    "models": {
+      "paymentGatewayLog": [
+        "create"
+      ]
+    },
+    "http_methods": [
+      "POST"
+    ],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 1
+  },
+  {
+    "file": "src/app/api/gateway/verify/route.ts",
+    "type": "route",
+    "models": {
+      "payment": [
+        "create"
+      ],
+      "paymentGatewayLog": [
+        "findUnique",
+        "update"
+      ]
+    },
+    "http_methods": [
+      "POST"
+    ],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 4
+  },
+  {
+    "file": "src/app/api/health/route.ts",
+    "type": "route",
+    "models": {},
+    "http_methods": [
+      "GET"
+    ],
+    "auth_deps": [],
+    "uses_raw_sql": true,
+    "uses_transaction": false,
+    "total_calls": 0
+  },
+  {
+    "file": "src/app/api/insurance/claim/route.ts",
+    "type": "route",
+    "models": {
+      "customer": [
+        "findUnique"
+      ],
+      "insuranceClaim": [
+        "create"
+      ],
+      "insurancePolicy": [
+        "findUnique",
+        "update"
+      ],
+      "job": [
+        "findUnique"
+      ],
+      "notification": [
+        "create"
+      ],
+      "technician": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 7
+  },
+  {
+    "file": "src/app/api/insurance/route.ts",
+    "type": "route",
+    "models": {
+      "customer": [
+        "findUnique"
+      ],
+      "insurancePolicy": [
+        "update",
+        "findMany",
+        "create"
+      ],
+      "vehicle": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 5
+  },
+  {
+    "file": "src/app/api/invoices/[id]/route.ts",
+    "type": "route",
+    "models": {
+      "invoice": [
+        "findUnique",
+        "update"
+      ],
+      "job": [
+        "update"
+      ]
+    },
+    "http_methods": [
+      "PATCH"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "requireJobParticipant"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 4
+  },
+  {
+    "file": "src/app/api/invoices/route.ts",
+    "type": "route",
+    "models": {
+      "invoice": [
+        "findUnique",
+        "create"
+      ],
+      "job": [
+        "findUnique"
+      ],
+      "message": [
+        "create"
+      ],
+      "notification": [
+        "create"
+      ],
+      "platformSetting": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "requireJobParticipant",
+      "getTechnicianFromSession"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 9
+  },
+  {
+    "file": "src/app/api/jobs/[id]/diagnosis/route.ts",
+    "type": "route",
+    "models": {
+      "diagnosis": [
+        "create"
+      ],
+      "job": [
+        "findUnique",
+        "update"
+      ]
+    },
+    "http_methods": [
+      "PATCH"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "requireJobParticipant",
+      "getTechnicianFromSession"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 4
+  },
+  {
+    "file": "src/app/api/jobs/[id]/parts/route.ts",
+    "type": "route",
+    "models": {
+      "job": [
+        "findUnique"
+      ],
+      "part": [
+        "create",
+        "findUnique",
+        "delete"
+      ]
+    },
+    "http_methods": [
+      "POST",
+      "DELETE"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "requireJobParticipant",
+      "getTechnicianFromSession"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 4
+  },
+  {
+    "file": "src/app/api/jobs/[id]/route.ts",
+    "type": "route",
+    "models": {
+      "job": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [
+      "GET"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "requireJobParticipant"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 1
+  },
+  {
+    "file": "src/app/api/jobs/[id]/status/route.ts",
+    "type": "route",
+    "models": {
+      "invoice": [
+        "create"
+      ],
+      "job": [
+        "findUnique",
+        "update"
+      ],
+      "message": [
+        "create"
+      ],
+      "notification": [
+        "create"
+      ],
+      "walletTransaction": [
+        "update"
+      ]
+    },
+    "http_methods": [
+      "PATCH"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "requireJobParticipant",
+      "getTechnicianFromSession"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": true,
+    "total_calls": 10
+  },
+  {
+    "file": "src/app/api/jobs/route.ts",
+    "type": "route",
+    "models": {
+      "job": [
+        "findMany"
+      ]
+    },
+    "http_methods": [
+      "GET"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "getTechnicianFromSession",
+      "getCustomerFromSession"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 1
+  },
+  {
+    "file": "src/app/api/maintenance/route.ts",
+    "type": "route",
+    "models": {
+      "customer": [
+        "findUnique"
+      ],
+      "maintenanceSchedule": [
+        "findMany",
+        "create",
+        "findUnique",
+        "update"
+      ],
+      "technician": [
+        "findUnique"
+      ],
+      "vehicle": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "POST",
+      "PATCH"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 7
+  },
+  {
+    "file": "src/app/api/mechanic-applications/[id]/approve/route.ts",
+    "type": "route",
+    "models": {
+      "mechanicApplication": [
+        "findUnique",
+        "update"
+      ],
+      "notification": [
+        "create"
+      ],
+      "technician": [
+        "findUnique",
+        "create"
+      ],
+      "user": [
+        "findUnique",
+        "create",
+        "update"
+      ]
+    },
+    "http_methods": [
+      "POST"
+    ],
+    "auth_deps": [
+      "verifySession"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 8
+  },
+  {
+    "file": "src/app/api/mechanic-applications/[id]/reject/route.ts",
+    "type": "route",
+    "models": {
+      "mechanicApplication": [
+        "update"
+      ]
+    },
+    "http_methods": [
+      "POST"
+    ],
+    "auth_deps": [
+      "verifySession"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 1
+  },
+  {
+    "file": "src/app/api/mechanic-applications/route.ts",
+    "type": "route",
+    "models": {
+      "mechanicApplication": [
+        "findMany",
+        "upsert"
+      ],
+      "technician": [
+        "findUnique"
+      ],
+      "user": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 4
+  },
+  {
+    "file": "src/app/api/messages/route.ts",
+    "type": "route",
+    "models": {
+      "job": [
+        "findUnique"
+      ],
+      "message": [
+        "findMany",
+        "create"
+      ],
+      "notification": [
+        "create"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "requireJobParticipant"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 4
+  },
+  {
+    "file": "src/app/api/notifications/[id]/route.ts",
+    "type": "route",
+    "models": {
+      "notification": [
+        "update"
+      ]
+    },
+    "http_methods": [
+      "PATCH"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 1
+  },
+  {
+    "file": "src/app/api/notifications/route.ts",
+    "type": "route",
+    "models": {
+      "notification": [
+        "findMany",
+        "update"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "PATCH"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 2
+  },
+  {
+    "file": "src/app/api/onboarding/route.ts",
+    "type": "route",
+    "models": {
+      "onboardingSlide": [
+        "findMany"
+      ]
+    },
+    "http_methods": [
+      "GET"
+    ],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 1
+  },
+  {
+    "file": "src/app/api/payments/route.ts",
+    "type": "route",
+    "models": {
+      "invoice": [
+        "findUnique",
+        "update"
+      ],
+      "job": [
+        "update"
+      ],
+      "notification": [
+        "create"
+      ],
+      "payment": [
+        "findUnique",
+        "update",
+        "create"
+      ],
+      "warranty": [
+        "create"
+      ]
+    },
+    "http_methods": [
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "rateLimitAsync",
+      "rateLimit"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 12
+  },
+  {
+    "file": "src/app/api/prepay/route.ts",
+    "type": "route",
+    "models": {
+      "job": [
+        "findUnique",
+        "update"
+      ],
+      "message": [
+        "create"
+      ],
+      "notification": [
+        "create"
+      ],
+      "wallet": [
+        "create",
+        "update"
+      ],
+      "walletTransaction": [
+        "create"
+      ]
+    },
+    "http_methods": [
+      "POST"
+    ],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 9
+  },
+  {
+    "file": "src/app/api/ready/route.ts",
+    "type": "route",
+    "models": {},
+    "http_methods": [
+      "GET"
+    ],
+    "auth_deps": [],
+    "uses_raw_sql": true,
+    "uses_transaction": false,
+    "total_calls": 0
+  },
+  {
+    "file": "src/app/api/referral/route.ts",
+    "type": "route",
+    "models": {
+      "notification": [
+        "create"
+      ],
+      "referral": [
+        "findMany",
+        "findFirst",
+        "create",
+        "findUnique",
+        "update"
+      ],
+      "user": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "POST",
+      "PATCH"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 7
+  },
+  {
+    "file": "src/app/api/reviews/route.ts",
+    "type": "route",
+    "models": {
+      "job": [
+        "findUnique"
+      ],
+      "review": [
+        "findFirst",
+        "create",
+        "findMany"
+      ],
+      "technician": [
+        "update"
+      ]
+    },
+    "http_methods": [
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "requireJobParticipant",
+      "getCustomerFromSession"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 5
+  },
+  {
+    "file": "src/app/api/service-requests/[id]/assign/route.ts",
+    "type": "route",
+    "models": {
+      "customer": [
+        "findUnique"
+      ],
+      "job": [
+        "create"
+      ],
+      "notification": [
+        "create"
+      ],
+      "serviceRequest": [
+        "findUnique",
+        "update"
+      ],
+      "technician": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 6
+  },
+  {
+    "file": "src/app/api/service-requests/route.ts",
+    "type": "route",
+    "models": {
+      "notification": [
+        "create"
+      ],
+      "serviceRequest": [
+        "findMany",
+        "create"
+      ],
+      "technician": [
+        "findMany"
+      ],
+      "user": [
+        "findFirst"
+      ],
+      "vehicle": [
+        "findUnique",
+        "create"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "getTechnicianFromSession",
+      "getCustomerFromSession"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 8
+  },
+  {
+    "file": "src/app/api/support/tickets/route.ts",
+    "type": "route",
+    "models": {
+      "notification": [
+        "create"
+      ],
+      "supportTicket": [
+        "findMany",
+        "create"
+      ],
+      "user": [
+        "findMany"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 5
+  },
+  {
+    "file": "src/app/api/technicians/[id]/route.ts",
+    "type": "route",
+    "models": {
+      "technician": [
+        "findUnique",
+        "update"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "PATCH"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 3
+  },
+  {
+    "file": "src/app/api/technicians/route.ts",
+    "type": "route",
+    "models": {
+      "technician": [
+        "findMany",
+        "create"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 2
+  },
+  {
+    "file": "src/app/api/vehicles/[id]/route.ts",
+    "type": "route",
+    "models": {
+      "vehicle": [
+        "delete",
+        "update"
+      ]
+    },
+    "http_methods": [
+      "DELETE",
+      "PATCH"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 2
+  },
+  {
+    "file": "src/app/api/vehicles/route.ts",
+    "type": "route",
+    "models": {
+      "vehicle": [
+        "findMany",
+        "create"
+      ]
+    },
+    "http_methods": [
+      "GET",
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "getCustomerFromSession"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 3
+  },
+  {
+    "file": "src/app/api/vip/my/route.ts",
+    "type": "route",
+    "models": {
+      "userVipSubscription": [
+        "update",
+        "findFirst"
+      ]
+    },
+    "http_methods": [
+      "GET"
+    ],
+    "auth_deps": [
+      "requireAuth"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 2
+  },
+  {
+    "file": "src/app/api/vip/plans/route.ts",
+    "type": "route",
+    "models": {
+      "vipPlan": [
+        "findMany"
+      ]
+    },
+    "http_methods": [
+      "GET"
+    ],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 1
+  },
+  {
+    "file": "src/app/api/vip/subscribe/route.ts",
+    "type": "route",
+    "models": {
+      "notification": [
+        "create"
+      ],
+      "userVipSubscription": [
+        "update",
+        "create"
+      ],
+      "vipPlan": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [
+      "POST"
+    ],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 4
+  },
+  {
+    "file": "src/app/api/wallets/route.ts",
+    "type": "route",
+    "models": {
+      "wallet": [
+        "findUnique",
+        "create",
+        "update"
+      ],
+      "walletTransaction": [
+        "update"
+      ]
+    },
+    "http_methods": [
+      "GET"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "getTechnicianFromSession"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 5
+  },
+  {
+    "file": "src/app/api/wallets/withdraw/route.ts",
+    "type": "route",
+    "models": {
+      "notification": [
+        "create"
+      ],
+      "wallet": [
+        "findUnique",
+        "update"
+      ],
+      "walletLedger": [
+        "create"
+      ],
+      "withdrawalRequest": [
+        "create"
+      ]
+    },
+    "http_methods": [
+      "POST"
+    ],
+    "auth_deps": [
+      "requireAuth",
+      "getTechnicianFromSession",
+      "rateLimitAsync",
+      "rateLimit"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": true,
+    "total_calls": 6
+  },
+  {
+    "file": "src/lib/admin-api.ts",
+    "type": "lib",
+    "models": {
+      "auditLog": [
+        "create"
+      ]
+    },
+    "http_methods": [],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 1
+  },
+  {
+    "file": "src/lib/admin-auth.ts",
+    "type": "lib",
+    "models": {
+      "adminUser": [
+        "count",
+        "create"
+      ]
+    },
+    "http_methods": [],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 3
+  },
+  {
+    "file": "src/lib/auth.ts",
+    "type": "lib",
+    "models": {
+      "customer": [
+        "findUnique"
+      ],
+      "idempotencyKey": [
+        "findUnique",
+        "upsert"
+      ],
+      "insurancePolicy": [
+        "findUnique"
+      ],
+      "job": [
+        "findUnique"
+      ],
+      "notification": [
+        "findUnique"
+      ],
+      "session": [
+        "create",
+        "findUnique",
+        "update"
+      ],
+      "supportTicket": [
+        "findUnique"
+      ],
+      "technician": [
+        "findUnique"
+      ],
+      "vehicle": [
+        "findUnique"
+      ],
+      "wallet": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [],
+    "auth_deps": [
+      "requireAuth",
+      "requireJobParticipant",
+      "getTechnicianFromSession",
+      "getCustomerFromSession",
+      "createSession",
+      "verifySession",
+      "getSessionFromRequest",
+      "revokeSession",
+      "withIdempotency"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 14
+  },
+  {
+    "file": "src/lib/care-auth.ts",
+    "type": "lib",
+    "models": {
+      "serviceBooking": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [],
+    "auth_deps": [
+      "requireBookingParticipant",
+      "requireAssignedTechnician",
+      "getTechnicianFromSession",
+      "getCustomerFromSession"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 3
+  },
+  {
+    "file": "src/lib/db-sequential.ts",
+    "type": "lib",
+    "models": {},
+    "http_methods": [],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": true,
+    "total_calls": 0
+  },
+  {
+    "file": "src/lib/dispatch.ts",
+    "type": "lib",
+    "models": {
+      "dispatchCandidate": [
+        "create"
+      ],
+      "technician": [
+        "findMany"
+      ]
+    },
+    "http_methods": [],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 2
+  },
+  {
+    "file": "src/lib/notifications.ts",
+    "type": "lib",
+    "models": {
+      "notification": [
+        "create"
+      ]
+    },
+    "http_methods": [],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 2
+  },
+  {
+    "file": "src/lib/pricing.ts",
+    "type": "lib",
+    "models": {
+      "pricingSnapshot": [
+        "create"
+      ],
+      "servicePackage": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 2
+  },
+  {
+    "file": "src/lib/rate-limit.ts",
+    "type": "lib",
+    "models": {
+      "rateLimit": [
+        "findUnique",
+        "upsert",
+        "update"
+      ]
+    },
+    "http_methods": [],
+    "auth_deps": [
+      "rateLimitAsync",
+      "rateLimit"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 3
+  },
+  {
+    "file": "src/lib/service-unified.ts",
+    "type": "lib",
+    "models": {
+      "job": [
+        "findMany",
+        "findUnique",
+        "count"
+      ],
+      "pricingSnapshot": [
+        "findUnique"
+      ],
+      "serviceBooking": [
+        "findMany",
+        "findUnique",
+        "count"
+      ]
+    },
+    "http_methods": [],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 11
+  },
+  {
+    "file": "src/lib/service-write.ts",
+    "type": "lib",
+    "models": {
+      "customer": [
+        "findUnique"
+      ],
+      "job": [
+        "create",
+        "findUnique",
+        "update"
+      ],
+      "serviceBooking": [
+        "create",
+        "findUnique",
+        "update"
+      ],
+      "serviceRequest": [
+        "create",
+        "update",
+        "findUnique"
+      ],
+      "serviceTimelineEvent": [
+        "create"
+      ],
+      "technician": [
+        "findUnique"
+      ],
+      "vehicle": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 15
+  },
+  {
+    "file": "src/lib/vip.ts",
+    "type": "lib",
+    "models": {
+      "userVipSubscription": [
+        "update",
+        "create",
+        "findFirst"
+      ],
+      "vipPlan": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [],
+    "auth_deps": [],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 4
+  }
+]
