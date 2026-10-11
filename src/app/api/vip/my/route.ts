@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 
 // Get the current active VIP subscription — userId derived from JWT session
@@ -8,6 +8,7 @@ export async function GET(req: Request) {
   if (session instanceof NextResponse) return session;
 
   const userId = session.userId; // Server-authoritative — NOT from query param
+  const db = await getDbForLib();
 
   // Expire any active subscriptions past their expiry
   const now = new Date();
