@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { createSession } from "@/lib/auth";
 import { validateBody } from "@/lib/api-helpers";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
@@ -49,6 +49,7 @@ export async function POST(req: Request) {
   // correct, secure behavior; we do NOT fall back to plaintext lookup.
   const codeHash = hashOtpCode(code);
 
+  const db = await getDbForLib();
   const otp = await db.otpCode.findFirst({
     where: { phone, code: codeHash, consumed: false },
     orderBy: { createdAt: "desc" },
