@@ -12,7 +12,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
-import { db } from "./db";
+import { getDbForLib } from "./db-access";
 
 // ──────────── JWT ────────────
 
@@ -91,6 +91,7 @@ export async function createSession(payload: Session, req?: Request): Promise<st
   const tokenHash = hashToken(token);
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
   try {
+    const db = await getDbForLib();
     await db.session.create({
       data: {
         userId: payload.userId,
@@ -129,6 +130,7 @@ export async function verifySession(token: string): Promise<Session | null> {
   //    DB call throws, fall back to JWT-only auth so existing deployments
   //    keep working.
   try {
+    const db = await getDbForLib();
     const tokenHash = hashToken(token);
     const sessionRecord = await db.session.findUnique({
       where: { tokenHash },
@@ -159,6 +161,7 @@ export async function verifySession(token: string): Promise<Session | null> {
 export async function revokeSession(token: string): Promise<void> {
   const tokenHash = hashToken(token);
   try {
+    const db = await getDbForLib();
     await db.session.updateMany({
       where: { tokenHash, revokedAt: null },
       data: { revokedAt: new Date() },
@@ -178,6 +181,7 @@ export async function revokeSession(token: string): Promise<void> {
  */
 export async function revokeAllUserSessions(userId: string): Promise<void> {
   try {
+    const db = await getDbForLib();
     await db.session.updateMany({
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },
@@ -240,11 +244,13 @@ export function requireRole(
 
 export async function getCustomerFromSession(session: Session) {
   if (session.role !== "CUSTOMER") return null;
+  const db = await getDbForLib();
   return db.customer.findUnique({ where: { userId: session.userId } });
 }
 
 export async function getTechnicianFromSession(session: Session) {
   if (session.role !== "TECHNICIAN") return null;
+  const db = await getDbForLib();
   return db.technician.findUnique({ where: { userId: session.userId } });
 }
 
@@ -253,6 +259,7 @@ export async function requireVehicleOwner(session: Session, vehicleId: string): 
   if (session.role === "ADMIN") return null; // Admin can access all
   const customer = await getCustomerFromSession(session);
   if (!customer) return NextResponse.json({ error: "پروفایل مشتری یافت نشد" }, { status: 403 });
+  const db = await getDbForLib();
   const vehicle = await db.vehicle.findUnique({ where: { id: vehicleId }, select: { customerId: true } });
   if (!vehicle) return NextResponse.json({ error: "خودرو یافت نشد" }, { status: 404 });
   if (vehicle.customerId !== customer.id) {
@@ -264,6 +271,7 @@ export async function requireVehicleOwner(session: Session, vehicleId: string): 
 // Check if user is participant in a job (customer or assigned technician)
 export async function requireJobParticipant(session: Session, jobId: string): Promise<NextResponse | null> {
   if (session.role === "ADMIN") return null;
+  const db = await getDbForLib();
   const job = await db.job.findUnique({
     where: { id: jobId },
     select: { id: true, request: { select: { customerId: true } }, technicianId: true },
@@ -287,6 +295,7 @@ export async function requireJobParticipant(session: Session, jobId: string): Pr
 // Check if user owns a notification
 export async function requireNotificationOwner(session: Session, notificationId: string): Promise<NextResponse | null> {
   if (session.role === "ADMIN") return null;
+  const db = await getDbForLib();
   const notif = await db.notification.findUnique({ where: { id: notificationId }, select: { userId: true } });
   if (!notif) return NextResponse.json({ error: "اعلان یافت نشد" }, { status: 404 });
   if (notif.userId !== session.userId) {
@@ -300,6 +309,7 @@ export async function requireWalletOwner(session: Session, walletId: string): Pr
   if (session.role === "ADMIN") return null;
   const technician = await getTechnicianFromSession(session);
   if (!technician) return NextResponse.json({ error: "پروفایل مکانیک یافت نشد" }, { status: 403 });
+  const db = await getDbForLib();
   const wallet = await db.wallet.findUnique({ where: { id: walletId }, select: { technicianId: true } });
   if (!wallet) return NextResponse.json({ error: "کیف پول یافت نشد" }, { status: 404 });
   if (wallet.technicianId !== technician.id) {
@@ -311,6 +321,7 @@ export async function requireWalletOwner(session: Session, walletId: string): Pr
 // Check if user owns a support ticket
 export async function requireTicketOwner(session: Session, ticketId: string): Promise<NextResponse | null> {
   if (session.role === "ADMIN") return null;
+  const db = await getDbForLib();
   const ticket = await db.supportTicket.findUnique({ where: { id: ticketId }, select: { userId: true } });
   if (!ticket) return NextResponse.json({ error: "تیکت یافت نشد" }, { status: 404 });
   if (ticket.userId !== session.userId) {
@@ -322,6 +333,7 @@ export async function requireTicketOwner(session: Session, ticketId: string): Pr
 // Check if user owns an insurance policy
 export async function requirePolicyOwner(session: Session, policyId: string): Promise<NextResponse | null> {
   if (session.role === "ADMIN") return null;
+  const db = await getDbForLib();
   const policy = await db.insurancePolicy.findUnique({ where: { id: policyId }, select: { userId: true } });
   if (!policy) return NextResponse.json({ error: "بیمه یافت نشد" }, { status: 404 });
   if (policy.userId !== session.userId) {
@@ -419,6 +431,7 @@ export async function withIdempotency<T>(
 
   // Try D1 IdempotencyKey table (works on Cloudflare + local SQLite via Prisma)
   try {
+    const db = await getDbForLib();
     const existing = await db.idempotencyKey.findUnique({ where: { key: d1Key } });
 
     if (existing && existing.expiresAt.getTime() > now) {
