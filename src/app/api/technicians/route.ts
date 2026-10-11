@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireRole } from "@/lib/auth";
 
@@ -36,7 +36,7 @@ export async function GET(req: Request) {
     where.specialties = { some: { category } };
   }
 
-  let techs = await db.technician.findMany({
+  let techs = await (await getDbForLib()).technician.findMany({
     where,
     include: {
       user: { select: PUBLIC_USER_FIELDS },
@@ -85,6 +85,7 @@ export async function POST(req: Request) {
     if (k in rest) safeData[k] = rest[k];
   }
 
+  const db = await getDbForLib();
   const tech = await db.technician.create({
     data: {
       userId,
