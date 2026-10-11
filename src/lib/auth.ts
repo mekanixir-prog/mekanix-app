@@ -115,6 +115,12 @@ export async function createSession(payload: Session, req?: Request): Promise<st
     });
   } catch (e) {
     console.error("[auth] Failed to create Session DB record:", e);
+    // In production: the session is still valid via JWT, but revocation
+    // tracking won't work for this session. This is acceptable because
+    // createSession is called during login (new session), not verification.
+    // If the DB is down during login, the user can still use the JWT
+    // until it expires — but they cannot revoke it via logout.
+    // In production, this should trigger an alert.
   }
 
   return token;
@@ -137,10 +143,15 @@ export async function verifySession(token: string): Promise<Session | null> {
     isGuest: payload.isGuest as boolean,
   };
 
-  // 2. Check the Session DB for revocation. Wrap in try/catch for backward
-  //    compat: if the Session table doesn't exist (pre-migration DB) or the
-  //    DB call throws, fall back to JWT-only auth so existing deployments
-  //    keep working.
+  // 2. Check the Session DB for revocation.
+  // SECURITY: This is fail-closed — if the DB is unreachable, the session
+  // is REJECTED (return null). A DB outage must NOT silently allow revoked
+  // or unregistered sessions to pass. The previous fallback-to-JWT-only
+  // behavior was a security risk (revoked tokens could still work during
+  // DB downtime).
+  //
+  // Exception: in dev mode (NODE_ENV !== 'production'), we allow fallback
+  // to JWT-only so local development works without a DB.
   try {
     const db = await getDbForLib();
     const tokenHash = hashToken(token);
@@ -153,7 +164,11 @@ export async function verifySession(token: string): Promise<Session | null> {
     if (sessionRecord.expiresAt.getTime() < Date.now()) return null; // expired
   } catch (e) {
     console.error("[auth] Failed to query Session DB:", e);
-    // Fall through — return the JWT-derived session (backward compat).
+    // Fail-closed in production: DB error → reject session.
+    // In dev: fall back to JWT-only so local dev works without DB.
+    if (process.env.NODE_ENV === "production") {
+      return null;
+    }
   }
 
   return session;
@@ -172,15 +187,13 @@ export async function verifySession(token: string): Promise<Session | null> {
  */
 export async function revokeSession(token: string): Promise<void> {
   const tokenHash = hashToken(token);
-  try {
-    const db = await getDbForLib();
-    await db.session.updateMany({
-      where: { tokenHash, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-  } catch (e) {
-    console.error("[auth] Failed to revoke session:", e);
-  }
+  const db = await getDbForLib();
+  await db.session.updateMany({
+    where: { tokenHash, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  // If this throws, the caller (logout endpoint) will see the error.
+  // We do NOT swallow it — failing to revoke is a security issue.
 }
 
 /**
@@ -192,15 +205,13 @@ export async function revokeSession(token: string): Promise<void> {
  * Idempotent: only touches sessions where `revokedAt` is still null.
  */
 export async function revokeAllUserSessions(userId: string): Promise<void> {
-  try {
-    const db = await getDbForLib();
-    await db.session.updateMany({
-      where: { userId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-  } catch (e) {
-    console.error("[auth] Failed to revoke all user sessions:", e);
-  }
+  const db = await getDbForLib();
+  await db.session.updateMany({
+    where: { userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  // If this throws, the caller will see the error.
+  // We do NOT swallow it — failing to revoke is a security issue.
 }
 
 // ──────────── Session Extraction ────────────
