@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 
 // GET /api/dashboard — platform-wide stats.
@@ -12,6 +12,8 @@ export async function GET(req: Request) {
   const now = Date.now();
   const day = 86400000;
   const since = new Date(now - 30 * day);
+
+  const db = await getDbForLib();
 
   const [activeRequests, techniciansOnline, jobsInProgress, completedJobs30d, payments30d] =
     await Promise.all([
