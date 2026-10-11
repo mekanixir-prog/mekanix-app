@@ -98,12 +98,17 @@ export async function createSession(payload: Session, req?: Request): Promise<st
     .sign(getSecret());
 
   // Persist a Session DB record so the token can be revoked/tracked.
-  // Wrap in try/catch: if the Session table doesn't exist (pre-migration
-  // DB) or the DB is unavailable, we still return the JWT so login works.
+  //
+  // SECURITY: In production, if the Session DB record cannot be created,
+  // we throw — login FAILS. This is fail-closed: a session that can't be
+  // tracked or revoked must not be issued.
+  //
+  // In dev (NODE_ENV !== 'production'), we allow fallback: the JWT is
+  // returned even if the DB is unavailable, so local dev works without DB.
   const tokenHash = hashToken(token);
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+  const db = await getDbForLib();
   try {
-    const db = await getDbForLib();
     await db.session.create({
       data: {
         userId: payload.userId,
@@ -115,12 +120,12 @@ export async function createSession(payload: Session, req?: Request): Promise<st
     });
   } catch (e) {
     console.error("[auth] Failed to create Session DB record:", e);
-    // In production: the session is still valid via JWT, but revocation
-    // tracking won't work for this session. This is acceptable because
-    // createSession is called during login (new session), not verification.
-    // If the DB is down during login, the user can still use the JWT
-    // until it expires — but they cannot revoke it via logout.
-    // In production, this should trigger an alert.
+    if (process.env.NODE_ENV === "production") {
+      // Fail-closed: if we can't persist the session, we can't allow
+      // revocation or tracking — so the login must fail.
+      throw new Error("Failed to create session record — login denied");
+    }
+    // Dev mode: fall through, return JWT (local dev without DB)
   }
 
   return token;

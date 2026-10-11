@@ -149,11 +149,31 @@ describe("createSession — DB record creation", () => {
     expect(expiresAt).toBeLessThanOrEqual(after + thirtyDaysMs + 1000);
   });
 
-  it("still returns the JWT even if the DB create throws (backward compat)", async () => {
-    mockSessionCreate.mockRejectedValueOnce(new Error("Table missing"));
-    const token = await createSession(PAYLOAD);
-    expect(typeof token).toBe("string");
-    expect(token.split(".")).toHaveLength(3);
+  it("still returns the JWT in dev mode if the DB create throws (backward compat)", async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    (process.env as Record<string, string>).NODE_ENV = "development";
+    try {
+      mockSessionCreate.mockRejectedValueOnce(new Error("Table missing"));
+      const token = await createSession(PAYLOAD);
+      expect(typeof token).toBe("string");
+      expect(token.split(".")).toHaveLength(3);
+    } finally {
+      (process.env as Record<string, string>).NODE_ENV = originalNodeEnv ?? "test";
+    }
+  });
+
+  it("THROWS in production if the DB create throws (fail-closed login)", async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalJwtSecret = process.env.JWT_SECRET;
+    (process.env as Record<string, string>).NODE_ENV = "production";
+    (process.env as Record<string, string>).JWT_SECRET = "test-jwt-secret-for-unit-test";
+    try {
+      mockSessionCreate.mockRejectedValueOnce(new Error("DB down"));
+      await expect(createSession(PAYLOAD)).rejects.toThrow("Failed to create session record");
+    } finally {
+      (process.env as Record<string, string>).NODE_ENV = originalNodeEnv ?? "test";
+      (process.env as Record<string, string>).JWT_SECRET = originalJwtSecret ?? "";
+    }
   });
 
   it("omits device/ip when no request is passed", async () => {
