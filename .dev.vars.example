@@ -1,0 +1,8 @@
+# Local development secrets for Cloudflare Workers (wrangler dev --local)
+# This file is NOT committed to Git — see .gitignore
+#
+# Copy this to .dev.vars and fill in your local values.
+# wrangler automatically loads .dev.vars for `wrangler dev --local`.
+
+JWT_SECRET=dev-jwt-secret-not-for-production
+DATABASE_URL=file:./db/custom.db

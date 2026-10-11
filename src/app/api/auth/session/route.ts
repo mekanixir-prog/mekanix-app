@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { getSessionFromRequest } from "@/lib/auth";
 
 const TECHNICIAN_INCLUDE = {
@@ -32,6 +32,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "احراز هویت نشده" }, { status: 401 });
   }
 
+  const db = await getDbForLib();
   const user = await db.user.findUnique({
     where: { id: session.userId },
     select: {
@@ -72,6 +73,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "احراز هویت نشده" }, { status: 401 });
   }
 
+  const db = await getDbForLib();
   const user = await db.user.findUnique({
     where: { id: session.userId },
     select: {

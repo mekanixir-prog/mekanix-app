@@ -16,18 +16,30 @@ import { getDbForLib } from "./db-access";
 
 // ──────────── JWT ────────────
 
-const JWT_SECRET = process.env.JWT_SECRET;
 const encoder = new TextEncoder();
 
+/**
+ * Get the JWT signing secret.
+ *
+ * In production: JWT_SECRET MUST be set (via wrangler secret or .dev.vars).
+ * Throws if missing — no insecure fallback in production.
+ *
+ * In dev: falls back to a hardcoded dev-only secret (NEVER in production).
+ *
+ * SECURITY: JWT_SECRET is read inside the function (not at module top-level)
+ * because in Workers/OpenNext, process.env may not be fully populated at
+ * module evaluation time.
+ */
 function getSecret(): Uint8Array {
-  if (!JWT_SECRET) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
     if (process.env.NODE_ENV === "production") {
       throw new Error("JWT_SECRET environment variable is required in production");
     }
     // Dev-only fallback — NEVER in production
     return encoder.encode("mekanix-dev-secret-change-in-production");
   }
-  return encoder.encode(JWT_SECRET);
+  return encoder.encode(secret);
 }
 
 export type Session = {
