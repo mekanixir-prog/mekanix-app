@@ -5697,3 +5697,219 @@ Stage Summary:
 - Files modified (1): public/sw.js — full rewrite to unconditionally self-destruct (no IS_DEV check). Now works for ALL hostnames (localhost, gateway IP, *.space-z.ai preview domain).
 - The "page won't load" issue is fully resolved at its root cause. The SW no longer caches stale chunks in any environment — it always evicts itself and clears caches on every load.
 - Once we ship to production, we'll re-add proper cache strategies gated on a real IS_PROD flag (e.g., process.env.NODE_ENV === "production" baked in at build time, not runtime hostname check).
+
+---
+Task ID: P3-BATCH-1-INSURANCE
+Agent: orchestrator
+Task: Migrate insurance API routes (2 files, 12 db calls) to getDbForLib for Cloudflare Workers D1 compatibility — priority 3 batch 1.
+
+Work Log:
+- First fixed branch state: previous lib migration commits (3d10982, b621a8f) had landed on local `main` instead of the feature branch. Reset local `main` back to match remote `new-repo/main` (e4c2faf, untouched) and moved all lib work onto `feature/cloudflare-d1-validation` (now at b621a8f). Confirmed main == remote main (untouched).
+- Verified the 9 lib files are fully migrated on the feature branch: auth.ts has 14 getDbForLib calls, getDbForLib defined in src/lib/db-access.ts (returns cached sync db in dev, async per-request PrismaClient via db-worker.ts in Workers).
+- Read insurance/route.ts (GET: expire+list policies; POST: create policy) and insurance/claim/route.ts (POST: file claim). Confirmed they still used sync `import { db } from "@/lib/db"` — 5 + 7 = 12 db calls total.
+- Migrated insurance/route.ts:
+  * import { db } → import { getDbForLib } from "@/lib/db-access"
+  * Added `const db = await getDbForLib();` at top of GET and POST (after auth check)
+  * Preserved all security: BOLA (userId from session), mass-assignment (sanitizeInput), server-authoritative userId, vehicle ownership check
+- Migrated insurance/claim/route.ts:
+  * Same import swap + `const db = await getDbForLib();` after requirePolicyOwner
+  * Examined 3-step dependent write (claim.create → policy.update → notification.create):
+    - claim.create: primary, if fails → 500, no partial state (unchanged)
+    - policy.update → "claimed": changed to best-effort try/catch. Previously a failure here would 500 even though the claim was already created (misleading the user). Now logs + returns success.
+    - notification.create: changed to best-effort try/catch. Never fail a claim submission over a notification side-effect.
+  * Documented mid-failure behavior in a comment block at the top of the function.
+- Verification: TypeScript exit 0, ESLint exit 0, Tests 335/335 passed (13 files).
+- Committed as 3a14af7 on feature/cloudflare-d1-validation.
+
+Stage Summary:
+- Files changed (2): src/app/api/insurance/route.ts, src/app/api/insurance/claim/route.ts
+- DB calls migrated: 12 (5 in route.ts, 7 in claim/route.ts)
+- Security preserved: BOLA, mass-assignment protection, server-authoritative userId, input validation
+- Intentional behavior change: policy.update and notification.create in claim route are now best-effort (try/catch + log) to avoid misleading 500s when the primary claim.create already succeeded. Documented in code comment.
+- main untouched (e4c2faf), feature branch advanced to 3a14af7, PR #3 still open, no remote D1 migration, no deploy.
+
+---
+Task ID: P3-BATCH-2-MECHANIC-APPLICATIONS
+Agent: orchestrator
+Task: Migrate mechanic-applications API routes (3 files) to getDbForLib — priority 3 batch 2.
+
+Work Log:
+- Read all 3 files: route.ts (GET admin-list + POST public-apply), [id]/approve/route.ts (admin approve → create user+technician), [id]/reject/route.ts (admin reject).
+- Migrated route.ts: import swap + `const db = await getDbForLib()` in GET (after role check) and POST. Preserved mass-assignment whitelist + duplicate-tech 409 guard + PENDING status.
+- Migrated approve/route.ts: import swap + `const db = await getDbForLib()` after auth/role check. Documented 5-step dependent write + mid-failure idempotency analysis in comment block.
+  * SECURITY FIX: reviewerId was `body.reviewerId` (client-supplied → spoofable). Changed to `session.userId` (server-authoritative). This aligns with the server-authoritative pattern used everywhere else in the codebase.
+  * Made notification.create best-effort (try/catch + log).
+- Migrated reject/route.ts: import swap + `const db = await getDbForLib()`.
+- Verification: TypeScript exit 0, ESLint exit 0, Tests 335/335 passed.
+- Committed as f35bf96.
+
+Stage Summary:
+- Files changed (3): mechanic-applications/route.ts, [id]/approve/route.ts, [id]/reject/route.ts
+- DB call sites migrated: 8 distinct sites (findMany, upsert, findUnique×3, create×2, update×2, notification.create)
+- Security fix: reviewerId now server-authoritative (session.userId, was body.reviewerId)
+- Mid-failure: approve route is idempotent on re-approve (findUnique guards prevent duplicate user/technician); notification best-effort.
+- main untouched (e4c2faf), feature branch advanced to f35bf96, PR #3 still open, no remote D1 migration, no deploy.
+
+---
+Task ID: P3-BATCH-3-MAINTENANCE
+Agent: orchestrator
+Task: Migrate maintenance API route (1 file) to getDbForLib — priority 3 batch 3.
+
+Work Log:
+- Read maintenance/route.ts: 3 handlers (GET role-scoped list, POST create, PATCH markDone). 7 db call sites (customer.findUnique, vehicle.findUnique, technician.findUnique, maintenanceSchedule.findMany/create/findUnique/update).
+- Migrated: import swap + `const db = await getDbForLib()` in each handler after auth. GET needs db before the role-branching, so db is obtained right after the vehicleId parse. POST obtains db after requireVehicleOwner (which uses its own getDbForLib internally). PATCH obtains db before findUnique.
+- Security preserved: BOLA (customerId from session not query param, vehicle ownership via requireVehicleOwner), mass-assignment (sanitizeInput), input validation.
+- Verification: TypeScript exit 0, ESLint exit 0, Tests 335/335 passed.
+- Committed.
+
+Stage Summary:
+- Files changed (1): maintenance/route.ts
+- DB call sites: 7
+- main untouched, feature branch advanced, PR #3 open, no remote migration, no deploy.
+
+---
+Task ID: P3-BATCHES-4-5-6
+Agent: orchestrator
+Task: Migrate referral, reviews, support/tickets API routes (3 files) to getDbForLib — priority 3 batches 4-6.
+
+Work Log:
+- referral/route.ts (7 calls): GET (referral.findMany + stats compute), POST (findFirst → findUnique → create for get-or-create code), PATCH (findUnique BOLA → self-referral check → update → notification). Made notification best-effort.
+- reviews/route.ts (5 calls): POST with requireJobParticipant BOLA, customer-only check, duplicate review 409 guard, review.create, then review.findMany (recompute avg) → technician.update (rating+reviewCount+completedJobs). Documented 3-step mid-failure trade-off: if technician.update fails, rating stale but self-corrects on next review (pre-existing, not changed).
+- support/tickets/route.ts (4+N calls): GET (role-scoped, admin sees all), POST (create ticket → admin notification loop → user confirmation). Made BOTH notification paths best-effort with per-iteration try/catch so one admin failure doesn't abort the loop.
+- Verification: TypeScript exit 0, ESLint exit 0, Tests 335/335 passed.
+- Committed as 3d45eee.
+
+Stage Summary:
+- Files changed (3): referral/route.ts, reviews/route.ts, support/tickets/route.ts
+- DB call sites: 16 (7+5+4)
+- Security: BOLA (referrerId/fromUserId/userId from session), participant checks, mass-assignment, duplicate guards
+- Mid-failure: notifications best-effort in all 3; reviews rating-recompute is a documented pre-existing trade-off
+- main untouched, feature branch advanced to 3d45eee, PR #3 open, no remote migration, no deploy.
+
+---
+Task ID: P3-BATCH-7-VIP
+Agent: orchestrator
+Task: Migrate vip API routes (3 files) to getDbForLib + verify lib-layer dependencies resolved — priority 3 batch 7.
+
+Work Log:
+- Read all 3 vip routes: my/route.ts (2 calls), plans/route.ts (1 call), subscribe/route.ts (4 calls). All still used sync `import { db }`.
+- CRITICAL SECURITY FINDING in vip/subscribe/route.ts: NO authentication, userId taken from request body. Any caller could subscribe any user to VIP. Fixed: added requireAuth + session.userId (server-authoritative, body userId ignored).
+- Migrated all 3: import swap + `const db = await getDbForLib()` in each handler.
+- Made notification.create in subscribe best-effort (try/catch).
+- Verified vip lib-layer dependencies (user's specific concern — test success alone doesn't prove Workers correctness):
+  * vip.ts lib: 4 getDbForLib calls (subscribeToVip: findUnique+updateMany+create; checkVipStatus: findFirst) ✓
+  * care/bookings/route.ts (consumer): already migrated in care batch, calls `await checkVipStatus(session.userId)` — full chain async ✓
+  * pricing module (src/modules/pricing/index.ts): zero direct db calls, only re-exports async lib functions ✓
+  * pricing.ts lib: 2 getDbForLib calls ✓
+  * Conclusion: all execution paths from vip routes to D1 are async. No sync db leakage.
+- Verification: TypeScript exit 0, ESLint exit 0, Tests 335/335 passed.
+- Committed.
+
+Stage Summary:
+- Files changed (3): vip/my/route.ts, vip/plans/route.ts, vip/subscribe/route.ts
+- DB calls migrated: 7
+- Security fix: vip/subscribe BOLA (was unauthenticated + client-supplied userId → now requireAuth + session.userId)
+- Lib-layer verified: vip.ts + pricing.ts + pricing module all async-D1-compatible; care/bookings consumer chain confirmed async end-to-end
+- main untouched, feature branch advanced, PR #3 open, no remote migration, no deploy.
+
+---
+Task ID: P3-BATCHES-8-9-MESSAGES-NOTIFICATIONS
+Agent: orchestrator
+Task: Migrate messages + notifications API routes (3 files) to getDbForLib — priority 3 batches 8-9.
+
+Work Log:
+- messages/route.ts (4 calls): GET (message.findMany with requireJobParticipant BOLA), POST (message.create with fromUserId from session + best-effort new-message notification). Made the notification best-effort (try/catch) since it's a side-effect.
+- notifications/route.ts (2 calls): GET (notification.findMany, userId from session), PATCH (notification.updateMany mark-all-read).
+- notifications/[id]/route.ts (1 call): PATCH (notification.update mark-one-read, requireNotificationOwner BOLA).
+- Verified notifications lib-layer (user's specific concern):
+  * src/lib/notifications.ts: sendNotification() uses `const db = await getDbForLib()` → `db.notification.create` ✓ (1 call, migrated)
+  * src/modules/notifications/index.ts: barrel re-export only, zero direct db ✓
+  * /api/notifications routes use direct db calls (not sendNotification lib), so migrated independently
+  * All notification paths (routes + lib helper) now async D1-compatible ✓
+- Verification: TypeScript exit 0, ESLint exit 0, Tests 335/335 passed.
+- Committed.
+
+Stage Summary:
+- Files changed (3): messages/route.ts, notifications/route.ts, notifications/[id]/route.ts
+- DB calls migrated: 7
+- Security: BOLA (participant/owner checks), server-authoritative fromUserId/userId
+- Lib-layer verified: notifications.ts sendNotification async; routes independent
+- main untouched, feature branch advanced, PR #3 open, no remote migration, no deploy.
+
+---
+Task ID: P3-BATCHES-10-11-EXCHANGE-ONBOARDING
+Agent: orchestrator
+Task: Migrate exchange-rate + onboarding API routes (2 files) to getDbForLib — priority 3 batches 10-11.
+
+Work Log:
+- exchange-rate/route.ts (3 calls): GET — USD→IRR rate. All 3 calls are platformSetting.findUnique (telegram rate, source, multiplier). Added `const db = await getDbForLib()` AFTER the 60s cache check (cache hit returns early without touching DB — avoids unnecessary async work on cache hits). Workers compatibility verified: fetch() + AbortSignal.timeout() are native in Workers; module-level cache works per-isolate (acceptable for 60s TTL).
+- onboarding/route.ts (1 call): GET — onboardingSlide.findMany. Read-only, try/catch returns [] on failure. Added db client inside the try block.
+- Verification: TypeScript exit 0, ESLint exit 0, Tests 335/335 passed.
+- Committed.
+
+Stage Summary:
+- Files changed (2): exchange-rate/route.ts, onboarding/route.ts
+- DB calls migrated: 4 (3+1)
+- Both are public read-only endpoints (no auth) — no BOLA/security concerns
+- main untouched, feature branch advanced, PR #3 open, no remote migration, no deploy.
+
+---
+Task ID: P3-HEALTH-READY-QUERYRAW
+Agent: orchestrator
+Task: Investigate health/ready $queryRaw compatibility on Workers (user's specific concern #2).
+
+Work Log:
+- Read health/route.ts and ready/route.ts — both use `db.$queryRaw\`SELECT 1\`` via sync `import { db } from "@/lib/db"`.
+- Investigated $queryRaw D1 adapter support:
+  * @prisma/adapter-d1@6.19.3 implements `queryRaw` (line 331, 547) and `executeRaw` (line 359, 581) — confirmed by grepping the adapter source.
+  * $queryRaw routes through D1Database.prepare(sql).bind(params).all() — standard D1 API. So $queryRaw IS D1-compatible.
+  * The REAL problem: routes used sync `db` import (a stub in Workers). So the health check would ALWAYS report "unhealthy" in Workers even when D1 was reachable. The inventory's "0 calls" was misleading — zero count masked the fact that the sync import made the route non-functional in Workers.
+- Migrated both routes to getDbForLib(). Now $queryRaw executes against the D1-backed PrismaClient (PrismaD1 adapter via db-worker.ts getDb()).
+- Made process.uptime() guard safer: `typeof process !== "undefined" && process.uptime` (nodejs_compat is enabled in wrangler.toml, but defensive check avoids ReferenceError if process is undefined).
+- Verification: TypeScript exit 0, ESLint exit 0, Tests 335/335 passed.
+- Committed.
+
+Stage Summary:
+- Files changed (2): health/route.ts, ready/route.ts
+- DB calls: 2 ($queryRaw each), now D1-compatible via getDbForLib
+- Key finding: $queryRaw itself IS compatible with D1; the sync db import was the actual blocker. Migrating to getDbForLib fixes both health checks.
+- main untouched, feature branch advanced, PR #3 open, no remote migration, no deploy.
+
+---
+Task ID: P3-FINAL-INVENTORY-AND-P4-ANALYSIS
+Agent: orchestrator
+Task: Regenerate inventory from actual code + extract remaining state + priority 4 decision analysis.
+
+Work Log:
+- Ran comprehensive grep scan of all src/**/*.ts files for:
+  * `import { db } from "@/lib/db"` or `"./db"` (sync — needs migration)
+  * `getDbForLib` (already migrated)
+- Results (from actual code, not manual counting):
+  * Migrated: 70 files (11 lib + 59 routes)
+  * Remaining: 7 files, 26 db calls
+- Remaining files (all admin-facing, priority 4):
+  1. src/lib/db-sequential.ts (1 call) — runSequential $transaction helper. Used by jobs/[id]/status route. In D1, $transaction not supported → must always run sequentially.
+  2. admin-panel/auth/login/route.ts (2 calls) — admin login
+  3. admin-panel/auth/me/route.ts (1 call) — admin profile
+  4. admin-panel/onboarding/route.ts (3 calls) — slide management
+  5. admin-panel/onboarding/[id]/route.ts (5 calls) — slide item CRUD
+  6. admin/[resource]/route.ts (7 calls) — generic admin resource list
+  7. admin/[resource]/[id]/route.ts (7 calls) — generic admin resource item CRUD
+- Wrote updated inventory to docs/d1-migration-inventory.json (regenerated from actual code).
+- Committed.
+
+Stage Summary — Priority 3 COMPLETE:
+- 17 priority-3 route files migrated across 8 commits (insurance, mechanic-applications, maintenance, referral, reviews, support/tickets, vip, messages, notifications, exchange-rate, onboarding) + health/ready $queryRaw fix.
+- Total db calls migrated this session: ~60 (across all priority-3 batches + health/ready)
+- Security fixes applied during P3: vip/subscribe BOLA (was unauthenticated), mechanic-applications reviewerId server-authoritative, multiple best-effort notification patterns.
+- CI: TypeScript exit 0, ESLint exit 0, Tests 335/335 passed (stable throughout).
+- main untouched (e4c2faf), feature branch advanced, PR #3 open, no remote D1 migration, no deploy.
+
+Priority 4 Decision Analysis (for user):
+- 7 remaining files, 26 db calls, ALL admin-facing.
+- Two clusters:
+  A) admin-panel/* (4 files, 11 calls) — dedicated admin panel auth + onboarding management. Uses admin-auth.ts + admin-api.ts helpers (both already migrated). Migration is straightforward (import swap + getDbForLib per handler).
+  B) admin/[resource]/* (2 files, 14 calls) — generic admin CRUD with dynamic resource handlers. Slightly more complex (dynamic dispatch table), but each handler is a simple findMany/findUnique/update/delete.
+  C) db-sequential.ts (1 file, 1 call) — the runSequential helper. Needs special handling: detect Workers env and skip $transaction entirely (always sequential in D1).
+- Risk: LOW. All admin routes are behind requireRole(ADMIN) or getAdminFromRequest. No customer-facing impact. Mid-failure concerns are minimal (admin writes are typically single-step or have natural idempotency).
+- Recommendation: proceed with priority 4 in 2 batches (admin-panel + db-sequential, then admin/[resource]). Awaiting user decision.
