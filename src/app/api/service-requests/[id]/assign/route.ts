@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 
 const include = {
@@ -34,6 +34,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "technicianId الزامی است" }, { status: 400 });
   }
 
+  const db = await getDbForLib();
   const sr = await db.serviceRequest.findUnique({ where: { id }, include: { vehicle: true } });
   if (!sr) return NextResponse.json({ error: "درخواست یافت نشد" }, { status: 404 });
 
