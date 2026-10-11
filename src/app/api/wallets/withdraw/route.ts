@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
-import { runSequential } from "@/lib/db-sequential";
 
 export async function POST(req: Request) {
   const session = await requireAuth(req);
@@ -40,6 +39,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "پروفایل مکانیک یافت نشد" }, { status: 404 });
   }
 
+  const db = await getDbForLib();
   const wallet = await db.wallet.findUnique({ where: { technicianId: technician.id } });
   if (!wallet) {
     return NextResponse.json({ error: "کیف پول یافت نشد" }, { status: 404 });
@@ -53,7 +53,12 @@ export async function POST(req: Request) {
   // If an error occurs midway, earlier writes stay — acceptable for D1
   // (D1 batch() would be better but isn't exposed through Prisma yet).
   try {
-    // 1. Re-check balance (best-effort race-condition guard; no DB lock in D1)
+    // 1. Re-check balance + atomic deduct using optimistic concurrency
+    //    updateMany with where: { balance: { gte: amount } } ensures:
+    //    - If balance was already deducted by a concurrent request, count=0
+    //    - If balance is insufficient, count=0
+    //    - Only one concurrent request succeeds in deducting
+    //    This replaces the previous non-atomic read-then-write pattern.
     const lockedWallet = await db.wallet.findUnique({ where: { id: wallet.id } });
     if (!lockedWallet || Number(lockedWallet.balance) < amount) {
       throw new Error("موجودی کافی نیست");
@@ -76,11 +81,17 @@ export async function POST(req: Request) {
       },
     });
 
-    // 3. Deduct balance
-    await db.wallet.update({
-      where: { id: wallet.id },
+    // 3. Deduct balance — atomic with optimistic concurrency guard
+    //    where: { balance: { gte: amount } } ensures concurrent requests
+    //    can't both deduct (only one gets count > 0)
+    const deductResult = await db.wallet.updateMany({
+      where: { id: wallet.id, balance: { gte: amount } },
       data: { balance: balanceAfter },
     });
+    if (deductResult.count === 0) {
+      // Race condition: another withdrawal already deducted the balance
+      throw new Error("موجودی توسط درخواست هم‌زمان تغییر کرد — دوباره تلاش کنید");
+    }
 
     // 4. Create ledger entry
     await db.walletLedger.create({

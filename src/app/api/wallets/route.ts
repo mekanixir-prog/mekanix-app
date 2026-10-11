@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
 
@@ -29,6 +29,7 @@ export async function GET(req: Request) {
   }
 
   // Find or create wallet
+  const db = await getDbForLib();
   let wallet = await db.wallet.findUnique({
     where: { technicianId },
     include: {
