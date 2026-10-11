@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { sanitizeInput, ALLOWED_FIELDS } from "@/lib/auth";
 
@@ -18,6 +18,7 @@ export async function GET(req: Request) {
   }
   if (status) where.status = status;
 
+  const db = await getDbForLib();
   const tickets = await db.supportTicket.findMany({
     where,
     orderBy: { createdAt: "desc" },
@@ -29,6 +30,10 @@ export async function GET(req: Request) {
 // POST: create a new support ticket.
 // userId is derived from the session — NEVER from the request body.
 // Body is sanitized to only allow whitelisted ticket fields (mass-assignment protection).
+//
+// Notifications (to admins + user) are best-effort: the ticket is the primary
+// record; a notification failure must not cause a 500 after the ticket was
+// already created.
 export async function POST(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
@@ -57,6 +62,7 @@ export async function POST(req: Request) {
   }
 
   const code = `TKT-${Math.floor(5000 + Math.random() * 4000)}`;
+  const db = await getDbForLib();
   const ticket = await db.supportTicket.create({
     data: {
       code,
@@ -70,32 +76,45 @@ export async function POST(req: Request) {
     include: { user: true },
   });
 
-  // Notify admins
-  const admins = await db.user.findMany({ where: { role: "ADMIN" } });
-  for (const admin of admins) {
-    await db.notification.create({
-      data: {
-        userId: admin.id,
-        type: "new_support_ticket",
-        title: `Ticket ${code}`,
-        body: `${ticket.user?.name ?? "User"}: ${safe.subject}`,
-        category: "system",
-        link: "admin/support",
-      },
-    });
+  // Notify admins — best-effort. If one notification fails, continue to the
+  // next rather than aborting the whole loop (the ticket is already created).
+  try {
+    const admins = await db.user.findMany({ where: { role: "ADMIN" } });
+    for (const admin of admins) {
+      try {
+        await db.notification.create({
+          data: {
+            userId: admin.id,
+            type: "new_support_ticket",
+            title: `Ticket ${code}`,
+            body: `${ticket.user?.name ?? "User"}: ${safe.subject}`,
+            category: "system",
+            link: "admin/support",
+          },
+        });
+      } catch (e) {
+        console.error(`[support/tickets] Failed to notify admin ${admin.id}:`, e);
+      }
+    }
+  } catch (e) {
+    console.error("[support/tickets] Failed to fetch admins for notification:", e);
   }
 
-  // Notify the user that their ticket was received
-  await db.notification.create({
-    data: {
-      userId: session.userId,
-      type: "support_update",
-      title: `Ticket ${code} received`,
-      body: "We'll respond within 2 hours during business hours.",
-      category: "system",
-      link: "customer/support",
-    },
-  });
+  // Notify the user that their ticket was received — best-effort.
+  try {
+    await db.notification.create({
+      data: {
+        userId: session.userId,
+        type: "support_update",
+        title: `Ticket ${code} received`,
+        body: "We'll respond within 2 hours during business hours.",
+        category: "system",
+        link: "customer/support",
+      },
+    });
+  } catch (e) {
+    console.error("[support/tickets] Failed to create user confirmation notification (ticket still created):", e);
+  }
 
   return NextResponse.json(ticket);
 }
