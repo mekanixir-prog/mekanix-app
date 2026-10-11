@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 
 // GET /api/exchange-rate
 // Returns the current USD→IRR exchange rate.
@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 // Priority: Telegram bot rate (@NerkhDollarIRT) > official API > fallback
 // Also applies admin-configured multiplier if set.
 
-// In-memory cache (per-server)
+// In-memory cache (per-server / per-Workers-isolate)
 let cache: { rate: number; baseRate: number; multiplier: number; source: string; fetchedAt: number } | null = null;
 const CACHE_TTL_MS = 60_000; // 60 seconds
 
@@ -16,6 +16,10 @@ export async function GET() {
   if (cache && now - cache.fetchedAt < CACHE_TTL_MS) {
     return NextResponse.json({ ...cache, cached: true });
   }
+
+  // Only obtain the DB client on a cache miss (avoids unnecessary async work
+  // when the 60s cache is still valid).
+  const db = await getDbForLib();
 
   // 1. Try Telegram rate (stored by mini-services/telegram-rate-bot)
   let rate: number | null = null;
