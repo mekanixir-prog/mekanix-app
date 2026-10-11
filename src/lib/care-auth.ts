@@ -7,7 +7,7 @@
 //   TECHNICIAN → only bookings assigned to them (booking.technicianId === technician.id)
 
 import { NextResponse } from "next/server";
-import { db } from "./db";
+import { getDbForLib } from "./db-access";
 import type { Session } from "./auth";
 import { getCustomerFromSession, getTechnicianFromSession } from "./auth";
 
@@ -21,6 +21,7 @@ export async function requireBookingParticipant(
 ): Promise<NextResponse | null> {
   if (session.role === "ADMIN") return null;
 
+  const db = await getDbForLib();
   const booking = await db.serviceBooking.findUnique({
     where: { id: bookingId },
     select: { id: true, userId: true, technicianId: true },
@@ -71,6 +72,7 @@ export async function requireAssignedTechnician(
     return NextResponse.json({ error: "پروفایل مکانیک یافت نشد" }, { status: 403 });
   }
 
+  const db = await getDbForLib();
   const booking = await db.serviceBooking.findUnique({
     where: { id: bookingId },
     select: { id: true, technicianId: true },
@@ -102,6 +104,7 @@ export async function requireBookingOwner(
     return NextResponse.json({ error: "این عملیات فقط برای مشتری مجاز است" }, { status: 403 });
   }
 
+  const db = await getDbForLib();
   const booking = await db.serviceBooking.findUnique({
     where: { id: bookingId },
     select: { id: true, userId: true },

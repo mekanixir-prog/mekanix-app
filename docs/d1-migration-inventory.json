@@ -827,8 +827,7 @@
       "POST"
     ],
     "auth_deps": [
-      "requireAuth",
-      "requirePolicyOwner"
+      "requireAuth"
     ],
     "uses_raw_sql": false,
     "uses_transaction": false,
@@ -1721,7 +1720,7 @@
   {
     "file": "src/lib/admin-api.ts",
     "type": "lib",
-    "access_type": "db (sync)",
+    "access_type": "getDbForLib",
     "models": {
       "auditLog": [
         "create"
@@ -1732,12 +1731,12 @@
     "uses_raw_sql": false,
     "uses_transaction": false,
     "total_calls": 1,
-    "migrated": false
+    "migrated": true
   },
   {
     "file": "src/lib/admin-auth.ts",
     "type": "lib",
-    "access_type": "db (sync)",
+    "access_type": "getDbForLib",
     "models": {
       "adminUser": [
         "count",
@@ -1749,12 +1748,65 @@
     "uses_raw_sql": false,
     "uses_transaction": false,
     "total_calls": 3,
-    "migrated": false
+    "migrated": true
+  },
+  {
+    "file": "src/lib/auth.ts",
+    "type": "lib",
+    "access_type": "getDbForLib",
+    "models": {
+      "customer": [
+        "findUnique"
+      ],
+      "idempotencyKey": [
+        "findUnique",
+        "upsert"
+      ],
+      "insurancePolicy": [
+        "findUnique"
+      ],
+      "job": [
+        "findUnique"
+      ],
+      "notification": [
+        "findUnique"
+      ],
+      "session": [
+        "create",
+        "findUnique",
+        "update"
+      ],
+      "supportTicket": [
+        "findUnique"
+      ],
+      "technician": [
+        "findUnique"
+      ],
+      "vehicle": [
+        "findUnique"
+      ],
+      "wallet": [
+        "findUnique"
+      ]
+    },
+    "http_methods": [],
+    "auth_deps": [
+      "requireAuth",
+      "requireJobParticipant",
+      "getTechnicianFromSession",
+      "getCustomerFromSession",
+      "requireVehicleOwner",
+      "requireRole"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 14,
+    "migrated": true
   },
   {
     "file": "src/lib/care-auth.ts",
     "type": "lib",
-    "access_type": "db (sync)",
+    "access_type": "getDbForLib",
     "models": {
       "serviceBooking": [
         "findUnique"
@@ -1770,12 +1822,12 @@
     "uses_raw_sql": false,
     "uses_transaction": false,
     "total_calls": 3,
-    "migrated": false
+    "migrated": true
   },
   {
     "file": "src/lib/dispatch.ts",
     "type": "lib",
-    "access_type": "db (sync)",
+    "access_type": "getDbForLib",
     "models": {
       "dispatchCandidate": [
         "create"
@@ -1789,12 +1841,12 @@
     "uses_raw_sql": false,
     "uses_transaction": false,
     "total_calls": 2,
-    "migrated": false
+    "migrated": true
   },
   {
     "file": "src/lib/notifications.ts",
     "type": "lib",
-    "access_type": "db (sync)",
+    "access_type": "getDbForLib",
     "models": {
       "notification": [
         "create"
@@ -1805,12 +1857,12 @@
     "uses_raw_sql": false,
     "uses_transaction": false,
     "total_calls": 2,
-    "migrated": false
+    "migrated": true
   },
   {
     "file": "src/lib/pricing.ts",
     "type": "lib",
-    "access_type": "db (sync)",
+    "access_type": "getDbForLib",
     "models": {
       "pricingSnapshot": [
         "create"
@@ -1824,12 +1876,32 @@
     "uses_raw_sql": false,
     "uses_transaction": false,
     "total_calls": 2,
-    "migrated": false
+    "migrated": true
+  },
+  {
+    "file": "src/lib/rate-limit.ts",
+    "type": "lib",
+    "access_type": "getDbForLib",
+    "models": {
+      "rateLimit": [
+        "findUnique",
+        "upsert",
+        "update"
+      ]
+    },
+    "http_methods": [],
+    "auth_deps": [
+      "rateLimitAsync"
+    ],
+    "uses_raw_sql": false,
+    "uses_transaction": false,
+    "total_calls": 3,
+    "migrated": true
   },
   {
     "file": "src/lib/service-unified.ts",
     "type": "lib",
-    "access_type": "db (sync)",
+    "access_type": "getDbForLib",
     "models": {
       "job": [
         "findMany",
@@ -1850,12 +1922,12 @@
     "uses_raw_sql": false,
     "uses_transaction": false,
     "total_calls": 11,
-    "migrated": false
+    "migrated": true
   },
   {
     "file": "src/lib/service-write.ts",
     "type": "lib",
-    "access_type": "db (sync)",
+    "access_type": "getDbForLib",
     "models": {
       "customer": [
         "findUnique"
@@ -1890,12 +1962,12 @@
     "uses_raw_sql": false,
     "uses_transaction": false,
     "total_calls": 15,
-    "migrated": false
+    "migrated": true
   },
   {
     "file": "src/lib/vip.ts",
     "type": "lib",
-    "access_type": "db (sync)",
+    "access_type": "getDbForLib",
     "models": {
       "userVipSubscription": [
         "update",
@@ -1911,6 +1983,6 @@
     "uses_raw_sql": false,
     "uses_transaction": false,
     "total_calls": 4,
-    "migrated": false
+    "migrated": true
   }
 ]

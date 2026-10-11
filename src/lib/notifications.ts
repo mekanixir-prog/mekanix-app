@@ -23,7 +23,7 @@
 //      branches on the type string.
 //   3. No DB migration needed — `Notification.type` is a free-form string.
 
-import { db } from "./db";
+import { getDbForLib } from "./db-access";
 
 // ──────────── Notification type catalogue ────────────
 // `as const` so the derived `NotificationType` union is a literal union of
@@ -64,6 +64,7 @@ export async function sendNotification(params: {
   category?: string;
   link?: string;
 }) {
+  const db = await getDbForLib();
   return db.notification.create({
     data: {
       userId: params.userId,
