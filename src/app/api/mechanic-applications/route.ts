@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireRole, sanitizeInput, FORBIDDEN_FIELDS } from "@/lib/auth";
 
@@ -12,6 +12,7 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const status = url.searchParams.get("status");
+  const db = await getDbForLib();
   const list = await db.mechanicApplication.findMany({
     where: status ? { status: status as any } : undefined,
     orderBy: { createdAt: "desc" },
@@ -49,6 +50,8 @@ export async function POST(req: Request) {
 
   const normalizedPhone = phone.trim();
   const code = `APP-${Math.floor(1000 + Math.random() * 9000)}`;
+
+  const db = await getDbForLib();
 
   // Check if user with this phone already exists
   const existingUser = await db.user.findUnique({ where: { phone: normalizedPhone } });
