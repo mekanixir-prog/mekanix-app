@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { sanitizeInput, ALLOWED_FIELDS } from "@/lib/auth";
 
@@ -10,6 +10,7 @@ export async function GET(req: Request) {
   if (session instanceof NextResponse) return session;
 
   const userId = session.userId;
+  const db = await getDbForLib();
 
   // Expire policies past their endDate
   const now = new Date();
@@ -44,6 +45,8 @@ export async function POST(req: Request) {
   if (!safe.provider || !safe.policyNumber || !safe.startDate || !safe.endDate) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
+
+  const db = await getDbForLib();
 
   // If vehicleId provided, ensure the user owns it
   if (safe.vehicleId) {
