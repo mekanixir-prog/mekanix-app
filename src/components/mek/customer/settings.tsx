@@ -99,12 +99,16 @@ export function CustomerSettings({ customer }: { customer: DemoUser }) {
           </div>
           <div>
             <Label className="text-xs">{t("settings.regional.theme")}</Label>
-            <Select value={theme} onValueChange={(v) => { setTheme(v); toast.success(t("toast.themeSwitched").replace("{theme}", v)); }}>
+            <Select value={theme} onValueChange={(value) => {
+              if (value === "light" || value === "dark") {
+                setTheme(value);
+                toast.success(t("toast.themeSwitched").replace("{theme}", value));
+              }
+            }}>
               <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="dark">{t("common.dark")}</SelectItem>
                 <SelectItem value="light">{t("common.light")}</SelectItem>
-                <SelectItem value="system">{t("common.system")}</SelectItem>
               </SelectContent>
             </Select>
           </div>

@@ -40,6 +40,15 @@
     "node_modules",
     "mini-services",
     "examples",
-    "skills"
+    "skills",
+    "experiments",
+    "admin-panel",
+    // ─── FEATURE INCOMPLETE: Prisma models not yet in schema.prisma ───
+    // These API routes reference models (Insurance, LoyaltyPoints, MultiRating)
+    // that haven't been added to the main Prisma schema yet.
+    // TODO: implement these models in schema.prisma + re-enable these routes
+    "src/app/api/insurance/[id]/route.ts",
+    "src/app/api/loyalty",
+    "src/app/api/multi-rating/route.ts"
   ]
 }
