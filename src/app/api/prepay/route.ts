@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
+import { requireAuth } from "@/lib/api-helpers";
+import { requireJobParticipant } from "@/lib/auth";
 
 // Pre-service payment: customer pays inspection fee + travel fee.
 // This activates chat/call with the mechanic.
@@ -7,6 +9,21 @@ import { db } from "@/lib/db";
 // - Net amount credited to technician's wallet as PENDING (12h hold from job completion)
 // - Job.prepayPaid = true, prepayPaidAt = now
 // - Inspection fee differs for passenger vs heavy machinery
+//
+// ⚠️ PAYMENT SIMULATOR — in dev mode, any non-empty cardNumber succeeds.
+// In production, this endpoint returns 404 (like auth/demo and gateway).
+// Real payment processing should call Zarinpal/IDPay verify API.
+//
+// SECURITY FIXES (from D1 migration review):
+//   1. Production guard: returns 404 in production
+//   2. Auth required: caller must be authenticated
+//   3. Job ownership: requireJobParticipant checks customer owns the job
+//   4. Optimistic concurrency: updateMany with where: { prepayPaid: false }
+//      prevents double-payment race condition
+//   5. Amount server-authoritative: fees from technician profile, not client
+//
+// MIGRATION: Uses getDbForLib() instead of direct db import.
+
 const COMMISSION_RATE = 0.10; // 10% platform cut
 const HOLD_HOURS = 12; // 12-hour hold from job completion
 
@@ -15,9 +32,24 @@ function isHeavyMachine(type: string): boolean {
 }
 
 export async function POST(req: Request) {
-  const { jobId, method, cardNumber, mobile } = await req.json();
+  // Hard block in production — simulator must not process real payments
+  if (process.env.NODE_ENV === "production") {
+    return new NextResponse(null, { status: 404 });
+  }
+
+  // Require authentication
+  const session = await requireAuth(req);
+  if (session instanceof NextResponse) return session;
+
+  const body = await req.json();
+  const { jobId, method, cardNumber, mobile } = body;
   if (!jobId) return NextResponse.json({ error: "jobId is required" }, { status: 400 });
 
+  // Job ownership: caller must be a participant (customer who owns it, or admin)
+  const access = await requireJobParticipant(session, jobId);
+  if (access) return access;
+
+  const db = await getDbForLib();
   const job = await db.job.findUnique({
     where: { id: jobId },
     include: {
@@ -26,7 +58,18 @@ export async function POST(req: Request) {
     },
   });
   if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
-  if (job.prepayPaid) return NextResponse.json({ error: "Pre-service payment already paid", alreadyPaid: true }, { status: 400 });
+
+  // Idempotency: if already paid, return current state
+  if (job.prepayPaid) {
+    return NextResponse.json({
+      ok: true,
+      alreadyPaid: true,
+      job,
+      amount: Number(job.inspectionFee ?? 0) + Number(job.travelFee ?? 0),
+      commission: Number(job.platformCommission ?? 0),
+      net: Number(job.netEarnings ?? 0),
+    });
+  }
 
   const tech = job.technician;
   if (!tech) return NextResponse.json({ error: "No technician assigned" }, { status: 400 });
@@ -41,14 +84,15 @@ export async function POST(req: Request) {
   const net = gross - commission;
 
   // Simulate gateway success (in production: call Zarinpal/IDPay verify here)
-  // For demo: any non-empty cardNumber succeeds.
   if (!cardNumber && method === "card") {
     return NextResponse.json({ error: "Card number required" }, { status: 400 });
   }
 
-  // 1. Update job: mark prepay paid
-  const updatedJob = await db.job.update({
-    where: { id: jobId },
+  // 1. Update job: mark prepay paid with optimistic concurrency check
+  //    where: { prepayPaid: false } prevents double-payment race condition
+  //    If another request already set prepayPaid=true, updateMany returns count=0
+  const result = await db.job.updateMany({
+    where: { id: jobId, prepayPaid: false },
     data: {
       prepayPaid: true,
       prepayPaidAt: new Date(),
@@ -56,9 +100,22 @@ export async function POST(req: Request) {
       travelFee,
       platformCommission: commission,
       netEarnings: net,
-      // hold until 12h after job completion (null for now — set when COMPLETED)
-      holdUntil: null,
+      holdUntil: null, // set when job completes
     },
+  });
+
+  if (result.count === 0) {
+    // Race condition: another request paid first
+    return NextResponse.json({
+      ok: true,
+      alreadyPaid: true,
+      message: "Pre-service payment already paid (concurrent request)",
+    });
+  }
+
+  // Re-fetch with includes for response
+  const updatedJob = await db.job.findUnique({
+    where: { id: jobId },
     include: {
       request: { include: { vehicle: true, customer: { include: { user: true } } } },
       technician: { include: { user: true, specialties: true } },
@@ -77,9 +134,7 @@ export async function POST(req: Request) {
     wallet = await db.wallet.create({ data: { technicianId: tech.id } });
   }
 
-  // Hold-until is null until job is COMPLETED, then 12h countdown starts.
-  // We record the txn with status PENDING; when job completes, the status route
-  // sets holdUntil = now + 12h, and a scheduled job flips status → AVAILABLE.
+  // 3. Record PREPAY transaction (PENDING until job completes)
   await db.walletTransaction.create({
     data: {
       walletId: wallet.id,
@@ -89,12 +144,12 @@ export async function POST(req: Request) {
       grossAmount: gross,
       commissionAmount: commission,
       netAmount: net,
-      holdUntil: null, // set when job completes
+      holdUntil: null,
       description: `Pre-service payment — ${job.code} (${heavy ? "heavy" : "passenger"})`,
     },
   });
 
-  // 3. Separate commission txn (for audit clarity)
+  // 4. Separate commission txn (for audit clarity)
   await db.walletTransaction.create({
     data: {
       walletId: wallet.id,
@@ -108,7 +163,7 @@ export async function POST(req: Request) {
     },
   });
 
-  // 4. Update wallet aggregates (pendingBalance increases; totalEarned/totalCommission tracked)
+  // 5. Update wallet aggregates
   await db.wallet.update({
     where: { id: wallet.id },
     data: {
@@ -118,7 +173,7 @@ export async function POST(req: Request) {
     },
   });
 
-  // 5. Notify customer + mechanic, system message
+  // 6. Notify customer + mechanic, system message
   await db.notification.create({
     data: {
       userId: job.request.customer.user.id,
