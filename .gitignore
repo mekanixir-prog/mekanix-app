@@ -90,3 +90,7 @@ zap-reports/
 .open-next/
 .wrangler/
 .next/
+
+# Large archive files (should not be committed)
+*.tar.gz
+*.zip
