@@ -26,17 +26,14 @@ export type AdminSession = {
 };
 
 export async function hashPassword(password: string): Promise<string> {
-  const db = await getDbForLib();
   return bcrypt.hash(password, 12);
 }
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  const db = await getDbForLib();
   return bcrypt.compare(password, hash);
 }
 
 export async function createAdminToken(payload: AdminSession): Promise<string> {
-  const db = await getDbForLib();
   return new SignJWT({ ...payload })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -45,7 +42,6 @@ export async function createAdminToken(payload: AdminSession): Promise<string> {
 }
 
 export async function verifyAdminToken(token: string): Promise<AdminSession | null> {
-  const db = await getDbForLib();
   try {
     const { payload } = await jwtVerify(token, getAdminSecret());
     return {
@@ -59,7 +55,6 @@ export async function verifyAdminToken(token: string): Promise<AdminSession | nu
 }
 
 export async function getAdminFromRequest(req: Request): Promise<AdminSession | null> {
-  const db = await getDbForLib();
   const auth = req.headers.get("authorization");
   if (!auth?.startsWith("Bearer ")) return null;
   return verifyAdminToken(auth.slice(7));

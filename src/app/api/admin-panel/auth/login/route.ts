@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { verifyPassword, createAdminToken, ensureDefaultAdmin } from "@/lib/admin-auth";
 
 export async function POST(req: Request) {
   await ensureDefaultAdmin();
   const { emailOrUsername, password } = await req.json();
+  const db = await getDbForLib();
   if (!emailOrUsername || !password) return NextResponse.json({ error: "ایمیل/یوزرنیم و پسورد الزامی است" }, { status: 400 });
 
   const admin = await db.adminUser.findFirst({

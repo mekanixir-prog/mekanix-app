@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { getAdminFromRequest } from "@/lib/admin-auth";
 import { writeAuditLog } from "@/lib/admin-api";
 
 export async function GET(req: Request) {
   const session = await getAdminFromRequest(req);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const db = await getDbForLib();
   const slides = await db.onboardingSlide.findMany({ orderBy: { order: "asc" } });
   return NextResponse.json(slides);
 }
@@ -14,6 +15,7 @@ export async function POST(req: Request) {
   const session = await getAdminFromRequest(req);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json();
+  const db = await getDbForLib();
   const { image, imageBase64, titleFa, subtitleFa, tagFa, bulletsFa, titleEn, subtitleEn, tagEn, bulletsEn, accent, order } = body;
 
   if (!titleFa || !subtitleFa) return NextResponse.json({ error: "titleFa and subtitleFa required" }, { status: 400 });

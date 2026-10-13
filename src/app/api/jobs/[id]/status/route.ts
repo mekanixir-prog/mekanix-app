@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
-import { runSequential } from "@/lib/db-sequential";
 
 const include = {
   request: { include: { customer: { include: { user: true } }, vehicle: true } },
