@@ -6003,3 +6003,31 @@ FINAL MIGRATION STATUS:
 - Remaining sync db files: 0
 - Remaining sync db calls: 0
 - All 5 security findings (S1-S5) fixed + tested
+
+---
+Task ID: PHASE3-SECURITY-AUDIT
+Agent: orchestrator
+Task: Phase 3 backend security audit — auth, BOLA, payments, multi-step writes, audit logging. Findings only, no code changes.
+
+Work Log:
+- Audited session creation/verification: createSession + verifySession both fail-closed in production (verified). JWT secret required in production. Revoke functions throw on DB error.
+- Audited role checks: requireRole used in 10+ admin routes. Session type has 5 roles (CUSTOMER, TECHNICIAN, ADMIN, FLEET_MANAGER, PARTNER).
+- Classified 11 no-auth routes: all intentional public (login, demo [404 in prod], otp-send, session, care/packages, categories, exchange-rate, health, ready, onboarding, vip/plans). No risk.
+- Audited BOLA: 7 helpers (requireVehicleOwner, requireJobParticipant, requireNotificationOwner, requireWalletOwner, requireTicketOwner, requirePolicyOwner, requireAuth). 41 usages. Zero write routes with auth but no BOLA (except admin-only routes which use requireRole ADMIN). Good coverage.
+- Audited payments: optimistic concurrency on invoice.status (updateMany with not:PAID). wallets/withdraw: atomic balance deduction (updateMany with balance gte). prepay: optimistic concurrency on prepayPaid. All server-authoritative amounts.
+- FINDING SEC-1 (HIGH): branch protection NOT enabled on main (confirmed by user). CI green doesn't block merge.
+- FINDING SEC-2 (MEDIUM): payments/route.ts — concurrent requests could both call payment.create before either commits. Mitigated by unique constraint on invoiceId, but P2002 not handled → 500 instead of 409.
+- FINDING SEC-3 (MEDIUM): withIdempotency() helper exists in auth.ts (lines 446-485) but UNUSED in any route. Should be wired into payments/prepay/withdraw.
+- FINDING SEC-4 (MEDIUM): admin/[resource]/[id] PATCH has ZERO audit logging. Customer status changes (ban/activate), technician edits, payment refunds — no audit trail. admin-panel/onboarding DOES log (5 calls). Inconsistency.
+- FINDING SEC-5 (LOW): admin login has no rate limit beyond generic 60/min. Failed attempts not logged.
+- FINDING SEC-6 (LOW): auth/session exposes SAFE_USER_SELECT fields — documented but not enforced.
+- Positive: all multi-step writes examined and correct. Mass-assignment protection consistent. 7 BOLA helpers with 41 usages.
+- Wrote docs/PHASE3_SECURITY_AUDIT.md (251 lines) with full findings + evidence + recommendations.
+- Committed as fdb908c. No code changes — audit only.
+
+Stage Summary:
+- Phase 3 audit COMPLETE. 6 findings (1 HIGH, 3 MEDIUM, 2 LOW).
+- Priority 1 (before merge): SEC-1 (branch protection), SEC-4 (audit logging).
+- Priority 2 (post-merge): SEC-3 (idempotency), SEC-2 (P2002 handling).
+- Priority 3 (hardening): SEC-5, SEC-6.
+- main untouched (e4c2faf), feature branch at fdb908c, PR #3 open, no remote migration, no deploy.
