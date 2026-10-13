@@ -5973,3 +5973,33 @@ Stage Summary:
 - Security fixes: S1 (mass-assignment) closed, S2 (info leak) closed, S4 (dead code) cleaned, S5 (dead code) cleaned.
 - Remaining for Batch 2: admin/[resource]/route.ts (7 calls) + admin/[resource]/[id]/route.ts (7 calls) + S3 (customer status validation).
 - main untouched (e4c2faf), feature branch at 71d0d59, PR #3 open, no remote migration, no deploy.
+
+---
+Task ID: PHASE2-BATCH2
+Agent: orchestrator
+Task: Batch 2 — admin/[resource] migration (2 files, 14 calls) + S3 fix (customer status validation) + new tests.
+
+Work Log:
+- Verified Batch 1 present on feature branch (71d0d59 confirmed, db-sequential.ts deleted, S1/S2 fixes in place, main untouched).
+- Verified UserStatus enum in prisma/schema.prisma: ACTIVE, SUSPENDED, PENDING (3 values).
+- Presented diff for both files before applying. User approved with conditions.
+- Applied File 1 (admin/[resource]/route.ts): HANDLERS map refactored to accept db as parameter. GET handler resolves db via getDbForLib() after auth+role check. No auth/RBAC change.
+- Applied File 2 (admin/[resource]/[id]/route.ts): migration + S3 fix.
+- WROTE 11 NEW TESTS for S3 validation (tests/unit/admin-status-validation.test.ts).
+- TESTS CAUGHT A REAL BUG: 'status' is in FORBIDDEN_FIELDS, so the validation (initially placed AFTER the FORBIDDEN_FIELDS strip) never fired — body.status was already deleted by the time validation ran. This is exactly the user's point: "TypeScript + tests alone don't prove correctness" — the existing 335 tests all passed, but the S3 fix was non-functional.
+- Fixed: moved validation BEFORE the FORBIDDEN_FIELDS strip. Read requestedUserStatus from the original body before stripping, then validate it, then apply to user.update below. All 11 tests now pass.
+- Mid-failure test verifies call ordering (mock.invocationCallOrder): user.update fires BEFORE customer.update, so the security action (ban) takes effect even if the profile update later fails.
+- Verification: TypeScript exit 0, ESLint exit 0, Tests 346/346 passed (335 + 11 new).
+- Committed as 136e3ce.
+
+Stage Summary:
+- Batch 2 COMPLETE. D1 ROUTE MIGRATION FULLY COMPLETE: 76/76 files migrated, 0 remaining.
+- S3 fix verified by 11 dedicated tests (including the test that caught the FORBIDDEN_FIELDS ordering bug).
+- The test-caught bug is concrete evidence that the user's caution ("green tests ≠ correct") was right — existing tests passed but the fix didn't actually work until reordered.
+- main untouched (e4c2faf), feature branch at 136e3ce, PR #3 open, no remote migration, no deploy.
+
+FINAL MIGRATION STATUS:
+- Total files migrated to getDbForLib: 76 (11 lib + 65 routes)
+- Remaining sync db files: 0
+- Remaining sync db calls: 0
+- All 5 security findings (S1-S5) fixed + tested
