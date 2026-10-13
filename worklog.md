@@ -5941,3 +5941,35 @@ Stage Summary:
 - 5 security findings documented (2 MEDIUM, 3 LOW).
 - Phase 2 plan: 2 batches (admin-panel + cleanup, then admin/[resource]).
 - main untouched (e4c2faf), feature branch at ece7f47, PR #3 open, no remote migration, no deploy.
+
+---
+Task ID: PHASE2-BATCH1
+Agent: orchestrator
+Task: Batch 1 — cleanup dead code (S4, S5) + migrate admin-panel routes + fix S1 (mass-assignment) + fix S2 (dead GET endpoint).
+
+Work Log:
+- ARCHITECTURE INVESTIGATION: User raised concern that admin-panel/ might be a separate project (based on PR #3 description). Investigated:
+  * Root admin-panel/ directory only contains stale .next/ build cache — no package.json, tsconfig.json, prisma/schema.prisma, or source code.
+  * NOT git-tracked (git ls-files admin-panel/ is empty).
+  * API routes under src/app/api/admin-panel/ ARE part of the main Next.js app (under src/app/api/).
+  * Frontend page at src/app/admin-panel/page.tsx calls /api/admin-panel/* via relative URLs.
+  * CONCLUSION: admin-panel routes run in the main app → D1 migration via getDbForLib() is correct. No separate project.
+- FINAL REFERENCE SEARCH (S5): grep for runSequential across all files — confirmed only the unused import in jobs/[id]/status/route.ts:5 + the definition in db-sequential.ts. No calls anywhere in src/ or tests/.
+- FINAL CONSUMER SEARCH (S2): grep for GET /api/admin-panel/onboarding/[id] — confirmed admin-panel page.tsx only calls DELETE and PATCH on [id], never GET. Dead code.
+- APPLIED CHANGES (6 files, 1 deleted):
+  1. S4: admin-auth.ts — removed 5 dead getDbForLib() calls from hashPassword/verifyPassword/createAdminToken/verifyAdminToken/getAdminFromRequest. Kept ensureDefaultAdmin's call (it uses db).
+  2. S5: removed unused runSequential import from jobs/[id]/status/route.ts; deleted src/lib/db-sequential.ts.
+  3. admin-panel/auth/login/route.ts — migrated to getDbForLib (import swap + const db after ensureDefaultAdmin).
+  4. admin-panel/auth/me/route.ts — migrated to getDbForLib (import swap + const db after auth check).
+  5. admin-panel/onboarding/route.ts — migrated to getDbForLib (import swap + const db in GET and POST).
+  6. admin-panel/onboarding/[id]/route.ts — migrated + S1 fix + S2 fix:
+     - S1: added sanitizeOnboardingUpdate() with type validation (strings truncated, accent enum-validated, order numeric-validated, image size-capped). Returns 400 if no valid fields.
+     - S2: deleted GET handler entirely (dead code, no consumers).
+- TypeScript: exit 0. ESLint: exit 0. Tests: 335/335 passed.
+- Committed as 71d0d59.
+
+Stage Summary:
+- Batch 1 COMPLETE. 6 files changed + 1 deleted (db-sequential.ts).
+- Security fixes: S1 (mass-assignment) closed, S2 (info leak) closed, S4 (dead code) cleaned, S5 (dead code) cleaned.
+- Remaining for Batch 2: admin/[resource]/route.ts (7 calls) + admin/[resource]/[id]/route.ts (7 calls) + S3 (customer status validation).
+- main untouched (e4c2faf), feature branch at 71d0d59, PR #3 open, no remote migration, no deploy.
