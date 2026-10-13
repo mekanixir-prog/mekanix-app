@@ -5913,3 +5913,31 @@ Priority 4 Decision Analysis (for user):
   C) db-sequential.ts (1 file, 1 call) — the runSequential helper. Needs special handling: detect Workers env and skip $transaction entirely (always sequential in D1).
 - Risk: LOW. All admin routes are behind requireRole(ADMIN) or getAdminFromRequest. No customer-facing impact. Mid-failure concerns are minimal (admin writes are typically single-step or have natural idempotency).
 - Recommendation: proceed with priority 4 in 2 batches (admin-panel + db-sequential, then admin/[resource]). Awaiting user decision.
+
+---
+Task ID: PHASE1-AUDIT
+Agent: orchestrator
+Task: Phase 1 audit — extract real remaining work from code, security review, test coverage gaps, produce consolidated report.
+
+Work Log:
+- Fixed main branch again (accidental commit d4d1f7f had landed on it during bundle/zip creation earlier). Reset main back to e4c2faf (untouched). Cleaned leftover bundle/zip files.
+- Confirmed feature branch intact at 98107eb (10 P3 commits + this audit).
+- Comprehensive D1 migration scan: 70 files migrated (getDbForLib), 7 files remaining (26 db calls). All 7 are admin-facing.
+- Read all 7 remaining files + their already-migrated helpers (admin-auth.ts, admin-api.ts).
+- Security findings (5 total):
+  * S1 (MEDIUM): admin-panel/onboarding/[id] PATCH — mass-assignment (data:rest, no sanitizeInput)
+  * S2 (LOW): admin-panel/onboarding/[id] GET — no auth check (may be intentional for public slides)
+  * S3 (MEDIUM): admin/[resource]/[id] — customer status cast to any, no validation
+  * S4 (LOW): admin-auth.ts — 5 dead getDbForLib() calls in functions that never use db
+  * S5 (LOW): db-sequential.ts is dead code (runSequential never called; only unused import in jobs/[id]/status)
+- Multi-step writes: all examined, all correct (best-effort notifications, idempotent guards).
+- Concurrency: payments/wallets/prepay/jobs-status use optimistic concurrency. Two minor gaps (onboarding order, vip/subscribe) — low impact.
+- Test coverage: 359 tests in 13 files. Most routes lack dedicated tests but exercised via e2e + security suites.
+- Wrote docs/PHASE1_AUDIT.md (151 lines) with full inventory, findings, recommendations.
+- Committed as ece7f47.
+
+Stage Summary:
+- Phase 1 COMPLETE. Audit report ready at docs/PHASE1_AUDIT.md.
+- 5 security findings documented (2 MEDIUM, 3 LOW).
+- Phase 2 plan: 2 batches (admin-panel + cleanup, then admin/[resource]).
+- main untouched (e4c2faf), feature branch at ece7f47, PR #3 open, no remote migration, no deploy.
