@@ -1,24 +1,27 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireRole } from "@/lib/auth";
+import type { PrismaClient } from "@prisma/client";
 
-const HANDLERS: Record<string, () => Promise<any[]>> = {
-  customers: async () => {
+// Each handler receives the db client (async-resolved per request) so it no
+// longer depends on the module-level sync `db` import (a stub in Workers).
+const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
+  customers: async (db) => {
     const list = await db.customer.findMany({
       include: { user: true, _count: { select: { vehicles: true, serviceRequests: true } } },
       orderBy: { createdAt: "desc" },
     });
     return list;
   },
-  technicians: async () => {
+  technicians: async (db) => {
     const list = await db.technician.findMany({
       include: { user: true, specialties: true, certifications: true },
       orderBy: { rating: "desc" },
     });
     return list;
   },
-  jobs: async () => {
+  jobs: async (db) => {
     const list = await db.job.findMany({
       include: {
         request: { include: { customer: { include: { user: true } }, vehicle: true } },
@@ -29,31 +32,31 @@ const HANDLERS: Record<string, () => Promise<any[]>> = {
     });
     return list;
   },
-  payments: async () => {
+  payments: async (db) => {
     const list = await db.payment.findMany({
       include: { invoice: { include: { job: true } }, user: true },
       orderBy: { createdAt: "desc" },
     });
     return list;
   },
-  reviews: async () => {
+  reviews: async (db) => {
     const list = await db.review.findMany({
       include: { fromUser: true, technician: { include: { user: true } }, job: true },
       orderBy: { createdAt: "desc" },
     });
     return list;
   },
-  vehicles: async () => {
+  vehicles: async (db) => {
     const list = await db.vehicle.findMany({
       include: { customer: { include: { user: true } } },
       orderBy: { createdAt: "desc" },
     });
     return list;
   },
-  categories: async () => {
+  categories: async (db) => {
     return db.serviceCategory.findMany({ orderBy: { order: "asc" } });
   },
-  applications: async () => {
+  applications: async (db) => {
     const list = await db.mechanicApplication.findMany({
       orderBy: { createdAt: "desc" },
       include: { user: { include: { technician: true } } },
@@ -73,6 +76,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ resource
   const { resource } = await params;
   const handler = HANDLERS[resource];
   if (!handler) return NextResponse.json({ error: "Unknown resource" }, { status: 404 });
-  const data = await handler();
+  const db = await getDbForLib();
+  const data = await handler(db);
   return NextResponse.json(data);
 }
