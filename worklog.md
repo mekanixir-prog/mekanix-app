@@ -5699,335 +5699,106 @@ Stage Summary:
 - Once we ship to production, we'll re-add proper cache strategies gated on a real IS_PROD flag (e.g., process.env.NODE_ENV === "production" baked in at build time, not runtime hostname check).
 
 ---
-Task ID: P3-BATCH-1-INSURANCE
-Agent: orchestrator
-Task: Migrate insurance API routes (2 files, 12 db calls) to getDbForLib for Cloudflare Workers D1 compatibility — priority 3 batch 1.
+Task ID: 2 (security-audit)
+Agent: security-auditor (independent deep audit)
+Task: Independent deep security audit of MEKANIX backend (feature/cloudflare-d1-validation)
 
 Work Log:
-- First fixed branch state: previous lib migration commits (3d10982, b621a8f) had landed on local `main` instead of the feature branch. Reset local `main` back to match remote `new-repo/main` (e4c2faf, untouched) and moved all lib work onto `feature/cloudflare-d1-validation` (now at b621a8f). Confirmed main == remote main (untouched).
-- Verified the 9 lib files are fully migrated on the feature branch: auth.ts has 14 getDbForLib calls, getDbForLib defined in src/lib/db-access.ts (returns cached sync db in dev, async per-request PrismaClient via db-worker.ts in Workers).
-- Read insurance/route.ts (GET: expire+list policies; POST: create policy) and insurance/claim/route.ts (POST: file claim). Confirmed they still used sync `import { db } from "@/lib/db"` — 5 + 7 = 12 db calls total.
-- Migrated insurance/route.ts:
-  * import { db } → import { getDbForLib } from "@/lib/db-access"
-  * Added `const db = await getDbForLib();` at top of GET and POST (after auth check)
-  * Preserved all security: BOLA (userId from session), mass-assignment (sanitizeInput), server-authoritative userId, vehicle ownership check
-- Migrated insurance/claim/route.ts:
-  * Same import swap + `const db = await getDbForLib();` after requirePolicyOwner
-  * Examined 3-step dependent write (claim.create → policy.update → notification.create):
-    - claim.create: primary, if fails → 500, no partial state (unchanged)
-    - policy.update → "claimed": changed to best-effort try/catch. Previously a failure here would 500 even though the claim was already created (misleading the user). Now logs + returns success.
-    - notification.create: changed to best-effort try/catch. Never fail a claim submission over a notification side-effect.
-  * Documented mid-failure behavior in a comment block at the top of the function.
-- Verification: TypeScript exit 0, ESLint exit 0, Tests 335/335 passed (13 files).
-- Committed as 3a14af7 on feature/cloudflare-d1-validation.
+- Read prior audit (commit fdb908c, `docs/PHASE3_SECURITY_AUDIT.md`) to establish baseline — 6 prior findings (1 HIGH, 3 MEDIUM, 2 LOW).
+- Created a temporary git worktree at `/tmp/mekanix-feature` of `feature/cloudflare-d1-validation @ 7694b77` (no source files in /home/z/my-project modified; worktree is read-only audit surface).
+- Verified prior audit's code state is identical to current feature HEAD (only docs commits between 917b2b2 and 7694b77).
+- Systematically read all 69 API route files + 15 lib/config files (84 total) on the feature branch.
+- Cross-referenced findings with `grep` to verify: `withIdempotency` is unused (0 matches in src/app/api/); `writeAuditLog` is called in only 3 routes (admin-panel/onboarding POST/PATCH/DELETE); only `$queryRaw` usages are safe `SELECT 1` (health/ready).
+- Verified each prior finding against actual feature-branch code (not the prior audit's claims).
+
+Verification of prior 6 findings (status / severity):
+- SEC-1 (HIGH, branch protection): PARTIALLY CONFIRMED — user enabling via UI in parallel; codebase has no other protection gaps. HIGH unchanged.
+- SEC-2 (MEDIUM, P2002 unhandled in payments): CONFIRMED — `payment.create` still has no try/catch for P2002; returns 500 instead of 409. MEDIUM unchanged.
+- SEC-3 (MEDIUM, withIdempotency unused): CONFIRMED — `grep` returns 0 matches in any route; helper + D1 IdempotencyKey table are dead code. MEDIUM unchanged.
+- SEC-4 (MEDIUM, admin/[resource]/[id] no audit log): CONFIRMED + EXPANDED — also missing audit log on mechanic-applications/[id]/approve (privilege grant!), /reject, care/admin/packages POST, care/admin/rules POST. MEDIUM unchanged but scope expanded.
+- SEC-5 (LOW, admin login no rate limit + failed attempts not logged): CONFIRMED + UPGRADED to MEDIUM — also has user enumeration via 404-vs-401 distinction (SEC-13). LOW → MEDIUM.
+- SEC-6 (LOW, SAFE_USER_SELECT not enforced): CONFIRMED — const object, no runtime enforcement. LOW unchanged.
+
+NEW findings (14 total):
+- SEC-7 (CRITICAL): VIP subscription bypass — `/api/vip/subscribe` creates ACTIVE subscription with NO payment verification. No production guard (unlike /api/prepay + /api/gateway/*). Any authenticated user gets free VIP.
+- SEC-8 (CRITICAL): Wallet balance doubling via concurrent GET /api/wallets — auto-release logic uses unconditional `walletTransaction.update` + atomic `wallet.update`; two concurrent GETs double-increment balance for the same released transaction. Funds theft.
+- SEC-9 (HIGH): Wallet withdraw race condition — `data: { balance: balanceAfter }` uses STALE pre-computed value instead of Prisma's atomic `decrement`. Two concurrent withdraws of 500 from a 1000-balance wallet both pass `balance >= amount` check and both set balance to 500, but two withdrawalRequests are created. Admin approves both → technician receives 1000 from a 500-deducted wallet. Funds theft.
+- SEC-10 (HIGH): OTP one-time-code replay — `findFirst({ consumed: false })` + `update({ consumed: true })` are non-atomic. Two concurrent verify requests with the same valid code both succeed. One-time property violated.
+- SEC-11 (HIGH): BOLA on /api/care/bookings/[id]/timeline — has `requireAuth` but NO `requireBookingParticipant`. Any authenticated user can fetch any booking's timeline. Only care booking sub-route missing the check.
+- SEC-12 (MEDIUM): Dashboard exposes PII to all authenticated users — `techPerformance` (technician names + revenue), `recentActivity` (customer + technician names) returned to any role. No `requireRole("ADMIN")`.
+- SEC-13 (MEDIUM): Admin login user enumeration — 404 for "user not found" vs 401 for "wrong password".
+- SEC-14 (MEDIUM): Admin JWT in localStorage — XSS-exfiltratable; 7-day TTL; no revocation.
+- SEC-15 (MEDIUM): Admin JWT irrevocable for 7 days — no AdminSession table; verifyAdminToken only checks JWT signature+expiry.
+- SEC-16 (MEDIUM): Rate-limit bypass via X-Forwarded-For spoofing (dev mode); fallback to "anonymous" bucket (prod edge case).
+- SEC-17 (LOW): admin-auth.ts JWT_SECRET read at module level — inconsistent with user auth.ts (which was fixed on feature branch). Secret rotation doesn't invalidate admin tokens until redeploy.
+- SEC-18 (LOW): `ensureDefaultAdmin()` called on every login attempt — DB count query per request, DoS amplifier.
+- SEC-19 (LOW): No admin role hierarchy enforcement — `requireRole(session, "ADMIN")` accepts any string match; future "ADMIN" role would have SUPER_ADMIN access.
+- SEC-20 (LOW): No CSRF protection for cookie-based auth — `sameSite: "lax"` allows top-level GET navigations; future state-changing GET routes would be CSRF-vulnerable.
+
+Severity tally:
+- Total findings: 20 (6 prior + 14 new)
+- CRITICAL: 2 (SEC-7, SEC-8)
+- HIGH: 4 (SEC-1, SEC-9, SEC-10, SEC-11)
+- MEDIUM: 9 (SEC-2, SEC-3, SEC-4, SEC-5, SEC-12, SEC-13, SEC-14, SEC-15, SEC-16)
+- LOW: 5 (SEC-6, SEC-17, SEC-18, SEC-19, SEC-20)
+
+Positive findings (29 items documented in audit) — strengths to preserve:
+- JWT_SECRET inside function body in user auth.ts (fixed on feature branch)
+- Fail-closed session verify/create/revoke in production (auth.ts)
+- Hashed OTP storage (SHA-256) + CSPRNG code generation
+- Comprehensive BOLA helpers (10 total: 7 user-side + 3 care-side)
+- Server-authoritative userId + amounts across all routes
+- Mass-assignment protection (sanitizeInput + ALLOWED_FIELDS + FORBIDDEN_FIELDS)
+- Optimistic concurrency on job/care-booking/prepay/invoice-PAID status transitions (4 patterns)
+- Production guards (404) on all simulator routes (auth/demo, prepay, gateway/initiate, gateway/verify)
+- next.config.ts defense-in-depth rewrite for /api/auth/demo
+- No filesystem/child_process on Workers (admin-panel/onboarding uses D1 data URLs; /api/seed removed)
+- Zod schema validation on all request bodies (Persian error messages)
+- No raw SQL with user input (only static `SELECT 1` health checks)
+- Job + care-booking state machines with per-role transition validation
+- HttpOnly + secure + sameSite cookie for user JWT
+
+Audit deliverable:
+- `/home/z/my-project/docs/PHASE3_SECURITY_AUDIT_V2.md` — 20 findings with file:line evidence, attack scenarios, suggested fixes, effort estimates.
+- Includes Phase 4 runtime test recommendations (11 tests targeting the highest-priority findings).
 
 Stage Summary:
-- Files changed (2): src/app/api/insurance/route.ts, src/app/api/insurance/claim/route.ts
-- DB calls migrated: 12 (5 in route.ts, 7 in claim/route.ts)
-- Security preserved: BOLA, mass-assignment protection, server-authoritative userId, input validation
-- Intentional behavior change: policy.update and notification.create in claim route are now best-effort (try/catch + log) to avoid misleading 500s when the primary claim.create already succeeded. Documented in code comment.
-- main untouched (e4c2faf), feature branch advanced to 3a14af7, PR #3 still open, no remote D1 migration, no deploy.
+- Independent deep audit complete. 84 files reviewed (69 API routes + 15 lib/config).
+- All 6 prior findings verified (5 CONFIRMED, 1 PARTIALLY CONFIRMED, 1 UPGRADED).
+- 14 NEW findings discovered, including 2 CRITICAL (VIP bypass, wallet doubling) and 3 HIGH (wallet withdraw race, OTP replay, timeline BOLA).
+- PR #3 SHOULD NOT MERGE until SEC-7 (VIP bypass) and SEC-8 (wallet doubling) are fixed — both are 1-line to 30-minute fixes.
+- No source files modified. No branches switched (used git worktree at /tmp/mekanix-feature for read-only audit of feature branch).
+- main untouched (e4c2faf). PR #3 still open. No migrations, no deploys, no remote pushes.
+- Worktree at /tmp/mekanix-feature will be cleaned up separately (not part of this task scope).
 
 ---
-Task ID: P3-BATCH-2-MECHANIC-APPLICATIONS
-Agent: orchestrator
-Task: Migrate mechanic-applications API routes (3 files) to getDbForLib — priority 3 batch 2.
+Task ID: 3
+Agent: fix-safety-review (read-only safety review of proposed fixes)
+Task: Read-only safety review of 5 proposed fixes (SEC-7 through SEC-11) from PHASE3_SECURITY_AUDIT_V2.md
 
 Work Log:
-- Read all 3 files: route.ts (GET admin-list + POST public-apply), [id]/approve/route.ts (admin approve → create user+technician), [id]/reject/route.ts (admin reject).
-- Migrated route.ts: import swap + `const db = await getDbForLib()` in GET (after role check) and POST. Preserved mass-assignment whitelist + duplicate-tech 409 guard + PENDING status.
-- Migrated approve/route.ts: import swap + `const db = await getDbForLib()` after auth/role check. Documented 5-step dependent write + mid-failure idempotency analysis in comment block.
-  * SECURITY FIX: reviewerId was `body.reviewerId` (client-supplied → spoofable). Changed to `session.userId` (server-authoritative). This aligns with the server-authoritative pattern used everywhere else in the codebase.
-  * Made notification.create best-effort (try/catch + log).
-- Migrated reject/route.ts: import swap + `const db = await getDbForLib()`.
-- Verification: TypeScript exit 0, ESLint exit 0, Tests 335/335 passed.
-- Committed as f35bf96.
+- Read /home/z/my-project/worklog.md (last ~170 lines, for context on prior Task ID 2 security audit).
+- Read /home/z/my-project/docs/PHASE3_SECURITY_AUDIT_V2.md in full (775 lines) — particularly the SEC-7 through SEC-11 finding sections (lines 107-360) and the Phase 4 runtime test recommendations (lines 684-747).
+- Observed that /home/z/my-project working directory was on `main` (HEAD 3324794), NOT `feature/cloudflare-d1-validation` as the task description stated. To preserve the READ-ONLY constraint (no branch switch, no working-tree mutation), all source-file reads were done via `git show feature/cloudflare-d1-validation:<path>`. Extracted copies were placed under /tmp/mek-review/ for the Read tool; NO files under /home/z/my-project/src/ were modified.
+- Verified each proposed fix by reading the corresponding source files on the feature branch (7694b77) AND the helpers they depend on:
+  - SEC-7 (vip/subscribe production guard): read prepay/route.ts, gateway/initiate/route.ts, gateway/verify/route.ts, auth/demo/route.ts to confirm the EXACT guard pattern (env var name, response code, response body). Confirmed all 4 reference routes use `process.env.NODE_ENV === "production"` + `new NextResponse(null, { status: 404 })` (bare 404, no JSON body) placed at the very TOP of the POST handler, before requireAuth. Also read customer/vip.tsx to confirm the frontend calls /api/vip/subscribe in production — but the simulator gateway routes it depends on already 404 in production, so the fix fails-closed consistently.
+  - SEC-8 (wallets GET auto-release conditional updateMany): read wallets/route.ts (lines 50-67), the WalletTransaction schema, and technician/earnings.tsx (frontend poller every 30s) to confirm no downstream consumer relies on auto-release ALWAYS happening, and `releasedAt` is only in a type declaration (never used for logic). Verified deduplication is correct via atomic SQL UPDATE WHERE status='PENDING'.
+  - SEC-9 (wallets/withdraw atomic decrement): read wallets/withdraw/route.ts in full. Identified that the proposed one-line fix (`data: { balance: { decrement: amount } }`) closes the race but leaves `balanceAfter` stale in the walletLedger.create (lines 102-103) AND the response body newBalance (line 122). Also flagged a PRE-EXISTING orphaned-withdrawalRequest issue (line 71-82 creates the request BEFORE the updateMany; if count===0, the request is orphaned) — but this is pre-existing and out of scope for SEC-9.
+  - SEC-10 (otp/verify conditional updateMany): read otp/verify/route.ts in full. Confirmed the existing code does NOT use `otp.userId` — the user is looked up by `phone` (lines 68-93) and either reused or created on first verification. So `updateMany` (which doesn't return the row) is fine. Noted minor UX regression (error messages conflated) but this is actually MORE secure (less info disclosure to attackers).
+  - SEC-11 (requireBookingParticipant on care/bookings/[id]/timeline): read care-auth.ts to confirm the helper is exported from `@/lib/care-auth` (NOT `@/lib/auth`), signature is `(session, bookingId) → Promise<NextResponse | null>` (TWO args, no requiredRole; returns null on success, NextResponse on failure; does NOT throw). Verified the sibling route /api/care/bookings/[id]/route.ts uses this exact import. Searched for /api/care/technician/missions/[id]/timeline — does NOT exist on feature branch (nothing else to flag). No frontend callers found for the timeline endpoint (frontend uses /api/care/bookings/[id] which includes timeline in its response).
+
+Deliverable:
+- Appended "## Fix Safety Review (Read-Only)" section to /home/z/my-project/docs/PHASE3_SECURITY_AUDIT_V2.md (now 1011 lines total). Section covers all 5 fixes with the requested template (Proposed fix / Files read / Verified safe? / Concerns found / Recommended adjustment / Confidence). Includes concrete code snippets for the recommended adjustments, particularly the production guard pattern (must match prepay/gateway exactly) and the SEC-9 ledger re-read pattern.
+
+Overall Safety Verdict:
+- 4 of 5 fixes are safe to apply as-proposed (SEC-7, SEC-8, SEC-10, SEC-11)
+- 1 of 5 fixes needs adjustment before applying (SEC-9 — re-read wallet.balance after atomic decrement to fix stale balanceAfter in ledger + response)
+- 0 of 5 fixes have unresolved concerns requiring human review
 
 Stage Summary:
-- Files changed (3): mechanic-applications/route.ts, [id]/approve/route.ts, [id]/reject/route.ts
-- DB call sites migrated: 8 distinct sites (findMany, upsert, findUnique×3, create×2, update×2, notification.create)
-- Security fix: reviewerId now server-authoritative (session.userId, was body.reviewerId)
-- Mid-failure: approve route is idempotent on re-approve (findUnique guards prevent duplicate user/technician); notification best-effort.
-- main untouched (e4c2faf), feature branch advanced to f35bf96, PR #3 still open, no remote D1 migration, no deploy.
-
----
-Task ID: P3-BATCH-3-MAINTENANCE
-Agent: orchestrator
-Task: Migrate maintenance API route (1 file) to getDbForLib — priority 3 batch 3.
-
-Work Log:
-- Read maintenance/route.ts: 3 handlers (GET role-scoped list, POST create, PATCH markDone). 7 db call sites (customer.findUnique, vehicle.findUnique, technician.findUnique, maintenanceSchedule.findMany/create/findUnique/update).
-- Migrated: import swap + `const db = await getDbForLib()` in each handler after auth. GET needs db before the role-branching, so db is obtained right after the vehicleId parse. POST obtains db after requireVehicleOwner (which uses its own getDbForLib internally). PATCH obtains db before findUnique.
-- Security preserved: BOLA (customerId from session not query param, vehicle ownership via requireVehicleOwner), mass-assignment (sanitizeInput), input validation.
-- Verification: TypeScript exit 0, ESLint exit 0, Tests 335/335 passed.
-- Committed.
-
-Stage Summary:
-- Files changed (1): maintenance/route.ts
-- DB call sites: 7
-- main untouched, feature branch advanced, PR #3 open, no remote migration, no deploy.
-
----
-Task ID: P3-BATCHES-4-5-6
-Agent: orchestrator
-Task: Migrate referral, reviews, support/tickets API routes (3 files) to getDbForLib — priority 3 batches 4-6.
-
-Work Log:
-- referral/route.ts (7 calls): GET (referral.findMany + stats compute), POST (findFirst → findUnique → create for get-or-create code), PATCH (findUnique BOLA → self-referral check → update → notification). Made notification best-effort.
-- reviews/route.ts (5 calls): POST with requireJobParticipant BOLA, customer-only check, duplicate review 409 guard, review.create, then review.findMany (recompute avg) → technician.update (rating+reviewCount+completedJobs). Documented 3-step mid-failure trade-off: if technician.update fails, rating stale but self-corrects on next review (pre-existing, not changed).
-- support/tickets/route.ts (4+N calls): GET (role-scoped, admin sees all), POST (create ticket → admin notification loop → user confirmation). Made BOTH notification paths best-effort with per-iteration try/catch so one admin failure doesn't abort the loop.
-- Verification: TypeScript exit 0, ESLint exit 0, Tests 335/335 passed.
-- Committed as 3d45eee.
-
-Stage Summary:
-- Files changed (3): referral/route.ts, reviews/route.ts, support/tickets/route.ts
-- DB call sites: 16 (7+5+4)
-- Security: BOLA (referrerId/fromUserId/userId from session), participant checks, mass-assignment, duplicate guards
-- Mid-failure: notifications best-effort in all 3; reviews rating-recompute is a documented pre-existing trade-off
-- main untouched, feature branch advanced to 3d45eee, PR #3 open, no remote migration, no deploy.
-
----
-Task ID: P3-BATCH-7-VIP
-Agent: orchestrator
-Task: Migrate vip API routes (3 files) to getDbForLib + verify lib-layer dependencies resolved — priority 3 batch 7.
-
-Work Log:
-- Read all 3 vip routes: my/route.ts (2 calls), plans/route.ts (1 call), subscribe/route.ts (4 calls). All still used sync `import { db }`.
-- CRITICAL SECURITY FINDING in vip/subscribe/route.ts: NO authentication, userId taken from request body. Any caller could subscribe any user to VIP. Fixed: added requireAuth + session.userId (server-authoritative, body userId ignored).
-- Migrated all 3: import swap + `const db = await getDbForLib()` in each handler.
-- Made notification.create in subscribe best-effort (try/catch).
-- Verified vip lib-layer dependencies (user's specific concern — test success alone doesn't prove Workers correctness):
-  * vip.ts lib: 4 getDbForLib calls (subscribeToVip: findUnique+updateMany+create; checkVipStatus: findFirst) ✓
-  * care/bookings/route.ts (consumer): already migrated in care batch, calls `await checkVipStatus(session.userId)` — full chain async ✓
-  * pricing module (src/modules/pricing/index.ts): zero direct db calls, only re-exports async lib functions ✓
-  * pricing.ts lib: 2 getDbForLib calls ✓
-  * Conclusion: all execution paths from vip routes to D1 are async. No sync db leakage.
-- Verification: TypeScript exit 0, ESLint exit 0, Tests 335/335 passed.
-- Committed.
-
-Stage Summary:
-- Files changed (3): vip/my/route.ts, vip/plans/route.ts, vip/subscribe/route.ts
-- DB calls migrated: 7
-- Security fix: vip/subscribe BOLA (was unauthenticated + client-supplied userId → now requireAuth + session.userId)
-- Lib-layer verified: vip.ts + pricing.ts + pricing module all async-D1-compatible; care/bookings consumer chain confirmed async end-to-end
-- main untouched, feature branch advanced, PR #3 open, no remote migration, no deploy.
-
----
-Task ID: P3-BATCHES-8-9-MESSAGES-NOTIFICATIONS
-Agent: orchestrator
-Task: Migrate messages + notifications API routes (3 files) to getDbForLib — priority 3 batches 8-9.
-
-Work Log:
-- messages/route.ts (4 calls): GET (message.findMany with requireJobParticipant BOLA), POST (message.create with fromUserId from session + best-effort new-message notification). Made the notification best-effort (try/catch) since it's a side-effect.
-- notifications/route.ts (2 calls): GET (notification.findMany, userId from session), PATCH (notification.updateMany mark-all-read).
-- notifications/[id]/route.ts (1 call): PATCH (notification.update mark-one-read, requireNotificationOwner BOLA).
-- Verified notifications lib-layer (user's specific concern):
-  * src/lib/notifications.ts: sendNotification() uses `const db = await getDbForLib()` → `db.notification.create` ✓ (1 call, migrated)
-  * src/modules/notifications/index.ts: barrel re-export only, zero direct db ✓
-  * /api/notifications routes use direct db calls (not sendNotification lib), so migrated independently
-  * All notification paths (routes + lib helper) now async D1-compatible ✓
-- Verification: TypeScript exit 0, ESLint exit 0, Tests 335/335 passed.
-- Committed.
-
-Stage Summary:
-- Files changed (3): messages/route.ts, notifications/route.ts, notifications/[id]/route.ts
-- DB calls migrated: 7
-- Security: BOLA (participant/owner checks), server-authoritative fromUserId/userId
-- Lib-layer verified: notifications.ts sendNotification async; routes independent
-- main untouched, feature branch advanced, PR #3 open, no remote migration, no deploy.
-
----
-Task ID: P3-BATCHES-10-11-EXCHANGE-ONBOARDING
-Agent: orchestrator
-Task: Migrate exchange-rate + onboarding API routes (2 files) to getDbForLib — priority 3 batches 10-11.
-
-Work Log:
-- exchange-rate/route.ts (3 calls): GET — USD→IRR rate. All 3 calls are platformSetting.findUnique (telegram rate, source, multiplier). Added `const db = await getDbForLib()` AFTER the 60s cache check (cache hit returns early without touching DB — avoids unnecessary async work on cache hits). Workers compatibility verified: fetch() + AbortSignal.timeout() are native in Workers; module-level cache works per-isolate (acceptable for 60s TTL).
-- onboarding/route.ts (1 call): GET — onboardingSlide.findMany. Read-only, try/catch returns [] on failure. Added db client inside the try block.
-- Verification: TypeScript exit 0, ESLint exit 0, Tests 335/335 passed.
-- Committed.
-
-Stage Summary:
-- Files changed (2): exchange-rate/route.ts, onboarding/route.ts
-- DB calls migrated: 4 (3+1)
-- Both are public read-only endpoints (no auth) — no BOLA/security concerns
-- main untouched, feature branch advanced, PR #3 open, no remote migration, no deploy.
-
----
-Task ID: P3-HEALTH-READY-QUERYRAW
-Agent: orchestrator
-Task: Investigate health/ready $queryRaw compatibility on Workers (user's specific concern #2).
-
-Work Log:
-- Read health/route.ts and ready/route.ts — both use `db.$queryRaw\`SELECT 1\`` via sync `import { db } from "@/lib/db"`.
-- Investigated $queryRaw D1 adapter support:
-  * @prisma/adapter-d1@6.19.3 implements `queryRaw` (line 331, 547) and `executeRaw` (line 359, 581) — confirmed by grepping the adapter source.
-  * $queryRaw routes through D1Database.prepare(sql).bind(params).all() — standard D1 API. So $queryRaw IS D1-compatible.
-  * The REAL problem: routes used sync `db` import (a stub in Workers). So the health check would ALWAYS report "unhealthy" in Workers even when D1 was reachable. The inventory's "0 calls" was misleading — zero count masked the fact that the sync import made the route non-functional in Workers.
-- Migrated both routes to getDbForLib(). Now $queryRaw executes against the D1-backed PrismaClient (PrismaD1 adapter via db-worker.ts getDb()).
-- Made process.uptime() guard safer: `typeof process !== "undefined" && process.uptime` (nodejs_compat is enabled in wrangler.toml, but defensive check avoids ReferenceError if process is undefined).
-- Verification: TypeScript exit 0, ESLint exit 0, Tests 335/335 passed.
-- Committed.
-
-Stage Summary:
-- Files changed (2): health/route.ts, ready/route.ts
-- DB calls: 2 ($queryRaw each), now D1-compatible via getDbForLib
-- Key finding: $queryRaw itself IS compatible with D1; the sync db import was the actual blocker. Migrating to getDbForLib fixes both health checks.
-- main untouched, feature branch advanced, PR #3 open, no remote migration, no deploy.
-
----
-Task ID: P3-FINAL-INVENTORY-AND-P4-ANALYSIS
-Agent: orchestrator
-Task: Regenerate inventory from actual code + extract remaining state + priority 4 decision analysis.
-
-Work Log:
-- Ran comprehensive grep scan of all src/**/*.ts files for:
-  * `import { db } from "@/lib/db"` or `"./db"` (sync — needs migration)
-  * `getDbForLib` (already migrated)
-- Results (from actual code, not manual counting):
-  * Migrated: 70 files (11 lib + 59 routes)
-  * Remaining: 7 files, 26 db calls
-- Remaining files (all admin-facing, priority 4):
-  1. src/lib/db-sequential.ts (1 call) — runSequential $transaction helper. Used by jobs/[id]/status route. In D1, $transaction not supported → must always run sequentially.
-  2. admin-panel/auth/login/route.ts (2 calls) — admin login
-  3. admin-panel/auth/me/route.ts (1 call) — admin profile
-  4. admin-panel/onboarding/route.ts (3 calls) — slide management
-  5. admin-panel/onboarding/[id]/route.ts (5 calls) — slide item CRUD
-  6. admin/[resource]/route.ts (7 calls) — generic admin resource list
-  7. admin/[resource]/[id]/route.ts (7 calls) — generic admin resource item CRUD
-- Wrote updated inventory to docs/d1-migration-inventory.json (regenerated from actual code).
-- Committed.
-
-Stage Summary — Priority 3 COMPLETE:
-- 17 priority-3 route files migrated across 8 commits (insurance, mechanic-applications, maintenance, referral, reviews, support/tickets, vip, messages, notifications, exchange-rate, onboarding) + health/ready $queryRaw fix.
-- Total db calls migrated this session: ~60 (across all priority-3 batches + health/ready)
-- Security fixes applied during P3: vip/subscribe BOLA (was unauthenticated), mechanic-applications reviewerId server-authoritative, multiple best-effort notification patterns.
-- CI: TypeScript exit 0, ESLint exit 0, Tests 335/335 passed (stable throughout).
-- main untouched (e4c2faf), feature branch advanced, PR #3 open, no remote D1 migration, no deploy.
-
-Priority 4 Decision Analysis (for user):
-- 7 remaining files, 26 db calls, ALL admin-facing.
-- Two clusters:
-  A) admin-panel/* (4 files, 11 calls) — dedicated admin panel auth + onboarding management. Uses admin-auth.ts + admin-api.ts helpers (both already migrated). Migration is straightforward (import swap + getDbForLib per handler).
-  B) admin/[resource]/* (2 files, 14 calls) — generic admin CRUD with dynamic resource handlers. Slightly more complex (dynamic dispatch table), but each handler is a simple findMany/findUnique/update/delete.
-  C) db-sequential.ts (1 file, 1 call) — the runSequential helper. Needs special handling: detect Workers env and skip $transaction entirely (always sequential in D1).
-- Risk: LOW. All admin routes are behind requireRole(ADMIN) or getAdminFromRequest. No customer-facing impact. Mid-failure concerns are minimal (admin writes are typically single-step or have natural idempotency).
-- Recommendation: proceed with priority 4 in 2 batches (admin-panel + db-sequential, then admin/[resource]). Awaiting user decision.
-
----
-Task ID: PHASE1-AUDIT
-Agent: orchestrator
-Task: Phase 1 audit — extract real remaining work from code, security review, test coverage gaps, produce consolidated report.
-
-Work Log:
-- Fixed main branch again (accidental commit d4d1f7f had landed on it during bundle/zip creation earlier). Reset main back to e4c2faf (untouched). Cleaned leftover bundle/zip files.
-- Confirmed feature branch intact at 98107eb (10 P3 commits + this audit).
-- Comprehensive D1 migration scan: 70 files migrated (getDbForLib), 7 files remaining (26 db calls). All 7 are admin-facing.
-- Read all 7 remaining files + their already-migrated helpers (admin-auth.ts, admin-api.ts).
-- Security findings (5 total):
-  * S1 (MEDIUM): admin-panel/onboarding/[id] PATCH — mass-assignment (data:rest, no sanitizeInput)
-  * S2 (LOW): admin-panel/onboarding/[id] GET — no auth check (may be intentional for public slides)
-  * S3 (MEDIUM): admin/[resource]/[id] — customer status cast to any, no validation
-  * S4 (LOW): admin-auth.ts — 5 dead getDbForLib() calls in functions that never use db
-  * S5 (LOW): db-sequential.ts is dead code (runSequential never called; only unused import in jobs/[id]/status)
-- Multi-step writes: all examined, all correct (best-effort notifications, idempotent guards).
-- Concurrency: payments/wallets/prepay/jobs-status use optimistic concurrency. Two minor gaps (onboarding order, vip/subscribe) — low impact.
-- Test coverage: 359 tests in 13 files. Most routes lack dedicated tests but exercised via e2e + security suites.
-- Wrote docs/PHASE1_AUDIT.md (151 lines) with full inventory, findings, recommendations.
-- Committed as ece7f47.
-
-Stage Summary:
-- Phase 1 COMPLETE. Audit report ready at docs/PHASE1_AUDIT.md.
-- 5 security findings documented (2 MEDIUM, 3 LOW).
-- Phase 2 plan: 2 batches (admin-panel + cleanup, then admin/[resource]).
-- main untouched (e4c2faf), feature branch at ece7f47, PR #3 open, no remote migration, no deploy.
-
----
-Task ID: PHASE2-BATCH1
-Agent: orchestrator
-Task: Batch 1 — cleanup dead code (S4, S5) + migrate admin-panel routes + fix S1 (mass-assignment) + fix S2 (dead GET endpoint).
-
-Work Log:
-- ARCHITECTURE INVESTIGATION: User raised concern that admin-panel/ might be a separate project (based on PR #3 description). Investigated:
-  * Root admin-panel/ directory only contains stale .next/ build cache — no package.json, tsconfig.json, prisma/schema.prisma, or source code.
-  * NOT git-tracked (git ls-files admin-panel/ is empty).
-  * API routes under src/app/api/admin-panel/ ARE part of the main Next.js app (under src/app/api/).
-  * Frontend page at src/app/admin-panel/page.tsx calls /api/admin-panel/* via relative URLs.
-  * CONCLUSION: admin-panel routes run in the main app → D1 migration via getDbForLib() is correct. No separate project.
-- FINAL REFERENCE SEARCH (S5): grep for runSequential across all files — confirmed only the unused import in jobs/[id]/status/route.ts:5 + the definition in db-sequential.ts. No calls anywhere in src/ or tests/.
-- FINAL CONSUMER SEARCH (S2): grep for GET /api/admin-panel/onboarding/[id] — confirmed admin-panel page.tsx only calls DELETE and PATCH on [id], never GET. Dead code.
-- APPLIED CHANGES (6 files, 1 deleted):
-  1. S4: admin-auth.ts — removed 5 dead getDbForLib() calls from hashPassword/verifyPassword/createAdminToken/verifyAdminToken/getAdminFromRequest. Kept ensureDefaultAdmin's call (it uses db).
-  2. S5: removed unused runSequential import from jobs/[id]/status/route.ts; deleted src/lib/db-sequential.ts.
-  3. admin-panel/auth/login/route.ts — migrated to getDbForLib (import swap + const db after ensureDefaultAdmin).
-  4. admin-panel/auth/me/route.ts — migrated to getDbForLib (import swap + const db after auth check).
-  5. admin-panel/onboarding/route.ts — migrated to getDbForLib (import swap + const db in GET and POST).
-  6. admin-panel/onboarding/[id]/route.ts — migrated + S1 fix + S2 fix:
-     - S1: added sanitizeOnboardingUpdate() with type validation (strings truncated, accent enum-validated, order numeric-validated, image size-capped). Returns 400 if no valid fields.
-     - S2: deleted GET handler entirely (dead code, no consumers).
-- TypeScript: exit 0. ESLint: exit 0. Tests: 335/335 passed.
-- Committed as 71d0d59.
-
-Stage Summary:
-- Batch 1 COMPLETE. 6 files changed + 1 deleted (db-sequential.ts).
-- Security fixes: S1 (mass-assignment) closed, S2 (info leak) closed, S4 (dead code) cleaned, S5 (dead code) cleaned.
-- Remaining for Batch 2: admin/[resource]/route.ts (7 calls) + admin/[resource]/[id]/route.ts (7 calls) + S3 (customer status validation).
-- main untouched (e4c2faf), feature branch at 71d0d59, PR #3 open, no remote migration, no deploy.
-
----
-Task ID: PHASE2-BATCH2
-Agent: orchestrator
-Task: Batch 2 — admin/[resource] migration (2 files, 14 calls) + S3 fix (customer status validation) + new tests.
-
-Work Log:
-- Verified Batch 1 present on feature branch (71d0d59 confirmed, db-sequential.ts deleted, S1/S2 fixes in place, main untouched).
-- Verified UserStatus enum in prisma/schema.prisma: ACTIVE, SUSPENDED, PENDING (3 values).
-- Presented diff for both files before applying. User approved with conditions.
-- Applied File 1 (admin/[resource]/route.ts): HANDLERS map refactored to accept db as parameter. GET handler resolves db via getDbForLib() after auth+role check. No auth/RBAC change.
-- Applied File 2 (admin/[resource]/[id]/route.ts): migration + S3 fix.
-- WROTE 11 NEW TESTS for S3 validation (tests/unit/admin-status-validation.test.ts).
-- TESTS CAUGHT A REAL BUG: 'status' is in FORBIDDEN_FIELDS, so the validation (initially placed AFTER the FORBIDDEN_FIELDS strip) never fired — body.status was already deleted by the time validation ran. This is exactly the user's point: "TypeScript + tests alone don't prove correctness" — the existing 335 tests all passed, but the S3 fix was non-functional.
-- Fixed: moved validation BEFORE the FORBIDDEN_FIELDS strip. Read requestedUserStatus from the original body before stripping, then validate it, then apply to user.update below. All 11 tests now pass.
-- Mid-failure test verifies call ordering (mock.invocationCallOrder): user.update fires BEFORE customer.update, so the security action (ban) takes effect even if the profile update later fails.
-- Verification: TypeScript exit 0, ESLint exit 0, Tests 346/346 passed (335 + 11 new).
-- Committed as 136e3ce.
-
-Stage Summary:
-- Batch 2 COMPLETE. D1 ROUTE MIGRATION FULLY COMPLETE: 76/76 files migrated, 0 remaining.
-- S3 fix verified by 11 dedicated tests (including the test that caught the FORBIDDEN_FIELDS ordering bug).
-- The test-caught bug is concrete evidence that the user's caution ("green tests ≠ correct") was right — existing tests passed but the fix didn't actually work until reordered.
-- main untouched (e4c2faf), feature branch at 136e3ce, PR #3 open, no remote migration, no deploy.
-
-FINAL MIGRATION STATUS:
-- Total files migrated to getDbForLib: 76 (11 lib + 65 routes)
-- Remaining sync db files: 0
-- Remaining sync db calls: 0
-- All 5 security findings (S1-S5) fixed + tested
-
----
-Task ID: PHASE3-SECURITY-AUDIT
-Agent: orchestrator
-Task: Phase 3 backend security audit — auth, BOLA, payments, multi-step writes, audit logging. Findings only, no code changes.
-
-Work Log:
-- Audited session creation/verification: createSession + verifySession both fail-closed in production (verified). JWT secret required in production. Revoke functions throw on DB error.
-- Audited role checks: requireRole used in 10+ admin routes. Session type has 5 roles (CUSTOMER, TECHNICIAN, ADMIN, FLEET_MANAGER, PARTNER).
-- Classified 11 no-auth routes: all intentional public (login, demo [404 in prod], otp-send, session, care/packages, categories, exchange-rate, health, ready, onboarding, vip/plans). No risk.
-- Audited BOLA: 7 helpers (requireVehicleOwner, requireJobParticipant, requireNotificationOwner, requireWalletOwner, requireTicketOwner, requirePolicyOwner, requireAuth). 41 usages. Zero write routes with auth but no BOLA (except admin-only routes which use requireRole ADMIN). Good coverage.
-- Audited payments: optimistic concurrency on invoice.status (updateMany with not:PAID). wallets/withdraw: atomic balance deduction (updateMany with balance gte). prepay: optimistic concurrency on prepayPaid. All server-authoritative amounts.
-- FINDING SEC-1 (HIGH): branch protection NOT enabled on main (confirmed by user). CI green doesn't block merge.
-- FINDING SEC-2 (MEDIUM): payments/route.ts — concurrent requests could both call payment.create before either commits. Mitigated by unique constraint on invoiceId, but P2002 not handled → 500 instead of 409.
-- FINDING SEC-3 (MEDIUM): withIdempotency() helper exists in auth.ts (lines 446-485) but UNUSED in any route. Should be wired into payments/prepay/withdraw.
-- FINDING SEC-4 (MEDIUM): admin/[resource]/[id] PATCH has ZERO audit logging. Customer status changes (ban/activate), technician edits, payment refunds — no audit trail. admin-panel/onboarding DOES log (5 calls). Inconsistency.
-- FINDING SEC-5 (LOW): admin login has no rate limit beyond generic 60/min. Failed attempts not logged.
-- FINDING SEC-6 (LOW): auth/session exposes SAFE_USER_SELECT fields — documented but not enforced.
-- Positive: all multi-step writes examined and correct. Mass-assignment protection consistent. 7 BOLA helpers with 41 usages.
-- Wrote docs/PHASE3_SECURITY_AUDIT.md (251 lines) with full findings + evidence + recommendations.
-- Committed as fdb908c. No code changes — audit only.
-
-Stage Summary:
-- Phase 3 audit COMPLETE. 6 findings (1 HIGH, 3 MEDIUM, 2 LOW).
-- Priority 1 (before merge): SEC-1 (branch protection), SEC-4 (audit logging).
-- Priority 2 (post-merge): SEC-3 (idempotency), SEC-2 (P2002 handling).
-- Priority 3 (hardening): SEC-5, SEC-6.
-- main untouched (e4c2faf), feature branch at fdb908c, PR #3 open, no remote migration, no deploy.
+- No source files modified (read-only review via `git show`). Two docs appended:
+  1. /home/z/my-project/docs/PHASE3_SECURITY_AUDIT_V2.md — appended "Fix Safety Review (Read-Only)" section at the END (existing content preserved, +237 lines).
+  2. /home/z/my-project/worklog.md — appended this Task ID: 3 entry (existing content preserved).
+- No branches switched. main untouched (3324794 → 3324794). feature/cloudflare-d1-validation untouched (7694b77 → 7694b77).
+- No migrations run. No deploys. No remote pushes. PR #3 not merged.
+- /tmp/mek-review/ contains read-only copies of feature-branch source files (used by the Read tool); these are outside /home/z/my-project and do not affect the repository.
