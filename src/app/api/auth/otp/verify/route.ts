@@ -50,17 +50,33 @@ export async function POST(req: Request) {
   const codeHash = hashOtpCode(code);
 
   const db = await getDbForLib();
-  const otp = await db.otpCode.findFirst({
-    where: { phone, code: codeHash, consumed: false },
-    orderBy: { createdAt: "desc" },
+
+  // SEC-10 fix: atomic one-time-code consumption.
+  // Previously: findFirst({ consumed: false }) + update({ consumed: true })
+  // were two separate non-atomic queries. Two concurrent verify requests
+  // with the same valid code could both pass findFirst and both call update,
+  // violating the one-time-code contract.
+  //
+  // Now: a single conditional updateMany atomically transitions the code
+  // from consumed:false → consumed:true ONLY if it is still unconsumed AND
+  // not expired. count === 1 means we won the race; count === 0 means the
+  // code was already used/expired/invalid — same 400 error as before.
+  // Note: WHERE clause uses `code: codeHash` because the DB stores the hash,
+  // not the plaintext code.
+  const now = new Date();
+  const consumed = await db.otpCode.updateMany({
+    where: {
+      phone,
+      code: codeHash,
+      consumed: false,
+      expiresAt: { gt: now },
+    },
+    data: { consumed: true },
   });
 
-  if (!otp) return NextResponse.json({ error: "Invalid code" }, { status: 400 });
-  if (otp.expiresAt.getTime() < Date.now()) {
-    return NextResponse.json({ error: "Code expired" }, { status: 400 });
+  if (consumed.count === 0) {
+    return NextResponse.json({ error: "Invalid or expired code" }, { status: 400 });
   }
-
-  await db.otpCode.update({ where: { id: otp.id }, data: { consumed: true } });
 
   // Try to find user by normalized phone first, then by phone digits only.
   // This handles legacy users whose phones were stored with dashes/spaces
