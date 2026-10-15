@@ -4,14 +4,22 @@ import { requireAuth } from "@/lib/api-helpers";
 
 // Subscribe the authenticated user to a VIP plan.
 // userId is derived from the session — NEVER from the request body (BOLA fix).
-// In production: this would go through the payment gateway first.
-// Here: we simulate success (the gateway is separate). Once payment verified,
-// we activate the subscription with startedAt=now and expiresAt=now+durationDays.
 //
-// SECURITY: Previously this endpoint had NO authentication and trusted a
-// client-supplied `userId` — any caller could subscribe any user to a VIP
-// plan. Now requires auth + uses session.userId (server-authoritative).
+// SEC-7 fix (3-layer):
+// 1. Production guard — returns 404 in production builds (consistent with
+//    /api/auth/demo and /api/seed). Dev-only simulation until the real
+//    payment gateway is wired in.
+// 2. requireAuth — userId derived from session, never from body.
+// 3. paymentId validated server-side: must exist, belong to caller, have
+//    status SUCCEEDED, and cover plan price. Closes the free-VIP bypass.
 export async function POST(req: Request) {
+  // 1. Production guard — fail closed. This route is dev-only simulation
+  //    until a real payment gateway integration exists.
+  if (process.env.NODE_ENV === "production") {
+    return new NextResponse(null, { status: 404 });
+  }
+
+  // 2. Auth — userId comes from the session, never from the body.
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
@@ -33,6 +41,21 @@ export async function POST(req: Request) {
   const plan = await db.vipPlan.findUnique({ where: { id: planId } });
   if (!plan || !plan.active) {
     return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
+  }
+
+  // 3. Validate paymentId — must be a real SUCCEEDED payment by this user
+  //    that covers the plan price. This closes the free-VIP bypass.
+  if (typeof paymentId !== "string" || !paymentId) {
+    return NextResponse.json({ error: "paymentId is required" }, { status: 400 });
+  }
+  const payment = await db.payment.findUnique({ where: { id: paymentId } });
+  if (
+    !payment ||
+    payment.userId !== userId ||
+    payment.status !== "SUCCEEDED" ||
+    Number(payment.amount) < Number(plan.price)
+  ) {
+    return NextResponse.json({ error: "Invalid or insufficient payment" }, { status: 400 });
   }
 
   // Cancel any existing ACTIVE subscription for this user
