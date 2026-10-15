@@ -6084,3 +6084,42 @@ Stage Summary:
 - No migrations, no deploys, no PR merge.
 - Report: docs/BUNDLE_2_1_REPORT.md
 - Constraints honored: stayed on feature/cloudflare-d1-validation the entire task (verified via `git branch --show-current` after every commit); main never touched (after the initial SEC-11 mishap was repaired); each fix based on the ACTUAL current content of the file on feature (verified by reading the file first via `git show HEAD:path` or `cat` after switching to feature); all existing security features of the feature branch preserved.
+---
+Task ID: B2.2
+Agent: bundle-2-2-withdrawal-consistency
+Task: Fix orphaned-WithdrawalRequest issue — reorder withdraw flow so atomic decrement happens before WithdrawalRequest.create.
+
+Work Log:
+- Step 0 — Baseline recorded. Read worklog.md tail for context (NEXT-THEMES-REMOVE, SW-UNCONDITIONAL-SELF-DESTRUCT, B2.1-VERIFY). Read docs/BUNDLE_2_1_VERIFY.md to understand the orphaned-WithdrawalRequest caveat flagged by the B2.1 verifier (SEC-9 review, Step 3 of B2.1-VERIFY).
+- Step 0 — Confirmed starting state: feature/cloudflare-d1-validation @ 4f41eee7cf444b859d3c1c1bf3d408d504e4c7c6, main local @ 625b23f, main remote @ e4c2faf, feature remote @ 917b2b2 (must remain unchanged — no push).
+- Step 1 — Read src/app/api/wallets/withdraw/route.ts at feature HEAD. The B2.1 SEC-9 fix was already applied (uses getDbForLib() + Prisma atomic decrement via db.wallet.updateMany with WHERE balance>=amount). However, WithdrawalRequest.create (step 2) happened BEFORE the updateMany (step 3) — the orphan-risk identified by B2.1-VERIFY.
+- Step 2 — Applied the B2.2 fix via the Edit/Write tools: rewrote the try block so wallet.updateMany happens FIRST (step 2), followed by the re-read of actualBalanceAfter (step 3), then withdrawalRequest.create (step 4), walletLedger.create (step 5), notification.create (step 6). Updated the comment block above try to document the B2.2 invariant.
+- Step 3 — Verified reorder via grep: updateMany (line 82) → withdrawalRequest.create (line 100) → walletLedger.create (line 114) ✓. Verified no escaped backticks. git diff confirms clean reorder with no spurious changes.
+- Step 4 — ESLint on src/app/api/wallets/withdraw/route.ts: CLEAN (only an unrelated .eslintignore deprecation warning).
+- Step 5 — TypeScript (bun run tsc --noEmit): 0 errors.
+- Step 6 — Existing test suite (before adding new tests): 346/346 passed (15 files). Matches B2.1 verifier's count — no regression.
+- Step 7 — Created tests/unit/wallets-withdraw.test.ts with 2 tests:
+  (a) "does NOT create WithdrawalRequest when atomic decrement fails (count=0)" — mocks getDbForLib() to return a mock client; mocks wallet.updateMany to return {count:0}; asserts 400 response, withdrawalRequest.create NOT called, ledger+notification NOT called, updateMany WAS called with the correct WHERE clause.
+  (b) "creates WithdrawalRequest ONLY after atomic decrement succeeds (count=1)" — mocks wallet.findUnique to return balance=1000/1000/500 in sequence; mocks updateMany to return {count:1}; asserts 200 response, withdrawalRequest.create called once (after decrement), ledger created with balanceBefore=1000/balanceAfter=500 (actual, not pre-computed), notification created.
+  Pattern: mints real TECHNICIAN JWT via createSession() (matches care.test.ts pattern); mocks @/lib/db-access, @/lib/rate-limit. Uses mockResolvedValueOnce for ordered responses; vi.clearAllMocks in beforeEach (NOT resetAllMocks — preserves rate-limit mock implementations).
+- Step 8 — New tests pass: 2/2 in tests/unit/wallets-withdraw.test.ts.
+- Step 9 — Committed the fix on feature/cloudflare-d1-validation: commit 895f604 "fix(b2.2): reorder withdraw flow — atomic decrement before WithdrawalRequest.create".
+- Step 10 — Committed the test on feature/cloudflare-d1-validation: commit 7b091ea "test(b2.2): concurrent withdraw failure does not create orphaned WithdrawalRequest".
+- Step 11 — Final verification:
+  * feature/cloudflare-d1-validation: 7b091ea (2 commits on top of 4f41eee)
+  * main local: 625b23f (UNCHANGED)
+  * new-repo/main: e4c2faf (UNCHANGED)
+  * new-repo/feature/cloudflare-d1-validation: 917b2b2 (UNCHANGED — no push)
+  * Full test suite: 348/348 passed (15 files). TypeScript: 0 errors. ESLint: clean.
+- Step 12 — Composed docs/BUNDLE_2_2_REPORT.md (this task's self-report).
+- Step 13 — Appended this worklog entry.
+
+Stage Summary:
+- 2 commits on feature/cloudflare-d1-validation (linear chain: 4f41eee → 895f604 → 7b091ea).
+- Fix: reorder atomic decrement (wallet.updateMany) BEFORE WithdrawalRequest.create. The SEC-9 atomic decrement itself is preserved unchanged — only its order relative to WithdrawalRequest.create changes. Key invariant: a WithdrawalRequest row exists ONLY if the wallet was successfully deducted. Even if a later step (ledger, notification) fails, the balance is deducted but no request exists — a recoverable state (admin can reconcile) rather than an unrecoverable one (payout without deduction).
+- 2 new tests in tests/unit/wallets-withdraw.test.ts: orphan prevention (count=0 case) + success path (count=1 case). Both pass.
+- Tests: 348/348 passed (was 346, +2 new). TypeScript: 0 errors. ESLint: clean on modified file.
+- Files modified: 2 (src/app/api/wallets/withdraw/route.ts +42/-40, tests/unit/wallets-withdraw.test.ts +241 new).
+- main untouched (local + remote). Remote feature untouched (no push). No merge of PR #3. No migrations or deploys.
+- Report: docs/BUNDLE_2_2_REPORT.md
+- Recommended follow-ups: (1) backfill concurrent-race tests for OTP verify (SEC-10) and wallet auto-release (SEC-8) — currently proven by code inspection only; (2) enable branch protection on main (Phase-3 SEC-1, HIGH); (3) consider adopting D1 db.batch() if/when Prisma exposes it — would obsolete the sequential-write-with-reorder pattern.
