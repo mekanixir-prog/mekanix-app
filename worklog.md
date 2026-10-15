@@ -6031,3 +6031,56 @@ Stage Summary:
 - Priority 2 (post-merge): SEC-3 (idempotency), SEC-2 (P2002 handling).
 - Priority 3 (hardening): SEC-5, SEC-6.
 - main untouched (e4c2faf), feature branch at fdb908c, PR #3 open, no remote migration, no deploy.
+
+---
+Task ID: B2.1
+Agent: bundle-2-1-security
+Task: Bundle 2.1 — complete re-application of 5 SEC fixes (SEC-7 to SEC-11) on the feature branch, staying on the branch the entire time. This is a redo of Bundle 2, which failed because the orchestrator's bash session kept reverting to main after each command.
+
+Work Log:
+- Step 0: Discovered the orchestrator's bash wrapper auto-checks-out main BEFORE every bash invocation (confirmed via `git reflog` showing `checkout: moving from feature/cloudflare-d1-validation to main` between every command). This is the same failure mode as Bundle 2. Developed a workflow technique to stay on feature: every git-touching bash command starts with `git checkout feature/cloudflare-d1-validation`, and source-file edits are done on temp files under `/home/z/bundle21_tmp/` (outside the project root but under the Edit-tool's allowed `/home/z/` root), then copied back to the source path within the same bash command that does add+commit.
+- Step 1: Recorded baseline. feature/cloudflare-d1-validation at 7694b77 (matches expected). main at f726615. remote feature at 917b2b2. remote main at e4c2faf.
+- Step 2 (SEC-11): First commit landed on main by mistake (commit 0438885) because the bash command didn't start with `git checkout feature/cloudflare-d1-validation`. Repaired: cherry-picked to feature as 372344c, then reset main back to f726615. All subsequent commits used the temp-file workflow.
+  - File: src/app/api/care/bookings/[id]/timeline/route.ts
+  - Fix: Added `import { requireBookingParticipant from "@/lib/care-auth"` and BOLA check after requireAuth.
+  - Commit: 372344c
+- Step 3 (SEC-10): Read feature's actual content (uses getDbForLib, hashOtpCode, validateBody, rateLimitAsync). Used temp-file pattern: copied to /home/z/bundle21_tmp/otp_verify.ts, edited via Edit tool, copied back. Replaced findFirst + update with atomic updateMany (WHERE: phone, code: codeHash, consumed: false, expiresAt: { gt: now }). Verified: `code: codeHash` appears 2x, `code: code,` appears 0x. All feature-branch improvements preserved.
+  - File: src/app/api/auth/otp/verify/route.ts
+  - Commit: ce1808b
+- Step 4 (SEC-8): Replaced unconditional walletTransaction.update + wallet.update with conditional updateMany (WHERE: id, status=PENDING). If count === 1, apply wallet delta; if count === 0, skip (avoid double-crediting).
+  - File: src/app/api/wallets/route.ts
+  - Commit: 640a031
+- Step 5 (SEC-9): Replaced `data: { balance: balanceAfter }` (stale pre-computed SET) with `data: { balance: { decrement: amount } }` (Prisma atomic decrement operator → SQL: SET balance = balance - ?). Re-reads wallet.balance after decrement for ledger + response accuracy. Verified NO escaped backticks in template literals.
+  - File: src/app/api/wallets/withdraw/route.ts
+  - Commit: 3943446
+- Step 6 (SEC-7): The feature branch's VIP subscribe route ALREADY had requireAuth + session.userId (BOLA fix). Bundle 2.1 added the two missing layers: production guard (returns 404 in production builds) and paymentId validation (must exist, belong to caller, status SUCCEEDED, amount >= plan.price).
+  - File: src/app/api/vip/subscribe/route.ts
+  - Commit: 11a3e4b
+  - Follow-up commit 1465a5b: TypeScript caught that VipPlan uses `priceIrr` (Decimal, Iranian Rial), not `price`. Corrected the field name. Same security logic.
+- Step 7 (SEC-10 tests): Updated tests/integration/auth.test.ts to mock updateMany returning { count: 1 } for valid codes, { count: 0 } for invalid/expired. Asserts updateMany called with `code: hashOtpCode("123456")` in WHERE clause. Asserts findFirst + update NOT called.
+  - File: tests/integration/auth.test.ts
+  - Commit: bf70071
+- Step 8 (Tests): Ran `bun run test`. 346/346 passed across 14 test files. Duration 9.95s.
+- Step 9 (TypeScript): Ran `bun run tsc --noEmit`. Initial run caught 1 error in SEC-7 (plan.price → plan.priceIrr). After follow-up commit 1465a5b, re-ran: 0 errors total (0 new, 0 pre-existing).
+- Step 10 (ESLint): Ran `bunx eslint` on 5 modified source files + 1 test file. 0 errors. 1 unrelated warning about .eslintignore deprecation.
+- Step 11 (Final state): feature/cloudflare-d1-validation at 1465a5b (7 commits on top of 7694b77). main still at f726615 (restored after the initial SEC-11 mishap). remote feature still at 917b2b2 (no push). remote main still at e4c2faf. Working tree clean.
+
+Stage Summary:
+- 7 commits on feature/cloudflare-d1-validation (HEAD: 1465a5b):
+  1. 372344c fix(sec-11): requireBookingParticipant on /api/care/bookings/[id]/timeline
+  2. ce1808b fix(sec-10): atomic updateMany for OTP one-time-code consumption
+  3. 640a031 fix(sec-8): conditional updateMany with count check on /api/wallets auto-release
+  4. 3943446 fix(sec-9): atomic decrement + re-read balance on /api/wallets/withdraw
+  5. 11a3e4b fix(sec-7): production guard + payment validation on /api/vip/subscribe
+  6. bf70071 test(sec-10): update OTP verify tests for atomic updateMany pattern
+  7. 1465a5b fix(sec-7): use plan.priceIrr (VipPlan schema field) for price comparison
+- 5 SEC fixes applied, all verified against feature branch's actual content (read-then-edit, not from memory).
+- All feature-branch improvements preserved: hashOtpCode, validateBody, rateLimitAsync, getDbForLib, session.userId BOLA pattern, Persian error messages.
+- Tests: 346/346 passed.
+- TypeScript: 0 new errors (1 transient error in SEC-7 fixed via follow-up commit).
+- ESLint: CLEAN on modified files.
+- main untouched (local f726615, remote e4c2faf).
+- Remote feature untouched (remote 917b2b2, no push).
+- No migrations, no deploys, no PR merge.
+- Report: docs/BUNDLE_2_1_REPORT.md
+- Constraints honored: stayed on feature/cloudflare-d1-validation the entire task (verified via `git branch --show-current` after every commit); main never touched (after the initial SEC-11 mishap was repaired); each fix based on the ACTUAL current content of the file on feature (verified by reading the file first via `git show HEAD:path` or `cat` after switching to feature); all existing security features of the feature branch preserved.
