@@ -6123,3 +6123,32 @@ Stage Summary:
 - main untouched (local + remote). Remote feature untouched (no push). No merge of PR #3. No migrations or deploys.
 - Report: docs/BUNDLE_2_2_REPORT.md
 - Recommended follow-ups: (1) backfill concurrent-race tests for OTP verify (SEC-10) and wallet auto-release (SEC-8) — currently proven by code inspection only; (2) enable branch protection on main (Phase-3 SEC-1, HIGH); (3) consider adopting D1 db.batch() if/when Prisma exposes it — would obsolete the sequential-write-with-reorder pattern.
+
+---
+Task ID: B2.2-VERIFY
+Agent: bundle-2-2-verifier (independent, read-only)
+Task: Independent verification of Bundle 2.2 — orphaned-WithdrawalRequest fix on feature/cloudflare-d1-validation @ ccd7aa2 (baseline B2.1 HEAD @ 4f41eee).
+
+Work Log:
+- Step 1 — Git state verification: confirmed feature HEAD = ccd7aa2, 3 commits added linearly on top of 4f41eee (895f604 fix → 7b091ea test → ccd7aa2 docs). main local = 625b23f, new-repo/main = e4c2faf, new-repo/feature/cloudflare-d1-validation = 917b2b2 — all UNCHANGED from baseline (no push).
+- Step 2 — Reviewed fix commit 895f604 (full diff) and the route file at HEAD. Verified the reorder: wallet.updateMany (line 82) BEFORE withdrawalRequest.create (line 100) BEFORE walletLedger.create (line 114) BEFORE notification.create (line 128). The `if (deductResult.count === 0) throw` guard at lines 86-89 sits BETWEEN updateMany and withdrawalRequest.create — proving the orphan-prevention invariant: no WithdrawalRequest can exist if the atomic decrement fails.
+- Step 3 — Verified other fix-correctness checks: walletLedger uses actualBalanceAfter (re-read value, not stale balanceAfter); no escaped backticks; SEC-9 atomic decrement pattern preserved (data: { balance: { decrement: amount } } + where: { balance: { gte: amount } }); Persian error message preserved.
+- Step 4 — Walked the orphan-prevention invariant step-by-step (Steps 1-6). Confirmed no code path allows withdrawalRequest.create without wallet.updateMany returning count=1. Analyzed edge cases (Steps 1-6 each failing) — all failure modes are recoverable (deduction-without-payout, admin reconciles) rather than unrecoverable (payout-without-deduction). Pre-B2.2 had the unrecoverable mode; B2.2 converts it to recoverable.
+- Step 5 — Reviewed test commit 7b091ea (full diff) and the test file at HEAD (tests/unit/wallets-withdraw.test.ts, 241 lines, 2 tests). Both tests are real (not expect(true).toBe(true)). Test 1 directly verifies orphan-prevention (withdrawalRequest.create NOT called when updateMany returns count=0). Test 2 verifies happy path + actualBalanceAfter correctness (ledger uses 500, not balanceBefore-amount=500 — same numeric result but the source is the re-read, not pre-computed). Minor coverage gaps noted (Steps 3-6 throwing not explicitly tested — non-blocking).
+- Step 6 — Checked out feature/cloudflare-d1-validation and ran `bun run test`. Result: 348/348 passed across 15 test files (was 346/346 pre-B2.2, +2 new tests in tests/unit/wallets-withdraw.test.ts). 0 failures, 0 regressions.
+- Step 7 — Ran `bun run tsc --noEmit`. Result: exit 0, 0 errors. Matches B2.1's clean state.
+- Step 8 — Ran `bunx eslint src/app/api/wallets/withdraw/route.ts tests/unit/wallets-withdraw.test.ts`. Result: exit 0, CLEAN (only an unrelated .eslintignore deprecation warning, project-wide, not introduced by B2.2).
+- Step 9 — Verified file scope via `git diff --stat 4f41eee..feature/cloudflare-d1-validation`. Exactly 4 files changed: src/app/api/wallets/withdraw/route.ts (+42/-40), tests/unit/wallets-withdraw.test.ts (+241 new), docs/BUNDLE_2_2_REPORT.md (+205 new), worklog.md (+39). No spurious changes to package.json, schema.prisma, migrations, or other source files.
+- Step 10 — Composed docs/BUNDLE_2_2_VERIFY.md with full verification details: executive summary, git state, fix verification with line numbers, orphan-prevention invariant proof, edge case analysis table, test verification, test/TS/ESLint results, files changed, SHA verification, non-blocking observations, and final verdict.
+- Step 11 — Appended this worklog entry.
+
+Stage Summary:
+- Verdict: APPROVED. The B2.2 fix correctly resolves the orphaned-WithdrawalRequest consistency hole flagged by B2.1-VERIFY.
+- Fix correct: YES. wallet.updateMany (atomic decrement, line 82) happens BEFORE withdrawalRequest.create (line 100). The count===0 throw guard (lines 86-89) prevents any WithdrawalRequest from being created when the atomic decrement fails. SEC-9 atomic decrement pattern preserved. walletLedger uses actualBalanceAfter (re-read value).
+- Orphan-prevention invariant: PROVEN. No code path allows withdrawalRequest.create without wallet.updateMany returning count=1. All edge-case failures (Steps 3-6 throwing) are recoverable (deduction-without-payout, admin reconciles) rather than unrecoverable (payout-without-deduction).
+- Tests: 348/348 passed (15 files). +2 new tests in tests/unit/wallets-withdraw.test.ts — Test 1 (orphan prevention, count=0 → withdrawalRequest.create NOT called), Test 2 (success path, count=1 → withdrawalRequest.create called after decrement, ledger uses actualBalanceAfter). Both real, both sufficient for the invariant.
+- TypeScript: 0 errors. ESLint: CLEAN on modified files. Files changed: 4 (matches expected: fix + test + report + worklog). No spurious modifications.
+- main (local 625b23f, remote e4c2faf) UNCHANGED. Remote feature (917b2b2) UNCHANGED — no push, no merge, no force-push.
+- Non-blocking observations noted in report: (a) docs/BUNDLE_2_1_VERIFY.md is referenced by B2.2 but only exists on main (not on feature branch); (b) post-decrement failure paths (Steps 3-6 throwing) not explicitly tested — recoverability not locked in by tests; (c) D1 db.batch() adoption deferred until Prisma exposes it.
+- Report: docs/BUNDLE_2_2_VERIFY.md
+- No files modified beyond the report and this worklog append. No branches reset. No pushes. No commits added.
