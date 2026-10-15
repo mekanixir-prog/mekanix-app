@@ -81,17 +81,32 @@ export async function POST(req: Request) {
       },
     });
 
-    // 3. Deduct balance — atomic with optimistic concurrency guard
-    //    where: { balance: { gte: amount } } ensures concurrent requests
-    //    can't both deduct (only one gets count > 0)
+    // 3. Deduct balance — atomic with optimistic concurrency guard.
+    //    SEC-9 fix: previously used `data: { balance: balanceAfter }` (a stale
+    //    pre-computed SET) which allowed two concurrent withdraw requests to
+    //    both pass the `balance >= amount` WHERE check and both SET balance to
+    //    the same value (idempotent SET, not a second decrement) — effectively
+    //    deducting only once while creating two withdrawal requests.
+    //
+    //    Now uses Prisma atomic `decrement` operator: the SQL becomes
+    //    `UPDATE wallet SET balance = balance - ? WHERE ...`, truly atomic at
+    //    the DB level. The WHERE clause `balance: { gte: amount }` prevents
+    //    negative balance.
     const deductResult = await db.wallet.updateMany({
       where: { id: wallet.id, balance: { gte: amount } },
-      data: { balance: balanceAfter },
+      data: { balance: { decrement: amount } },
     });
     if (deductResult.count === 0) {
       // Race condition: another withdrawal already deducted the balance
       throw new Error("موجودی توسط درخواست هم‌زمان تغییر کرد — دوباره تلاش کنید");
     }
+
+    // Re-read the actual post-decrement balance for the ledger + response.
+    // We can't use `balanceAfter` anymore because the atomic decrement may
+    // have raced with other transactions — the true balance can only be
+    // known by re-reading it.
+    const updatedWallet = await db.wallet.findUnique({ where: { id: wallet.id } });
+    const actualBalanceAfter = updatedWallet ? Number(updatedWallet.balance) : balanceBefore - amount;
 
     // 4. Create ledger entry
     await db.walletLedger.create({
@@ -100,7 +115,7 @@ export async function POST(req: Request) {
         type: "WITHDRAWAL",
         amount: -amount,
         balanceBefore,
-        balanceAfter,
+        balanceAfter: actualBalanceAfter,
         referenceType: "Withdrawal",
         referenceId: withdrawal.id,
         description: `Withdrawal request ${withdrawal.code}`,
@@ -119,7 +134,7 @@ export async function POST(req: Request) {
       },
     });
 
-    return NextResponse.json({ withdrawal, newBalance: balanceAfter });
+    return NextResponse.json({ withdrawal, newBalance: actualBalanceAfter });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || "خطا در پردازش برداشت" }, { status: 400 });
   }
