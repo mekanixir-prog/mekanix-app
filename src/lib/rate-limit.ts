@@ -6,8 +6,11 @@
 //
 // The synchronous `rateLimit()` function is kept for backward compat with
 // callers that don't want to await — it uses the in-memory store only.
+//
+// MIGRATION: Uses `getDbForLib()` instead of direct `db` import.
+// This works in both dev (Node.js + SQLite) and Workers (D1 via PrismaD1).
 
-import { db } from "./db";
+import { getDbForLib } from "./db-access";
 
 // ──────────── Rate limit configuration ────────────
 
@@ -73,6 +76,7 @@ export async function rateLimitAsync(key: string, max: number, windowMs: number)
 
   // Try D1 RateLimit table (works on Cloudflare + local SQLite via Prisma)
   try {
+    const db = await getDbForLib();
     const existing = await db.rateLimit.findUnique({ where: { key: d1Key } });
 
     if (!existing || existing.expiresAt.getTime() < now) {

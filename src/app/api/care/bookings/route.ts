@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth, validateBody } from "@/lib/api-helpers";
 import { getCustomerFromSession } from "@/lib/auth";
 import { careBookingSchema } from "@/lib/schemas";
 import { calculatePrice } from "@/lib/pricing";
 import { checkVipStatus } from "@/lib/vip";
 import { wantsLite, liteResponse } from "@/lib/lite-response";
-import { runSequential } from "@/lib/db-sequential";
 
 // POST /api/care/bookings — create a service booking.
 //
@@ -21,6 +20,7 @@ import { runSequential } from "@/lib/db-sequential";
 //   3. Persist the price as a frozen `PricingSnapshot` linked to the
 //      booking — historical prices are immutable.
 export async function POST(req: Request) {
+  const db = await getDbForLib();
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
@@ -126,6 +126,7 @@ export async function POST(req: Request) {
 
 // GET /api/care/bookings — list user's bookings
 export async function GET(req: Request) {
+  const db = await getDbForLib();
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 

@@ -1,4 +1,4 @@
-import { db } from "./db";
+import { getDbForLib } from "./db-access";
 import type { AdminSession } from "./admin-auth";
 
 export function getPagination(req: Request) {
@@ -22,6 +22,7 @@ export async function writeAuditLog(opts: {
   req?: Request;
 }) {
   try {
+    const db = await getDbForLib();
     await db.auditLog.create({
       data: {
         adminId: opts.session.adminId,

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
 
@@ -10,6 +10,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
   const access = await requireJobParticipant(session, id);
   if (access) return access;
+
+  const db = await getDbForLib();
 
   // Only the technician assigned to this job (or admin) can set diagnosis.
   if (session.role === "TECHNICIAN") {

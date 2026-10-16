@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
-import { runSequential } from "@/lib/db-sequential";
 
 const include = {
   request: { include: { customer: { include: { user: true } }, vehicle: true } },
@@ -95,6 +94,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { status, ...extra } = body;
 
   // Load the current job so we can validate the transition
+  const db = await getDbForLib();
   const existing = await db.job.findUnique({ where: { id }, select: { status: true, technicianId: true } });
   if (!existing) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
 

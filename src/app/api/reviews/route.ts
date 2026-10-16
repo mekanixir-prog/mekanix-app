@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getCustomerFromSession } from "@/lib/auth";
 
@@ -8,6 +8,15 @@ import { requireJobParticipant, getCustomerFromSession } from "@/lib/auth";
 // - Reviewer must be participant in the job being reviewed.
 // - Only customers can submit reviews (the customer of the job).
 // - rating must be 1–5, comment/tags are sanitized.
+//
+// Multi-step write (no $transaction in D1 — sequential):
+//   1. review.create (primary)
+//   2. review.findMany (recompute technician avg rating)
+//   3. technician.update (rating + reviewCount + completedJobs increment)
+// If step 3 fails after step 1, the review exists but the technician's
+// cached rating is stale. A retry would hit the duplicate-guard 409, so the
+// user cannot re-submit — the rating will self-correct on the NEXT review.
+// This is a pre-existing trade-off documented here, not changed by migration.
 export async function POST(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
@@ -34,6 +43,8 @@ export async function POST(req: Request) {
   // BOLA: must be participant in the job
   const access = await requireJobParticipant(session, jobId);
   if (access) return access;
+
+  const db = await getDbForLib();
 
   // Only customers can submit reviews (technicians review their customers? — out of scope).
   // Admins can technically submit but we restrict to customers for clarity.

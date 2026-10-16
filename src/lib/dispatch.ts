@@ -11,7 +11,7 @@
 //     exposes them as `etaMins` / `rank` for caller ergonomics — the mapping
 //     happens inside `autoAssignTechnician()` when persisting.
 
-import { db } from "./db";
+import { getDbForLib } from "./db-access";
 
 export interface DispatchInput {
   lat: number;
@@ -121,6 +121,7 @@ const DISPATCH_RADIUS_KM = 50;
 
 // Rank technicians for a dispatch request
 export async function findBestTechnicians(input: DispatchInput, limit = 5): Promise<DispatchCandidate[]> {
+  const db = await getDbForLib();
   // Fetch available technicians with their specialties.
   //
   // NOTE: Prisma + SQLite doesn't support native geospatial filtering
@@ -196,6 +197,7 @@ export async function findBestTechnicians(input: DispatchInput, limit = 5): Prom
 //   - `etaMins`  → `eta`       (Int?, minutes)
 //   - `rank`     → `finalRank` (Int?)
 export async function autoAssignTechnician(jobId: string, input: DispatchInput): Promise<DispatchCandidate | null> {
+  const db = await getDbForLib();
   const candidates = await findBestTechnicians(input, 5);
   if (candidates.length === 0) return null;
 

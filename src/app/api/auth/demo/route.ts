@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 
 // GET /api/auth/demo
 // DEV-ONLY endpoint that returns demo users for one-click sign-in.
@@ -26,6 +26,7 @@ export async function GET() {
   }
 
   // ── DEV-ONLY: build the demo sign-in payload ──
+  const db = await getDbForLib();
   const customer = await db.user.findFirst({
     where: { role: "CUSTOMER" },
     include: { customer: true },

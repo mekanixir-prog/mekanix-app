@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { verifySession, requireRole } from "@/lib/auth";
 
 // POST /api/mechanic-applications/[id]/reject — ADMIN ONLY.
@@ -17,6 +17,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
+  const db = await getDbForLib();
   const updated = await db.mechanicApplication.update({
     where: { id },
     data: { status: "REJECTED", reviewedAt: new Date(), adminNotes: body.notes || null },

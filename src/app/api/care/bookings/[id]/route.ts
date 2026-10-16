@@ -1,12 +1,13 @@
 // MEKANIX CARE — Booking detail (read-only)
 // BOLA-protected via requireBookingParticipant: ADMIN / booking owner / assigned technician.
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireBookingParticipant } from "@/lib/care-auth";
 
 // GET /api/care/bookings/[id] — booking details
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const db = await getDbForLib();
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
   const { id } = await ctx.params;

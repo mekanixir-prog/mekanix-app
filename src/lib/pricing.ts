@@ -31,7 +31,7 @@
 //   pricingVersion← pricingVersion      ("2.1" — bumped for Decimal-safe)
 
 import Decimal from "decimal.js";
-import { db } from "./db";
+import { getDbForLib } from "./db-access";
 
 export interface PricingInput {
   packageId?: string;
@@ -104,6 +104,7 @@ function round(dec: Decimal): number {
 }
 
 export async function calculatePrice(input: PricingInput): Promise<PricingBreakdown> {
+    const db = await getDbForLib();
   // Get package base price if provided. Today the package base price is
   // informational — the primary price driver is vehicle-type-scaled labor +
   // parts + travel. Phase 5 will fold it into the calculation (e.g. as a
@@ -209,6 +210,7 @@ export async function createPricingSnapshot(
   bookingId: string,
   pricing: PricingBreakdown
 ): Promise<string> {
+  const db = await getDbForLib();
   const snapshot = await db.pricingSnapshot.create({
     data: {
       bookingId,

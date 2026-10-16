@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 
 // GET /api/ready — readiness probe (503 if DB is unreachable)
+// See health/route.ts for $queryRaw D1 compatibility notes.
 export async function GET() {
   const checks: Record<string, boolean> = {};
   const errors: string[] = [];
 
   // DB check
   try {
+    const db = await getDbForLib();
     await db.$queryRaw`SELECT 1`;
     checks.database = true;
   } catch (e: unknown) {

@@ -149,11 +149,31 @@ describe("createSession — DB record creation", () => {
     expect(expiresAt).toBeLessThanOrEqual(after + thirtyDaysMs + 1000);
   });
 
-  it("still returns the JWT even if the DB create throws (backward compat)", async () => {
-    mockSessionCreate.mockRejectedValueOnce(new Error("Table missing"));
-    const token = await createSession(PAYLOAD);
-    expect(typeof token).toBe("string");
-    expect(token.split(".")).toHaveLength(3);
+  it("still returns the JWT in dev mode if the DB create throws (backward compat)", async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    (process.env as Record<string, string>).NODE_ENV = "development";
+    try {
+      mockSessionCreate.mockRejectedValueOnce(new Error("Table missing"));
+      const token = await createSession(PAYLOAD);
+      expect(typeof token).toBe("string");
+      expect(token.split(".")).toHaveLength(3);
+    } finally {
+      (process.env as Record<string, string>).NODE_ENV = originalNodeEnv ?? "test";
+    }
+  });
+
+  it("THROWS in production if the DB create throws (fail-closed login)", async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalJwtSecret = process.env.JWT_SECRET;
+    (process.env as Record<string, string>).NODE_ENV = "production";
+    (process.env as Record<string, string>).JWT_SECRET = "test-jwt-secret-for-unit-test";
+    try {
+      mockSessionCreate.mockRejectedValueOnce(new Error("DB down"));
+      await expect(createSession(PAYLOAD)).rejects.toThrow("Failed to create session record");
+    } finally {
+      (process.env as Record<string, string>).NODE_ENV = originalNodeEnv ?? "test";
+      (process.env as Record<string, string>).JWT_SECRET = originalJwtSecret ?? "";
+    }
   });
 
   it("omits device/ip when no request is passed", async () => {
@@ -213,14 +233,38 @@ describe("verifySession — DB revocation checks", () => {
     expect(mockSessionFindUnique).not.toHaveBeenCalled();
   });
 
-  it("falls back to JWT-only auth when the DB throws (backward compat)", async () => {
+  it("rejects session (fail-closed) when the DB throws in production", async () => {
     const token = await createSession(PAYLOAD);
     mockSessionFindUnique.mockRejectedValueOnce(new Error("Session table missing"));
 
-    const result = await verifySession(token);
-    // Backward compat: DB error → fall back to JWT auth → return session
-    expect(result).not.toBeNull();
-    expect(result?.userId).toBe("user_abc");
+    // Simulate production mode for this test
+    const originalNodeEnv = process.env.NODE_ENV;
+    (process.env as Record<string, string>).NODE_ENV = "production";
+
+    try {
+      const result = await verifySession(token);
+      // Fail-closed: DB error → reject session (return null)
+      expect(result).toBeNull();
+    } finally {
+      (process.env as Record<string, string>).NODE_ENV = originalNodeEnv ?? "test";
+    }
+  });
+
+  it("falls back to JWT-only auth when the DB throws in dev mode", async () => {
+    const token = await createSession(PAYLOAD);
+    mockSessionFindUnique.mockRejectedValueOnce(new Error("Session table missing"));
+
+    const originalNodeEnv = process.env.NODE_ENV;
+    (process.env as Record<string, string>).NODE_ENV = "development";
+
+    try {
+      const result = await verifySession(token);
+      // Dev mode: DB error → fall back to JWT auth → return session
+      expect(result).not.toBeNull();
+      expect(result?.userId).toBe("user_abc");
+    } finally {
+      (process.env as Record<string, string>).NODE_ENV = originalNodeEnv ?? "test";
+    }
   });
 
   it("queries by tokenHash matching the SHA-256 hash of the token", async () => {
@@ -258,9 +302,9 @@ describe("revokeSession — single-token revocation", () => {
     expect(mockSessionUpdateMany.mock.calls[1][0].where.revokedAt).toBeNull();
   });
 
-  it("does NOT throw if the DB throws (graceful failure)", async () => {
+  it("THROWS if the DB throws (fail-closed for security)", async () => {
     mockSessionUpdateMany.mockRejectedValueOnce(new Error("DB down"));
-    await expect(revokeSession("some.jwt.token")).resolves.toBeUndefined();
+    await expect(revokeSession("some.jwt.token")).rejects.toThrow("DB down");
   });
 });
 
@@ -275,9 +319,9 @@ describe("revokeAllUserSessions — user-wide revocation", () => {
     expect(args.data.revokedAt).toBeInstanceOf(Date);
   });
 
-  it("does NOT throw if the DB throws (graceful failure)", async () => {
+  it("THROWS if the DB throws (fail-closed for security)", async () => {
     mockSessionUpdateMany.mockRejectedValueOnce(new Error("DB down"));
-    await expect(revokeAllUserSessions("user_abc")).resolves.toBeUndefined();
+    await expect(revokeAllUserSessions("user_abc")).rejects.toThrow("DB down");
   });
 
   it("does not touch already-revoked sessions (idempotent)", async () => {

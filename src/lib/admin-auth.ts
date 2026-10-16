@@ -1,6 +1,6 @@
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
-import { db } from "./db";
+import { getDbForLib } from "./db-access";
 
 // JWT secret — NEVER fall back to a hardcoded value in production.
 // In dev we use a clearly-marked insecure secret so the app keeps working
@@ -71,6 +71,7 @@ export async function getAdminFromRequest(req: Request): Promise<AdminSession | 
  *   is created — an operator must seed the admin out-of-band.
  */
 export async function ensureDefaultAdmin() {
+  const db = await getDbForLib();
   const count = await db.adminUser.count();
   if (count > 0) return;
 
