@@ -93,12 +93,12 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
 
   afterEach(() => {
     // Restore NODE_ENV so test isolation is preserved
-    process.env.NODE_ENV = ORIGINAL_ENV;
+    vi.stubEnv("NODE_ENV", ORIGINAL_ENV);
   });
 
   // ──────────── 1. Production guard ────────────
   it("returns 404 in production (production guard)", async () => {
-    process.env.NODE_ENV = "production";
+    vi.stubEnv("NODE_ENV", "production");
     const req = makePostRequest({ planId: "plan-1", paymentId: "pay-1" });
     const res = await POST(req);
     expect(res.status).toBe(404);
@@ -109,7 +109,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
 
   // ──────────── 2. Auth required ────────────
   it("returns 401 when requireAuth returns a NextResponse (unauthenticated)", async () => {
-    process.env.NODE_ENV = "test"; // not production
+    vi.stubEnv("NODE_ENV", "test"); // not production
     mockRequireAuth.mockResolvedValue(
       NextResponse.json({ error: "unauthorized" }, { status: 401 })
     );
@@ -120,7 +120,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
 
   // ──────────── 3. paymentId required ────────────
   it("returns 400 when paymentId is missing", async () => {
-    process.env.NODE_ENV = "test";
+    vi.stubEnv("NODE_ENV", "test");
     const req = makePostRequest({ planId: "plan-1" });
     const res = await POST(req);
     expect(res.status).toBe(400);
@@ -129,7 +129,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
 
   // ──────────── 4. paymentId must exist ────────────
   it("returns 400 when payment is not found (invalid paymentId)", async () => {
-    process.env.NODE_ENV = "test";
+    vi.stubEnv("NODE_ENV", "test");
     mockPaymentFindUnique.mockResolvedValue(null);
     const req = makePostRequest({ planId: "plan-1", paymentId: "nonexistent" });
     const res = await POST(req);
@@ -138,7 +138,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
 
   // ──────────── 5. payment must belong to caller ────────────
   it("returns 400 when payment belongs to a different user", async () => {
-    process.env.NODE_ENV = "test";
+    vi.stubEnv("NODE_ENV", "test");
     mockPaymentFindUnique.mockResolvedValue({
       id: "pay-1",
       userId: "other-user", // different from session.userId = "user-1"
@@ -152,7 +152,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
 
   // ──────────── 6. payment status must be SUCCEEDED ────────────
   it("returns 400 when payment status is not SUCCEEDED", async () => {
-    process.env.NODE_ENV = "test";
+    vi.stubEnv("NODE_ENV", "test");
     mockPaymentFindUnique.mockResolvedValue({
       id: "pay-1",
       userId: "user-1",
@@ -166,7 +166,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
 
   // ──────────── 7. payment amount must cover plan price ────────────
   it("returns 400 when payment amount is insufficient (less than plan.priceIrr)", async () => {
-    process.env.NODE_ENV = "test";
+    vi.stubEnv("NODE_ENV", "test");
     mockPaymentFindUnique.mockResolvedValue({
       id: "pay-1",
       userId: "user-1",
@@ -180,7 +180,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
 
   // ──────────── 8. Valid payment → 200 + subscription created ────────────
   it("returns 200 and creates subscription when payment is valid", async () => {
-    process.env.NODE_ENV = "test";
+    vi.stubEnv("NODE_ENV", "test");
     const req = makePostRequest({ planId: "plan-1", paymentId: "pay-1" });
     const res = await POST(req);
     expect(res.status).toBe(200);
@@ -209,7 +209,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
 
   // ──────────── Extra: planId required ────────────
   it("returns 400 when planId is missing", async () => {
-    process.env.NODE_ENV = "test";
+    vi.stubEnv("NODE_ENV", "test");
     const req = makePostRequest({ paymentId: "pay-1" });
     const res = await POST(req);
     expect(res.status).toBe(400);
@@ -218,7 +218,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
 
   // ──────────── Extra: plan must be active ────────────
   it("returns 404 when plan is not found or inactive", async () => {
-    process.env.NODE_ENV = "test";
+    vi.stubEnv("NODE_ENV", "test");
     mockVipPlanFindUnique.mockResolvedValue(null);
     const req = makePostRequest({ planId: "missing", paymentId: "pay-1" });
     const res = await POST(req);
@@ -227,7 +227,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
 
   // ──────────── Extra: subscription creation never uses body.userId ────────────
   it("never reads userId from the request body (server-authoritative)", async () => {
-    process.env.NODE_ENV = "test";
+    vi.stubEnv("NODE_ENV", "test");
     // Body tries to spoof a different userId — must be IGNORED.
     const req = makePostRequest({
       planId: "plan-1",
