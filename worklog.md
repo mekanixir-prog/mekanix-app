@@ -6152,3 +6152,109 @@ Stage Summary:
 - Non-blocking observations noted in report: (a) docs/BUNDLE_2_1_VERIFY.md is referenced by B2.2 but only exists on main (not on feature branch); (b) post-decrement failure paths (Steps 3-6 throwing) not explicitly tested — recoverability not locked in by tests; (c) D1 db.batch() adoption deferred until Prisma exposes it.
 - Report: docs/BUNDLE_2_2_VERIFY.md
 - No files modified beyond the report and this worklog append. No branches reset. No pushes. No commits added.
+
+---
+From remote branch (0942466) — preserved during merge:
+Task ID: 2 (security-audit)
+Agent: security-auditor (independent deep audit)
+Task: Independent deep security audit of MEKANIX backend (feature/cloudflare-d1-validation)
+
+Work Log:
+- Read prior audit (commit fdb908c, `docs/PHASE3_SECURITY_AUDIT.md`) to establish baseline — 6 prior findings (1 HIGH, 3 MEDIUM, 2 LOW).
+- Created a temporary git worktree at `/tmp/mekanix-feature` of `feature/cloudflare-d1-validation @ 7694b77` (no source files in /home/z/my-project modified; worktree is read-only audit surface).
+- Verified prior audit's code state is identical to current feature HEAD (only docs commits between 917b2b2 and 7694b77).
+- Systematically read all 69 API route files + 15 lib/config files (84 total) on the feature branch.
+- Cross-referenced findings with `grep` to verify: `withIdempotency` is unused (0 matches in src/app/api/); `writeAuditLog` is called in only 3 routes (admin-panel/onboarding POST/PATCH/DELETE); only `$queryRaw` usages are safe `SELECT 1` (health/ready).
+- Verified each prior finding against actual feature-branch code (not the prior audit's claims).
+
+Verification of prior 6 findings (status / severity):
+- SEC-1 (HIGH, branch protection): PARTIALLY CONFIRMED — user enabling via UI in parallel; codebase has no other protection gaps. HIGH unchanged.
+- SEC-2 (MEDIUM, P2002 unhandled in payments): CONFIRMED — `payment.create` still has no try/catch for P2002; returns 500 instead of 409. MEDIUM unchanged.
+- SEC-3 (MEDIUM, withIdempotency unused): CONFIRMED — `grep` returns 0 matches in any route; helper + D1 IdempotencyKey table are dead code. MEDIUM unchanged.
+- SEC-4 (MEDIUM, admin/[resource]/[id] no audit log): CONFIRMED + EXPANDED — also missing audit log on mechanic-applications/[id]/approve (privilege grant!), /reject, care/admin/packages POST, care/admin/rules POST. MEDIUM unchanged but scope expanded.
+- SEC-5 (LOW, admin login no rate limit + failed attempts not logged): CONFIRMED + UPGRADED to MEDIUM — also has user enumeration via 404-vs-401 distinction (SEC-13). LOW → MEDIUM.
+- SEC-6 (LOW, SAFE_USER_SELECT not enforced): CONFIRMED — const object, no runtime enforcement. LOW unchanged.
+
+NEW findings (14 total):
+- SEC-7 (CRITICAL): VIP subscription bypass — `/api/vip/subscribe` creates ACTIVE subscription with NO payment verification. No production guard (unlike /api/prepay + /api/gateway/*). Any authenticated user gets free VIP.
+- SEC-8 (CRITICAL): Wallet balance doubling via concurrent GET /api/wallets — auto-release logic uses unconditional `walletTransaction.update` + atomic `wallet.update`; two concurrent GETs double-increment balance for the same released transaction. Funds theft.
+- SEC-9 (HIGH): Wallet withdraw race condition — `data: { balance: balanceAfter }` uses STALE pre-computed value instead of Prisma's atomic `decrement`. Two concurrent withdraws of 500 from a 1000-balance wallet both pass `balance >= amount` check and both set balance to 500, but two withdrawalRequests are created. Admin approves both → technician receives 1000 from a 500-deducted wallet. Funds theft.
+- SEC-10 (HIGH): OTP one-time-code replay — `findFirst({ consumed: false })` + `update({ consumed: true })` are non-atomic. Two concurrent verify requests with the same valid code both succeed. One-time property violated.
+- SEC-11 (HIGH): BOLA on /api/care/bookings/[id]/timeline — has `requireAuth` but NO `requireBookingParticipant`. Any authenticated user can fetch any booking's timeline. Only care booking sub-route missing the check.
+- SEC-12 (MEDIUM): Dashboard exposes PII to all authenticated users — `techPerformance` (technician names + revenue), `recentActivity` (customer + technician names) returned to any role. No `requireRole("ADMIN")`.
+- SEC-13 (MEDIUM): Admin login user enumeration — 404 for "user not found" vs 401 for "wrong password".
+- SEC-14 (MEDIUM): Admin JWT in localStorage — XSS-exfiltratable; 7-day TTL; no revocation.
+- SEC-15 (MEDIUM): Admin JWT irrevocable for 7 days — no AdminSession table; verifyAdminToken only checks JWT signature+expiry.
+- SEC-16 (MEDIUM): Rate-limit bypass via X-Forwarded-For spoofing (dev mode); fallback to "anonymous" bucket (prod edge case).
+- SEC-17 (LOW): admin-auth.ts JWT_SECRET read at module level — inconsistent with user auth.ts (which was fixed on feature branch). Secret rotation doesn't invalidate admin tokens until redeploy.
+- SEC-18 (LOW): `ensureDefaultAdmin()` called on every login attempt — DB count query per request, DoS amplifier.
+- SEC-19 (LOW): No admin role hierarchy enforcement — `requireRole(session, "ADMIN")` accepts any string match; future "ADMIN" role would have SUPER_ADMIN access.
+- SEC-20 (LOW): No CSRF protection for cookie-based auth — `sameSite: "lax"` allows top-level GET navigations; future state-changing GET routes would be CSRF-vulnerable.
+
+Severity tally:
+- Total findings: 20 (6 prior + 14 new)
+- CRITICAL: 2 (SEC-7, SEC-8)
+- HIGH: 4 (SEC-1, SEC-9, SEC-10, SEC-11)
+- MEDIUM: 9 (SEC-2, SEC-3, SEC-4, SEC-5, SEC-12, SEC-13, SEC-14, SEC-15, SEC-16)
+- LOW: 5 (SEC-6, SEC-17, SEC-18, SEC-19, SEC-20)
+
+Positive findings (29 items documented in audit) — strengths to preserve:
+- JWT_SECRET inside function body in user auth.ts (fixed on feature branch)
+- Fail-closed session verify/create/revoke in production (auth.ts)
+- Hashed OTP storage (SHA-256) + CSPRNG code generation
+- Comprehensive BOLA helpers (10 total: 7 user-side + 3 care-side)
+- Server-authoritative userId + amounts across all routes
+- Mass-assignment protection (sanitizeInput + ALLOWED_FIELDS + FORBIDDEN_FIELDS)
+- Optimistic concurrency on job/care-booking/prepay/invoice-PAID status transitions (4 patterns)
+- Production guards (404) on all simulator routes (auth/demo, prepay, gateway/initiate, gateway/verify)
+- next.config.ts defense-in-depth rewrite for /api/auth/demo
+- No filesystem/child_process on Workers (admin-panel/onboarding uses D1 data URLs; /api/seed removed)
+- Zod schema validation on all request bodies (Persian error messages)
+- No raw SQL with user input (only static `SELECT 1` health checks)
+- Job + care-booking state machines with per-role transition validation
+- HttpOnly + secure + sameSite cookie for user JWT
+
+Audit deliverable:
+- `/home/z/my-project/docs/PHASE3_SECURITY_AUDIT_V2.md` — 20 findings with file:line evidence, attack scenarios, suggested fixes, effort estimates.
+- Includes Phase 4 runtime test recommendations (11 tests targeting the highest-priority findings).
+
+Stage Summary:
+- Independent deep audit complete. 84 files reviewed (69 API routes + 15 lib/config).
+- All 6 prior findings verified (5 CONFIRMED, 1 PARTIALLY CONFIRMED, 1 UPGRADED).
+- 14 NEW findings discovered, including 2 CRITICAL (VIP bypass, wallet doubling) and 3 HIGH (wallet withdraw race, OTP replay, timeline BOLA).
+- PR #3 SHOULD NOT MERGE until SEC-7 (VIP bypass) and SEC-8 (wallet doubling) are fixed — both are 1-line to 30-minute fixes.
+- No source files modified. No branches switched (used git worktree at /tmp/mekanix-feature for read-only audit of feature branch).
+- main untouched (e4c2faf). PR #3 still open. No migrations, no deploys, no remote pushes.
+- Worktree at /tmp/mekanix-feature will be cleaned up separately (not part of this task scope).
+
+---
+Task ID: 3
+Agent: fix-safety-review (read-only safety review of proposed fixes)
+Task: Read-only safety review of 5 proposed fixes (SEC-7 through SEC-11) from PHASE3_SECURITY_AUDIT_V2.md
+
+Work Log:
+- Read /home/z/my-project/worklog.md (last ~170 lines, for context on prior Task ID 2 security audit).
+- Read /home/z/my-project/docs/PHASE3_SECURITY_AUDIT_V2.md in full (775 lines) — particularly the SEC-7 through SEC-11 finding sections (lines 107-360) and the Phase 4 runtime test recommendations (lines 684-747).
+- Observed that /home/z/my-project working directory was on `main` (HEAD 3324794), NOT `feature/cloudflare-d1-validation` as the task description stated. To preserve the READ-ONLY constraint (no branch switch, no working-tree mutation), all source-file reads were done via `git show feature/cloudflare-d1-validation:<path>`. Extracted copies were placed under /tmp/mek-review/ for the Read tool; NO files under /home/z/my-project/src/ were modified.
+- Verified each proposed fix by reading the corresponding source files on the feature branch (7694b77) AND the helpers they depend on:
+  - SEC-7 (vip/subscribe production guard): read prepay/route.ts, gateway/initiate/route.ts, gateway/verify/route.ts, auth/demo/route.ts to confirm the EXACT guard pattern (env var name, response code, response body). Confirmed all 4 reference routes use `process.env.NODE_ENV === "production"` + `new NextResponse(null, { status: 404 })` (bare 404, no JSON body) placed at the very TOP of the POST handler, before requireAuth. Also read customer/vip.tsx to confirm the frontend calls /api/vip/subscribe in production — but the simulator gateway routes it depends on already 404 in production, so the fix fails-closed consistently.
+  - SEC-8 (wallets GET auto-release conditional updateMany): read wallets/route.ts (lines 50-67), the WalletTransaction schema, and technician/earnings.tsx (frontend poller every 30s) to confirm no downstream consumer relies on auto-release ALWAYS happening, and `releasedAt` is only in a type declaration (never used for logic). Verified deduplication is correct via atomic SQL UPDATE WHERE status='PENDING'.
+  - SEC-9 (wallets/withdraw atomic decrement): read wallets/withdraw/route.ts in full. Identified that the proposed one-line fix (`data: { balance: { decrement: amount } }`) closes the race but leaves `balanceAfter` stale in the walletLedger.create (lines 102-103) AND the response body newBalance (line 122). Also flagged a PRE-EXISTING orphaned-withdrawalRequest issue (line 71-82 creates the request BEFORE the updateMany; if count===0, the request is orphaned) — but this is pre-existing and out of scope for SEC-9.
+  - SEC-10 (otp/verify conditional updateMany): read otp/verify/route.ts in full. Confirmed the existing code does NOT use `otp.userId` — the user is looked up by `phone` (lines 68-93) and either reused or created on first verification. So `updateMany` (which doesn't return the row) is fine. Noted minor UX regression (error messages conflated) but this is actually MORE secure (less info disclosure to attackers).
+  - SEC-11 (requireBookingParticipant on care/bookings/[id]/timeline): read care-auth.ts to confirm the helper is exported from `@/lib/care-auth` (NOT `@/lib/auth`), signature is `(session, bookingId) → Promise<NextResponse | null>` (TWO args, no requiredRole; returns null on success, NextResponse on failure; does NOT throw). Verified the sibling route /api/care/bookings/[id]/route.ts uses this exact import. Searched for /api/care/technician/missions/[id]/timeline — does NOT exist on feature branch (nothing else to flag). No frontend callers found for the timeline endpoint (frontend uses /api/care/bookings/[id] which includes timeline in its response).
+
+Deliverable:
+- Appended "## Fix Safety Review (Read-Only)" section to /home/z/my-project/docs/PHASE3_SECURITY_AUDIT_V2.md (now 1011 lines total). Section covers all 5 fixes with the requested template (Proposed fix / Files read / Verified safe? / Concerns found / Recommended adjustment / Confidence). Includes concrete code snippets for the recommended adjustments, particularly the production guard pattern (must match prepay/gateway exactly) and the SEC-9 ledger re-read pattern.
+
+Overall Safety Verdict:
+- 4 of 5 fixes are safe to apply as-proposed (SEC-7, SEC-8, SEC-10, SEC-11)
+- 1 of 5 fixes needs adjustment before applying (SEC-9 — re-read wallet.balance after atomic decrement to fix stale balanceAfter in ledger + response)
+- 0 of 5 fixes have unresolved concerns requiring human review
+
+Stage Summary:
+- No source files modified (read-only review via `git show`). Two docs appended:
+  1. /home/z/my-project/docs/PHASE3_SECURITY_AUDIT_V2.md — appended "Fix Safety Review (Read-Only)" section at the END (existing content preserved, +237 lines).
+  2. /home/z/my-project/worklog.md — appended this Task ID: 3 entry (existing content preserved).
+- No branches switched. main untouched (3324794 → 3324794). feature/cloudflare-d1-validation untouched (7694b77 → 7694b77).
+- No migrations run. No deploys. No remote pushes. PR #3 not merged.
+- /tmp/mek-review/ contains read-only copies of feature-branch source files (used by the Read tool); these are outside /home/z/my-project and do not affect the repository.
