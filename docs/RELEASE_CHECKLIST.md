@@ -1,21 +1,18 @@
 # MEKANIX — Release Checklist
 
 **Last Updated:** 2026-10-16
-**Commit:** `9845091` (feature/cloudflare-d1-validation, local — NOT pushed to GitHub)
+**Commit:** `e916b3e` (feature/cloudflare-d1-validation, PUSHED to GitHub)
 **Baseline:** main @ `e4c2faf` (untouched)
 
-> ⚠️ **IMPORTANT:** This checklist reflects the LOCAL state on commit `9845091`.
-> This commit has NOT been pushed to GitHub. The official remote `feature/cloudflare-d1-validation`
-> is still on `0942466` (which does NOT include the security fixes below).
-> Until this commit is pushed and CI runs on it, these items are "verified locally"
-> but NOT "verified on GitHub CI".
+> ✅ This checklist reflects the state on commit `e916b3e`, which has been pushed to GitHub.
+> CI has run on this commit — all 4 workflows are green (verified via GitHub API).
+> The official remote `feature/cloudflare-d1-validation` is now on `e916b3e`.
 
 ## Status Legend
 
 - ☐ Not started
 - ☑ Completed (verified locally)
 - ⚠ Blocked / pending dependency
-- 🔒 Verified locally, pending GitHub CI
 
 ---
 
@@ -38,9 +35,9 @@
 
 ## Phase 2: Quality & Security
 
-- ☑ TypeScript passes (`bunx tsc --noEmit` exit 0) — verified on `9845091`
-- ☑ ESLint passes (0 errors, 2 warnings) — verified on `9845091`
-- ☑ Tests pass (389/389) — verified on `9845091` (was 335/335 on `7109d65`)
+- ☑ TypeScript passes (`bunx tsc --noEmit` exit 0) — verified on `e916b3e` (CI green)
+- ☑ ESLint passes (0 errors, 2 warnings) — verified on `e916b3e` (CI green)
+- ☑ Tests pass (389/389) — verified on `e916b3e` (CI green) (was 335/335 on `7109d65`)
 - ☑ `verifySession()` fail-closed in production
 - ☑ `createSession()` fail-closed in production
 - ☑ `revokeSession()` / `revokeAllUserSessions()` no error swallowing
@@ -67,7 +64,7 @@
 
 - ☑ CI green on commit `06f161e` (verified by reviewer, historical)
 - ☑ CI green on commit `0942466` (remote feature HEAD, 4 workflows success)
-- ⚠ CI green on commit `9845091` — BLOCKED: commit not pushed to GitHub
+- ☑ CI green on commit `e916b3e` (PUSHED, 4/4 workflows success — verified via GitHub API)
 - ☑ PR #3 description updated (Phase 3 audit)
 - ☐ Independent code review by project owner
 - ☐ Merge PR #3 to main
@@ -126,9 +123,9 @@
 
 ## Discrepancy Resolution
 
-### Previous checklist (on `0942466`) vs current state (on `9845091`):
+### Previous checklist (on `0942466`) vs current state (on `e916b3e`):
 
-| Item | Previous (`0942466`) | Current (`9845091`) | Evidence |
+| Item | Previous (`0942466`) | Current (`e916b3e`) | Evidence |
 |------|---------------------|---------------------|----------|
 | Lib migration (9 files) | ☐ Not started | ☑ Completed | 12 lib files use `getDbForLib` |
 | Route migration (15 files) | ☐ Not started | ☑ Completed | 65 API files use `getDbForLib`, 0 use sync `db` |
@@ -140,7 +137,7 @@
 
 ### Blocking items for Release Candidate:
 
-1. ⚠ Commit `9845091` not pushed to GitHub — CI cannot run on it
+1. ☑ Commit `e916b3e` pushed to GitHub — CI green (4/4 workflows)
 2. ☐ Workers runtime test (requires D1 staging)
 3. ☐ Concurrency verification on Workers (requires D1 staging)
 4. ☐ Backup/restore testing (requires staging environment)
