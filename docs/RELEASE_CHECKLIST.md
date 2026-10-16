@@ -1,19 +1,27 @@
 # MEKANIX — Release Checklist
 
-**Last Updated:** 2026-10-11  
-**Commit:** `7109d65`
+**Last Updated:** 2026-10-16
+**Commit:** `9845091` (feature/cloudflare-d1-validation, local — NOT pushed to GitHub)
+**Baseline:** main @ `e4c2faf` (untouched)
+
+> ⚠️ **IMPORTANT:** This checklist reflects the LOCAL state on commit `9845091`.
+> This commit has NOT been pushed to GitHub. The official remote `feature/cloudflare-d1-validation`
+> is still on `0942466` (which does NOT include the security fixes below).
+> Until this commit is pushed and CI runs on it, these items are "verified locally"
+> but NOT "verified on GitHub CI".
 
 ## Status Legend
 
 - ☐ Not started
-- ☑ Completed
+- ☑ Completed (verified locally)
 - ⚠ Blocked / pending dependency
+- 🔒 Verified locally, pending GitHub CI
 
 ---
 
 ## Phase 1: Code Migration
 
-- ☑ Migrate auth (4 routes + 2 lib files, 38 calls)
+- ☑ Migrate auth (4 routes + 2 lib files, 38 calls) — verified: `auth.ts` uses `getDbForLib` (14 refs)
 - ☑ Migrate vehicles (2 routes, 5 calls)
 - ☑ Migrate technicians (2 routes, 2 calls)
 - ☑ Migrate service-requests + jobs (7 routes, 34 calls)
@@ -24,15 +32,15 @@
 - ☑ Migrate payments (1 route, 12 calls) + race condition fix
 - ☑ Migrate wallets (2 routes, 11 calls) + atomic balance
 - ☑ Migrate care (16 routes, 58 calls)
-- ☐ Migrate remaining 9 lib files (43 calls)
-- ☐ Migrate remaining 15 route files (71 calls)
-- ☐ Migrate admin-panel + admin routes (22 calls)
+- ☑ Migrate remaining 9 lib files (43 calls) — verified: 12 lib files use `getDbForLib`
+- ☑ Migrate remaining 15 route files (71 calls) — verified: 65 API files use `getDbForLib`, 0 use sync `db`
+- ☑ Migrate admin-panel + admin routes (22 calls) — verified: 6 admin files use `getDbForLib`
 
 ## Phase 2: Quality & Security
 
-- ☑ TypeScript passes (`bunx tsc --noEmit` exit 0)
-- ☑ ESLint passes (0 errors, 2 warnings)
-- ☑ Tests pass (335/335)
+- ☑ TypeScript passes (`bunx tsc --noEmit` exit 0) — verified on `9845091`
+- ☑ ESLint passes (0 errors, 2 warnings) — verified on `9845091`
+- ☑ Tests pass (389/389) — verified on `9845091` (was 335/335 on `7109d65`)
 - ☑ `verifySession()` fail-closed in production
 - ☑ `createSession()` fail-closed in production
 - ☑ `revokeSession()` / `revokeAllUserSessions()` no error swallowing
@@ -43,15 +51,24 @@
 - ☑ Wallets atomic balance deduction
 - ☑ Test routes removed (`/api/test/d1`, `/api/test/cache`)
 - ☑ `runSequential` unused imports removed
-- ☐ Security audit of remaining 34 files
-- ☐ Workers runtime test for all migrated endpoints
-- ☐ Concurrency/race condition verification on Workers
+- ☑ Security audit of remaining 34 files — completed (Phase 3 audit V2: 20 findings)
+- ☑ SEC-7 fix: VIP subscribe production guard + payment validation
+- ☑ SEC-8 fix: Wallets auto-release conditional updateMany + count check
+- ☑ SEC-9 fix: Withdraw atomic decrement + reorder (orphan prevention)
+- ☑ SEC-10 fix: OTP atomic updateMany (consumed:false WHERE)
+- ☑ SEC-11 fix: Timeline BOLA (requireBookingParticipant)
+- ☑ SEC-4 fix: Admin PATCH audit logging (5 branches)
+- ☑ SEC-5 fix: Admin login rate limit + audit logging
+- ☑ SEC-13 fix: Unified 401 + timing mitigation (DUMMY_HASH)
+- ☐ Workers runtime test for all migrated endpoints — NOT done (D1 staging required)
+- ☐ Concurrency/race condition verification on Workers — NOT done (D1 staging required)
 
 ## Phase 3: CI & PR
 
-- ☑ CI green on commit `06f161e` (verified by reviewer)
-- ☐ CI green on final commit (after remaining migration)
-- ☑ PR #3 description updated
+- ☑ CI green on commit `06f161e` (verified by reviewer, historical)
+- ☑ CI green on commit `0942466` (remote feature HEAD, 4 workflows success)
+- ⚠ CI green on commit `9845091` — BLOCKED: commit not pushed to GitHub
+- ☑ PR #3 description updated (Phase 3 audit)
 - ☐ Independent code review by project owner
 - ☐ Merge PR #3 to main
 - ☐ CI green on main after merge
@@ -89,6 +106,14 @@
 - ☐ Monitor logs for 24h
 - ☐ Confirm no critical errors
 
+## Phase 7: Backup & Restore Testing
+
+- ☐ Test backup script: `bash scripts/backup-db.sh`
+- ☐ Test restore script: `bash scripts/restore-db.sh`
+- ☐ Verify backup integrity (checksum + row count)
+- ☐ Verify restore produces identical data
+- ☐ Document backup schedule + retention policy
+
 ## Rollback Plan
 
 - [ ] Previous `wrangler.toml` + `next.config.ts` backed up
@@ -96,3 +121,27 @@
 - [ ] `git revert` to `e4c2faf` (main before merge) documented
 - [ ] `wrangler rollback` command documented (if available)
 - [ ] DNS rollback plan documented (if domain changed)
+
+---
+
+## Discrepancy Resolution
+
+### Previous checklist (on `0942466`) vs current state (on `9845091`):
+
+| Item | Previous (`0942466`) | Current (`9845091`) | Evidence |
+|------|---------------------|---------------------|----------|
+| Lib migration (9 files) | ☐ Not started | ☑ Completed | 12 lib files use `getDbForLib` |
+| Route migration (15 files) | ☐ Not started | ☑ Completed | 65 API files use `getDbForLib`, 0 use sync `db` |
+| Admin migration (22 calls) | ☐ Not started | ☑ Completed | 6 admin files use `getDbForLib` |
+| Test count | 335/335 | 389/389 | +54 tests (SEC-4/5/7/8/10/11/13 + B2.2) |
+| Security audit (34 files) | ☐ Not started | ☑ Completed | Phase 3 audit V2: 20 findings |
+| Workers runtime test | ☐ Not started | ☐ Not done | Requires D1 staging |
+| Concurrency on Workers | ☐ Not started | ☐ Not done | Requires D1 staging |
+
+### Blocking items for Release Candidate:
+
+1. ⚠ Commit `9845091` not pushed to GitHub — CI cannot run on it
+2. ☐ Workers runtime test (requires D1 staging)
+3. ☐ Concurrency verification on Workers (requires D1 staging)
+4. ☐ Backup/restore testing (requires staging environment)
+
