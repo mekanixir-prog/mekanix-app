@@ -8,12 +8,11 @@
 //   4. verifyPassword is always called (even when admin not found) — timing
 //   5. Valid credentials → 200 + token
 //
-// (SEC-5 tests for rate limit + audit log are appended in a separate describe
-//  block — see "SEC-5 — admin login rate limit + audit log" below.)
-//
-// The mocks below (rateLimitAsync, writeAuditLog) are set up here so the file
-// is forward-compatible: when SEC-5 changes are added to the route, the
-// SEC-13 tests continue to pass without modification.
+// Verifies the SEC-5 fix (rate limit + audit log):
+//   6. After 5 failed attempts, returns 429
+//   7. Failed login creates audit log entry (FAILED_ADMIN_LOGIN)
+//   8. Successful login creates audit log entry (ADMIN_LOGIN_SUCCESS)
+//   9. Audit log failure does NOT block the login (best-effort audit)
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -32,9 +31,9 @@ vi.mock("@/lib/db-access", () => ({
       count: (...args: any[]) => mockAdminUserCount(...args),
       create: (...args: any[]) => mockAdminUserCreate(...args),
     },
-    // Forward-compat: SEC-5 will use rateLimit + auditLog tables. Provide
-    // no-op mocks so writeAuditLog / rateLimitAsync fail-open silently
-    // (they catch errors internally) when the SEC-5 changes are added.
+    // SEC-5: rateLimit + auditLog tables. writeAuditLog / rateLimitAsync
+    // fail-open silently (they catch errors internally) when the mocks below
+    // don't return what they need, but providing them keeps the test clean.
     rateLimit: {
       findUnique: vi.fn().mockResolvedValue(null),
       upsert: vi.fn().mockResolvedValue({}),
@@ -55,8 +54,7 @@ vi.mock("@/lib/admin-auth", () => ({
   hashPassword: vi.fn().mockResolvedValue("$2b$12$hashed"),
 }));
 
-// Forward-compat mocks — used by SEC-5 tests below. Defined here so the
-// module-level mock setup is stable across both describe blocks.
+// SEC-5 mocks — rate limit + audit log
 const mockRateLimitAsync = vi.fn();
 const mockGetClientId = vi.fn();
 vi.mock("@/lib/rate-limit", () => ({
@@ -93,7 +91,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockEnsureDefaultAdmin.mockResolvedValue(undefined);
   mockGetClientId.mockReturnValue("1.2.3.4");
-  // Default: rate limit allows (SEC-5 forward-compat)
+  // Default: rate limit allows (SEC-5)
   mockRateLimitAsync.mockResolvedValue({ success: true, resetMs: 15 * 60_000 });
   // Default: verifyPassword returns true (valid)
   mockVerifyPassword.mockResolvedValue(true);
@@ -202,5 +200,152 @@ describe("SEC-13 — admin login user enumeration mitigation", () => {
     const req = makeLoginRequest("", "");
     const res = await POST(req);
     expect(res.status).toBe(400);
+  });
+});
+
+// ──────────── SEC-5: Rate Limit + Audit Log ────────────
+describe("SEC-5 — admin login rate limit + audit log", () => {
+  it("returns 429 when rate limit is exceeded (after 5 failed attempts)", async () => {
+    // Simulate the 6th attempt — rate limit returns success: false.
+    mockRateLimitAsync.mockResolvedValueOnce({ success: false, resetMs: 15 * 60_000 });
+
+    const req = makeLoginRequest("admin@mekanix.ir", "wrong");
+    const res = await POST(req);
+    expect(res.status).toBe(429);
+    // Retry-After header should be present (in seconds)
+    expect(res.headers.get("retry-after")).toBeTruthy();
+    const retryAfter = Number(res.headers.get("retry-after"));
+    expect(retryAfter).toBeGreaterThan(0);
+
+    // CRITICAL: when rate-limited, the route must NOT call verifyPassword
+    // (don't leak timing info about whether the user exists) and must NOT
+    // call writeAuditLog for the login attempt (the rate-limit event itself
+    // is the audit signal — no need to spam FAILED_ADMIN_LOGIN on every
+    // rate-limited request).
+    expect(mockVerifyPassword).not.toHaveBeenCalled();
+    expect(mockWriteAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("rate limit uses a per-IP key derived from getClientId(req)", async () => {
+    mockGetClientId.mockReturnValueOnce("203.0.113.99");
+    mockAdminUserFindFirst.mockResolvedValue(null);
+    mockVerifyPassword.mockResolvedValue(false);
+
+    await POST(makeLoginRequest("nobody@example.com", "x"));
+
+    // rateLimitAsync was called with the IP-scoped key
+    expect(mockRateLimitAsync).toHaveBeenCalledTimes(1);
+    const args = mockRateLimitAsync.mock.calls[0];
+    expect(args[0]).toBe("admin-login:203.0.113.99");
+    expect(args[1]).toBe(5); // max attempts
+    expect(args[2]).toBe(15 * 60_000); // 15 min window
+  });
+
+  it("failed login (wrong password) creates audit log entry with action FAILED_ADMIN_LOGIN", async () => {
+    mockAdminUserFindFirst.mockResolvedValue({
+      id: "admin-1",
+      username: "admin",
+      email: "admin@mekanix.ir",
+      passwordHash: "$2b$12$realhash",
+      name: "Admin",
+      role: "SUPER_ADMIN",
+    });
+    mockVerifyPassword.mockResolvedValue(false); // wrong password
+
+    const req = makeLoginRequest("admin@mekanix.ir", "wrongpassword");
+    await POST(req);
+
+    expect(mockWriteAuditLog).toHaveBeenCalledTimes(1);
+    const args = mockWriteAuditLog.mock.calls[0][0];
+    expect(args.action).toBe("FAILED_ADMIN_LOGIN");
+    expect(args.entity).toBe("AdminUser");
+    expect(args.entityId).toBe("admin-1");
+    expect(args.session.adminId).toBe("admin-1");
+    expect(args.after.reason).toBe("wrong_password");
+  });
+
+  it("failed login for non-existent user creates audit log with adminId 'unknown'", async () => {
+    mockAdminUserFindFirst.mockResolvedValue(null);
+    mockVerifyPassword.mockResolvedValue(false);
+
+    const req = makeLoginRequest("nobody@example.com", "wrong");
+    await POST(req);
+
+    expect(mockWriteAuditLog).toHaveBeenCalledTimes(1);
+    const args = mockWriteAuditLog.mock.calls[0][0];
+    expect(args.action).toBe("FAILED_ADMIN_LOGIN");
+    expect(args.session.adminId).toBe("unknown");
+    expect(args.after.reason).toBe("user_not_found");
+  });
+
+  it("successful login creates audit log entry with action ADMIN_LOGIN_SUCCESS", async () => {
+    mockAdminUserFindFirst.mockResolvedValue({
+      id: "admin-1",
+      username: "admin",
+      email: "admin@mekanix.ir",
+      passwordHash: "$2b$12$realhash",
+      name: "Admin",
+      role: "SUPER_ADMIN",
+    });
+    mockVerifyPassword.mockResolvedValue(true);
+    mockCreateAdminToken.mockResolvedValue("jwt-123");
+
+    const req = makeLoginRequest("admin", "admin12345");
+    await POST(req);
+
+    expect(mockWriteAuditLog).toHaveBeenCalledTimes(1);
+    const args = mockWriteAuditLog.mock.calls[0][0];
+    expect(args.action).toBe("ADMIN_LOGIN_SUCCESS");
+    expect(args.entity).toBe("AdminUser");
+    expect(args.entityId).toBe("admin-1");
+    expect(args.session.adminId).toBe("admin-1");
+  });
+
+  it("audit log failure does NOT block the login (best-effort audit)", async () => {
+    // writeAuditLog rejects — but the login should still succeed
+    mockWriteAuditLog.mockRejectedValue(new Error("audit log service down"));
+    mockAdminUserFindFirst.mockResolvedValue({
+      id: "admin-1",
+      username: "admin",
+      email: "admin@mekanix.ir",
+      passwordHash: "$2b$12$realhash",
+      name: "Admin User",
+      role: "SUPER_ADMIN",
+    });
+    mockVerifyPassword.mockResolvedValue(true);
+    mockCreateAdminToken.mockResolvedValue("jwt-123");
+
+    const req = makeLoginRequest("admin", "admin12345");
+    const res = await POST(req);
+
+    // CRITICAL: login succeeds even though audit log failed
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.token).toBe("jwt-123");
+    // writeAuditLog was attempted (even though it failed)
+    expect(mockWriteAuditLog).toHaveBeenCalledTimes(1);
+  });
+
+  it("rate limit fail-open: if rateLimitAsync throws, login proceeds (no DoS on admin)", async () => {
+    // Simulate rateLimitAsync throwing (DB unavailable AND in-memory also fails)
+    mockRateLimitAsync.mockRejectedValueOnce(new Error("rate limit store unavailable"));
+    mockAdminUserFindFirst.mockResolvedValue({
+      id: "admin-1",
+      username: "admin",
+      email: "admin@mekanix.ir",
+      passwordHash: "$2b$12$realhash",
+      name: "Admin User",
+      role: "SUPER_ADMIN",
+    });
+    mockVerifyPassword.mockResolvedValue(true);
+    mockCreateAdminToken.mockResolvedValue("jwt-123");
+
+    const req = makeLoginRequest("admin", "admin12345");
+    const res = await POST(req);
+
+    // CRITICAL: fail-open — login succeeds even though rateLimitAsync threw.
+    // Better to risk a brute-force than to lock the admin out of the panel.
+    expect(res.status).toBe(200);
+    expect(mockVerifyPassword).toHaveBeenCalled();
   });
 });
