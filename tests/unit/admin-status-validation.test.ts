@@ -9,6 +9,11 @@
 // These tests exercise the validation logic in isolation by mocking getDbForLib
 // so no actual DB connection is needed. The key invariant under test:
 //   "An invalid status value must NEVER reach db.user.update"
+//
+// NOTE (Bundle 3 / SEC-4): the route now also writes audit logs around each
+// update (best-effort — never blocks the mutation). The mocks below include
+// the findUnique + auditLog.create + writeAuditLog stubs needed for the
+// SEC-4 audit logging path to run cleanly without a DB.
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -16,21 +21,28 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mock getDbForLib — returns a mock PrismaClient whose methods are vi.fn()
 // so we can assert they were (or were not) called.
 const mockUserUpdate = vi.fn();
+const mockUserFindUnique = vi.fn();
 const mockCustomerFindUnique = vi.fn();
 const mockCustomerUpdate = vi.fn();
 const mockTechnicianUpdate = vi.fn();
+const mockTechnicianFindUnique = vi.fn();
 const mockReviewUpdate = vi.fn();
+const mockReviewFindUnique = vi.fn();
 const mockPaymentUpdate = vi.fn();
+const mockPaymentFindUnique = vi.fn();
 const mockServiceCategoryUpdate = vi.fn();
+const mockServiceCategoryFindUnique = vi.fn();
+const mockAuditLogCreate = vi.fn();
 
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: vi.fn().mockResolvedValue({
-    user: { update: mockUserUpdate },
+    user: { update: mockUserUpdate, findUnique: mockUserFindUnique },
     customer: { findUnique: mockCustomerFindUnique, update: mockCustomerUpdate },
-    technician: { update: mockTechnicianUpdate },
-    review: { update: mockReviewUpdate },
-    payment: { update: mockPaymentUpdate },
-    serviceCategory: { update: mockServiceCategoryUpdate },
+    technician: { update: mockTechnicianUpdate, findUnique: mockTechnicianFindUnique },
+    review: { update: mockReviewUpdate, findUnique: mockReviewFindUnique },
+    payment: { update: mockPaymentUpdate, findUnique: mockPaymentFindUnique },
+    serviceCategory: { update: mockServiceCategoryUpdate, findUnique: mockServiceCategoryFindUnique },
+    auditLog: { create: mockAuditLogCreate },
   }),
 }));
 
@@ -52,6 +64,17 @@ vi.mock("@/lib/auth", async () => {
   };
 });
 
+// SEC-4 forward-compat: mock writeAuditLog so the audit log path doesn't
+// actually try to call db.auditLog.create (which is mocked above as a no-op
+// but writeAuditLog also stringifies before/after — mocking keeps the test
+// focused on the S3 status-validation invariant).
+vi.mock("@/lib/admin-api", () => ({
+  writeAuditLog: vi.fn().mockResolvedValue(undefined),
+  getPagination: vi.fn(),
+  getQuery: vi.fn(),
+  daysAgo: vi.fn(),
+}));
+
 // Helper: build a fake Next.js Request for PATCH
 function makePatchRequest(resource: string, id: string, body: Record<string, any>): Request {
   return new Request(`http://localhost/api/admin/${resource}/${id}`, {
@@ -69,6 +92,13 @@ describe("S3 fix — admin/[resource]/[id] status validation", () => {
     vi.clearAllMocks();
     // customer.findUnique returns a customer linked to a user
     mockCustomerFindUnique.mockResolvedValue({ userId: "user-1" });
+    // SEC-4: before-snapshot mocks return a minimal record (the audit log
+    // captures whatever is here — content doesn't affect the S3 invariant).
+    mockUserFindUnique.mockResolvedValue({ id: "user-1", status: "ACTIVE" });
+    mockTechnicianFindUnique.mockResolvedValue({ id: "tech-1" });
+    mockReviewFindUnique.mockResolvedValue({ id: "rev-1" });
+    mockPaymentFindUnique.mockResolvedValue({ id: "pay-1" });
+    mockServiceCategoryFindUnique.mockResolvedValue({ id: "cat-1" });
     // update operations return their data arg
     mockUserUpdate.mockResolvedValue({});
     mockCustomerUpdate.mockResolvedValue({ id: "cust-1", user: { id: "user-1", status: "ACTIVE" } });

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireRole, sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
+import { writeAuditLog } from "@/lib/admin-api";
 
 // Mass-assignment protection: define per-resource whitelists.
 const RESOURCE_ALLOWED_FIELDS: Record<string, readonly string[]> = {
@@ -22,6 +23,26 @@ const RESOURCE_ALLOWED_FIELDS: Record<string, readonly string[]> = {
 // any DB write — never cast to `any` and pass to Prisma.
 const VALID_USER_STATUSES = ["ACTIVE", "SUSPENDED", "PENDING"] as const;
 
+// SEC-4: helper to wrap writeAuditLog in try/catch so audit failure never
+// blocks the mutation. Audit logs are best-effort — they MUST NOT break the
+// admin workflow (otherwise operators couldn't fix data when the audit
+// pipeline is degraded).
+async function safeAudit(opts: {
+  session: { adminId: string; username: string; role: string };
+  action: string;
+  entity: string;
+  entityId?: string;
+  before?: unknown;
+  after?: unknown;
+  req?: Request;
+}) {
+  try {
+    await writeAuditLog(opts);
+  } catch (e) {
+    console.error(`[audit log error] ${opts.action}`, e);
+  }
+}
+
 export async function PATCH(req: Request, { params }: { params: Promise<{ resource: string; id: string }> }) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
@@ -40,11 +61,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
   }
 
   // S3 FIX: validate user.status BEFORE stripping FORBIDDEN_FIELDS.
-  // 'status' is in FORBIDDEN_FIELDS (so it can't be mass-assigned to
-  // technician/customer records), but for the customers resource, the admin
-  // CAN set the linked User's status (ban/activate). We read it from the
-  // original body here, validate it, and apply it to user.update below —
-  // before the FORBIDDEN_FIELDS strip removes it.
   const requestedUserStatus = body.status;
   if (resource === "customers" && requestedUserStatus !== undefined) {
     if (
@@ -59,9 +75,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
   }
 
   // Mass-assignment: strip forbidden fields (defense in depth)
-  // This removes 'status' from body so it won't flow to customer.update
-  // (where it would be a mass-assignment on the Customer record). The
-  // validated status is applied to the User record separately below.
   for (const key of Object.keys(body)) {
     if (FORBIDDEN_FIELDS.has(key)) {
       delete body[key];
@@ -69,12 +82,19 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
   }
 
   const db = await getDbForLib();
+  // SEC-4: build an admin-session shape for writeAuditLog. The route uses
+  // requireAuth (Session type) — writeAuditLog expects AdminSession. We map
+  // session.userId → adminId (the admin's user record id).
+  const adminSession = { adminId: session.userId, username: session.userId, role: session.role };
   let result: any = null;
 
   if (resource === "technicians") {
     const allowed = RESOURCE_ALLOWED_FIELDS.technicians ?? ALLOWED_FIELDS.technician;
     const safe = sanitizeInput(body, allowed);
+    // SEC-4: snapshot BEFORE the update for audit log.
+    const before = await db.technician.findUnique({ where: { id } });
     result = await db.technician.update({ where: { id }, data: safe as any, include: { user: true } });
+    await safeAudit({ session: adminSession, action: "UPDATE_TECHNICIAN", entity: "technician", entityId: id, before, after: result, req });
   } else if (resource === "customers") {
     // Allow direct updates to customer record (company, taxId) — but block userId
     const allowed = RESOURCE_ALLOWED_FIELDS.customers ?? ALLOWED_FIELDS.profile;
@@ -84,30 +104,55 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     // ban/activate the user), THEN update customer profile fields. If the
     // second write fails, the user IS banned/activated (the security action
     // took effect) — the admin can retry to complete the profile update.
-    // Reversing the order would risk: admin thinks they banned a user, but
-    // the ban didn't take effect (worse failure mode for a security op).
     if (typeof requestedUserStatus === "string") {
       const customer = await db.customer.findUnique({ where: { id }, select: { userId: true } });
       if (customer) {
+        // SEC-4: snapshot the user BEFORE the status change.
+        const userBefore = await db.user.findUnique({
+          where: { id: customer.userId },
+          select: { id: true, status: true },
+        });
         await db.user.update({
           where: { id: customer.userId },
           data: { status: requestedUserStatus as (typeof VALID_USER_STATUSES)[number] },
         });
+        // SEC-4: audit log the user status change (best-effort).
+        await safeAudit({
+          session: adminSession,
+          action: "CHANGE_USER_STATUS",
+          entity: "user",
+          entityId: customer.userId,
+          before: userBefore,
+          after: { id: customer.userId, status: requestedUserStatus },
+          req,
+        });
       }
     }
+    // SEC-4: snapshot the customer BEFORE the profile update.
+    const before = await db.customer.findUnique({ where: { id } });
     result = await db.customer.update({ where: { id }, data: safe as any, include: { user: true } });
+    await safeAudit({ session: adminSession, action: "UPDATE_CUSTOMER", entity: "customer", entityId: id, before, after: result, req });
   } else if (resource === "categories") {
     const allowed = RESOURCE_ALLOWED_FIELDS.categories ?? ALLOWED_FIELDS.profile;
     const safe = sanitizeInput(body, allowed);
+    // SEC-4: snapshot BEFORE.
+    const before = await db.serviceCategory.findUnique({ where: { id } });
     result = await db.serviceCategory.update({ where: { id }, data: safe as any });
+    await safeAudit({ session: adminSession, action: "UPDATE_CATEGORY", entity: "serviceCategory", entityId: id, before, after: result, req });
   } else if (resource === "reviews") {
     const allowed = RESOURCE_ALLOWED_FIELDS.reviews ?? ALLOWED_FIELDS.review;
     const safe = sanitizeInput(body, allowed);
+    // SEC-4: snapshot BEFORE.
+    const before = await db.review.findUnique({ where: { id } });
     result = await db.review.update({ where: { id }, data: safe as any });
+    await safeAudit({ session: adminSession, action: "UPDATE_REVIEW", entity: "review", entityId: id, before, after: result, req });
   } else if (resource === "payments") {
     const allowed = RESOURCE_ALLOWED_FIELDS.payments ?? ALLOWED_FIELDS.review;
     const safe = sanitizeInput(body, allowed);
+    // SEC-4: snapshot BEFORE.
+    const before = await db.payment.findUnique({ where: { id } });
     result = await db.payment.update({ where: { id }, data: safe as any });
+    await safeAudit({ session: adminSession, action: "UPDATE_PAYMENT", entity: "payment", entityId: id, before, after: result, req });
   } else {
     return NextResponse.json({ error: "Unsupported resource" }, { status: 400 });
   }
