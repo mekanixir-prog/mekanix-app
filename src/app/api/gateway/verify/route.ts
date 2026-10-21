@@ -38,11 +38,6 @@ export async function POST(req: Request) {
   const log = await db.paymentGatewayLog.findUnique({ where: { code } });
   if (!log) return NextResponse.json({ error: "Payment log not found" }, { status: 404 });
 
-  // Double-verification protection: check if already verified
-  if (log.status === "VERIFIED") {
-    return NextResponse.json({ error: "Already verified" }, { status: 400 });
-  }
-
   // SECURITY: userId comes from session, NOT from client body.
   // The payment is attributed to the authenticated user, not whoever
   // the client claims to be.
@@ -50,12 +45,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "این درخواست متعلق به شما نیست" }, { status: 403 });
   }
 
-  // Simulate success (any 4+ digit OTP succeeds in demo mode)
-  // In production, this would call the real gateway verify API
-  const verified = await db.paymentGatewayLog.update({
-    where: { id: log.id },
+  // Atomic double-verify prevention: only transition to VERIFIED if not already verified
+  const verifyResult = await db.paymentGatewayLog.updateMany({
+    where: { id: log.id, status: { not: "VERIFIED" } },
     data: { status: "VERIFIED", verifiedAt: new Date() },
   });
+  if (verifyResult.count === 0) {
+    return NextResponse.json({ error: "Already verified" }, { status: 400 });
+  }
 
   // Create a Payment record — amount from server log, NOT from client
   const payment = await db.payment.create({

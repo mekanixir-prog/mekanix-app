@@ -22,6 +22,7 @@ const mockVipPlanFindUnique = vi.fn();
 const mockPaymentFindUnique = vi.fn();
 const mockUserVipSubscriptionUpdateMany = vi.fn();
 const mockUserVipSubscriptionCreate = vi.fn();
+const mockUserVipSubscriptionFindFirst = vi.fn();
 const mockNotificationCreate = vi.fn();
 
 vi.mock("@/lib/db-access", () => ({
@@ -29,6 +30,7 @@ vi.mock("@/lib/db-access", () => ({
     vipPlan: { findUnique: (...args: any[]) => mockVipPlanFindUnique(...args) },
     payment: { findUnique: (...args: any[]) => mockPaymentFindUnique(...args) },
     userVipSubscription: {
+      findFirst: (...args: any[]) => mockUserVipSubscriptionFindFirst(...args),
       updateMany: (...args: any[]) => mockUserVipSubscriptionUpdateMany(...args),
       create: (...args: any[]) => mockUserVipSubscriptionCreate(...args),
     },
@@ -81,6 +83,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       amount: 100_000, // exactly covers plan price
     });
     mockUserVipSubscriptionUpdateMany.mockResolvedValue({ count: 0 });
+    mockUserVipSubscriptionFindFirst.mockResolvedValue(null); // no existing sub using this payment
     mockUserVipSubscriptionCreate.mockResolvedValue({
       id: "sub-1",
       userId: "user-1",

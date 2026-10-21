@@ -59,6 +59,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid or insufficient payment" }, { status: 400 });
   }
 
+  // Check if this payment has already been used for a VIP subscription
+  const existingSub = await db.userVipSubscription.findFirst({
+    where: { paymentId, status: { in: ["ACTIVE", "CANCELLED", "EXPIRED"] } },
+  });
+  if (existingSub) {
+    return NextResponse.json({ error: "این پرداخت قبلاً برای اشتراک VIP استفاده شده است" }, { status: 409 });
+  }
+
   // Cancel any existing ACTIVE subscription for this user
   await db.userVipSubscription.updateMany({
     where: { userId, status: "ACTIVE" },

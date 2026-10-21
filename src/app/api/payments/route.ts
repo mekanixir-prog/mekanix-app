@@ -26,6 +26,9 @@ import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 // MIGRATION: Uses getDbForLib() instead of direct db import.
 
 export async function POST(req: Request) {
+  if (process.env.NODE_ENV === "production") {
+    return new NextResponse(null, { status: 404 });
+  }
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
