@@ -7,7 +7,6 @@ import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
 const PUBLIC_USER_FIELDS = {
   id: true,
   name: true,
-  phone: true,
   avatar: true,
   role: true,
   status: true,

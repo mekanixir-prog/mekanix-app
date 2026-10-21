@@ -77,10 +77,22 @@ export async function rateLimitAsync(key: string, max: number, windowMs: number)
   // Try D1 RateLimit table (works on Cloudflare + local SQLite via Prisma)
   try {
     const db = await getDbForLib();
-    const existing = await db.rateLimit.findUnique({ where: { key: d1Key } });
+    // Atomic conditional increment: only increment if count < max and not expired
+    const result = await db.rateLimit.updateMany({
+      where: { key: d1Key, count: { lt: max }, expiresAt: { gt: new Date(now) } },
+      data: { count: { increment: 1 } },
+    });
 
+    if (result.count === 1) {
+      // Successfully incremented — request allowed
+      const entry = await db.rateLimit.findUnique({ where: { key: d1Key } });
+      return { success: true, resetMs: entry ? entry.expiresAt.getTime() - now : windowMs };
+    }
+
+    // Either: row doesn't exist, expired, or at max — check which
+    const existing = await db.rateLimit.findUnique({ where: { key: d1Key } });
     if (!existing || existing.expiresAt.getTime() < now) {
-      // Window expired (or first ever request) — start a fresh window.
+      // Window expired or first-ever — start fresh window atomically
       await db.rateLimit.upsert({
         where: { key: d1Key },
         create: { key: d1Key, count: 1, expiresAt: new Date(now + windowMs) },
@@ -89,15 +101,8 @@ export async function rateLimitAsync(key: string, max: number, windowMs: number)
       return { success: true, resetMs: windowMs };
     }
 
-    if (existing.count >= max) {
-      return { success: false, resetMs: existing.expiresAt.getTime() - now };
-    }
-
-    await db.rateLimit.update({
-      where: { key: d1Key },
-      data: { count: { increment: 1 } },
-    });
-    return { success: true, resetMs: existing.expiresAt.getTime() - now };
+    // At max — denied
+    return { success: false, resetMs: existing.expiresAt.getTime() - now };
   } catch {
     // Fall back to in-memory (dev mode without DB)
     return memRateLimit(key, max, windowMs);

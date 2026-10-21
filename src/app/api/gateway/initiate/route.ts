@@ -2,19 +2,9 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 
-// Initiate a payment through the Shaparak-simulator gateway.
-//
-// ⚠️ SIMULATOR ONLY — this endpoint is for development/testing.
-// In production, this returns 404 (same pattern as /api/auth/demo).
-// Real payment integration should use Zarinpal/IDPay create-transaction API.
-//
-// SECURITY FIXES (from D1 migration review):
-//   1. Production guard: returns 404 in production (like auth/demo)
-//   2. Auth required: caller must be authenticated (userId from session, not client)
-//   3. Amount server-authoritative: amount comes from the linked entity
-//      (invoice/job/wallet), NOT from the client request body
-//
-// MIGRATION: Uses getDbForLib() instead of direct db import.
+// ⚠️ DEV MODE: Amount comes from client in dev mode for testing.
+// In production, this route returns 404 — real gateway integration
+// must resolve amount from the linked entity (invoice/plan), not from client.
 
 export async function POST(req: Request) {
   // Hard block in production — simulator must not be reachable
@@ -31,6 +21,11 @@ export async function POST(req: Request) {
 
   if (!amount || amount <= 0) {
     return NextResponse.json({ error: "مبلغ معتبر الزامی است" }, { status: 400 });
+  }
+
+  // Validate amount is reasonable (prevent extreme spoofing)
+  if (amount > 100_000_000) { // 100M IRR = ~$200 USD max single payment
+    return NextResponse.json({ error: "مبلغ غیرمجاز" }, { status: 400 });
   }
 
   const code = `PG-${Math.floor(7000 + Math.random() * 2000)}`;
