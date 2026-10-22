@@ -26,6 +26,8 @@ const mockWalletFindUnique = vi.fn();
 const mockWalletUpdateMany = vi.fn();
 const mockWithdrawalRequestCreate = vi.fn();
 const mockWalletLedgerCreate = vi.fn();
+const mockWalletLedgerDelete = vi.fn();
+const mockWithdrawalRequestDelete = vi.fn();
 const mockNotificationCreate = vi.fn();
 const mockTechnicianFindUnique = vi.fn();
 
@@ -55,9 +57,11 @@ vi.mock("@/lib/db-access", () => ({
     },
     withdrawalRequest: {
       create: (...args: any[]) => mockWithdrawalRequestCreate(...args),
+      delete: (...args: any[]) => mockWithdrawalRequestDelete(...args),
     },
     walletLedger: {
       create: (...args: any[]) => mockWalletLedgerCreate(...args),
+      delete: (...args: any[]) => mockWalletLedgerDelete(...args),
     },
     notification: {
       create: (...args: any[]) => mockNotificationCreate(...args),
@@ -132,6 +136,10 @@ beforeEach(() => {
     createdAt: new Date(),
   });
   mockSessionCreate.mockResolvedValue({});
+  mockWithdrawalRequestCreate.mockResolvedValue({ id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, status: "REQUESTED" });
+  mockWalletLedgerCreate.mockResolvedValue({ id: "ledger_1" });
+  mockWithdrawalRequestDelete.mockResolvedValue({});
+  mockWalletLedgerDelete.mockResolvedValue({});
   mockSessionUpdateMany.mockResolvedValue({ count: 0 });
 
   // Default technician record (so getTechnicianFromSession returns a tech).
