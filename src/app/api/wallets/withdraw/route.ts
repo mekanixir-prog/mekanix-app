@@ -30,7 +30,8 @@ export async function POST(req: Request) {
   const body = await req.json();
   const { amount, method, cardNumber, bankName, shebaNumber } = body;
 
-  if (!amount || amount <= 0) {
+  const requestedAmount = Number(amount);
+  if (!Number.isSafeInteger(requestedAmount) || requestedAmount <= 0) {
     return NextResponse.json({ error: "مبلغ نامعتبر است" }, { status: 400 });
   }
 
@@ -45,7 +46,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "کیف پول یافت نشد" }, { status: 404 });
   }
 
-  if (Number(wallet.balance) < amount) {
+  if (Number(wallet.balance) < requestedAmount) {
     return NextResponse.json({ error: "موجودی کافی نیست" }, { status: 400 });
   }
 
@@ -67,41 +68,41 @@ export async function POST(req: Request) {
   // ledger, and notification. Even if a later step fails, the balance is
   // deducted but no request exists — a recoverable state (admin can
   // reconcile) rather than an unrecoverable one (payout without deduction).
+  let balanceDeducted = false;
+  let withdrawalId: string | null = null;
+  let ledgerId: string | null = null;
+  let balanceBefore = Number(wallet.balance);
+
   try {
-    // 1. Re-check balance (early bail before any write).
+    // Re-check before mutation, then use a conditional atomic decrement.
     const lockedWallet = await db.wallet.findUnique({ where: { id: wallet.id } });
-    if (!lockedWallet || Number(lockedWallet.balance) < amount) {
-      throw new Error("موجودی کافی نیست");
+    if (!lockedWallet || Number(lockedWallet.balance) < requestedAmount) {
+      return NextResponse.json({ error: "موجودی کافی نیست" }, { status: 400 });
     }
-    const balanceBefore = Number(lockedWallet.balance);
+    balanceBefore = Number(lockedWallet.balance);
 
-    // 2. Atomic balance decrement — MUST happen before WithdrawalRequest.create.
-    //    SEC-9 fix: uses Prisma atomic `decrement` (SQL: SET balance = balance - ?)
-    //    with WHERE `balance >= amount` to prevent negative balance.
-    //    If count===0, the race was lost — return 400, NO WithdrawalRequest created.
     const deductResult = await db.wallet.updateMany({
-      where: { id: wallet.id, balance: { gte: amount } },
-      data: { balance: { decrement: amount } },
+      where: { id: wallet.id, balance: { gte: requestedAmount } },
+      data: { balance: { decrement: requestedAmount } },
     });
-    if (deductResult.count === 0) {
-      // Race condition: another withdrawal already deducted the balance.
-      // No WithdrawalRequest created — clean failure.
-      throw new Error("موجودی توسط درخواست هم‌زمان تغییر کرد — دوباره تلاش کنید");
+    if (deductResult.count !== 1) {
+      return NextResponse.json(
+        { error: "موجودی توسط درخواست هم‌زمان تغییر کرد — دوباره تلاش کنید" },
+        { status: 409 }
+      );
     }
+    balanceDeducted = true;
 
-    // 3. Re-read the actual post-decrement balance for the ledger + response.
-    //    We can't use a pre-computed balanceAfter because the atomic decrement
-    //    may have raced with other transactions.
     const updatedWallet = await db.wallet.findUnique({ where: { id: wallet.id } });
-    const actualBalanceAfter = updatedWallet ? Number(updatedWallet.balance) : balanceBefore - amount;
+    const actualBalanceAfter = updatedWallet
+      ? Number(updatedWallet.balance)
+      : balanceBefore - requestedAmount;
 
-    // 4. NOW create the WithdrawalRequest — balance is already deducted,
-    //    so even if this step fails, no orphaned-request payout can happen.
     const withdrawal = await db.withdrawalRequest.create({
       data: {
         code: `WD-${Math.floor(100000 + Math.random() * 900000)}`,
         walletId: wallet.id,
-        amount,
+        amount: requestedAmount,
         method: method || "card",
         cardNumber: cardNumber?.replace(/.(?=.{4})/g, "*"),
         bankName,
@@ -109,13 +110,13 @@ export async function POST(req: Request) {
         status: "REQUESTED",
       },
     });
+    withdrawalId = withdrawal.id;
 
-    // 5. Create ledger entry with the ACTUAL post-decrement balance.
-    await db.walletLedger.create({
+    const ledger = await db.walletLedger.create({
       data: {
         walletId: wallet.id,
         type: "WITHDRAWAL",
-        amount: -amount,
+        amount: -requestedAmount,
         balanceBefore,
         balanceAfter: actualBalanceAfter,
         referenceType: "Withdrawal",
@@ -123,21 +124,71 @@ export async function POST(req: Request) {
         description: `Withdrawal request ${withdrawal.code}`,
       },
     });
+    ledgerId = ledger.id;
 
-    // 6. Create notification
-    await db.notification.create({
-      data: {
-        userId: session.userId,
-        type: "withdrawal_requested",
-        title: `درخواست برداشت ${amount} ثبت شد`,
-        body: `درخواست برداشت شما ثبت شد و در انتظار تأیید است.`,
-        category: "payment",
-        link: "technician/earnings",
-      },
-    });
+    // Notifications are best-effort: a notification outage must not make a
+    // completed withdrawal look failed and encourage a duplicate retry.
+    try {
+      await db.notification.create({
+        data: {
+          userId: session.userId,
+          type: "withdrawal_requested",
+          title: `درخواست برداشت ${requestedAmount} ثبت شد`,
+          body: "درخواست برداشت شما ثبت شد و در انتظار تأیید است.",
+          category: "payment",
+          link: "technician/earnings",
+        },
+      });
+    } catch (notificationError) {
+      console.error("[wallets/withdraw] Notification failed after withdrawal was recorded", {
+        withdrawalId: withdrawal.id,
+        error: notificationError,
+      });
+    }
 
     return NextResponse.json({ withdrawal, newBalance: actualBalanceAfter });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || "خطا در پردازش برداشت" }, { status: 400 });
+  } catch (e: unknown) {
+    // Best-effort compensation for failures before the operation is fully
+    // recorded. Never refund while a withdrawal or ledger record still exists:
+    // doing so could permit an admin payout without the matching debit.
+    let compensationError: unknown = null;
+    try {
+      if (ledgerId) {
+        await db.walletLedger.delete({ where: { id: ledgerId } });
+      }
+      if (withdrawalId) {
+        await db.withdrawalRequest.delete({ where: { id: withdrawalId } });
+      }
+      if (balanceDeducted) {
+        const refund = await db.wallet.updateMany({
+          where: { id: wallet.id },
+          data: { balance: { increment: requestedAmount } },
+        });
+        if (refund.count !== 1) throw new Error("Wallet balance compensation did not update exactly one row");
+      }
+    } catch (rollbackError) {
+      compensationError = rollbackError;
+    }
+
+    if (compensationError) {
+      console.error("[wallets/withdraw] CRITICAL: withdrawal compensation failed", {
+        walletId: wallet.id,
+        withdrawalId,
+        ledgerId,
+        error: compensationError,
+        originalError: e,
+      });
+      return NextResponse.json(
+        { error: "وضعیت برداشت نیازمند بررسی پشتیبانی است؛ دوباره درخواست برداشت ثبت نکنید" },
+        { status: 500 }
+      );
+    }
+
+    const message = e instanceof Error ? e.message : "خطا در پردازش برداشت";
+    console.error("[wallets/withdraw] Withdrawal failed and compensation completed", {
+      walletId: wallet.id,
+      error: message,
+    });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
