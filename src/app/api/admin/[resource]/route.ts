@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
-import { requireAuth } from "@/lib/api-helpers";
-import { requireRole } from "@/lib/auth";
+import { getAdminFromRequest } from "@/lib/admin-auth";
 import type { PrismaClient } from "@prisma/client";
 
 // Each handler receives the db client (async-resolved per request) so it no
@@ -66,12 +65,8 @@ const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
 };
 
 export async function GET(req: Request, { params }: { params: Promise<{ resource: string }> }) {
-  const session = await requireAuth(req);
-  if (session instanceof NextResponse) return session;
-
-  // Function-level authorization: only ADMIN role can access admin resources
-  const forbidden = requireRole(session, "ADMIN");
-  if (forbidden) return forbidden;
+  const adminSession = await getAdminFromRequest(req);
+  if (!adminSession) return NextResponse.json({ error: "احراز هویت مدیر الزامی است" }, { status: 401 });
 
   const { resource } = await params;
   const handler = HANDLERS[resource];

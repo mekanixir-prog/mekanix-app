@@ -59,13 +59,12 @@ vi.mock("@/lib/db-access", () => ({
   })),
 }));
 
-// Mock auth helpers — requireAuth returns a valid ADMIN session
-vi.mock("@/lib/api-helpers", () => ({
-  requireAuth: vi.fn().mockResolvedValue({
-    userId: "admin-1",
-    role: "ADMIN",
-    phone: null,
-    isGuest: false,
+// Mock admin auth — getAdminFromRequest returns a valid AdminUser session
+vi.mock("@/lib/admin-auth", () => ({
+  getAdminFromRequest: vi.fn().mockResolvedValue({
+    adminId: "admin-1",
+    username: "admin",
+    role: "SUPER_ADMIN",
   }),
 }));
 

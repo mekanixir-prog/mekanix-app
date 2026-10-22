@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
-import { requireAuth } from "@/lib/api-helpers";
-import { requireRole, sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
+import { getAdminFromRequest } from "@/lib/admin-auth";
+import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/admin-api";
 
 // Mass-assignment protection: define per-resource whitelists.
@@ -44,12 +44,10 @@ async function safeAudit(opts: {
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ resource: string; id: string }> }) {
-  const session = await requireAuth(req);
-  if (session instanceof NextResponse) return session;
-
-  // Function-level authorization
-  const forbidden = requireRole(session, "ADMIN");
-  if (forbidden) return forbidden;
+  const adminSession = await getAdminFromRequest(req);
+  if (!adminSession) {
+    return NextResponse.json({ error: "احراز هویت مدیر الزامی است" }, { status: 401 });
+  }
 
   const { resource, id } = await params;
 
@@ -82,10 +80,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
   }
 
   const db = await getDbForLib();
-  // SEC-4: build an admin-session shape for writeAuditLog. The route uses
-  // requireAuth (Session type) — writeAuditLog expects AdminSession. We map
-  // session.userId → adminId (the admin's user record id).
-  const adminSession = { adminId: session.userId, username: session.userId, role: session.role };
   let result: any = null;
 
   if (resource === "technicians") {
