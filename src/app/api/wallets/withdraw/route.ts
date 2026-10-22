@@ -27,8 +27,26 @@ export async function POST(req: Request) {
     );
   }
 
-  const body = await req.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "بدنه درخواست معتبر نیست" }, { status: 400 });
+  }
   const { amount, method, cardNumber, bankName, shebaNumber } = body;
+
+  if (method !== undefined && method !== "card" && method !== "bank") {
+    return NextResponse.json({ error: "روش برداشت نامعتبر است" }, { status: 400 });
+  }
+  if (cardNumber !== undefined && (typeof cardNumber !== "string" || !/^[0-9\s-]{12,25}$/.test(cardNumber))) {
+    return NextResponse.json({ error: "شماره کارت نامعتبر است" }, { status: 400 });
+  }
+  if (bankName !== undefined && (typeof bankName !== "string" || bankName.length > 100)) {
+    return NextResponse.json({ error: "نام بانک نامعتبر است" }, { status: 400 });
+  }
+  if (shebaNumber !== undefined && (typeof shebaNumber !== "string" || !/^IR[0-9]{24}$/.test(shebaNumber))) {
+    return NextResponse.json({ error: "شماره شبا نامعتبر است" }, { status: 400 });
+  }
 
   const requestedAmount = Number(amount);
   if (!Number.isSafeInteger(requestedAmount) || requestedAmount <= 0) {
@@ -103,10 +121,10 @@ export async function POST(req: Request) {
         code: `WD-${Math.floor(100000 + Math.random() * 900000)}`,
         walletId: wallet.id,
         amount: requestedAmount,
-        method: method || "card",
-        cardNumber: cardNumber?.replace(/.(?=.{4})/g, "*"),
-        bankName,
-        shebaNumber,
+        method: typeof method === "string" ? method : "card",
+        cardNumber: typeof cardNumber === "string" ? cardNumber.replace(/.(?=.{4})/g, "*") : undefined,
+        bankName: typeof bankName === "string" ? bankName : undefined,
+        shebaNumber: typeof shebaNumber === "string" ? shebaNumber : undefined,
         status: "REQUESTED",
       },
     });
