@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
 
@@ -29,6 +29,7 @@ export async function GET(req: Request) {
   }
 
   // Find or create wallet
+  const db = await getDbForLib();
   let wallet = await db.wallet.findUnique({
     where: { technicianId },
     include: {
@@ -52,17 +53,28 @@ export async function GET(req: Request) {
     (t) => t.status === "PENDING" && t.holdUntil && t.holdUntil.getTime() < now.getTime()
   );
   for (const t of releasable) {
-    await db.walletTransaction.update({
-      where: { id: t.id },
+    // SEC-8 fix: conditional updateMany with count check.
+    // Previously: unconditional walletTransaction.update + wallet.update was
+    // non-atomic. Two concurrent GET /api/wallets requests could both see the
+    // same PENDING transaction, both call update (idempotent set to AVAILABLE),
+    // and both increment wallet.balance — doubling the credit.
+    //
+    // Now: conditional updateMany with WHERE on status=PENDING ensures only
+    // the first request that wins the race transitions the row. If count === 1,
+    // apply the wallet delta; if count === 0, skip it to avoid double-crediting.
+    const releaseResult = await db.walletTransaction.updateMany({
+      where: { id: t.id, status: "PENDING" },
       data: { status: "AVAILABLE", releasedAt: now },
     });
-    await db.wallet.update({
-      where: { id: wallet.id },
-      data: {
-        pendingBalance: { decrement: t.netAmount },
-        balance: { increment: t.netAmount },
-      },
-    });
+    if (releaseResult.count === 1) {
+      await db.wallet.update({
+        where: { id: wallet.id },
+        data: {
+          pendingBalance: { decrement: t.netAmount },
+          balance: { increment: t.netAmount },
+        },
+      });
+    }
   }
 
   const fresh = await db.wallet.findUnique({

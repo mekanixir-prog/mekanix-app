@@ -19,7 +19,7 @@
 //     ("ACTIVE" | "EXPIRED" | "CANCELLED")
 //     (DB also has "PENDING_PAYMENT" — internal only, never returned.)
 
-import { db } from "./db";
+import { getDbForLib } from "./db-access";
 
 export interface VipSubscriptionResult {
   subscriptionId: string;
@@ -47,6 +47,7 @@ export interface VipSubscriptionResult {
 // payment gateway integration in Phase 5 will set status to PENDING_PAYMENT
 // first, then flip to ACTIVE on payment verification.
 export async function subscribeToVip(userId: string, planId: string): Promise<VipSubscriptionResult> {
+  const db = await getDbForLib();
   const plan = await db.vipPlan.findUnique({ where: { id: planId } });
   if (!plan) throw new Error("VIP plan not found");
 
@@ -96,6 +97,7 @@ export async function subscribeToVip(userId: string, planId: string): Promise<Vi
 // cron hasn't run yet to flip them) are treated as inactive here — the
 // date check is authoritative.
 export async function checkVipStatus(userId: string): Promise<{ active: boolean; discountPercent: number; plan?: string; expiresAt?: Date }> {
+  const db = await getDbForLib();
   const sub = await db.userVipSubscription.findFirst({
     where: {
       userId,

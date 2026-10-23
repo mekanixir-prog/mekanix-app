@@ -94,3 +94,6 @@ zap-reports/
 # Large archive files (should not be committed)
 *.tar.gz
 *.zip
+
+# Cloudflare local dev secrets (NEVER commit)
+.dev.vars

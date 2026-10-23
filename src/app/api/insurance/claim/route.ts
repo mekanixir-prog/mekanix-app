@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requirePolicyOwner } from "@/lib/auth";
 
@@ -7,6 +7,20 @@ import { requirePolicyOwner } from "@/lib/auth";
 // File a new insurance claim against a policy.
 // - policyId must be owned by the calling user (BOLA).
 // - amount/description validated.
+//
+// Multi-step write (no $transaction in D1 — sequential):
+//   1. insuranceClaim.create   (primary — the claim record)
+//   2. insurancePolicy.update  (marks policy status → "claimed")
+//   3. notification.create     (best-effort side-effect, wrapped in try/catch)
+//
+// Mid-failure behavior:
+//   - If step 1 fails → 500, no partial state.
+//   - If step 2 fails after step 1 → claim exists but policy still "active".
+//     We log + still return success (the claim WAS created). The policy status
+//     can be reconciled later by an admin/job. Failing the response here would
+//     mislead the user (they'd think the claim failed, but it already exists).
+//   - If step 3 fails → claim + policy updated, notification silently skipped.
+//     Notifications are a side-effect, never a reason to fail the request.
 export async function POST(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
@@ -32,6 +46,8 @@ export async function POST(req: Request) {
   // BOLA: must own the policy (or be admin)
   const access = await requirePolicyOwner(session, policyId);
   if (access) return access;
+
+  const db = await getDbForLib();
 
   const policy = await db.insurancePolicy.findUnique({
     where: { id: policyId },
@@ -73,22 +89,31 @@ export async function POST(req: Request) {
     },
   });
 
-  // Update policy status to "claimed"
-  await db.insurancePolicy.update({
-    where: { id: policyId },
-    data: { status: "claimed" },
-  });
+  // Update policy status to "claimed" — best-effort after the claim is created.
+  // If this fails the claim still exists; we log but don't fail the response.
+  try {
+    await db.insurancePolicy.update({
+      where: { id: policyId },
+      data: { status: "claimed" },
+    });
+  } catch (e) {
+    console.error("[insurance/claim] Failed to update policy status to 'claimed' (claim still created):", e);
+  }
 
-  // Notify user + admins
-  await db.notification.create({
-    data: {
-      userId: policy.userId,
-      type: "insurance_claim",
-      title: `Claim ${code} submitted`,
-      body: `Your claim for ${claim.amount} is under review.`,
-      category: "system",
-      link: "customer/insurance",
-    },
-  });
+  // Notify user + admins — best-effort, never fail the request over a notification.
+  try {
+    await db.notification.create({
+      data: {
+        userId: policy.userId,
+        type: "insurance_claim",
+        title: `Claim ${code} submitted`,
+        body: `Your claim for ${claim.amount} is under review.`,
+        category: "system",
+        link: "customer/insurance",
+      },
+    });
+  } catch (e) {
+    console.error("[insurance/claim] Failed to create notification (claim still created):", e);
+  }
   return NextResponse.json({ ok: true, claim });
 }

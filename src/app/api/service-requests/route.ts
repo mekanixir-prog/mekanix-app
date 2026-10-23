@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { getCustomerFromSession, getTechnicianFromSession } from "@/lib/auth";
 
@@ -40,6 +40,7 @@ export async function GET(req: Request) {
   }
   // ADMIN sees all
 
+  const db = await getDbForLib();
   const list = await db.serviceRequest.findMany({
     where,
     orderBy: { createdAt: "desc" },
@@ -96,6 +97,7 @@ export async function POST(req: Request) {
 
   // If a vehicleId is provided, ensure it belongs to this customer (BOLA)
   let vehicleId = typeof body.vehicleId === "string" ? body.vehicleId : undefined;
+  const db = await getDbForLib();
   if (vehicleId) {
     const vehicle = await db.vehicle.findUnique({ where: { id: vehicleId }, select: { customerId: true } });
     if (!vehicle || vehicle.customerId !== customerId) {

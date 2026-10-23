@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant } from "@/lib/auth";
 
@@ -15,6 +15,7 @@ export async function GET(req: Request) {
   const access = await requireJobParticipant(session, jobId);
   if (access) return access;
 
+  const db = await getDbForLib();
   const list = await db.message.findMany({
     where: { jobId },
     include: { fromUser: true },
@@ -47,6 +48,8 @@ export async function POST(req: Request) {
   const access = await requireJobParticipant(session, jobId);
   if (access) return access;
 
+  const db = await getDbForLib();
+
   // Server-authoritative: fromUserId comes from session — NEVER from the request body
   const msg = await db.message.create({
     data: {
@@ -58,27 +61,32 @@ export async function POST(req: Request) {
     include: { fromUser: true },
   });
 
-  // Notify the other party
-  const job = await db.job.findUnique({
-    where: { id: jobId },
-    include: {
-      technician: { include: { user: true } },
-      request: { include: { customer: { include: { user: true } } } },
-    },
-  });
-  if (job) {
-    const isFromTech = session.userId === job.technician.userId;
-    const target = isFromTech ? job.request.customer.user : job.technician.user;
-    await db.notification.create({
-      data: {
-        userId: target.id,
-        type: "new_message",
-        title: "New message",
-        body: text.slice(0, 80),
-        category: "message",
-        link: isFromTech ? "customer/chat" : "technician/job-detail",
+  // Notify the other party — best-effort. A notification failure must not
+  // cause a 500 after the message was already created.
+  try {
+    const job = await db.job.findUnique({
+      where: { id: jobId },
+      include: {
+        technician: { include: { user: true } },
+        request: { include: { customer: { include: { user: true } } } },
       },
     });
+    if (job) {
+      const isFromTech = session.userId === job.technician.userId;
+      const target = isFromTech ? job.request.customer.user : job.technician.user;
+      await db.notification.create({
+        data: {
+          userId: target.id,
+          type: "new_message",
+          title: "New message",
+          body: text.slice(0, 80),
+          category: "message",
+          link: isFromTech ? "customer/chat" : "technician/job-detail",
+        },
+      });
+    }
+  } catch (e) {
+    console.error("[messages] Failed to create new-message notification (message still sent):", e);
   }
 
   return NextResponse.json(msg);

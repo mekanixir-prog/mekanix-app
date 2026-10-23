@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 
 // GET /api/care/packages — list available service packages
 export async function GET(req: Request) {
+  const db = await getDbForLib();
   const url = new URL(req.url);
   const vehicleId = url.searchParams.get("vehicleId");
 

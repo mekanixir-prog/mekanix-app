@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth, validateBody } from "@/lib/api-helpers";
 import { getCustomerFromSession, sanitizeInput, ALLOWED_FIELDS } from "@/lib/auth";
 import { vehicleCreateSchema } from "@/lib/schemas";
@@ -9,6 +9,7 @@ export async function GET(req: Request) {
   if (session instanceof NextResponse) return session;
 
   // Derive customer from session — ignore any client-supplied customerId
+  const db = await getDbForLib();
   if (session.role === "ADMIN") {
     // Admins can list all vehicles (used by admin portal)
     const vehicles = await db.vehicle.findMany({
@@ -57,6 +58,7 @@ export async function POST(req: Request) {
   }
 
   // customerId is server-authoritative — NEVER trust client
+  const db = await getDbForLib();
   const vehicle = await db.vehicle.create({
     data: { ...(safe as any), customerId: customer.id },
   });

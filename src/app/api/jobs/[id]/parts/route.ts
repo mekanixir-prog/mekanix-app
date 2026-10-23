@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
 
@@ -9,6 +9,7 @@ async function ensureAssignedTechOrAdmin(session: any, jobId: string) {
     return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
   }
   const tech = await getTechnicianFromSession(session);
+  const db = await getDbForLib();
   const job = await db.job.findUnique({ where: { id: jobId }, select: { technicianId: true } });
   if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
   if (!tech || tech.id !== job.technicianId) {
@@ -49,7 +50,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "قیمت نامعتبر" }, { status: 400 });
   }
 
-  const part = await db.part.create({
+  const part = await (await getDbForLib()).part.create({
     data: {
       jobId,
       name: String(body.name).slice(0, 200),
@@ -84,6 +85,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   }
 
   // Ensure the part actually belongs to this job (defense-in-depth)
+  const db = await getDbForLib();
   const part = await db.part.findUnique({ where: { id: body.partId }, select: { jobId: true } });
   if (!part || part.jobId !== jobId) {
     return NextResponse.json({ error: "قطعه متعلق به این کار نیست" }, { status: 404 });

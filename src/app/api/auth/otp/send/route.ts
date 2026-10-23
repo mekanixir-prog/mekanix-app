@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { validateBody } from "@/lib/api-helpers";
 import { rateLimitAsync, getClientId } from "@/lib/rate-limit";
 import { otpSendSchema } from "@/lib/schemas";
@@ -73,6 +73,7 @@ export async function POST(req: Request) {
   const codeHash = hashOtpCode(code);
 
   // Invalidate any previous unconsumed codes for this phone (only the newest one is valid).
+  const db = await getDbForLib();
   await db.otpCode.updateMany({ where: { phone, consumed: false }, data: { consumed: true } });
   await db.otpCode.create({ data: { phone, code: codeHash, expiresAt } });
 

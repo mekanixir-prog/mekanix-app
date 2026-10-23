@@ -209,16 +209,11 @@ describe("integration — POST /api/auth/otp/send", () => {
 // ──────────── POST /api/auth/otp/verify ────────────
 describe("integration — POST /api/auth/otp/verify", () => {
   it("returns 200 + `user` object for a valid code + existing user", async () => {
-    // Arrange: OTP record exists, is unconsumed, and not expired.
-    const expiresAt = new Date(Date.now() + 4 * 60 * 1000);
-    mockOtpFindFirst.mockResolvedValueOnce({
-      id: "otp_1",
-      phone: "+989121234567",
-      code: "123456",
-      consumed: false,
-      expiresAt,
-    });
-    mockOtpUpdate.mockResolvedValueOnce({});
+    // Arrange: the atomic updateMany returns count=1 (one row matched the
+    // WHERE clause: phone + code hash + consumed:false + not expired).
+    // SEC-10 fix: route no longer calls findFirst + update separately;
+    // a single conditional updateMany atomically transitions the code.
+    mockOtpUpdateMany.mockResolvedValueOnce({ count: 1 });
     // Existing user with a customer record
     mockUserFindUnique.mockResolvedValueOnce({
       id: "user_1",
@@ -243,26 +238,34 @@ describe("integration — POST /api/auth/otp/verify", () => {
     expect(body.user.phone).toBe("+989121234567");
     expect(body.created).toBe(false);
 
-    // The OTP should have been marked as consumed
-    expect(mockOtpUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: "otp_1" },
-        data: expect.objectContaining({ consumed: true }),
-      })
-    );
-
-    // SECURITY regression check: the verify route must hash the user-supplied
-    // code with SHA-256 before looking it up — the DB column holds the hash,
-    // not the plaintext code. Assert findFirst was called with the digest.
-    expect(mockOtpFindFirst).toHaveBeenCalledWith(
+    // SEC-10 regression check: the OTP is consumed via a single atomic
+    // updateMany call whose WHERE clause includes phone + code hash +
+    // consumed:false + expiresAt > now. DATA sets consumed:true.
+    expect(mockOtpUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           phone: "+989121234567",
           code: hashOtpCode("123456"),
           consumed: false,
+          expiresAt: expect.objectContaining({ gt: expect.any(Date) }),
         }),
+        data: expect.objectContaining({ consumed: true }),
       })
     );
+
+    // The legacy findFirst + update pattern must NOT be used.
+    expect(mockOtpFindFirst).not.toHaveBeenCalled();
+    expect(mockOtpUpdate).not.toHaveBeenCalled();
+
+    // SECURITY regression check: the verify route must hash the user-supplied
+    // code with SHA-256 before looking it up — the DB column holds the hash,
+    // not the plaintext code. Assert updateMany was called with the digest
+    // (NOT the plaintext) in the WHERE clause.
+    const updateManyCall = mockOtpUpdateMany.mock.calls[0][0] as {
+      where: { code: string };
+    };
+    expect(updateManyCall.where.code).toBe(hashOtpCode("123456"));
+    expect(updateManyCall.where.code).not.toBe("123456");
 
     // Session cookie should be set
     const setCookie = res.headers.get("set-cookie");
@@ -281,15 +284,9 @@ describe("integration — POST /api/auth/otp/verify", () => {
   });
 
   it("creates a new user when the phone is unknown (created=true)", async () => {
-    const expiresAt = new Date(Date.now() + 4 * 60 * 1000);
-    mockOtpFindFirst.mockResolvedValueOnce({
-      id: "otp_2",
-      phone: "+989111111111",
-      code: "999999",
-      consumed: false,
-      expiresAt,
-    });
-    mockOtpUpdate.mockResolvedValueOnce({});
+    // SEC-10 fix: route uses a single updateMany that returns count=1 for
+    // a valid unconsumed, non-expired code.
+    mockOtpUpdateMany.mockResolvedValueOnce({ count: 1 });
     // First user lookup: not found
     mockUserFindUnique
       .mockResolvedValueOnce(null) // initial lookup by phone
@@ -327,7 +324,12 @@ describe("integration — POST /api/auth/otp/verify", () => {
   });
 
   it("returns 400 for an invalid code (no matching OTP record)", async () => {
-    mockOtpFindFirst.mockResolvedValueOnce(null); // no OTP found
+    // SEC-10 fix: updateMany returns count=0 when no row matches the WHERE
+    // clause (phone + code hash + consumed:false + not expired). This
+    // covers the "invalid code" case (no row with that hash) AND the
+    // "already consumed" case (no row with consumed:false) AND the
+    // "expired" case (no row with expiresAt > now).
+    mockOtpUpdateMany.mockResolvedValueOnce({ count: 0 });
 
     const req = jsonReq("https://mekanix.test/api/auth/otp/verify", {
       phone: "+989121234567",
@@ -343,14 +345,11 @@ describe("integration — POST /api/auth/otp/verify", () => {
   });
 
   it("returns 400 for an expired code", async () => {
-    const expiredAt = new Date(Date.now() - 60 * 1000); // 1 min ago
-    mockOtpFindFirst.mockResolvedValueOnce({
-      id: "otp_expired",
-      phone: "+989121234567",
-      code: "123456",
-      consumed: false,
-      expiresAt: expiredAt,
-    });
+    // SEC-10 fix: the atomic updateMany WHERE clause includes
+    // `expiresAt: { gt: now }`. An expired code (expiresAt < now) does NOT
+    // match the WHERE clause, so updateMany returns count=0 → 400.
+    // (No need to mock a fake OTP row — the WHERE clause filters it out.)
+    mockOtpUpdateMany.mockResolvedValueOnce({ count: 0 });
 
     const req = jsonReq("https://mekanix.test/api/auth/otp/verify", {
       phone: "+989121234567",
@@ -370,7 +369,7 @@ describe("integration — POST /api/auth/otp/verify", () => {
     });
     const res = await otpVerifyPOST(req);
     expect(res.status).toBe(400);
-    expect(mockOtpFindFirst).not.toHaveBeenCalled();
+    expect(mockOtpUpdateMany).not.toHaveBeenCalled();
   });
 
   it("returns 400 when phone is missing", async () => {
@@ -379,7 +378,7 @@ describe("integration — POST /api/auth/otp/verify", () => {
     });
     const res = await otpVerifyPOST(req);
     expect(res.status).toBe(400);
-    expect(mockOtpFindFirst).not.toHaveBeenCalled();
+    expect(mockOtpUpdateMany).not.toHaveBeenCalled();
   });
 
   it("returns 400 when code is missing", async () => {
@@ -388,6 +387,6 @@ describe("integration — POST /api/auth/otp/verify", () => {
     });
     const res = await otpVerifyPOST(req);
     expect(res.status).toBe(400);
-    expect(mockOtpFindFirst).not.toHaveBeenCalled();
+    expect(mockOtpUpdateMany).not.toHaveBeenCalled();
   });
 });
