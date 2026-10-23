@@ -9,11 +9,15 @@ const techInclude = {
   serviceAreas: true,
 } as const;
 
-// Public-facing technician fields — never expose password or sensitive PII
+// Public-facing technician fields — never expose password or sensitive PII.
+// SEC-22 fix (Agent 1 coordinator, FIX-SEC-22): `phone` removed from the
+// PUBLIC list. The detail route (/api/technicians/[id]) already omitted phone
+// (M-03); the list route must match — a public, unauthenticated listing must
+// not leak technician phone numbers. Customers contact technicians through the
+// platform (chat / job dispatch), never via direct phone.
 const PUBLIC_USER_FIELDS = {
   id: true,
   name: true,
-  phone: true,
   avatar: true,
   role: true,
   status: true,
