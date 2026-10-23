@@ -2,21 +2,59 @@ import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { getDbForLib } from "./db-access";
 
-// JWT secret — NEVER fall back to a hardcoded value in production.
-// In dev we use a clearly-marked insecure secret so the app keeps working
-// locally without forcing env setup, but production builds MUST set JWT_SECRET.
-const JWT_SECRET = process.env.JWT_SECRET;
+// ─────────────────────────────────────────────────────────────────────────────
+// SEC-21 fix: Admin JWT isolation + payload-shape validation.
+//
+// Previously `verifyAdminToken` accepted ANY token signed with `JWT_SECRET`,
+// which in production collides with the user-OTP secret (`src/lib/auth.ts`).
+// A user JWT therefore passed the admin gate (adminId/username were `undefined`
+// but truthy enough to bypass `if (!adminSession)`).
+//
+// Two layers of defense now:
+//   (1) Secret separation — admin tokens prefer `ADMIN_JWT_SECRET`. If unset,
+//       admin falls back to `JWT_SECRET` (backward compat) but a prod warning
+//       is emitted recommending explicit separation. A user token signed with
+//       `JWT_SECRET` can no longer verify when `ADMIN_JWT_SECRET` is set.
+//   (2) Payload-shape validation — even if secrets still collide, a token is
+//       only accepted as an admin session if it carries a non-empty `adminId`
+//       and a role in {ADMIN, SUPER_ADMIN}. A user token has role "CUSTOMER"
+//       and is rejected.
+//
+// The secret is read INSIDE the function (not module-level) so test harnesses
+// can stub env per-test (fixes SEC-17).
+// ─────────────────────────────────────────────────────────────────────────────
+
 const encoder = new TextEncoder();
 
+const ADMIN_ROLES = new Set(["ADMIN", "SUPER_ADMIN"]);
+
 function getAdminSecret(): Uint8Array {
-  if (!JWT_SECRET) {
+  // Prefer a dedicated admin secret to guarantee cryptographic isolation
+  // from user-session JWTs.
+  const adminSecret = process.env.ADMIN_JWT_SECRET;
+  if (adminSecret) return encoder.encode(adminSecret);
+
+  // Backward-compat fallback: reuse JWT_SECRET. This keeps existing admin
+  // tokens working, but relies on payload-shape validation below for safety.
+  const sharedSecret = process.env.JWT_SECRET;
+  if (sharedSecret) {
     if (process.env.NODE_ENV === "production") {
-      throw new Error("JWT_SECRET environment variable is required in production");
+      console.warn(
+        "⚠ SECURITY: ADMIN_JWT_SECRET is not set — admin tokens fall back to JWT_SECRET. " +
+          "Set ADMIN_JWT_SECRET to fully isolate admin sessions from user sessions."
+      );
     }
-    // Dev-only fallback — NEVER in production
-    return encoder.encode("mekanix-admin-dev-secret-change-me");
+    return encoder.encode(sharedSecret);
   }
-  return encoder.encode(JWT_SECRET);
+
+  // No secret configured at all.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "JWT_SECRET (or ADMIN_JWT_SECRET) environment variable is required in production"
+    );
+  }
+  // Dev-only fallback — NEVER in production
+  return encoder.encode("mekanix-admin-dev-secret-change-me");
 }
 
 export type AdminSession = {
@@ -44,10 +82,20 @@ export async function createAdminToken(payload: AdminSession): Promise<string> {
 export async function verifyAdminToken(token: string): Promise<AdminSession | null> {
   try {
     const { payload } = await jwtVerify(token, getAdminSecret());
+
+    // ── Payload-shape validation (SEC-21 layer 2) ──────────────────────────
+    // Reject any token that does not carry a real admin identity. This blocks
+    // user-session JWTs (role "CUSTOMER", no adminId) even if the signing
+    // secret happens to match.
+    const adminId = payload.adminId;
+    const role = payload.role;
+    if (typeof adminId !== "string" || adminId.length === 0) return null;
+    if (typeof role !== "string" || !ADMIN_ROLES.has(role)) return null;
+
     return {
-      adminId: payload.adminId as string,
-      username: payload.username as string,
-      role: payload.role as string,
+      adminId,
+      username: typeof payload.username === "string" ? payload.username : "",
+      role,
     };
   } catch {
     return null;
