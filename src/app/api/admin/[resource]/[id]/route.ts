@@ -23,6 +23,9 @@ const RESOURCE_ALLOWED_FIELDS: Record<string, readonly string[]> = {
 // any DB write — never cast to `any` and pass to Prisma.
 const VALID_USER_STATUSES = ["ACTIVE", "SUSPENDED", "PENDING"] as const;
 
+// Valid Payment status values, matching PaymentStatus enum.
+const VALID_PAYMENT_STATUSES = ["PENDING", "SUCCEEDED", "FAILED", "REFUNDED"] as const;
+
 // SEC-4: helper to wrap writeAuditLog in try/catch so audit failure never
 // blocks the mutation. Audit logs are best-effort — they MUST NOT break the
 // admin workflow (otherwise operators couldn't fix data when the audit
@@ -143,6 +146,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
   } else if (resource === "payments") {
     const allowed = RESOURCE_ALLOWED_FIELDS.payments ?? ALLOWED_FIELDS.review;
     const safe = sanitizeInput(body, allowed);
+    // Validate payment status if provided
+    if (typeof body.status === "string" && !(VALID_PAYMENT_STATUSES as readonly string[]).includes(body.status)) {
+      return NextResponse.json(
+        { error: `status باید یکی از ${VALID_PAYMENT_STATUSES.join("، ")} باشد` },
+        { status: 400 }
+      );
+    }
     // SEC-4: snapshot BEFORE.
     const before = await db.payment.findUnique({ where: { id } });
     result = await db.payment.update({ where: { id }, data: safe as any });
