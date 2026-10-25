@@ -23,10 +23,13 @@ export function ModeSelect() {
   };
 
   const modes = [
-    // HEAVY mode is FIRST (brand priority). amber accent = #F58220.
+    // HEAVY mode is FIRST (brand priority). Both cards use amber tone
+    // (#F58220) on the mode-select screen — the emerald green is only for
+    // the in-app accent AFTER the user picks passenger mode. On the
+    // selection screen both cards are brand orange so the user isn't
+    // confused by two different colors before they've chosen.
     { slug: "heavy" as MachineMode, icon: "Truck", tone: "amber", types: ["TRUCK", "BUS", "EXCAVATOR", "LOADER", "BULLDOZER", "GRADER", "AGRI", "INDUSTRIAL", "OTHER"] },
-    // PASSENGER mode is SECOND. emerald accent = #3D9B68.
-    { slug: "passenger" as MachineMode, icon: "Car", tone: "emerald", types: ["CAR"] },
+    { slug: "passenger" as MachineMode, icon: "Car", tone: "amber", types: ["CAR"] },
   ];
 
   // Resolve which card image to show per mode + current theme.
