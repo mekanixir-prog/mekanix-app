@@ -104,8 +104,10 @@ export function ModeSelect() {
         </motion.p>
       </div>
 
-      {/* Two large mode cards */}
-      <div className="relative z-20 mx-auto grid max-w-5xl gap-5 px-6 py-8 sm:grid-cols-2" dir={isFa ? "rtl" : "ltr"}>
+      {/* Two mode cards — side-by-side on ALL viewports (mobile + desktop)
+          so both fit without scrolling. Card height matches the image's
+          intrinsic aspect ratio (heavy cards are 2.5:1 → aspect-[5/2]). */}
+      <div className="relative z-20 mx-auto grid max-w-5xl grid-cols-2 gap-3 px-4 py-4 sm:gap-5 sm:px-6 sm:py-6" dir={isFa ? "rtl" : "ltr"}>
         {modes.map((mode, i) => (
           <motion.button
             key={mode.slug}
@@ -114,48 +116,42 @@ export function ModeSelect() {
             transition={{ delay: 0.15 + i * 0.08, type: "spring", stiffness: 200 }}
             whileHover={{ y: -4 }}
             onClick={() => choose(mode.slug)}
-            className={`group relative overflow-hidden rounded-2xl border bg-card p-0 transition-colors mk-card-shadow mk-card-hover ${mode.tone === "amber" ? "border-amber/40 hover:border-amber" : "border-emerald-glow/40 hover:border-emerald-glow"}`}
+            className={`group relative flex flex-col overflow-hidden rounded-2xl border bg-card p-0 transition-colors mk-card-shadow mk-card-hover ${mode.tone === "amber" ? "border-amber/40 hover:border-amber" : "border-emerald-glow/40 hover:border-emerald-glow"}`}
           >
             <div className={`absolute -right-16 -top-16 size-48 rounded-full blur-3xl ${mode.tone === "amber" ? "bg-amber/20" : "bg-emerald-glow/15"}`} />
 
-            {/* Card hero image — uses the themed card PNG (heavy-dark/light, passenger-dark/light). */}
-            <div className="relative aspect-[4/3] w-full overflow-hidden">
+            {/* Card hero image — matches the image's intrinsic aspect ratio
+                (heavy: 1983x793 ≈ 2.5:1, passenger: 1983x793 ≈ 2.5:1) so the
+                card height tracks the image, not arbitrary padding. */}
+            <div className="relative aspect-[5/2] w-full overflow-hidden">
               <img
                 src={cardImage(mode.slug)}
                 alt={mode.slug === "passenger" ? t("mode.passenger") : t("mode.heavy")}
                 className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                 loading="lazy"
               />
-              {/* Gradient overlay so the text below the image stays legible */}
-              <div className="absolute inset-0 bg-gradient-to-t from-card via-card/40 to-transparent" />
+              {/* Gradient overlay so the text overlaid on the image stays legible */}
+              <div className="absolute inset-0 bg-gradient-to-t from-card via-card/30 to-transparent" />
             </div>
 
-            <div className="relative p-5">
-              <div className="flex items-start justify-between">
-                <div className={`grid size-12 place-items-center rounded-xl border ${mode.tone === "amber" ? "border-amber/40 bg-amber/10" : "border-emerald-glow/40 bg-emerald-glow/10"}`}>
-                  <MekIcon name={mode.icon} className={`size-6 ${mode.tone === "amber" ? "text-amber" : "text-emerald-glow"}`} />
-                </div>
-                <ArrowRight className={`size-5 transition-transform group-hover:translate-x-1 ${mode.tone === "amber" ? "text-amber" : "text-emerald-glow"} ${isFa ? "rotate-180" : ""}`} />
-              </div>
-
-              <div className="relative mt-4">
-                <h2 className="font-display text-xl font-bold tracking-tight">
+            {/* Card meta — overlaid on the bottom of the image.
+                Icon on the OPPOSITE side from the text:
+                  - passenger card (amber, RTL): icon left, text right
+                  - heavy card (emerald, RTL): icon right, text left
+                We alternate via mode.slug so the two cards mirror each other. */}
+            <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 p-3 sm:p-4">
+              {/* Text block */}
+              <div className={`relative min-w-0 ${mode.slug === "heavy" ? "order-2 text-right" : "order-1 text-left"}`}>
+                <h2 className="font-display text-sm font-bold tracking-tight text-foreground sm:text-lg">
                   {mode.slug === "passenger" ? t("mode.passenger") : t("mode.heavy")}
                 </h2>
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-0.5 line-clamp-1 text-[10px] text-muted-foreground sm:text-xs">
                   {mode.slug === "passenger" ? t("mode.passengerDesc") : t("mode.heavyDesc")}
                 </p>
               </div>
-
-              <div className="relative mt-4 flex flex-wrap gap-1.5">
-                {mode.types.slice(0, 6).map((tp) => (
-                  <span key={tp} className="rounded-md border border-border bg-background/60 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide text-muted-foreground">
-                    {typeLabel(tp)}
-                  </span>
-                ))}
-                {mode.types.length > 6 && (
-                  <span className="rounded-md px-1.5 py-0.5 text-[9px] text-muted-foreground">+{isFa ? toPersianDigits(mode.types.length - 6) : (mode.types.length - 6)}</span>
-                )}
+              {/* Icon chip — opposite side from the text */}
+              <div className={`relative grid size-9 shrink-0 place-items-center rounded-xl border sm:size-12 ${mode.slug === "heavy" ? "order-1" : "order-2"} ${mode.tone === "amber" ? "border-amber/40 bg-amber/10" : "border-emerald-glow/40 bg-emerald-glow/10"}`}>
+                <MekIcon name={mode.icon} className={`size-4 sm:size-6 ${mode.tone === "amber" ? "text-amber" : "text-emerald-glow"}`} />
               </div>
             </div>
           </motion.button>
