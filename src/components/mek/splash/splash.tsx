@@ -151,8 +151,8 @@ export function Splash() {
         ))}
       </div>
 
-      {/* Main content — vertically centered, spacious */}
-      <div className="relative z-20 flex flex-1 flex-col items-center justify-center px-8">
+      {/* Main content — split layout: logo on one side, buttons on the other */}
+      <div className="relative z-20 flex flex-1 flex-col items-center justify-center px-6 py-8">
         <AnimatePresence mode="wait">
           {stage === "entry" && (
             <motion.div
@@ -161,57 +161,86 @@ export function Splash() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.4 }}
-              className="w-full max-w-xs text-center"
+              className="grid w-full max-w-3xl items-center gap-8 md:grid-cols-2"
+              dir={isFa ? "rtl" : "ltr"}
             >
-              {/* Logo — clean, inverted, well-sized */}
-              <HeroLogo />
+              {/* Hero mascot character — occupies one column */}
+              <div className="order-1 flex justify-center md:order-1">
+                <HeroLogo />
+              </div>
 
-              {/* Primary actions — generous spacing */}
+              {/* Action buttons — beside the logo, vertically centered */}
               <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.6 }}
-                className="mt-12 space-y-3"
+                initial={{ opacity: 0, x: isFa ? -20 : 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.4, duration: 0.5 }}
+                className="order-2 w-full space-y-3"
               >
-                <Button onClick={() => { setLoginTarget("customer"); setStage("phone"); }} className="h-13 w-full rounded-xl bg-amber py-3.5 text-sm font-semibold text-black hover:bg-amber/90">
-                  <Phone className="mr-2 size-4" /> {t("splash.signInMobile")}
-                </Button>
-                <Button onClick={continueAsGuest} variant="ghost" className="w-full rounded-xl py-3 text-sm text-white/60 hover:bg-white/5 hover:text-white">
-                  <UserRound className="mr-2 size-4" /> {t("splash.continueGuest")}
-                </Button>
-              </motion.div>
+                <div className="mb-5">
+                  <motion.h1
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 }}
+                    className="font-display text-2xl font-bold leading-tight text-white"
+                  >
+                    {t("splash.welcome")}
+                  </motion.h1>
+                  <motion.p
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.4 }}
+                    className="mt-1 text-sm text-white/50"
+                  >
+                    {t("splash.subtitle")}
+                  </motion.p>
+                </div>
 
-              {/* Divider */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.8 }}
-                className="my-6 flex items-center gap-3"
-              >
-                <div className="h-px flex-1 bg-white/6" />
-                <span className="text-[9px] tracking-widest text-white/20">{isFa ? "یا" : "OR"}</span>
-                <div className="h-px flex-1 bg-white/6" />
-              </motion.div>
-
-              {/* Mechanic actions — clearly separated */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.9 }}
-                className="space-y-2.5"
-              >
-                <button
-                  onClick={() => { setLoginTarget("mechanic"); setStage("phone"); }}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/8 py-3 text-sm text-white/50 transition-all hover:border-amber/30 hover:text-amber"
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.5 }}
+                  className="space-y-2.5"
                 >
-                  <Wrench className="size-4" /> {t("splash.mechanicPortal")}
-                </button>
-                <button
-                  onClick={() => setApplyOpen(true)}
-                  className="block w-full text-center text-[11px] text-white/30 transition-colors hover:text-amber"
+                  <Button onClick={() => { setLoginTarget("customer"); setStage("phone"); }} className="h-12 w-full rounded-xl bg-amber py-3.5 text-sm font-semibold text-black hover:bg-amber/90">
+                    <Phone className="mr-2 size-4" /> {t("splash.signInMobile")}
+                  </Button>
+                  <Button onClick={continueAsGuest} variant="ghost" className="w-full rounded-xl py-3 text-sm text-white/60 hover:bg-white/5 hover:text-white">
+                    <UserRound className="mr-2 size-4" /> {t("splash.continueGuest")}
+                  </Button>
+                </motion.div>
+
+                {/* Divider */}
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.7 }}
+                  className="my-4 flex items-center gap-3"
                 >
-                  {t("splash.applyMechanic")}
-                </button>
+                  <div className="h-px flex-1 bg-white/6" />
+                  <span className="text-[9px] tracking-widest text-white/20">{isFa ? "یا" : "OR"}</span>
+                  <div className="h-px flex-1 bg-white/6" />
+                </motion.div>
+
+                {/* Mechanic actions */}
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.8 }}
+                  className="space-y-2"
+                >
+                  <button
+                    onClick={() => { setLoginTarget("mechanic"); setStage("phone"); }}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/8 py-2.5 text-sm text-white/50 transition-all hover:border-amber/30 hover:text-amber"
+                  >
+                    <Wrench className="size-4" /> {t("splash.mechanicPortal")}
+                  </button>
+                  <button
+                    onClick={() => setApplyOpen(true)}
+                    className="block w-full text-center text-[11px] text-white/30 transition-colors hover:text-amber"
+                  >
+                    {t("splash.applyMechanic")}
+                  </button>
+                </motion.div>
               </motion.div>
             </motion.div>
           )}
