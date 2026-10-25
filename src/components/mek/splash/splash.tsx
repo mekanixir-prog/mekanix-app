@@ -154,7 +154,7 @@ export function Splash() {
       {/* Main content — single column. Content is pushed to the top so
           the mascot sits high and its feet land right above the login
           button (no gap, no overlap). */}
-      <div className="relative z-20 flex flex-1 flex-col items-center justify-start px-5 pt-16 pb-6">
+      <div className="relative z-20 flex flex-1 flex-col items-center justify-start px-5 pt-8 pb-6">
         <AnimatePresence mode="wait">
           {stage === "entry" && (
             <motion.div
@@ -336,26 +336,25 @@ function HeroLogo() {
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
       // Fixed height container — bounds the mascot so it can't overflow.
-      className="relative mx-auto h-[180px] w-[180px] overflow-hidden sm:h-[200px] sm:w-[200px]"
+      // Larger than the previous 180/200px — the user said it was too small.
+      className="relative mx-auto h-[240px] w-[240px] overflow-hidden sm:h-[280px] sm:w-[280px]"
     >
       {/* Soft amber spotlight behind the mascot (brand color #F58220) */}
       <div
         className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
         style={{
-          width: 200, height: 200,
+          width: 260, height: 260,
           background: "radial-gradient(circle, rgba(245, 130, 32, 0.18), transparent 60%)",
         }}
       />
 
       {/* 3D Mascot Character — the hero image.
           Explicit max-height (NOT max-h-full, which breaks inside the grid)
-          so the img is bounded by the container's fixed height. The img
-          uses w-auto so its width derives from the bounded height + aspect
-          ratio, and max-w-full as a safety net. */}
+          so the img is bounded by the container's fixed height. */}
       <motion.img
         src="/splash-logo.webp"
         alt="MEKANIX — مکانیک سیار"
-        className="absolute left-1/2 top-1/2 max-h-[180px] w-auto -translate-x-1/2 -translate-y-1/2 select-none object-contain drop-shadow-2xl sm:max-h-[200px]"
+        className="absolute left-1/2 top-1/2 max-h-[240px] w-auto -translate-x-1/2 -translate-y-1/2 select-none object-contain drop-shadow-2xl sm:max-h-[280px]"
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2, duration: 0.7 }}
