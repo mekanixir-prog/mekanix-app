@@ -23,8 +23,10 @@ export function ModeSelect() {
   };
 
   const modes = [
-    { slug: "passenger" as MachineMode, icon: "Car", tone: "amber", types: ["CAR"] },
-    { slug: "heavy" as MachineMode, icon: "Truck", tone: "emerald", types: ["TRUCK", "BUS", "EXCAVATOR", "LOADER", "BULLDOZER", "GRADER", "AGRI", "INDUSTRIAL", "OTHER"] },
+    // HEAVY mode is FIRST (brand priority). amber accent = #F58220.
+    { slug: "heavy" as MachineMode, icon: "Truck", tone: "amber", types: ["TRUCK", "BUS", "EXCAVATOR", "LOADER", "BULLDOZER", "GRADER", "AGRI", "INDUSTRIAL", "OTHER"] },
+    // PASSENGER mode is SECOND. emerald accent = #3D9B68.
+    { slug: "passenger" as MachineMode, icon: "Car", tone: "emerald", types: ["CAR"] },
   ];
 
   // Resolve which card image to show per mode + current theme.
@@ -105,9 +107,11 @@ export function ModeSelect() {
       </div>
 
       {/* Two mode cards — side-by-side on ALL viewports (mobile + desktop)
-          so both fit without scrolling. Card height matches the image's
-          intrinsic aspect ratio (heavy cards are 2.5:1 → aspect-[5/2]). */}
-      <div className="relative z-20 mx-auto grid max-w-5xl grid-cols-2 gap-3 px-4 py-4 sm:gap-5 sm:px-6 sm:py-6" dir={isFa ? "rtl" : "ltr"}>
+          so both fit without scrolling. Card aspect ratio matches the
+          image's intrinsic aspect ratio (dark: 1983x793 ≈ 5:2, light:
+          2172x724 ≈ 3:1). We use 5/2 which matches the dark cards exactly.
+          HEAVY card is first (brand priority). */}
+      <div className="relative z-20 mx-auto grid w-full max-w-6xl grid-cols-2 gap-2 px-2 py-4 sm:gap-4 sm:px-6 sm:py-6" dir={isFa ? "rtl" : "ltr"}>
         {modes.map((mode, i) => (
           <motion.button
             key={mode.slug}
@@ -120,9 +124,10 @@ export function ModeSelect() {
           >
             <div className={`absolute -right-16 -top-16 size-48 rounded-full blur-3xl ${mode.tone === "amber" ? "bg-amber/20" : "bg-emerald-glow/15"}`} />
 
-            {/* Card hero image — matches the image's intrinsic aspect ratio
-                (heavy: 1983x793 ≈ 2.5:1, passenger: 1983x793 ≈ 2.5:1) so the
-                card height tracks the image, not arbitrary padding. */}
+            {/* Card hero image — aspect ratio matches the actual PNG
+                dimensions exactly: 1983x793 (dark) / 2172x724 (light).
+                We use aspect-[5/2] (2.5:1) which matches the dark cards
+                that the Worker serves by default. */}
             <div className="relative aspect-[5/2] w-full overflow-hidden">
               <img
                 src={cardImage(mode.slug)}

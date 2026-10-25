@@ -1,12 +1,12 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Home, Car, Wrench, MapPin, Receipt, History, MessageSquare, Bell, Settings, Plus, Crown, Headset,
   Truck, CalendarClock, Gift, Shield, Heart,
 } from "lucide-react";
 import { AppShell, type NavItem } from "@/components/mek/app-shell";
 import { useApp } from "@/lib/store";
-import { useActiveUser } from "@/lib/use-active-user";
+import { useActiveUser, type DemoUser } from "@/lib/use-active-user";
 import { CustomerHome } from "./home";
 import { CustomerVehicles } from "./vehicles";
 import { RequestType, DescribeProblem, Matching, TechnicianProfileView } from "./request-flow";
@@ -26,8 +26,6 @@ import { CareDashboard } from "./care-dashboard";
 import { CareBooking } from "./care-booking";
 import { CareDetail } from "./care-detail";
 import { CustomerInsurance } from "./insurance";
-import { EmptyState } from "@/components/mek/shared/primitives";
-import { Bell as BellIcon } from "lucide-react";
 import { NotificationCenter } from "@/components/mek/shared/notification-center";
 import { useT } from "@/lib/use-t";
 
@@ -44,11 +42,30 @@ export function CustomerApp() {
       </div>
     );
   }
-  if (!user) {
-    return (
-      <EmptyState icon={Wrench} title={t("common.noCustomerTitle")} description={t("common.noCustomerDesc")} className="m-6" />
-    );
-  }
+
+  // Guest fallback — construct a demo customer profile so the app is fully
+  // browsable without a real login. Without this, a guest lands on an empty
+  // state and can't see any customer UI (the user complained "پروفایل مشتری
+  // موجود نیست"). The demo profile has no real DB records, so mutations are
+  // client-side only.
+  const activeUser: DemoUser = user ?? {
+    id: "guest",
+    name: "کاربر مهمان",
+    phone: null,
+    role: "CUSTOMER",
+    email: null,
+    phoneVerified: false,
+    password: null,
+    avatar: null,
+    country: "",
+    currency: "IRR",
+    language: "fa",
+    status: "ACTIVE",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    customer: { id: "guest", userId: "guest" } as any,
+    technician: null,
+  };
 
   const nav: NavItem[] = [
     { view: "home", label: t("nav.home"), icon: Home },
@@ -67,34 +84,34 @@ export function CustomerApp() {
 
   const render = () => {
     switch (view) {
-      case "home": return <CustomerHome customer={user} />;
-      case "vehicles": return <CustomerVehicles customer={user} />;
-      case "care": return <CareDashboard customer={user} />;
-      case "care-packages": return <CareBooking customer={user} />;
+      case "home": return <CustomerHome customer={activeUser} />;
+      case "vehicles": return <CustomerVehicles customer={activeUser} />;
+      case "care": return <CareDashboard customer={activeUser} />;
+      case "care-packages": return <CareBooking customer={activeUser} />;
       case "care-detail": return <CareDetail />;
-      case "fleet-dashboard": return <CustomerFleetDashboard customer={user} />;
-      case "maintenance": return <CustomerMaintenance customer={user} />;
-      case "request-type": return <RequestType customer={user} />;
-      case "describe": return <DescribeProblem customer={user} />;
-      case "matching": return <Matching customer={user} />;
-      case "technician-profile": return <TechnicianProfileView customer={user} />;
-      case "track": return <CustomerTracking customer={user} />;
-      case "invoice": return <CustomerInvoice customer={user} />;
-      case "invoice-document": return <InvoiceDocument customer={user} />;
-      case "completion": return <CustomerCompletion customer={user} />;
-      case "service-history": return <CustomerHistory customer={user} />;
-      case "chat": return <CustomerChat customer={user} />;
-      case "vip": return <CustomerVip userId={user.id} />;
-      case "support": return <CustomerSupport userId={user.id} />;
-      case "referral": return <CustomerReferral userId={user.id} />;
-      case "insurance": return <CustomerInsurance customer={user} />;
+      case "fleet-dashboard": return <CustomerFleetDashboard customer={activeUser} />;
+      case "maintenance": return <CustomerMaintenance customer={activeUser} />;
+      case "request-type": return <RequestType customer={activeUser} />;
+      case "describe": return <DescribeProblem customer={activeUser} />;
+      case "matching": return <Matching customer={activeUser} />;
+      case "technician-profile": return <TechnicianProfileView customer={activeUser} />;
+      case "track": return <CustomerTracking customer={activeUser} />;
+      case "invoice": return <CustomerInvoice customer={activeUser} />;
+      case "invoice-document": return <InvoiceDocument customer={activeUser} />;
+      case "completion": return <CustomerCompletion customer={activeUser} />;
+      case "service-history": return <CustomerHistory customer={activeUser} />;
+      case "chat": return <CustomerChat customer={activeUser} />;
+      case "vip": return <CustomerVip userId={activeUser.id} />;
+      case "support": return <CustomerSupport userId={activeUser.id} />;
+      case "referral": return <CustomerReferral userId={activeUser.id} />;
+      case "insurance": return <CustomerInsurance customer={activeUser} />;
       case "notifications": return (
         <div className="rounded-xl border border-border bg-card" style={{ height: "calc(100vh - 8rem)" }}>
-          <NotificationCenter userId={user.id} />
+          <NotificationCenter userId={activeUser.id} />
         </div>
       );
-      case "settings": return <CustomerSettings customer={user} />;
-      default: return <CustomerHome customer={user} />;
+      case "settings": return <CustomerSettings customer={activeUser} />;
+      default: return <CustomerHome customer={activeUser} />;
     }
   };
 

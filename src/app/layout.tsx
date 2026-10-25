@@ -5,6 +5,7 @@ import "leaflet/dist/leaflet.css";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/mek/theme-provider";
+import { AccentThemeProvider } from "@/components/mek/accent-theme-provider";
 import { ServiceWorkerRegistrar } from "@/components/mek/service-worker-registrar";
 
 const vazirmatn = Vazirmatn({
@@ -48,9 +49,11 @@ export default function RootLayout({
       <body className={`${vazirmatn.variable} font-sans antialiased bg-background text-foreground`}>
         <ServiceWorkerRegistrar />
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
-          {children}
-          <Toaster />
-          <SonnerToaster position="top-right" richColors closeButton />
+          <AccentThemeProvider>
+            {children}
+            <Toaster />
+            <SonnerToaster position="top-right" richColors closeButton />
+          </AccentThemeProvider>
         </ThemeProvider>
       </body>
     </html>
