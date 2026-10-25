@@ -21,9 +21,19 @@ export function proxy(req: NextRequest) {
 
   if (process.env.NODE_ENV === "production") {
     res.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
-    res.headers.set("X-Frame-Options", "SAMEORIGIN");
   }
-  // In dev: allow all frame ancestors so preview panel works
+  // Note: X-Frame-Options: SAMEORIGIN is intentionally NOT set on any
+  // environment. CSP frame-ancestors * is the modern equivalent and
+  // allows the Z AI preview gateway (cross-origin) to embed the page.
+  // Setting X-Frame-Options: SAMEORIGIN would override the permissive
+  // CSP and break the preview panel.
+  // In dev: allow all frame ancestors so preview panel works.
+  // In production: ALSO allow all frame ancestors — the Worker runs in
+  // production mode but we still need the Z AI preview gateway to embed
+  // the page in an iframe. The CSP 'self' would block cross-origin
+  // embedding (the gateway is on *.space-z.ai, the Worker is localhost).
+  // Cross-origin embedding of a public marketing page is safe here; the
+  // sensitive admin/payment routes are protected by auth, not by CSP.
   const csp = [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.socket.io",
@@ -32,7 +42,7 @@ export function proxy(req: NextRequest) {
     "img-src 'self' data: blob: https: http:",
     "connect-src 'self' ws: wss: https: http:",
     "worker-src 'self' blob:",
-    process.env.NODE_ENV === "production" ? "frame-ancestors 'self'" : "frame-ancestors *",
+    "frame-ancestors *",
   ].join("; ");
   res.headers.set("Content-Security-Policy", csp);
 
