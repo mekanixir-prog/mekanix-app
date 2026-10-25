@@ -1,18 +1,20 @@
 "use client";
 import { motion } from "framer-motion";
-import { ArrowRight, Car, Truck, Wrench, ShieldCheck, LogOut, Languages } from "lucide-react";
+import { ArrowRight, Car, Truck, Wrench, ShieldCheck, LogOut, Languages, Sun, Moon } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { useT, LANGS, type Lang } from "@/lib/use-t";
 import { MACHINE_MODES, type MachineMode } from "@/lib/constants";
 import { MekIcon } from "@/components/mek/shared/icons";
 import { Logo } from "@/components/mek/brand/logo";
 import { Button } from "@/components/ui/button";
+import { useTheme } from "@/components/mek/theme-provider";
 import { toast } from "sonner";
 import { toPersianDigits } from "@/lib/format";
 
 export function ModeSelect() {
   const { auth, setMachineMode, exitToSplash, lang, setLang } = useApp();
   const { t, isFa, type: typeLabel } = useT();
+  const { theme, setTheme } = useTheme();
 
   const choose = (mode: MachineMode) => {
     setMachineMode(mode);
@@ -24,6 +26,14 @@ export function ModeSelect() {
     { slug: "passenger" as MachineMode, icon: "Car", tone: "amber", types: ["CAR"] },
     { slug: "heavy" as MachineMode, icon: "Truck", tone: "emerald", types: ["TRUCK", "BUS", "EXCAVATOR", "LOADER", "BULLDOZER", "GRADER", "AGRI", "INDUSTRIAL", "OTHER"] },
   ];
+
+  // Resolve which card image to show per mode + current theme.
+  // Cards exist as 4 variants: heavy-dark, heavy-light, passenger-dark, passenger-light.
+  const isDark = theme === "dark";
+  const cardImage = (slug: MachineMode) =>
+    slug === "passenger"
+      ? isDark ? "/cards/passenger-dark.png" : "/cards/passenger-light.png"
+      : isDark ? "/cards/heavy-dark.png" : "/cards/heavy-light.png";
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-background">
@@ -38,6 +48,14 @@ export function ModeSelect() {
         </button>
         <Logo size={28} />
         <div className="flex items-center gap-2">
+          {/* Day/Night theme toggle — applies to mode-select + persisted globally */}
+          <button
+            onClick={() => setTheme(isDark ? "light" : "dark")}
+            aria-label={isDark ? "Switch to light" : "Switch to dark"}
+            className="grid size-8 place-items-center rounded-lg border border-border bg-card/60 text-muted-foreground transition-colors hover:text-foreground"
+          >
+            {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+          </button>
           {/* Language toggle */}
           <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card/60 p-0.5">
             {LANGS.map((l) => (
@@ -96,35 +114,49 @@ export function ModeSelect() {
             transition={{ delay: 0.15 + i * 0.08, type: "spring", stiffness: 200 }}
             whileHover={{ y: -4 }}
             onClick={() => choose(mode.slug)}
-            className={`group relative overflow-hidden rounded-2xl border bg-card p-7 transition-colors ${mode.tone === "amber" ? "border-amber/40 hover:border-amber" : "border-emerald-glow/40 hover:border-emerald-glow"}`}
+            className={`group relative overflow-hidden rounded-2xl border bg-card p-0 transition-colors mk-card-shadow mk-card-hover ${mode.tone === "amber" ? "border-amber/40 hover:border-amber" : "border-emerald-glow/40 hover:border-emerald-glow"}`}
           >
             <div className={`absolute -right-16 -top-16 size-48 rounded-full blur-3xl ${mode.tone === "amber" ? "bg-amber/20" : "bg-emerald-glow/15"}`} />
 
-            <div className="relative flex items-start justify-between">
-              <div className={`grid size-16 place-items-center rounded-2xl border ${mode.tone === "amber" ? "border-amber/40 bg-amber/10" : "border-emerald-glow/40 bg-emerald-glow/10"}`}>
-                <MekIcon name={mode.icon} className={`size-8 ${mode.tone === "amber" ? "text-amber" : "text-emerald-glow"}`} />
+            {/* Card hero image — uses the themed card PNG (heavy-dark/light, passenger-dark/light). */}
+            <div className="relative aspect-[4/3] w-full overflow-hidden">
+              <img
+                src={cardImage(mode.slug)}
+                alt={mode.slug === "passenger" ? t("mode.passenger") : t("mode.heavy")}
+                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                loading="lazy"
+              />
+              {/* Gradient overlay so the text below the image stays legible */}
+              <div className="absolute inset-0 bg-gradient-to-t from-card via-card/40 to-transparent" />
+            </div>
+
+            <div className="relative p-5">
+              <div className="flex items-start justify-between">
+                <div className={`grid size-12 place-items-center rounded-xl border ${mode.tone === "amber" ? "border-amber/40 bg-amber/10" : "border-emerald-glow/40 bg-emerald-glow/10"}`}>
+                  <MekIcon name={mode.icon} className={`size-6 ${mode.tone === "amber" ? "text-amber" : "text-emerald-glow"}`} />
+                </div>
+                <ArrowRight className={`size-5 transition-transform group-hover:translate-x-1 ${mode.tone === "amber" ? "text-amber" : "text-emerald-glow"} ${isFa ? "rotate-180" : ""}`} />
               </div>
-              <ArrowRight className={`size-5 transition-transform group-hover:translate-x-1 ${mode.tone === "amber" ? "text-amber" : "text-emerald-glow"} ${isFa ? "rotate-180" : ""}`} />
-            </div>
 
-            <div className="relative mt-6">
-              <h2 className="font-display text-2xl font-bold tracking-tight">
-                {mode.slug === "passenger" ? t("mode.passenger") : t("mode.heavy")}
-              </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {mode.slug === "passenger" ? t("mode.passengerDesc") : t("mode.heavyDesc")}
-              </p>
-            </div>
+              <div className="relative mt-4">
+                <h2 className="font-display text-xl font-bold tracking-tight">
+                  {mode.slug === "passenger" ? t("mode.passenger") : t("mode.heavy")}
+                </h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {mode.slug === "passenger" ? t("mode.passengerDesc") : t("mode.heavyDesc")}
+                </p>
+              </div>
 
-            <div className="relative mt-5 flex flex-wrap gap-1.5">
-              {mode.types.slice(0, 6).map((tp) => (
-                <span key={tp} className="rounded-md border border-border bg-background/60 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide text-muted-foreground">
-                  {typeLabel(tp)}
-                </span>
-              ))}
-              {mode.types.length > 6 && (
-                <span className="rounded-md px-1.5 py-0.5 text-[9px] text-muted-foreground">+{isFa ? toPersianDigits(mode.types.length - 6) : (mode.types.length - 6)}</span>
-              )}
+              <div className="relative mt-4 flex flex-wrap gap-1.5">
+                {mode.types.slice(0, 6).map((tp) => (
+                  <span key={tp} className="rounded-md border border-border bg-background/60 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wide text-muted-foreground">
+                    {typeLabel(tp)}
+                  </span>
+                ))}
+                {mode.types.length > 6 && (
+                  <span className="rounded-md px-1.5 py-0.5 text-[9px] text-muted-foreground">+{isFa ? toPersianDigits(mode.types.length - 6) : (mode.types.length - 6)}</span>
+                )}
+              </div>
             </div>
           </motion.button>
         ))}

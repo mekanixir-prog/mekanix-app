@@ -15,6 +15,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { MechanicApplicationForm } from "./mechanic-application";
 import { toPersianDigits } from "@/lib/format";
+import dynamic from "next/dynamic";
+
+// 3D Logo — loaded dynamically (client-only, no SSR) to avoid
+// react-three/fiber SSR issues. Falls back to the 2D logo while loading
+// or if WebGL is unavailable.
+const Logo3D = dynamic(
+  () => import("@/components/mek/brand/logo-3d").then((m) => m.Logo3D),
+  {
+    ssr: false,
+    loading: () => null,
+  }
+);
 
 type Stage = "entry" | "phone" | "otp";
 
@@ -311,10 +323,10 @@ export function Splash() {
   );
 }
 
-// ─── Hero logo: 2D brand mark (the original, before 3D) ───
-// logo.webp is a black-on-white combination mark (M icon + "MEKANIX" wordmark
-// + "REPAIR / MAINTAIN / CONNECT" tagline). On the dark splash we invert it
-// via CSS so it reads as white-on-dark.
+// ─── Hero logo: 3D model with 2D fallback ───
+// logo3d.glb is rendered via @react-three/fiber (Logo3D). The 2D logo
+// (logo.webp) is shown behind the Canvas as a fallback while the 3D model
+// loads or if WebGL is unavailable.
 function HeroLogo() {
   return (
     <motion.div
@@ -333,16 +345,22 @@ function HeroLogo() {
         }}
       />
 
-      {/* 2D Logo — the original brand mark, inverted for dark background */}
+      {/* 2D Logo fallback — visible behind the 3D canvas until the model loads */}
       <motion.img
         src="/logo.webp"
         alt="MEKANIX"
-        className="relative z-10 select-none object-contain"
+        className="pointer-events-none absolute z-0 select-none object-contain opacity-60"
         style={{ width: 200, height: "auto", filter: "invert(1) hue-rotate(180deg) brightness(1.1)" }}
         initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
+        animate={{ opacity: 0.6, y: 0 }}
         transition={{ delay: 0.2, duration: 0.6 }}
       />
+
+      {/* 3D Logo — rendered on top of the 2D fallback. Canvas has alpha:true
+          so the 2D logo shows through where the 3D model isn't drawn. */}
+      <div className="relative z-10">
+        <Logo3D width={240} height={220} />
+      </div>
     </motion.div>
   );
 }
