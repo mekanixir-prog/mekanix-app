@@ -15,18 +15,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { MechanicApplicationForm } from "./mechanic-application";
 import { toPersianDigits } from "@/lib/format";
-import dynamic from "next/dynamic";
+import { Logo3D } from "@/components/mek/brand/logo-3d";
 
-// 3D Logo — loaded dynamically (client-only, no SSR) to avoid
-// react-three/fiber SSR issues. Falls back to the 2D logo while loading
-// or if WebGL is unavailable.
-const Logo3D = dynamic(
-  () => import("@/components/mek/brand/logo-3d").then((m) => m.Logo3D),
-  {
-    ssr: false,
-    loading: () => null,
-  }
-);
+// Logo3D uses an internal mount guard (isMounted) so it only renders the
+// Canvas on the client after hydration. This is Worker-safe — no need for
+// next/dynamic { ssr: false } which gets tree-shaken out of OpenNext builds.
 
 type Stage = "entry" | "phone" | "otp";
 

@@ -2,7 +2,7 @@
 
 import { Canvas } from "@react-three/fiber";
 import { useGLTF, Float, Environment } from "@react-three/drei";
-import { Suspense } from "react";
+import { Suspense, useState, useEffect } from "react";
 import * as THREE from "three";
 
 // MEKANIX — 3D Logo component for splash
@@ -11,10 +11,11 @@ import * as THREE from "three";
 // ambient lighting. Falls back gracefully if the model fails to load
 // (the parent shows a 2D logo behind the Canvas).
 //
-// Performance:
-//   - dpr={[1, 2]} caps pixel ratio for high-DPI screens
-//   - gl={{ antialias: true, alpha: true }} for smooth edges + transparency
-//   - No shadows (cheaper) — the model is lit by ambient + directional only
+// IMPORTANT: This component uses a mount guard (isMounted) so it only
+// renders the Canvas on the client after hydration. This avoids SSR issues
+// with react-three/fiber in Next.js + OpenNext (Cloudflare Worker) builds.
+// We do NOT use next/dynamic with ssr:false because that causes the
+// component to be tree-shaken out of the Worker bundle entirely.
 
 function LogoModel() {
   const { scene } = useGLTF("/logo3d.glb");
@@ -67,6 +68,20 @@ export function Logo3D({
   width?: number;
   height?: number;
 }) {
+  // Mount guard — only render Canvas on the client after hydration.
+  // This is the Worker-safe alternative to next/dynamic { ssr: false }.
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  if (!isMounted) {
+    // Render nothing during SSR / before hydration. The 2D fallback logo
+    // (rendered by the parent Splash component behind this Canvas) stays
+    // visible until the 3D model mounts.
+    return <div style={{ width, height }} />;
+  }
+
   return (
     <div style={{ width, height }} className="relative">
       <Canvas
@@ -97,5 +112,8 @@ export function Logo3D({
   );
 }
 
-// Preload the model for faster splash render.
-useGLTF.preload("/logo3d.glb");
+// NOTE: useGLTF.preload() is intentionally NOT called at module scope.
+// In the OpenNext (Cloudflare Worker) SSR pass, calling preload at import
+// time tries to fetch /logo3d.glb on the server, which either 404s inside
+// the worker bundle or throws. Preloading happens lazily on the client
+// when LogoModel first mounts (via useGLTF inside the Canvas).
