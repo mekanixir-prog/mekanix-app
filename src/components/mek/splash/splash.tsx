@@ -15,11 +15,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { MechanicApplicationForm } from "./mechanic-application";
 import { toPersianDigits } from "@/lib/format";
-import { Logo3D } from "@/components/mek/brand/logo-3d";
 
-// Logo3D uses an internal mount guard (isMounted) so it only renders the
-// Canvas on the client after hydration. This is Worker-safe — no need for
-// next/dynamic { ssr: false } which gets tree-shaken out of OpenNext builds.
+// The splash hero uses splash-logo.webp — a pre-rendered 3D mascot character
+// (mechanic with wrench + M logo). No live WebGL canvas needed.
 
 type Stage = "entry" | "phone" | "otp";
 
@@ -316,10 +314,13 @@ export function Splash() {
   );
 }
 
-// ─── Hero logo: 3D model with 2D fallback ───
-// logo3d.glb is rendered via @react-three/fiber (Logo3D). The 2D logo
-// (logo.webp) is shown behind the Canvas as a fallback while the 3D model
-// loads or if WebGL is unavailable.
+// ─── Hero logo: 3D mascot character (from splash-logo.webp) ───
+// splash-logo.webp is a 3D-rendered mascot character (a mechanic holding a
+// wrench with the MEKANIX "M" logo behind him). It's the hero visual of the
+// splash screen — a high-quality photorealistic render, NOT a flat logo.
+//
+// We display it large and centered, with a soft amber spotlight behind it
+// to make the character pop against the dark graphite background.
 function HeroLogo() {
   return (
     <motion.div
@@ -327,33 +328,27 @@ function HeroLogo() {
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
       className="relative mx-auto grid place-items-center"
-      style={{ width: 240, height: 220 }}
+      style={{ width: 280, height: 280 }}
     >
-      {/* Subtle amber ambient glow behind the mark */}
+      {/* Soft amber spotlight behind the mascot */}
       <div
         className="pointer-events-none absolute rounded-full"
         style={{
-          width: 220, height: 220,
-          background: "radial-gradient(circle, oklch(0.74 0.16 68 / 0.15), transparent 65%)",
+          width: 260, height: 260,
+          background: "radial-gradient(circle, oklch(0.74 0.16 68 / 0.18), transparent 60%)",
         }}
       />
 
-      {/* 2D Logo fallback — visible behind the 3D canvas until the model loads */}
+      {/* 3D Mascot Character — the hero image */}
       <motion.img
-        src="/logo.webp"
-        alt="MEKANIX"
-        className="pointer-events-none absolute z-0 select-none object-contain opacity-60"
-        style={{ width: 200, height: "auto", filter: "invert(1) hue-rotate(180deg) brightness(1.1)" }}
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 0.6, y: 0 }}
-        transition={{ delay: 0.2, duration: 0.6 }}
+        src="/splash-logo.webp"
+        alt="MEKANIX — مکانیک سیار"
+        className="relative z-10 select-none object-contain drop-shadow-2xl"
+        style={{ width: 280, height: "auto" }}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2, duration: 0.7 }}
       />
-
-      {/* 3D Logo — rendered on top of the 2D fallback. Canvas has alpha:true
-          so the 2D logo shows through where the 3D model isn't drawn. */}
-      <div className="relative z-10">
-        <Logo3D width={240} height={220} />
-      </div>
     </motion.div>
   );
 }
