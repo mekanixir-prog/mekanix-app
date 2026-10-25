@@ -151,8 +151,10 @@ export function Splash() {
         ))}
       </div>
 
-      {/* Main content — single column, mascot centered above buttons */}
-      <div className="relative z-20 flex flex-1 flex-col items-center justify-center px-6 py-8">
+      {/* Main content — single column. Content is pushed to the top so
+          the mascot sits high and its feet land right above the login
+          button (no gap, no overlap). */}
+      <div className="relative z-20 flex flex-1 flex-col items-center justify-start px-5 pt-16 pb-6">
         <AnimatePresence mode="wait">
           {stage === "entry" && (
             <motion.div
@@ -161,17 +163,18 @@ export function Splash() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.4 }}
-              className="w-full max-w-sm text-center"
+              className="w-full max-w-xs text-center"
             >
-              {/* Hero mascot — centered, nothing beside it */}
+              {/* Hero mascot — centered, nothing beside it. */}
               <HeroLogo />
 
-              {/* Action buttons — directly below the mascot, tight grouping */}
+              {/* Action buttons — directly below the mascot's feet.
+                  No margin-top so the feet sit right on the button. */}
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.5 }}
-                className="mt-6 space-y-2.5"
+                className="-mt-1 space-y-2.5"
               >
                 <Button onClick={() => { setLoginTarget("customer"); setStage("phone"); }} className="h-12 w-full rounded-xl bg-amber py-3.5 text-sm font-semibold text-black hover:bg-amber/90">
                   <Phone className="mr-2 size-4" /> {t("splash.signInMobile")}
@@ -186,7 +189,7 @@ export function Splash() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.7 }}
-                className="my-4 flex items-center gap-3"
+                className="my-3 flex items-center gap-3"
               >
                 <div className="h-px flex-1 bg-white/6" />
                 <span className="text-[9px] tracking-widest text-white/20">{isFa ? "یا" : "OR"}</span>
@@ -327,24 +330,24 @@ function HeroLogo() {
       initial={{ opacity: 0, scale: 0.92 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
-      className="relative mx-auto grid place-items-center"
-      style={{ width: 220, height: 200 }}
+      className="relative mx-auto grid h-[220px] w-[240px] place-items-center sm:h-[260px] sm:w-[280px]"
     >
       {/* Soft amber spotlight behind the mascot (brand color #F58220) */}
       <div
         className="pointer-events-none absolute rounded-full"
         style={{
-          width: 200, height: 200,
+          width: 220, height: 220,
           background: "radial-gradient(circle, rgba(245, 130, 32, 0.18), transparent 60%)",
         }}
       />
 
-      {/* 3D Mascot Character — the hero image */}
+      {/* 3D Mascot Character — the hero image.
+          Fixed parent height so the image is bounded; the mascot's feet
+          land right at the bottom edge, immediately above the login button. */}
       <motion.img
         src="/splash-logo.webp"
         alt="MEKANIX — مکانیک سیار"
-        className="relative z-10 select-none object-contain drop-shadow-2xl"
-        style={{ width: 200, height: "auto" }}
+        className="relative z-10 h-full w-auto max-w-full select-none object-contain drop-shadow-2xl"
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2, duration: 0.7 }}
