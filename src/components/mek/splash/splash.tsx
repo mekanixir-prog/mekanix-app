@@ -335,11 +335,12 @@ function HeroLogo() {
       initial={{ opacity: 0, scale: 0.92 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
-      className="relative mx-auto grid h-[180px] w-[200px] place-items-center sm:h-[200px] sm:w-[220px]"
+      // Fixed height container — bounds the mascot so it can't overflow.
+      className="relative mx-auto h-[180px] w-[180px] overflow-hidden sm:h-[200px] sm:w-[200px]"
     >
       {/* Soft amber spotlight behind the mascot (brand color #F58220) */}
       <div
-        className="pointer-events-none absolute rounded-full"
+        className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
         style={{
           width: 200, height: 200,
           background: "radial-gradient(circle, rgba(245, 130, 32, 0.18), transparent 60%)",
@@ -347,12 +348,14 @@ function HeroLogo() {
       />
 
       {/* 3D Mascot Character — the hero image.
-          Fixed parent height so the image is bounded; the mascot's feet
-          land right at the bottom edge, immediately above the login button. */}
+          Explicit max-height (NOT max-h-full, which breaks inside the grid)
+          so the img is bounded by the container's fixed height. The img
+          uses w-auto so its width derives from the bounded height + aspect
+          ratio, and max-w-full as a safety net. */}
       <motion.img
         src="/splash-logo.webp"
         alt="MEKANIX — مکانیک سیار"
-        className="relative z-10 h-full w-auto max-w-full select-none object-contain drop-shadow-2xl"
+        className="absolute left-1/2 top-1/2 max-h-[180px] w-auto -translate-x-1/2 -translate-y-1/2 select-none object-contain drop-shadow-2xl sm:max-h-[200px]"
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2, duration: 0.7 }}
