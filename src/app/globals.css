@@ -297,5 +297,38 @@ html.accent-heavy {
 .mk-btn-glow { box-shadow: 0 4px 14px -2px color-mix(in oklch, var(--amber) 45%, transparent); transition: box-shadow 0.2s ease, transform 0.15s ease; }
 .mk-btn-glow:hover { box-shadow: 0 6px 20px -2px color-mix(in oklch, var(--amber) 60%, transparent); transform: translateY(-1px); }
 .mk-btn-glow:active { transform: translateY(0); }
+
+/* Glossy amber button — same metallic finish as the MEKANIX logo.
+   Layered: base amber + radial highlight (top) + linear sheen (across) +
+   inner highlight border. Mimics the 3D embossed look of the brand mark. */
+.mk-btn-glossy-amber {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.35) 0%, transparent 55%),
+    linear-gradient(180deg, #FFB05A 0%, var(--amber) 45%, #D96810 100%);
+  border: 1px solid rgba(255, 200, 120, 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(120, 60, 0, 0.3),
+    0 4px 14px -2px color-mix(in oklch, var(--amber) 50%, transparent);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+  transition: box-shadow 0.2s ease, transform 0.15s ease;
+}
+.mk-btn-glossy-amber:hover {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.45) 0%, transparent 55%),
+    linear-gradient(180deg, #FFB866 0%, #FF8C30 45%, #E0700F 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -1px 0 rgba(120, 60, 0, 0.4),
+    0 6px 20px -2px color-mix(in oklch, var(--amber) 65%, transparent);
+  transform: translateY(-1px);
+}
+.mk-btn-glossy-amber:active {
+  transform: translateY(0);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -1px 0 rgba(120, 60, 0, 0.4),
+    0 2px 8px -2px color-mix(in oklch, var(--amber) 40%, transparent);
+}
 .mk-liquid-glass { background: color-mix(in oklch, var(--background) 65%, transparent); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); border: 1px solid color-mix(in oklch, var(--foreground) 8%, transparent); box-shadow: 0 -4px 24px rgba(0,0,0,0.08), inset 0 1px 0 color-mix(in oklch, var(--foreground) 6%, transparent); }
 .dark .mk-liquid-glass { background: color-mix(in oklch, var(--background) 55%, transparent); border: 1px solid color-mix(in oklch, var(--foreground) 10%, transparent); box-shadow: 0 -4px 24px rgba(0,0,0,0.4), inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent); }

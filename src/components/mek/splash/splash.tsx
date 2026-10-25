@@ -169,14 +169,19 @@ export function Splash() {
               <HeroLogo />
 
               {/* Action buttons — directly below the mascot's feet.
-                  No margin-top so the feet sit right on the button. */}
+                  The mascot's feet land on the FIRST (primary amber) button. */}
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.5 }}
                 className="-mt-1 space-y-2.5"
               >
-                <Button onClick={() => { setLoginTarget("customer"); setStage("phone"); }} className="h-12 w-full rounded-xl bg-amber py-3.5 text-sm font-semibold text-black hover:bg-amber/90">
+                {/* Primary amber button — styled with the same glossy metallic
+                    finish as the MEKANIX logo (gradient + inner highlight). */}
+                <Button
+                  onClick={() => { setLoginTarget("customer"); setStage("phone"); }}
+                  className="mk-btn-glossy-amber h-12 w-full rounded-xl py-3.5 text-sm font-semibold text-black"
+                >
                   <Phone className="mr-2 size-4" /> {t("splash.signInMobile")}
                 </Button>
                 <Button onClick={continueAsGuest} variant="ghost" className="w-full rounded-xl py-3 text-sm text-white/60 hover:bg-white/5 hover:text-white">
@@ -330,13 +335,13 @@ function HeroLogo() {
       initial={{ opacity: 0, scale: 0.92 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
-      className="relative mx-auto grid h-[220px] w-[240px] place-items-center sm:h-[260px] sm:w-[280px]"
+      className="relative mx-auto grid h-[180px] w-[200px] place-items-center sm:h-[200px] sm:w-[220px]"
     >
       {/* Soft amber spotlight behind the mascot (brand color #F58220) */}
       <div
         className="pointer-events-none absolute rounded-full"
         style={{
-          width: 220, height: 220,
+          width: 200, height: 200,
           background: "radial-gradient(circle, rgba(245, 130, 32, 0.18), transparent 60%)",
         }}
       />
