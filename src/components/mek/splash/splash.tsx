@@ -133,7 +133,7 @@ export function Splash() {
 
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#050607] flex flex-col">
+    <div className="relative min-h-screen overflow-hidden flex flex-col" style={{ backgroundColor: "#050607" }}>
       {/* Single ambient glow — soft, centered */}
       <div className="absolute left-1/2 top-[40%] size-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ background: "radial-gradient(circle, oklch(0.74 0.16 68 / 0.06), transparent 70%)" }} />
 
@@ -145,7 +145,7 @@ export function Splash() {
             onClick={() => setLang(l.code as Lang)}
             className={`relative rounded-full px-3 py-1 text-[10px] font-medium transition-colors ${lang === l.code ? "text-black" : "text-white/40 hover:text-white/70"}`}
           >
-            {lang === l.code && <motion.div layoutId="splash-lang" className="absolute inset-0 rounded-full bg-amber" transition={{ type: "spring", stiffness: 350, damping: 30 }} />}
+            {lang === l.code && <motion.div layoutId="splash-lang" className="absolute inset-0 rounded-full mk-splash-amber" transition={{ type: "spring", stiffness: 350, damping: 30 }} />}
             <span className="relative">{l.label}</span>
           </button>
         ))}
@@ -210,13 +210,13 @@ export function Splash() {
               >
                 <button
                   onClick={() => { setLoginTarget("mechanic"); setStage("phone"); }}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/8 py-2.5 text-sm text-white/50 transition-all hover:border-amber/30 hover:text-amber"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/8 py-2.5 text-sm text-white/50 transition-all hover:mk-splash-amber-border hover:mk-splash-amber-text"
                 >
                   <Wrench className="size-4" /> {t("splash.mechanicPortal")}
                 </button>
                 <button
                   onClick={() => setApplyOpen(true)}
-                  className="block w-full text-center text-[11px] text-white/30 transition-colors hover:text-amber"
+                  className="block w-full text-center text-[11px] text-white/30 transition-colors hover:mk-splash-amber-text"
                 >
                   {t("splash.applyMechanic")}
                 </button>
@@ -263,7 +263,7 @@ export function Splash() {
                     />
                   </div>
                 </div>
-                <Button onClick={sendOtp} disabled={busy} className="h-11 w-full bg-amber text-black hover:bg-amber/90">
+                <Button onClick={sendOtp} disabled={busy} className="h-11 w-full mk-splash-amber text-black hover:mk-splash-amber">
                   {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : <ChevronRight className={isFa ? "mr-2 size-4 rotate-180" : "mr-2 size-4"} />}
                   {t("splash.sendCode")}
                 </Button>
@@ -282,15 +282,15 @@ export function Splash() {
             >
               <BackBtn onClick={() => setStage("phone")} label={t("splash.back")} />
               <div className="mt-2 text-center">
-                <div className="mx-auto grid size-12 place-items-center rounded-xl border border-amber/30 bg-amber/10">
-                  <KeyRound className="size-5 text-amber" />
+                <div className="mx-auto grid size-12 place-items-center rounded-xl border mk-splash-amber-border-soft mk-splash-amber-bg-soft">
+                  <KeyRound className="size-5 mk-splash-amber-text" />
                 </div>
                 <h2 className="mt-4 font-display text-2xl font-semibold">{t("splash.enterCode")}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {t("splash.sentTo")} <span className="font-medium text-foreground">{fullPhone}</span>
                 </p>
                 {sentCode && (
-                  <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-amber/30 bg-amber/10 px-2.5 py-0.5 text-[11px] text-amber">
+                  <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border mk-splash-amber-border-soft mk-splash-amber-bg-soft px-2.5 py-0.5 text-[11px] mk-splash-amber-text">
                     <Sparkles className="size-3" /> {t("splash.demoCode")}: {isFa ? toPersianDigits(sentCode) : sentCode}
                   </div>
                 )}
@@ -298,11 +298,11 @@ export function Splash() {
 
               <div className="mt-6 space-y-3">
                 <OtpInput value={code} onChange={setCode} length={6} />
-                <Button onClick={verifyOtp} disabled={busy || code.length < 6} className="h-11 w-full bg-amber text-black hover:bg-amber/90">
+                <Button onClick={verifyOtp} disabled={busy || code.length < 6} className="h-11 w-full mk-splash-amber text-black hover:mk-splash-amber">
                   {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : <ShieldCheck className="mr-2 size-4" />}
                   {t("splash.verifyContinue")}
                 </Button>
-                <button onClick={sendOtp} className="w-full text-center text-[11px] text-muted-foreground hover:text-amber">
+                <button onClick={sendOtp} className="w-full text-center text-[11px] text-muted-foreground hover:mk-splash-amber-text">
                   {t("splash.resend")}
                 </button>
               </div>
@@ -396,7 +396,7 @@ function OtpInput({ value, onChange, length }: { value: string; onChange: (v: st
           }}
           inputMode="numeric"
           maxLength={1}
-          className="size-12 rounded-xl border border-white/10 bg-white/5 text-center font-display text-xl font-semibold text-white focus:border-amber focus:outline-none focus:ring-2 focus:ring-amber/20"
+          className="size-12 rounded-xl border border-white/10 bg-white/5 text-center font-display text-xl font-semibold text-white focus:mk-splash-amber-border focus:outline-none focus:mk-splash-amber-ring"
         />
       ))}
     </div>
