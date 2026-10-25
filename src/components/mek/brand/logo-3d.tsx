@@ -93,8 +93,8 @@ export function Logo3D({
         {/* Lighting — warm amber key light + cool fill */}
         <ambientLight intensity={0.4} />
         <directionalLight position={[3, 4, 5]} intensity={1.2} color={"#ffffff"} />
-        <directionalLight position={[-3, -2, -4]} intensity={0.4} color={"#F38E00"} />
-        <pointLight position={[0, 0, 3]} intensity={0.5} color={"#F38E00"} />
+        <directionalLight position={[-3, -2, -4]} intensity={0.4} color={"#F58220"} />
+        <pointLight position={[0, 0, 3]} intensity={0.5} color={"#F58220"} />
 
         <Suspense fallback={<LoadingFallback />}>
           <Float

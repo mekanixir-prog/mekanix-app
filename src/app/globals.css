@@ -73,8 +73,8 @@
   --border: oklch(0.91 0.005 260);
   --input: oklch(0.91 0.005 260);
   --ring: oklch(0.72 0.16 70);
-  /* MEKANIX signature amber (industrial / mechanical energy) */
-  --amber: oklch(0.74 0.17 63);
+  /* MEKANIX signature amber — exact brand color #F58220 (extracted from logo) */
+  --amber: #F58220;
   --amber-foreground: oklch(0.18 0.05 63);
   --emerald-glow: oklch(0.7 0.17 158);
   --steel: oklch(0.62 0.02 255);
@@ -114,7 +114,7 @@
   --border: oklch(1 0 0 / 9%);
   --input: oklch(1 0 0 / 12%);
   --ring: oklch(0.74 0.17 63);
-  --amber: oklch(0.78 0.16 68);
+  --amber: #F58220;
   --amber-foreground: oklch(0.18 0.05 63);
   --emerald-glow: oklch(0.74 0.16 160);
   --steel: oklch(0.7 0.018 255);

@@ -6,7 +6,7 @@ export function AccentThemeProvider({ children }: { children: React.ReactNode })
     const root = document.documentElement;
 
     const applyAccent = (mode: string) => {
-      const color = mode === "passenger" ? "#3D9B68" : "#F38E00";
+      const color = mode === "passenger" ? "#3D9B68" : "#F58220";
       const cls = mode === "passenger" ? "accent-passenger" : "accent-heavy";
       root.classList.remove("accent-passenger", "accent-heavy");
       root.classList.add(cls);

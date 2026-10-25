@@ -151,7 +151,7 @@ export function Splash() {
         ))}
       </div>
 
-      {/* Main content — split layout: logo on one side, buttons on the other */}
+      {/* Main content — single column, mascot centered above buttons */}
       <div className="relative z-20 flex flex-1 flex-col items-center justify-center px-6 py-8">
         <AnimatePresence mode="wait">
           {stage === "entry" && (
@@ -161,86 +161,57 @@ export function Splash() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.4 }}
-              className="grid w-full max-w-3xl items-center gap-8 md:grid-cols-2"
-              dir={isFa ? "rtl" : "ltr"}
+              className="w-full max-w-sm text-center"
             >
-              {/* Hero mascot character — occupies one column */}
-              <div className="order-1 flex justify-center md:order-1">
-                <HeroLogo />
-              </div>
+              {/* Hero mascot — centered, nothing beside it */}
+              <HeroLogo />
 
-              {/* Action buttons — beside the logo, vertically centered */}
+              {/* Action buttons — directly below the mascot, tight grouping */}
               <motion.div
-                initial={{ opacity: 0, x: isFa ? -20 : 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.4, duration: 0.5 }}
-                className="order-2 w-full space-y-3"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+                className="mt-6 space-y-2.5"
               >
-                <div className="mb-5">
-                  <motion.h1
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 }}
-                    className="font-display text-2xl font-bold leading-tight text-white"
-                  >
-                    {t("splash.welcome")}
-                  </motion.h1>
-                  <motion.p
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.4 }}
-                    className="mt-1 text-sm text-white/50"
-                  >
-                    {t("splash.subtitle")}
-                  </motion.p>
-                </div>
+                <Button onClick={() => { setLoginTarget("customer"); setStage("phone"); }} className="h-12 w-full rounded-xl bg-amber py-3.5 text-sm font-semibold text-black hover:bg-amber/90">
+                  <Phone className="mr-2 size-4" /> {t("splash.signInMobile")}
+                </Button>
+                <Button onClick={continueAsGuest} variant="ghost" className="w-full rounded-xl py-3 text-sm text-white/60 hover:bg-white/5 hover:text-white">
+                  <UserRound className="mr-2 size-4" /> {t("splash.continueGuest")}
+                </Button>
+              </motion.div>
 
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.5 }}
-                  className="space-y-2.5"
-                >
-                  <Button onClick={() => { setLoginTarget("customer"); setStage("phone"); }} className="h-12 w-full rounded-xl bg-amber py-3.5 text-sm font-semibold text-black hover:bg-amber/90">
-                    <Phone className="mr-2 size-4" /> {t("splash.signInMobile")}
-                  </Button>
-                  <Button onClick={continueAsGuest} variant="ghost" className="w-full rounded-xl py-3 text-sm text-white/60 hover:bg-white/5 hover:text-white">
-                    <UserRound className="mr-2 size-4" /> {t("splash.continueGuest")}
-                  </Button>
-                </motion.div>
+              {/* Divider */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.7 }}
+                className="my-4 flex items-center gap-3"
+              >
+                <div className="h-px flex-1 bg-white/6" />
+                <span className="text-[9px] tracking-widest text-white/20">{isFa ? "یا" : "OR"}</span>
+                <div className="h-px flex-1 bg-white/6" />
+              </motion.div>
 
-                {/* Divider */}
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.7 }}
-                  className="my-4 flex items-center gap-3"
+              {/* Mechanic actions */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.8 }}
+                className="space-y-2"
+              >
+                <button
+                  onClick={() => { setLoginTarget("mechanic"); setStage("phone"); }}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/8 py-2.5 text-sm text-white/50 transition-all hover:border-amber/30 hover:text-amber"
                 >
-                  <div className="h-px flex-1 bg-white/6" />
-                  <span className="text-[9px] tracking-widest text-white/20">{isFa ? "یا" : "OR"}</span>
-                  <div className="h-px flex-1 bg-white/6" />
-                </motion.div>
-
-                {/* Mechanic actions */}
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.8 }}
-                  className="space-y-2"
+                  <Wrench className="size-4" /> {t("splash.mechanicPortal")}
+                </button>
+                <button
+                  onClick={() => setApplyOpen(true)}
+                  className="block w-full text-center text-[11px] text-white/30 transition-colors hover:text-amber"
                 >
-                  <button
-                    onClick={() => { setLoginTarget("mechanic"); setStage("phone"); }}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/8 py-2.5 text-sm text-white/50 transition-all hover:border-amber/30 hover:text-amber"
-                  >
-                    <Wrench className="size-4" /> {t("splash.mechanicPortal")}
-                  </button>
-                  <button
-                    onClick={() => setApplyOpen(true)}
-                    className="block w-full text-center text-[11px] text-white/30 transition-colors hover:text-amber"
-                  >
-                    {t("splash.applyMechanic")}
-                  </button>
-                </motion.div>
+                  {t("splash.applyMechanic")}
+                </button>
               </motion.div>
             </motion.div>
           )}
@@ -346,10 +317,10 @@ export function Splash() {
 // ─── Hero logo: 3D mascot character (from splash-logo.webp) ───
 // splash-logo.webp is a 3D-rendered mascot character (a mechanic holding a
 // wrench with the MEKANIX "M" logo behind him). It's the hero visual of the
-// splash screen — a high-quality photorealistic render, NOT a flat logo.
+// splash screen — displayed centered, above the login buttons.
 //
-// We display it large and centered, with a soft amber spotlight behind it
-// to make the character pop against the dark graphite background.
+// Size is capped at 200px so the mascot's feet don't overlap the buttons
+// below. A soft amber spotlight (brand color #F58220) glows behind it.
 function HeroLogo() {
   return (
     <motion.div
@@ -357,14 +328,14 @@ function HeroLogo() {
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
       className="relative mx-auto grid place-items-center"
-      style={{ width: 280, height: 280 }}
+      style={{ width: 220, height: 200 }}
     >
-      {/* Soft amber spotlight behind the mascot */}
+      {/* Soft amber spotlight behind the mascot (brand color #F58220) */}
       <div
         className="pointer-events-none absolute rounded-full"
         style={{
-          width: 260, height: 260,
-          background: "radial-gradient(circle, oklch(0.74 0.16 68 / 0.18), transparent 60%)",
+          width: 200, height: 200,
+          background: "radial-gradient(circle, rgba(245, 130, 32, 0.18), transparent 60%)",
         }}
       />
 
@@ -373,8 +344,8 @@ function HeroLogo() {
         src="/splash-logo.webp"
         alt="MEKANIX — مکانیک سیار"
         className="relative z-10 select-none object-contain drop-shadow-2xl"
-        style={{ width: 280, height: "auto" }}
-        initial={{ opacity: 0, y: 10 }}
+        style={{ width: 200, height: "auto" }}
+        initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2, duration: 0.7 }}
       />
