@@ -709,4 +709,37 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
       expect(statuses).toEqual([200, 409]);
     }
   );
+  it(
+    "VIP-01: concurrent subscribes with different paymentIds cannot create two ACTIVE subscriptions",
+    async () => {
+      mockPaymentFindUnique.mockImplementation(async ({ where }: any) => ({
+        id: where.id,
+        userId: "user-1",
+        status: "SUCCEEDED",
+        amount: 100_000,
+      }));
+      mockUserVipSubscriptionFindFirst.mockResolvedValue(null);
+      mockUserVipSubscriptionCreate
+        .mockResolvedValueOnce({ id: "sub-1", userId: "user-1", planId: "plan-1", status: "ACTIVE", paymentId: "pay-1" })
+        .mockRejectedValueOnce({ code: "P2002", message: "Unique constraint failed on the fields: (userId) WHERE status = ACTIVE" });
+
+      const req1 = makePostRequest("http://localhost/api/vip/subscribe", {
+        planId: "plan-1",
+        paymentId: "pay-1",
+      });
+      const req2 = makePostRequest("http://localhost/api/vip/subscribe", {
+        planId: "plan-1",
+        paymentId: "pay-2",
+      });
+
+      const [res1, res2] = await Promise.all([
+        vipSubscribePOST(req1),
+        vipSubscribePOST(req2),
+      ]);
+
+      expect(mockUserVipSubscriptionCreate).toHaveBeenCalledTimes(2);
+      expect([res1.status, res2.status].sort()).toEqual([200, 409]);
+    }
+  );
+
 });
