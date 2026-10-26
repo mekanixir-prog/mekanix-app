@@ -115,24 +115,30 @@ export async function POST(req: Request) {
     // +digits
     phoneVariants.add(`+${phoneDigits}`);
 
-    // For Iranian numbers (start with 98 after removing +), try common formats:
-    if (phoneDigits.startsWith("98") && phoneDigits.length >= 12) {
-      // +98 912 345 6789
-      phoneVariants.add(`+98 ${phoneDigits.slice(2, 5)} ${phoneDigits.slice(5, 8)} ${phoneDigits.slice(8)}`);
-      // +98-912-345-6789
-      phoneVariants.add(`+98-${phoneDigits.slice(2, 5)}-${phoneDigits.slice(5, 8)}-${phoneDigits.slice(8)}`);
-      // 09123456789 (Iranian local format — strip 98, add 0)
-      phoneVariants.add(`0${phoneDigits.slice(2)}`);
+    // Iranian mobile numbers may arrive in international (+98...) or
+    // domestic (09...) form. Normalize both directions without treating the
+    // leading 0 of a domestic number as a one-digit country code.
+    let iranianInternationalDigits: string | null = null;
+    if (phoneDigits.startsWith("98") && phoneDigits.length === 12) {
+      iranianInternationalDigits = phoneDigits;
+    } else if (phoneDigits.startsWith("0") && phoneDigits.length === 11) {
+      iranianInternationalDigits = `98${phoneDigits.slice(1)}`;
     }
 
-    // For 1-digit CC numbers (US: +1-415-224-1180):
-    if (phoneDigits.length >= 10 && !phoneDigits.startsWith("98")) {
-      const cc = phoneDigits.slice(0, 1);
+    if (iranianInternationalDigits) {
+      const national = iranianInternationalDigits.slice(2);
+      phoneVariants.add(`+${iranianInternationalDigits}`);
+      phoneVariants.add(iranianInternationalDigits);
+      phoneVariants.add(`0${national}`);
+      phoneVariants.add(`+98 ${national.slice(0, 3)} ${national.slice(3, 6)} ${national.slice(6)}`);
+      phoneVariants.add(`+98-${national.slice(0, 3)}-${national.slice(3, 6)}-${national.slice(6)}`);
+    }
+
+    // US +1 format only: do not guess a country code from a domestic number.
+    if (phoneDigits.startsWith("1") && phoneDigits.length === 11) {
       const rest = phoneDigits.slice(1);
-      if (rest.length >= 9) {
-        phoneVariants.add(`+${cc}-${rest.slice(0, 3)}-${rest.slice(3, 6)}-${rest.slice(6)}`);
-        phoneVariants.add(`+${cc} ${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6)}`);
-      }
+      phoneVariants.add(`+1-${rest.slice(0, 3)}-${rest.slice(3, 6)}-${rest.slice(6)}`);
+      phoneVariants.add(`+1 ${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6)}`);
     }
 
     // Remove the original phone and empty strings
