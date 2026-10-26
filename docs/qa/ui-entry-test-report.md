@@ -145,3 +145,62 @@ and running `qa-repro.test.ts`:
 - TypeScript: 0 errors ✅
 - ESLint: 0 errors (2 pre-existing warnings) ✅
 - Tests: 422 PASS + 2 expected-fail (424 total) ✅
+
+---
+
+## PostgreSQL CI Fix Update (2026-10-26, SHA f53afe1)
+
+### Status: BLOCKED
+
+**Root Cause:** The `.github/workflows/postgresql-ci.yml` workflow file still
+hardcodes copying only the `init` migration from `prisma/migrations-postgresql/`.
+The additive migration `20260926000000_add_rate_limit_idempotency` (which adds
+RateLimit + IdempotencyKey tables) was added to `prisma/migrations-postgresql/`
+in commit `69862a4`, but the workflow doesn't copy it.
+
+**Fix Applied Locally:** Changed the workflow's "Replace migrations" step from:
+```yaml
+mkdir -p prisma/migrations/20260925000000_init
+cp prisma/migrations-postgresql/20260925000000_init/migration.sql prisma/migrations/20260925000000_init/migration.sql
+cp prisma/migrations-postgresql/migration_lock.toml prisma/migrations/migration_lock.toml
+```
+to:
+```yaml
+cp -r prisma/migrations-postgresql prisma/migrations
+```
+
+**Push Status:** BLOCKED — the Z AI token (`repo` scope only) cannot push
+changes to `.github/workflows/` files. GitHub requires `workflow` scope for
+any commit that modifies workflow files.
+
+**Patch File:** `docs/qa/fix-postgresql-ci-workflow.patch` — contains the
+exact diff to apply.
+
+### Owner Action Required:
+
+1. Apply the patch locally:
+   ```bash
+   cd C:\Projects\mekanix-app
+   git pull new-repo feature/cloudflare-d1-validation
+   git apply docs/qa/fix-postgresql-ci-workflow.patch
+   git add .github/workflows/postgresql-ci.yml
+   git commit -m "fix(ci): copy ALL PostgreSQL migrations (not just init)"
+   git push new-repo feature/cloudflare-d1-validation
+   ```
+
+2. Or manually edit `.github/workflows/postgresql-ci.yml` — in the
+   "Replace migrations with PostgreSQL versions" step, replace the 3
+   hardcoded `cp` lines with:
+   ```yaml
+   cp -r prisma/migrations-postgresql prisma/migrations
+   ```
+
+3. After push, verify CI passes on GitHub Actions.
+
+### SHA Tested: `f53afe1531a7dc1f5ed02b5c7afd555c503bb82b`
+
+### Verification (local simulation):
+- Copied `migrations-postgresql/` → `migrations/` (simulating CI)
+- `prisma migrate deploy` with PostgreSQL: both tables created ✅
+- `qa-repro.test.ts`: 4 PASS + 1 expected-fail ✅
+- `RateLimit` + `IdempotencyKey` found in PostgreSQL migrations ✅
