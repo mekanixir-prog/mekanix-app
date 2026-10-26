@@ -4,7 +4,8 @@
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Release branch:** `feature/cloudflare-d1-validation`  
 **PR:** [#3 — fix(d1): separate Cloudflare build from Node/Docker build](https://github.com/mekanixir-prog/mekanix-app/pull/3)  
-**Reviewed branch head at audit time:** `ed72dd67211c1d8107e31cf77f69afc0890b6b41`  
+**Initial code-review snapshot:** `ed72dd67211c1d8107e31cf77f69afc0890b6b41`  
+**Subsequent hardening:** professional README added and destructive `--accept-data-loss` flags removed from the `db:push` and `setup` package scripts. The current candidate SHA is always the live PR head: [PR #3](https://github.com/mekanixir-prog/mekanix-app/pull/3).  
 **Base branch:** `main` at `e4c2faf1447622da02bdd12a9535e367e8d46e36`  
 **Decision:** **NOT APPROVED FOR PRODUCTION RELEASE YET.** Keep PR #3 open until the release gates below have evidence.
 
@@ -22,7 +23,7 @@ The current GitHub state shows PR #3 is open and not merged. Five workflows asso
 | PostgreSQL CI | 40335019804 | success |
 | Docker E2E | 40335019860 | success |
 
-These are useful automated checks, but they do not establish production readiness. In particular, the current `wrangler.toml` sets `NODE_ENV = "production"`, `SMS_PROVIDER = "console"`, and `PAYMENT_PROVIDER = "simulator"`. The readiness route is designed to return HTTP 503 while these production gates fail, and payment/VIP simulation routes intentionally return 404 in production. This is a safe fail-closed posture, but it means the configured Worker is not yet a user-ready release configuration.
+These are useful automated checks, but they do not establish production readiness. These run IDs are a historical baseline for the snapshot above; after the README and package-script hardening, wait for all required checks on the live PR head before merging. In particular, the current `wrangler.toml` sets `NODE_ENV = "production"`, `SMS_PROVIDER = "console"`, and `PAYMENT_PROVIDER = "simulator"`. The readiness route is designed to return HTTP 503 while these production gates fail, and payment/VIP simulation routes intentionally return 404 in production. This is a safe fail-closed posture, but it means the configured Worker is not yet a user-ready release configuration.
 
 ## 2. Evidence-based findings
 
