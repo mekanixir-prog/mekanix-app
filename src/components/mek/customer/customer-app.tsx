@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Home, Car, Wrench, MapPin, Receipt, History, MessageSquare, Bell, Settings, Plus, Crown, Headset,
   Truck, CalendarClock, Gift, Shield, Heart,
@@ -45,9 +45,8 @@ export function CustomerApp() {
 
   // Guest fallback — construct a demo customer profile so the app is fully
   // browsable without a real login. Without this, a guest lands on an empty
-  // state and can't see any customer UI (the user complained "پروفایل مشتری
-  // موجود نیست"). The demo profile has no real DB records, so mutations are
-  // client-side only.
+  // state and can't see any customer UI ('پروفایل مشتری وجود نداره').
+  // The demo profile has no real DB records, so mutations are client-side only.
   const activeUser: DemoUser = user ?? {
     id: "guest",
     name: "کاربر مهمان",
