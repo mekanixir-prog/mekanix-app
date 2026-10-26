@@ -94,18 +94,50 @@ export async function POST(req: Request) {
 
   if (!user && phoneDigits) {
     // D1-02 fix: try common phone format variants as indexed findUnique
-    // lookups instead of scanning all users. These cover the most common
-    // legacy storage formats:
-    //   "+1-415-224-1180" → digits "14152241180"
-    //   "+1 415 224 1180" → digits "14152241180"
-    //   "1-415-224-1180"  → digits "14152241180"
-    // Each variant is tried as a findUnique on the @unique phone column.
-    const phoneVariants = [
-      phoneDigits,                                    // raw digits
-      `+${phoneDigits}`,                              // +14152241180
-      `+${phoneDigits.slice(0, 1)}-${phoneDigits.slice(1, 4)}-${phoneDigits.slice(4, 7)}-${phoneDigits.slice(7)}`,  // +1-415-224-1180
-      `+${phoneDigits.slice(0, 1)} ${phoneDigits.slice(1, 4)} ${phoneDigits.slice(4, 7)} ${phoneDigits.slice(7)}`,  // +1 415 224 1180
-    ].filter((v) => v && v !== phone); // skip the one we already tried
+    // lookups instead of scanning all users. Each variant is an O(1) lookup
+    // on the @unique phone column.
+    //
+    // We generate variants that cover the most common formats:
+    //   Iranian (+98 912 345 6789):
+    //     +989123456789, 989123456789, 09123456789, +98 912 345 6789, +98-912-345-6789
+    //   International (+1-415-224-1180):
+    //     14152241180, +14152241180, +1-415-224-1180, +1 415 224 1180
+    //
+    // The key insight: we try the raw digits, +digits, and several
+    // formatted variants that cover 1-digit CC (US, etc.) and 2-digit CC
+    // (Iran, EU, etc.).
+
+    const phoneVariants = new Set<string>();
+
+    // Raw digits (no +)
+    phoneVariants.add(phoneDigits);
+
+    // +digits
+    phoneVariants.add(`+${phoneDigits}`);
+
+    // For Iranian numbers (start with 98 after removing +), try common formats:
+    if (phoneDigits.startsWith("98") && phoneDigits.length >= 12) {
+      // +98 912 345 6789
+      phoneVariants.add(`+98 ${phoneDigits.slice(2, 5)} ${phoneDigits.slice(5, 8)} ${phoneDigits.slice(8)}`);
+      // +98-912-345-6789
+      phoneVariants.add(`+98-${phoneDigits.slice(2, 5)}-${phoneDigits.slice(5, 8)}-${phoneDigits.slice(8)}`);
+      // 09123456789 (Iranian local format — strip 98, add 0)
+      phoneVariants.add(`0${phoneDigits.slice(2)}`);
+    }
+
+    // For 1-digit CC numbers (US: +1-415-224-1180):
+    if (phoneDigits.length >= 10 && !phoneDigits.startsWith("98")) {
+      const cc = phoneDigits.slice(0, 1);
+      const rest = phoneDigits.slice(1);
+      if (rest.length >= 9) {
+        phoneVariants.add(`+${cc}-${rest.slice(0, 3)}-${rest.slice(3, 6)}-${rest.slice(6)}`);
+        phoneVariants.add(`+${cc} ${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6)}`);
+      }
+    }
+
+    // Remove the original phone and empty strings
+    phoneVariants.delete(phone);
+    phoneVariants.delete("");
 
     for (const variant of phoneVariants) {
       user = await db.user.findUnique({
