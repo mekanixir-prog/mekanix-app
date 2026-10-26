@@ -230,3 +230,16 @@ The release audit is the current decision record; older audit documents may cont
 ## Security reporting
 
 Do not publish credentials, OTPs, tokens, or exploitable production details in a public issue. Use the repository owner's private security-reporting channel if one is configured; otherwise contact the maintainers privately before disclosing sensitive details.
+
+
+## Public pages and SEO
+
+The branch includes Persian server-rendered informational pages intended to make public service information easier for search engines to discover:
+
+- `/about` — about MEKANIX
+- `/services/heavy-machinery` — heavy-machinery repair and maintenance request guidance
+- `/services/mobile-repair` — mobile repair request guidance
+
+Page metadata, canonical paths, Open Graph previews, `robots.txt`, and `sitemap.xml` are maintained in the Next.js App Router. The pages avoid unverified claims about nationwide coverage, guaranteed arrival times, warranty duration, or live payment availability. SEO implementation and launch checks are documented in [docs/SEO_IMPLEMENTATION.md](docs/SEO_IMPLEMENTATION.md).
+
+The canonical origin is configured as `https://mekanix.ir`; verify DNS/TLS and rendered metadata against the live domain before launch. Sitemap inclusion does not guarantee indexing or rankings.
