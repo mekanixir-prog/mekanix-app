@@ -126,20 +126,20 @@ export function ModeSelect() {
           >
             <div className={`absolute -right-16 -top-16 size-48 rounded-full blur-3xl ${mode.tone === "amber" ? "bg-amber/20" : "bg-emerald-glow/15"}`} />
 
-            {/* Card hero image — fixed aspect ratio 5/2 (2.5:1) for both
-                dark and light themes so cards are always the same shape.
-                Dark cards are naturally 1983x793 (2.5:1) — no crop.
-                Light cards are 2172x724 (3.0:1) — object-cover crops
-                slightly to fit 2.5:1, keeping the vehicle centered. */}
+            {/* Card hero image — uses each image's NATURAL aspect ratio.
+                Dark cards: 1983x793 (2.5:1). Light cards: 2172x724 (3:1).
+                The user provided 4 images with specific dimensions; we
+                respect them as-is, no cropping or forced ratio. */}
             <div
               className="relative w-full overflow-hidden"
-              style={{ aspectRatio: "5 / 2" }}
+              style={{ aspectRatio: isDark ? "1983 / 793" : "2172 / 724" }}
             >
               <img
+                key={cardImage(mode.slug)}
                 src={cardImage(mode.slug)}
                 alt={mode.slug === "passenger" ? t("mode.passenger") : t("mode.heavy")}
                 className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                loading="lazy"
+                loading="eager"
               />
             </div>
 
