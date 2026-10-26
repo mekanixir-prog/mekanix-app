@@ -128,9 +128,7 @@ export function ModeSelect() {
 
             {/* Card hero image — aspect ratio matches the actual PNG
                 dimensions exactly. Dark cards: 1983x793 (2.501:1).
-                Light cards: 2172x724 (3.0:1). We compute the exact ratio
-                from the current theme so the card height always tracks
-                the served image, with no distortion. */}
+                Light cards: 2172x724 (3.0:1). */}
             <div
               className="relative w-full overflow-hidden"
               style={{ aspectRatio: isDark ? "1983 / 793" : "2172 / 724" }}
@@ -141,16 +139,14 @@ export function ModeSelect() {
                 className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                 loading="lazy"
               />
-              {/* Gradient overlay so the text overlaid on the image stays legible */}
-              <div className="absolute inset-0 bg-gradient-to-t from-card via-card/30 to-transparent" />
             </div>
 
-            {/* Card meta — overlaid on the bottom of the image.
+            {/* Card meta — BELOW the image (not overlaid on it).
                 Icon on the OPPOSITE side from the text:
                   - heavy card (amber, RTL): icon right, text left
-                  - passenger card (emerald, RTL): icon left, text right
+                  - passenger card (amber, RTL): icon left, text right
                 We alternate via mode.slug so the two cards mirror each other. */}
-            <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-4 sm:p-6">
+            <div className="relative flex items-center justify-between gap-3 p-4 sm:p-6">
               {/* Text block */}
               <div className={`relative min-w-0 ${mode.slug === "heavy" ? "order-2 text-right" : "order-1 text-left"}`}>
                 <h2 className="font-display text-lg font-bold tracking-tight text-foreground sm:text-2xl">
