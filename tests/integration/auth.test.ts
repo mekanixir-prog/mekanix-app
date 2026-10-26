@@ -31,7 +31,7 @@ const mockOtpFindFirst = vi.fn();
 const mockOtpUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
 const mockOtpCreate = vi.fn().mockResolvedValue({});
 const mockOtpUpdate = vi.fn().mockResolvedValue({});
-const mockUserFindUnique = vi.fn();
+const mockUserFindUnique = vi.fn().mockResolvedValue(null);
 const mockUserCreate = vi.fn();
 const mockUserUpdate = vi.fn();
 const mockUserFindMany = vi.fn().mockResolvedValue([]);
@@ -287,25 +287,18 @@ describe("integration — POST /api/auth/otp/verify", () => {
     // SEC-10 fix: route uses a single updateMany that returns count=1 for
     // a valid unconsumed, non-expired code.
     mockOtpUpdateMany.mockResolvedValueOnce({ count: 1 });
-    // First user lookup: not found
-    mockUserFindUnique
-      .mockResolvedValueOnce(null) // initial lookup by phone
-      .mockResolvedValueOnce({    // after create, re-fetch with includes
-        id: "user_new",
-        phone: "+989111111111",
-        phoneVerified: true,
-        role: "CUSTOMER",
-        name: "MEKANIX User 1111",
-        customer: { id: "cust_new", userId: "user_new" },
-        technician: null,
-      });
-    mockUserCreate.mockResolvedValueOnce({
+    // mockUserFindUnique defaults to null (set at declaration with mockResolvedValue).
+    // First call (phone lookup) returns null → D1-02 variants also return null.
+    // After create, the route re-fetches but falls back to the created user
+    // if re-fetch returns null, so we don't need to mock the re-fetch.
+    mockUserFindUnique.mockResolvedValue(null); // all lookups return null
+    mockUserCreate.mockResolvedValue({  // persistent (not Once) so it always returns user
       id: "user_new",
       phone: "+989111111111",
       phoneVerified: true,
       role: "CUSTOMER",
       name: "MEKANIX User 1111",
-      customer: null,
+      customer: { id: "cust_new", userId: "user_new" },
       technician: null,
     });
     mockCustomerCreate.mockResolvedValueOnce({ id: "cust_new", userId: "user_new" });

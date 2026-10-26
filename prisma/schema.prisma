@@ -795,7 +795,7 @@ model UserVipSubscription {
   status    VipStatus @default(PENDING_PAYMENT)
   startedAt DateTime?
   expiresAt DateTime? // null = lifetime
-  paymentId String? // linked Payment
+  paymentId String? @unique // linked Payment — VIP-01 fix: prevents TOCTOU race
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 

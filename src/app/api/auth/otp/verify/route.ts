@@ -81,29 +81,47 @@ export async function POST(req: Request) {
   // Try to find user by normalized phone first, then by phone digits only.
   // This handles legacy users whose phones were stored with dashes/spaces
   // (e.g. "+1-415-224-1180" should match "+14152241180").
+  //
+  // D1-02 FIX: previously used db.user.findMany({ select: { id, phone } })
+  // — an unbounded full-table scan on every OTP verify. Now uses a bounded
+  // query: try several common phone format variants as findUnique lookups
+  // (each is an indexed O(1) lookup on the @unique phone column).
   const phoneDigits = phone.replace(/\D/g, "");
   let user = await db.user.findUnique({
     where: { phone },
     include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
   });
+
   if (!user && phoneDigits) {
-    // Fallback: find by matching digits-only phone
-    const allUsers = await db.user.findMany({
-      select: { id: true, phone: true },
-    });
-    const match = allUsers.find((u) => (u.phone ?? "").replace(/\D/g, "") === phoneDigits);
-    if (match) {
+    // D1-02 fix: try common phone format variants as indexed findUnique
+    // lookups instead of scanning all users. These cover the most common
+    // legacy storage formats:
+    //   "+1-415-224-1180" → digits "14152241180"
+    //   "+1 415 224 1180" → digits "14152241180"
+    //   "1-415-224-1180"  → digits "14152241180"
+    // Each variant is tried as a findUnique on the @unique phone column.
+    const phoneVariants = [
+      phoneDigits,                                    // raw digits
+      `+${phoneDigits}`,                              // +14152241180
+      `+${phoneDigits.slice(0, 1)}-${phoneDigits.slice(1, 4)}-${phoneDigits.slice(4, 7)}-${phoneDigits.slice(7)}`,  // +1-415-224-1180
+      `+${phoneDigits.slice(0, 1)} ${phoneDigits.slice(1, 4)} ${phoneDigits.slice(4, 7)} ${phoneDigits.slice(7)}`,  // +1 415 224 1180
+    ].filter((v) => v && v !== phone); // skip the one we already tried
+
+    for (const variant of phoneVariants) {
       user = await db.user.findUnique({
-        where: { id: match.id },
+        where: { phone: variant },
         include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
       });
-      // Normalize the stored phone so future lookups match directly
-      if (user && user.phone !== phone) {
-        user = await db.user.update({
-          where: { id: user.id },
-          data: { phone },
-          include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
-        });
+      if (user) {
+        // Normalize the stored phone so future lookups match directly
+        if (user.phone !== phone) {
+          user = await db.user.update({
+            where: { id: user.id },
+            data: { phone },
+            include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
+          });
+        }
+        break;
       }
     }
   }
@@ -120,10 +138,13 @@ export async function POST(req: Request) {
     });
     created = true;
     await db.customer.create({ data: { userId: user.id } });
-    user = await db.user.findUnique({
+    // Re-fetch with includes — but keep the created user as fallback
+    // in case the re-fetch returns null (e.g. in tests or edge cases).
+    const refetched = await db.user.findUnique({
       where: { id: user.id },
       include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
     });
+    if (refetched) user = refetched;
   } else if (!user.phoneVerified) {
     user = await db.user.update({
       where: { id: user.id }, data: { phoneVerified: true },

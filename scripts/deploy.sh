@@ -51,13 +51,9 @@ rsync -a --exclude='node_modules' --exclude='.next' --exclude='.git' \
   --exclude='db/*.db' --exclude='*.log' \
   "$REPO_DIR/" "$BUILD_CTX/"
 
-# Replace SQLite migrations with PostgreSQL migrations
+# Replace SQLite migrations with ALL PostgreSQL migrations (init + additive)
 rm -rf "$BUILD_CTX/prisma/migrations"
-mkdir -p "$BUILD_CTX/prisma/migrations/20260925000000_init"
-cp "$REPO_DIR/prisma/migrations-postgresql/20260925000000_init/migration.sql" \
-   "$BUILD_CTX/prisma/migrations/20260925000000_init/"
-cp "$REPO_DIR/prisma/migrations-postgresql/migration_lock.toml" \
-   "$BUILD_CTX/prisma/migrations/"
+cp -r "$REPO_DIR/prisma/migrations-postgresql" "$BUILD_CTX/prisma/migrations"
 
 # Switch schema.prisma to PostgreSQL (in build context only)
 sed -i 's/provider = "sqlite"/provider = "postgresql"/' \

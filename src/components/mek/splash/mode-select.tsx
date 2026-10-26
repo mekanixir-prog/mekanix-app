@@ -122,9 +122,9 @@ export function ModeSelect() {
             transition={{ delay: 0.15 + i * 0.08, type: "spring", stiffness: 200 }}
             whileHover={{ y: -4 }}
             onClick={() => choose(mode.slug)}
-            className={`group relative block w-full overflow-hidden rounded-2xl border bg-card p-0 transition-colors mk-card-shadow mk-card-hover ${mode.tone === "amber" ? "border-amber/40 hover:border-amber" : "border-emerald-glow/40 hover:border-emerald-glow"}`}
+            className="group relative block w-full overflow-hidden rounded-2xl border bg-card p-0 transition-colors mk-card-shadow mk-card-hover border-amber/40 hover:border-amber"
           >
-            <div className={`absolute -right-16 -top-16 size-48 rounded-full blur-3xl ${mode.tone === "amber" ? "bg-amber/20" : "bg-emerald-glow/15"}`} />
+            <div className="absolute -right-16 -top-16 size-48 rounded-full blur-3xl bg-amber/20" />
 
             {/* Card hero image — uses each image's NATURAL aspect ratio.
                 Dark cards: 1983x793 (2.5:1). Light cards: 2172x724 (3:1).
@@ -159,35 +159,38 @@ export function ModeSelect() {
                 </p>
               </div>
               {/* Icon chip — opposite side from the text */}
-              <div className={`relative grid size-12 shrink-0 place-items-center rounded-xl border sm:size-14 ${mode.slug === "heavy" ? "order-1" : "order-2"} ${mode.tone === "amber" ? "border-amber/40 bg-amber/10" : "border-emerald-glow/40 bg-emerald-glow/10"}`}>
-                <MekIcon name={mode.icon} className={`size-6 sm:size-7 ${mode.tone === "amber" ? "text-amber" : "text-emerald-glow"}`} />
+              <div className={`relative grid size-12 shrink-0 place-items-center rounded-xl border sm:size-14 border-amber/40 bg-amber/10 ${mode.slug === "heavy" ? "order-1" : "order-2"}`}>
+                <MekIcon name={mode.icon} className="size-6 sm:size-7 text-amber" />
               </div>
             </div>
           </motion.button>
         ))}
       </div>
 
-      {/* Helper strip */}
-      <div className="relative z-20 mx-auto max-w-5xl px-6 pb-8" dir={isFa ? "rtl" : "ltr"}>
-        <div className="grid gap-2 rounded-xl border border-border bg-card/60 p-4 sm:grid-cols-3">
+      {/* Helper strip — modern premium cards with amber accent */}
+      <div className="relative z-20 mx-auto w-full max-w-4xl px-4 pb-6 sm:px-6" dir={isFa ? "rtl" : "ltr"}>
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
           {[
             { icon: Wrench, label: t("mode.verifiedSpecialists"), desc: t("mode.backgroundChecked") },
             { icon: ShieldCheck, label: t("mode.warranty"), desc: t("mode.onPartsLabor") },
             { icon: Car, label: t("mode.onSiteService"), desc: t("mode.weComeToYou") },
           ].map((f, i) => (
-            <div key={i} className="flex items-center gap-2.5">
-              <div className="grid size-8 place-items-center rounded-lg border border-border bg-background">
-                <f.icon className="size-4 text-amber" />
+            <div
+              key={i}
+              className="group/item flex flex-col items-center gap-2 rounded-2xl border border-amber/20 bg-card/80 p-3 text-center mk-card-shadow transition-all hover:border-amber/40 hover:bg-amber/5 sm:flex-row sm:items-center sm:gap-3 sm:p-4 sm:text-left"
+            >
+              <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-amber/10 ring-1 ring-amber/30 transition-colors group-hover/item:bg-amber/20 sm:size-11">
+                <f.icon className="size-5 text-amber" />
               </div>
-              <div>
-                <p className="text-xs font-medium">{f.label}</p>
-                <p className="text-[10px] text-muted-foreground">{f.desc}</p>
+              <div className="min-w-0">
+                <p className="truncate text-[11px] font-semibold text-foreground sm:text-xs">{f.label}</p>
+                <p className="hidden text-[10px] text-muted-foreground sm:block sm:text-[11px]">{f.desc}</p>
               </div>
             </div>
           ))}
         </div>
         {auth.isGuest && (
-          <p className="mt-3 text-center text-[11px] text-muted-foreground">
+          <p className="mt-4 text-center text-[11px] text-muted-foreground">
             {t("mode.guestBrowseHint")}
           </p>
         )}

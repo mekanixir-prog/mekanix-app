@@ -678,17 +678,17 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
     expect(mockUserVipSubscriptionCreate).toHaveBeenCalledTimes(1);
   });
 
-  // BUG-DOCUMENTATION: concurrent subscribes with the same paymentId both
-  // pass the findFirst check (race window) → both call create.
-  // Uses `it.fails()` so the test suite stays green while documenting the bug.
-  it.fails(
-    "VIP-01 TOCTOU: two concurrent subscribes with same paymentId must NOT both create (atomic guard required)",
+  // VIP-01 FIX VERIFICATION: with @@unique([paymentId]) in the schema, the DB
+  // itself rejects the second insert. The route handler catches the P2002 error
+  // and returns 409. This test simulates the race: findFirst returns null on
+  // both calls (race window), but the second create throws P2002.
+  it(
+    "VIP-01 FIXED: two concurrent subscribes with same paymentId — exactly one succeeds, one 409",
     async () => {
-      // Race simulation: findFirst returns null on EVERY call — both concurrent
-      // requests see "no existing sub using this payment" and both proceed to
-      // create. In a real DB without a @@unique constraint on paymentId, both
-      // inserts succeed.
       mockUserVipSubscriptionFindFirst.mockResolvedValue(null);
+      mockUserVipSubscriptionCreate
+        .mockResolvedValueOnce({ id: "sub-1", userId: "user-1", planId: "plan-1", status: "ACTIVE", paymentId: "pay-1" })
+        .mockRejectedValueOnce({ code: "P2002", message: "Unique constraint failed on the fields: (paymentId)" });
 
       const req1 = makePostRequest("http://localhost/api/vip/subscribe", {
         planId: "plan-1",
@@ -704,14 +704,7 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
         vipSubscribePOST(req2),
       ]);
 
-      // EXPECTED behavior (what SHOULD happen once the bug is fixed):
-      //   exactly one 200, exactly one 409, exactly one create call.
-      // ACTUAL behavior (current buggy code):
-      //   both 200, both create — i.e., TWO ACTIVE subs for one paymentId.
-      //
-      // This assertion will FAIL today (because create IS called twice) —
-      // that's the bug we're documenting. `it.fails()` marks this as expected.
-      expect(mockUserVipSubscriptionCreate).toHaveBeenCalledTimes(1);
+      expect(mockUserVipSubscriptionCreate).toHaveBeenCalledTimes(2);
       const statuses = [res1.status, res2.status].sort();
       expect(statuses).toEqual([200, 409]);
     }

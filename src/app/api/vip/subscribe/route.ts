@@ -76,17 +76,34 @@ export async function POST(req: Request) {
   const startedAt = new Date();
   const expiresAt = new Date(startedAt.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
 
-  const sub = await db.userVipSubscription.create({
-    data: {
-      userId,
-      planId,
-      status: "ACTIVE",
-      startedAt,
-      expiresAt,
-      paymentId: paymentId ?? null,
-    },
-    include: { plan: true },
-  });
+  // Create the subscription. With @@unique([paymentId]) in the schema, the DB
+  // itself rejects duplicate paymentId inserts (P2002). This is the real
+  // race guard — even if two concurrent requests both pass the findFirst
+  // check above, only one create succeeds.
+  let sub;
+  try {
+    sub = await db.userVipSubscription.create({
+      data: {
+        userId,
+        planId,
+        status: "ACTIVE",
+        startedAt,
+        expiresAt,
+        paymentId: paymentId ?? null,
+      },
+      include: { plan: true },
+    });
+  } catch (e: any) {
+    // P2002 = unique constraint violation on paymentId (concurrent race).
+    // The other request won — return 409.
+    if (e?.code === "P2002" || e?.message?.includes("Unique constraint")) {
+      return NextResponse.json(
+        { error: "این پرداخت قبلاً برای اشتراک VIP استفاده شده است" },
+        { status: 409 }
+      );
+    }
+    throw e; // re-throw unexpected errors
+  }
 
   // Notify user — best-effort, never fail a subscription over a notification.
   try {

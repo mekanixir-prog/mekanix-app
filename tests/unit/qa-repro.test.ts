@@ -101,11 +101,12 @@ describe("QA-01 — D1-01 schema/migration drift (CRITICAL, FIXED)", () => {
   );
 });
 
-describe("QA-02 — D1-02 unbounded User.findMany in OTP verify (HIGH/perf, NOT YET FIXED)", () => {
-  // EXPECTED TO FAIL until D1-02 is fixed (replace findMany with findUnique on
-  // normalized phone or backfill the column). The `it.fails()` wrapper
-  // documents the bug.
-  it.fails(
+describe("QA-02 — D1-02 OTP verify no longer uses unbounded findMany (FIXED)", () => {
+  // D1-02 FIXED: the unbounded db.user.findMany({ select: { id, phone } })
+  // has been replaced with indexed findUnique lookups on common phone format
+  // variants. This test is now a POSITIVE regression guard — it PASSES and
+  // will FAIL if someone reintroduces the unbounded findMany.
+  it(
     "OTP verify route does NOT perform an unbounded User.findMany (select-only, no where/take)",
     () => {
       const src = readFileSync(OTP_VERIFY_PATH, "utf8");
