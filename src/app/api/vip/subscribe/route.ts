@@ -67,32 +67,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "این پرداخت قبلاً برای اشتراک VIP استفاده شده است" }, { status: 409 });
   }
 
-  // Cancel any existing ACTIVE subscription for this user — atomically.
-  // This is the race guard for the "two subscriptions with different
-  // paymentId" scenario: both requests try updateMany, but only the one
-  // that actually cancels rows proceeds to create. The other sees
-  // count=0 (already cancelled by the first request) and returns 409.
+  // Cancel any existing ACTIVE subscription for this user. This alone is NOT
+  // a concurrency guard: two requests can both observe zero rows before either
+  // creates. The provider-specific partial unique index in the migration is the
+  // final atomic guard against two ACTIVE subscriptions for one user.
   const cancelResult = await db.userVipSubscription.updateMany({
     where: { userId, status: "ACTIVE" },
     data: { status: "CANCELLED" },
   });
 
-  // If another request already created an ACTIVE subscription between our
-  // findFirst check and this updateMany, the updateMany would have
-  // cancelled it — but that means another subscription was created
-  // concurrently. We can detect this by checking if the create succeeds.
-  // However, a simpler approach: add a @@unique constraint that prevents
-  // two ACTIVE subs for the same user. Since Prisma doesn't support
-  // partial unique indexes, we handle this in application logic:
-  // The updateMany above is atomic — if it cancels 0 rows, it means
-  // there was no active sub, so we can safely create.
-  // If it cancels 1+ rows, we're the winner — create our sub.
-  // The race window is between updateMany and create, but since we hold
-  // no transaction, another request could also pass updateMany with 0
-  // rows cancelled. The @@unique([paymentId]) catches same-paymentId
-  // races. For different-paymentId races, we accept the risk of a brief
-  // double-ACTIVE — the customer-facing impact is minimal (they get
-  // extra VIP time, not a financial loss).
+  // A partial unique index (userId WHERE status='ACTIVE') is created by the
+  // provider-specific migrations because Prisma schema cannot express it.
+  // The database—not this read/update sequence—must enforce the invariant.
 
   const startedAt = new Date();
   const expiresAt = new Date(startedAt.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
@@ -115,11 +101,11 @@ export async function POST(req: Request) {
       include: { plan: true },
     });
   } catch (e: any) {
-    // P2002 = unique constraint violation on paymentId (concurrent race).
-    // The other request won — return 409.
+    // P2002 may mean either this payment was already consumed or another
+    // request won the one-ACTIVE-subscription-per-user race.
     if (e?.code === "P2002" || e?.message?.includes("Unique constraint")) {
       return NextResponse.json(
-        { error: "این پرداخت قبلاً برای اشتراک VIP استفاده شده است" },
+        { error: "پرداخت قبلاً استفاده شده یا اشتراک فعال دیگری ثبت شده است" },
         { status: 409 }
       );
     }
