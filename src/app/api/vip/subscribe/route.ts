@@ -71,7 +71,7 @@ export async function POST(req: Request) {
   // a concurrency guard: two requests can both observe zero rows before either
   // creates. The provider-specific partial unique index in the migration is the
   // final atomic guard against two ACTIVE subscriptions for one user.
-  const cancelResult = await db.userVipSubscription.updateMany({
+  await db.userVipSubscription.updateMany({
     where: { userId, status: "ACTIVE" },
     data: { status: "CANCELLED" },
   });
