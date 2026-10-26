@@ -7,7 +7,7 @@
     "build": "next build && node -e \"const fs=require('fs'); fs.mkdirSync('.next/standalone/.next',{recursive:true}); fs.cpSync('.next/static','.next/standalone/.next/static',{recursive:true}); if(fs.existsSync('public')) fs.cpSync('public','.next/standalone/public',{recursive:true});\"",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
-    "db:push": "prisma db push --accept-data-loss",
+    "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
@@ -19,7 +19,7 @@
     "test:e2e:ui": "playwright test --ui",
     "check:hygiene": "bash scripts/check-hygiene.sh",
     "check:repo": "bun run lint && bunx tsc --noEmit && bun run check:hygiene",
-    "setup": "bun install --frozen-lockfile && bunx prisma db push --accept-data-loss && bunx tsx prisma/seed.ts"
+    "setup": "bun install --frozen-lockfile && bunx prisma db push && bunx tsx prisma/seed.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
