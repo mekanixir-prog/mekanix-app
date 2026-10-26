@@ -335,9 +335,11 @@ function HeroLogo() {
       initial={{ opacity: 0, scale: 0.92 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
-      // Fixed height container — bounds the mascot so it can't overflow.
-      // Larger than the previous 180/200px — the user said it was too small.
-      className="relative mx-auto h-[240px] w-[240px] overflow-hidden sm:h-[280px] sm:w-[280px]"
+      // No overflow-hidden — the mascot image needs to be fully visible.
+      // The container just centers the image; the image's natural
+      // aspect ratio determines the rendered size.
+      className="relative mx-auto flex items-center justify-center"
+      style={{ width: 240, height: 280 }}
     >
       {/* Soft amber spotlight behind the mascot (brand color #F58220) */}
       <div
@@ -349,12 +351,14 @@ function HeroLogo() {
       />
 
       {/* 3D Mascot Character — the hero image.
-          Explicit max-height (NOT max-h-full, which breaks inside the grid)
-          so the img is bounded by the container's fixed height. */}
+          No absolute positioning or max-h — let it render at its natural
+          size within the container. The image is 1024x1536 (portrait),
+          so it scales to fit the height. */}
       <motion.img
         src="/splash-logo.webp"
         alt="MEKANIX — مکانیک سیار"
-        className="absolute left-1/2 top-1/2 max-h-[240px] w-auto -translate-x-1/2 -translate-y-1/2 select-none object-contain drop-shadow-2xl sm:max-h-[280px]"
+        className="relative z-10 h-auto w-auto max-w-full max-h-full select-none object-contain drop-shadow-2xl"
+        style={{ maxHeight: 280 }}
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2, duration: 0.7 }}
