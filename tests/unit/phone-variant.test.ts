@@ -75,16 +75,17 @@ describe("D1-02 — phone variant lookups for Iranian and international formats"
     expect(phones).toContain("+98-912-345-6789");
   });
 
-  it("generates correct variants for Iranian 0-prefix format", async () => {
+  it("generates international Iranian variants from domestic 09 format", async () => {
     await otpVerifyPOST(makeReq("09123456789"));
-    
+
     const phones = findUniqueCalls;
     expect(phones).toContain("09123456789");
-    // digits without leading 0 → 9123456789 → +989123456789
-    // But 09123456789 → digits "09123456789" → starts with 0, not 98
-    // So the Iranian-specific logic won't trigger. But we still try:
-    expect(phones).toContain("09123456789"); // original
-    expect(phones).toContain("+09123456789"); // +digits
+    expect(phones).toContain("+09123456789"); // literal +digits variant remains supported
+    expect(phones).toContain("+989123456789");
+    expect(phones).toContain("989123456789");
+    expect(phones).toContain("+98 912 345 6789");
+    expect(phones).toContain("+98-912-345-6789");
+    expect(phones).not.toContain("+0-912-345-6789");
   });
 
   it("generates correct variants for US +1 format", async () => {
