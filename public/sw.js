@@ -1,14 +1,15 @@
-// MEKANIX — Service Worker (self-destruct by default)
+// MEKANIX — Service Worker (DISABLED in dev)
 //
-// Why: This app is under active development. The dev server (Next.js 16
-// Turbopack) regenerates JS chunks on every code change, but a cache-first
-// SW would serve stale chunks from cache and crash the app with
-// "module factory is not available" errors.
+// This SW is intentionally a NO-OP in development. It does NOT register
+// any fetch handler, does NOT cache anything, and does NOT call
+// c.navigate() (which caused an infinite reload loop with stale cached
+// pages — the user kept seeing the old version even after server-side
+// updates).
 //
-// Until we ship a production build, this SW unconditionally unregisters
-// itself and clears all caches on install + activate. Once we ship prod,
-// we'll gate this on a `IS_PROD` flag and add proper cache strategies.
+// On install + activate, it just clears all caches and unregisters itself.
+// No fetch interception, no navigation forcing.
 
+// Clear caches on install.
 self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
@@ -16,33 +17,26 @@ self.addEventListener("install", (event) => {
         const names = await caches.keys();
         await Promise.all(names.map((n) => caches.delete(n)));
       } catch {}
+      // skipWaiting so the new SW takes over immediately.
       await self.skipWaiting();
     })()
   );
 });
 
+// On activate: unregister self + clear caches. Do NOT navigate clients —
+// let the user's browser handle the refresh naturally.
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       try {
-        // Unregister ourselves.
         await self.registration.unregister();
-        // Nuke every cache we can find.
         const names = await caches.keys();
         await Promise.all(names.map((n) => caches.delete(n)));
-        // Force every controlled client to navigate (reload) so they pick up
-        // the new SW-less state.
-        const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-        clients.forEach((c) => {
-          try {
-            c.navigate(c.url);
-          } catch {}
-        });
       } catch {}
       return self.clients.claim();
     })()
   );
 });
 
-// Never intercept fetches — pass everything straight through to the network.
-self.addEventListener("fetch", () => {});
+// No fetch handler at all — the browser goes straight to the network for
+// every request. This guarantees the user always gets the latest version.
