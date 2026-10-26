@@ -11,9 +11,17 @@
   - `/services/mobile-repair`
 - Added page-specific titles, descriptions, canonical paths, and Open Graph metadata.
 - Added site-wide metadata base, Persian locale, Open Graph and Twitter preview metadata.
-- Expanded `src/app/sitemap.ts` to include the public pages.
+- Expanded `src/app/sitemap.ts` to include the public pages. Sitemap entries intentionally omit `lastModified` until real content-edit dates are available; using build time would falsely mark every URL as changed on every deployment.
 - Updated `src/app/robots.ts` to disallow crawling API and private admin paths. This is crawler guidance only; it is not an access-control mechanism.
 - Removed unsupported claims of a six-month warranty and secure payment from the global metadata. Those claims must not be published until the actual service terms and gateway are verified.
+
+## UI isolation review
+
+The SEO work adds three independent informational routes and changes metadata/crawler files only. It does not require replacing or restyling the existing customer, technician, admin, splash, or mode-selection UI. Those existing UI files are outside the SEO change scope and should not be altered for SEO.
+
+A separate review of the overall PR diff shows UI changes already present elsewhere in this broad PR (including global theme styles, the splash hero, mode-selection card layout, and the mobile bottom navigation). These are not necessary for SEO. They have not been reverted here because they are outside the SEO-only scope; review them separately before merging if the requirement is to preserve the current production UI exactly.
+
+The root app entry remains the existing client-side splash/application flow. The informational routes are additional paths, not a replacement for that entry point.
 
 ## SEO scope and limits
 
