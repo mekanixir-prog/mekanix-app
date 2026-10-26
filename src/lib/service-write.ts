@@ -27,7 +27,7 @@
 //     RequestStatus.CANCELLED).
 // ============================================================================
 
-import { db } from "./db";
+import { getDbForLib } from "./db-access";
 import { isValidTransition } from "./care-auth";
 import { sendNotification, NOTIFICATION_TYPES } from "./notifications";
 import type { ServiceStatus } from "./service-unified";
@@ -87,6 +87,7 @@ async function createBookingService(
 ): Promise<CreateServiceResult> {
   const code = `CARE-${Math.floor(100000 + Math.random() * 900000)}`;
 
+  const db = await getDbForLib();
   const booking = await db.serviceBooking.create({
     data: {
       code,
@@ -132,6 +133,7 @@ async function createJobService(
   userId: string
 ): Promise<CreateServiceResult> {
   // Resolve customer record from session (server-authoritative).
+  const db = await getDbForLib();
   const customer = await db.customer.findUnique({ where: { userId } });
   if (!customer) throw new Error("Customer profile not found");
 
@@ -243,6 +245,7 @@ async function transitionBooking(
   role: string,
   userId: string
 ): Promise<{ success: boolean; error?: string }> {
+  const db = await getDbForLib();
   const booking = await db.serviceBooking.findUnique({
     where: { id: bookingId },
     select: { id: true, status: true, userId: true, technicianId: true },
@@ -299,6 +302,7 @@ async function transitionJob(
   _role: string,
   _userId: string
 ): Promise<{ success: boolean; error?: string }> {
+  const db = await getDbForLib();
   const job = await db.job.findUnique({
     where: { id: jobId },
     select: { id: true, status: true, technicianId: true },

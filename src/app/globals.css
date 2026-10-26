@@ -53,28 +53,33 @@
 
 :root {
   --radius: 0.75rem;
-  /* MEKANIX light: clean technical white with graphite ink + amber accent */
-  --background: oklch(0.99 0.002 95);
-  --foreground: oklch(0.18 0.008 260);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.008 260);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.18 0.008 260);
+  /* MEKANIX light: warm cream paper with graphite ink + amber accent.
+     Background is a warm cream (not flat white) so the page feels alive,
+     and cards are a soft matte off-white with subtle warmth — the user
+     asked for 'a special, attractive, warm cream background' and 'matte
+     components so colors sit closer to the ground'. */
+  --background: oklch(0.965 0.012 80);      /* warm cream paper */
+  --foreground: oklch(0.2 0.01 60);          /* graphite ink, warm */
+  --card: oklch(0.985 0.008 80);             /* soft matte cream-white card */
+  --card-foreground: oklch(0.2 0.01 60);
+  --popover: oklch(0.985 0.008 80);
+  --popover-foreground: oklch(0.2 0.01 60);
   /* Primary = graphite (industrial ink) */
   --primary: oklch(0.22 0.01 260);
   --primary-foreground: oklch(0.99 0.002 95);
-  --secondary: oklch(0.965 0.004 260);
+  --secondary: oklch(0.94 0.014 80);        /* warm muted secondary */
   --secondary-foreground: oklch(0.22 0.01 260);
-  --muted: oklch(0.965 0.004 260);
-  --muted-foreground: oklch(0.5 0.012 260);
-  --accent: oklch(0.965 0.004 260);
+  --muted: oklch(0.93 0.012 80);             /* warm muted */
+  --muted-foreground: oklch(0.48 0.014 60);  /* softer, warm-muted text */
+  --accent: oklch(0.93 0.012 80);
   --accent-foreground: oklch(0.22 0.01 260);
   --destructive: oklch(0.58 0.22 25);
-  --border: oklch(0.91 0.005 260);
-  --input: oklch(0.91 0.005 260);
+  --border: oklch(0.89 0.012 75);            /* warm border, slightly darker than card */
+  --input: oklch(0.89 0.012 75);
   --ring: oklch(0.72 0.16 70);
-  /* MEKANIX signature amber (industrial / mechanical energy) */
-  --amber: oklch(0.74 0.17 63);
+  /* MEKANIX signature amber — exact brand color #F58220 (heavy mode, default).
+     Passenger pages override this to emerald #3D9B68 via .accent-passenger. */
+  --amber: #F58220;
   --amber-foreground: oklch(0.18 0.05 63);
   --emerald-glow: oklch(0.7 0.17 158);
   --steel: oklch(0.62 0.02 255);
@@ -84,7 +89,7 @@
   --chart-3: oklch(0.62 0.02 255);
   --chart-4: oklch(0.66 0.21 38);
   --chart-5: oklch(0.55 0.13 290);
-  --sidebar: oklch(0.18 0.008 260);
+  --sidebar: oklch(0.2 0.01 60);
   --sidebar-foreground: oklch(0.96 0.004 260);
   --sidebar-primary: oklch(0.74 0.17 63);
   --sidebar-primary-foreground: oklch(0.18 0.05 63);
@@ -114,7 +119,7 @@
   --border: oklch(1 0 0 / 9%);
   --input: oklch(1 0 0 / 12%);
   --ring: oklch(0.74 0.17 63);
-  --amber: oklch(0.78 0.16 68);
+  --amber: #F58220;
   --amber-foreground: oklch(0.18 0.05 63);
   --emerald-glow: oklch(0.74 0.16 160);
   --steel: oklch(0.7 0.018 255);
@@ -274,3 +279,109 @@
 .leaflet-control-attribution a {
   color: rgba(255,180,80,0.8) !important;
 }
+
+/* AccentThemeProvider — dynamic accent color override.
+   HEAVY mode (default, brand-priority): amber #F58220.
+   PASSENGER mode: emerald green #3D9B68.
+   The override is applied at the <html> level so every component that uses
+   var(--amber) — buttons, icons, borders, glows, chart series — picks up
+   the correct mode color automatically. */
+html.accent-heavy {
+  --amber: #F58220 !important;
+  --amber-foreground: #ffffff !important;
+  --color-amber: #F58220 !important;
+  --color-amber-foreground: #ffffff !important;
+}
+html.accent-passenger {
+  --amber: #3D9B68 !important;
+  --amber-foreground: #ffffff !important;
+  --color-amber: #3D9B68 !important;
+  --color-amber-foreground: #ffffff !important;
+}
+
+/* MEKANIX depth / elevation utilities.
+   In light mode, cards have a stronger shadow + warm border so they sit
+   above the cream background with visible depth (not flat). In dark mode,
+   the shadow is darker + larger for the same effect. */
+.mk-card-shadow {
+  box-shadow:
+    0 1px 2px rgba(60, 40, 0, 0.06),
+    0 4px 12px rgba(60, 40, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+.dark .mk-card-shadow {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 4px 12px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.mk-card-hover {
+  transition: box-shadow 0.25s ease, transform 0.25s ease, border-color 0.25s ease;
+}
+.mk-card-hover:hover {
+  box-shadow:
+    0 2px 6px rgba(60, 40, 0, 0.08),
+    0 12px 28px rgba(60, 40, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  transform: translateY(-2px);
+}
+.dark .mk-card-hover:hover {
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.5),
+    0 12px 28px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transform: translateY(-2px);
+}
+.mk-btn-glow { box-shadow: 0 4px 14px -2px color-mix(in oklch, var(--amber) 45%, transparent); transition: box-shadow 0.2s ease, transform 0.15s ease; }
+.mk-btn-glow:hover { box-shadow: 0 6px 20px -2px color-mix(in oklch, var(--amber) 60%, transparent); transform: translateY(-1px); }
+.mk-btn-glow:active { transform: translateY(0); }
+
+/* Glossy amber button — same metallic finish as the MEKANIX logo.
+   Layered: base amber + radial highlight (top) + linear sheen (across) +
+   inner highlight border. Hardcoded to #F58220 so it's ALWAYS brand
+   orange, never the passenger emerald — used on the splash screen which
+   is the brand entry point. */
+.mk-btn-glossy-amber {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.35) 0%, transparent 55%),
+    linear-gradient(180deg, #FFB05A 0%, #F58220 45%, #D96810 100%);
+  border: 1px solid rgba(255, 200, 120, 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(120, 60, 0, 0.3),
+    0 4px 14px -2px rgba(245, 130, 32, 0.5);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+  transition: box-shadow 0.2s ease, transform 0.15s ease;
+}
+.mk-btn-glossy-amber:hover {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.45) 0%, transparent 55%),
+    linear-gradient(180deg, #FFB866 0%, #FF8C30 45%, #E0700F 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -1px 0 rgba(120, 60, 0, 0.4),
+    0 6px 20px -2px rgba(245, 130, 32, 0.65);
+  transform: translateY(-1px);
+}
+.mk-btn-glossy-amber:active {
+  transform: translateY(0);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -1px 0 rgba(120, 60, 0, 0.4),
+    0 2px 8px -2px rgba(245, 130, 32, 0.4);
+}
+.mk-liquid-glass { background: color-mix(in oklch, var(--background) 65%, transparent); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); border: 1px solid color-mix(in oklch, var(--foreground) 8%, transparent); box-shadow: 0 -4px 24px rgba(0,0,0,0.08), inset 0 1px 0 color-mix(in oklch, var(--foreground) 6%, transparent); }
+.dark .mk-liquid-glass { background: color-mix(in oklch, var(--background) 55%, transparent); border: 1px solid color-mix(in oklch, var(--foreground) 10%, transparent); box-shadow: 0 -4px 24px rgba(0,0,0,0.4), inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent); }
+
+/* Splash brand amber — ALWAYS #F58220, regardless of accent-heavy / accent-passenger.
+   The splash screen is the brand entry point and must always use the brand
+   orange, never the passenger emerald. These classes bypass the --amber
+   CSS variable so they don't change when the user picks passenger mode. */
+.mk-splash-amber { background-color: #F58220; color: #000; }
+.mk-splash-amber:hover { background-color: #FF9433; }
+.mk-splash-amber-text { color: #F58220; }
+.mk-splash-amber-border { border-color: rgba(245, 130, 32, 0.4); }
+.mk-splash-amber-bg-soft { background-color: rgba(245, 130, 32, 0.1); }
+.mk-splash-amber-border-soft { border-color: rgba(245, 130, 32, 0.3); }
+.mk-splash-amber-ring { box-shadow: 0 0 0 2px rgba(245, 130, 32, 0.2); }
+.mk-splash-amber-glow { background-color: #F58220; }

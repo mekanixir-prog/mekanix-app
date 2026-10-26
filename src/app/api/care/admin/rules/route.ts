@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireRole } from "@/lib/auth";
 
 export async function GET(req: Request) {
+  const db = await getDbForLib();
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
   const forbidden = requireRole(session, "ADMIN");
@@ -13,6 +14,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const db = await getDbForLib();
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
   const forbidden = requireRole(session, "ADMIN");

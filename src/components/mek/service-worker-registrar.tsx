@@ -3,35 +3,36 @@
 import { useEffect } from "react";
 
 /**
- * ServiceWorkerRegistrar — registers /sw.js on the client.
+ * ServiceWorkerRegistrar — DISABLED in development.
  *
- * Why a client component instead of next/script or a raw <script> tag:
- * Next.js 16 (Turbopack) forbids <script dangerouslySetInnerHTML> inside
- * React components (it throws "Encountered a script tag while rendering
- * React component"). The idiomatic React/Next.js way to run a side-effect
- * on mount is useEffect inside a "use client" component.
+ * Why disabled: the previous SW used c.navigate() to force-reload clients,
+ * which created an infinite loop — the old cached page kept reloading
+ * itself, never picking up the new server-side code. Users saw stale
+ * content even after we pushed fixes.
  *
- * In dev (localhost), sw.js self-destructs on install/activate, so any stale
- * SW from a prior session gets evicted. In production, sw.js acts as a
- * normal PWA service worker (cache-first for static assets, network-first
- * for navigation).
+ * In dev, we DON'T register any SW at all. The browser always fetches
+ * fresh resources from the dev server. In production, we can re-enable
+ * registration with a proper cache-first strategy.
  */
 export function ServiceWorkerRegistrar() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!("serviceWorker" in navigator)) return;
-    // Register after window load so it doesn't compete with first paint.
-    const register = () => {
-      navigator.serviceWorker.register("/sw.js").catch(() => {
-        // Silent — SW is a progressive enhancement, not a hard requirement.
-      });
+
+    // DEV: aggressively unregister any existing SW + clear caches so
+    // stale content from a previous session is evicted.
+    const cleanup = async () => {
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map((r) => r.unregister()));
+        const names = await caches.keys();
+        await Promise.all(names.map((n) => caches.delete(n)));
+        console.log("[SW] Cleared all service workers + caches (dev mode).");
+      } catch {
+        // Silent — SW is a progressive enhancement.
+      }
     };
-    if (document.readyState === "complete") {
-      register();
-    } else {
-      window.addEventListener("load", register, { once: true });
-      return () => window.removeEventListener("load", register);
-    }
+    cleanup();
   }, []);
 
   return null;

@@ -18,16 +18,16 @@
 //     proceed without the extra (no longer blocked on customer approval).
 
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import {
   requireBookingOwner,
   isValidTransition,
   isValidApprovalTransition,
 } from "@/lib/care-auth";
-import { runSequential } from "@/lib/db-sequential";
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const db = await getDbForLib();
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
   const { id } = await ctx.params;

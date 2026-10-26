@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { createSession } from "@/lib/auth";
 import { validateBody } from "@/lib/api-helpers";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
@@ -49,44 +49,117 @@ export async function POST(req: Request) {
   // correct, secure behavior; we do NOT fall back to plaintext lookup.
   const codeHash = hashOtpCode(code);
 
-  const otp = await db.otpCode.findFirst({
-    where: { phone, code: codeHash, consumed: false },
-    orderBy: { createdAt: "desc" },
+  const db = await getDbForLib();
+
+  // SEC-10 fix: atomic one-time-code consumption.
+  // Previously: findFirst({ consumed: false }) + update({ consumed: true })
+  // were two separate non-atomic queries. Two concurrent verify requests
+  // with the same valid code could both pass findFirst and both call update,
+  // violating the one-time-code contract.
+  //
+  // Now: a single conditional updateMany atomically transitions the code
+  // from consumed:false → consumed:true ONLY if it is still unconsumed AND
+  // not expired. count === 1 means we won the race; count === 0 means the
+  // code was already used/expired/invalid — same 400 error as before.
+  // Note: WHERE clause uses `code: codeHash` because the DB stores the hash,
+  // not the plaintext code.
+  const now = new Date();
+  const consumed = await db.otpCode.updateMany({
+    where: {
+      phone,
+      code: codeHash,
+      consumed: false,
+      expiresAt: { gt: now },
+    },
+    data: { consumed: true },
   });
 
-  if (!otp) return NextResponse.json({ error: "Invalid code" }, { status: 400 });
-  if (otp.expiresAt.getTime() < Date.now()) {
-    return NextResponse.json({ error: "Code expired" }, { status: 400 });
+  if (consumed.count === 0) {
+    return NextResponse.json({ error: "Invalid or expired code" }, { status: 400 });
   }
-
-  await db.otpCode.update({ where: { id: otp.id }, data: { consumed: true } });
 
   // Try to find user by normalized phone first, then by phone digits only.
   // This handles legacy users whose phones were stored with dashes/spaces
   // (e.g. "+1-415-224-1180" should match "+14152241180").
+  //
+  // D1-02 FIX: previously used db.user.findMany({ select: { id, phone } })
+  // — an unbounded full-table scan on every OTP verify. Now uses a bounded
+  // query: try several common phone format variants as findUnique lookups
+  // (each is an indexed O(1) lookup on the @unique phone column).
   const phoneDigits = phone.replace(/\D/g, "");
   let user = await db.user.findUnique({
     where: { phone },
     include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
   });
+
   if (!user && phoneDigits) {
-    // Fallback: find by matching digits-only phone
-    const allUsers = await db.user.findMany({
-      select: { id: true, phone: true },
-    });
-    const match = allUsers.find((u) => (u.phone ?? "").replace(/\D/g, "") === phoneDigits);
-    if (match) {
+    // D1-02 fix: try common phone format variants as indexed findUnique
+    // lookups instead of scanning all users. Each variant is an O(1) lookup
+    // on the @unique phone column.
+    //
+    // We generate variants that cover the most common formats:
+    //   Iranian (+98 912 345 6789):
+    //     +989123456789, 989123456789, 09123456789, +98 912 345 6789, +98-912-345-6789
+    //   International (+1-415-224-1180):
+    //     14152241180, +14152241180, +1-415-224-1180, +1 415 224 1180
+    //
+    // The key insight: we try the raw digits, +digits, and several
+    // formatted variants that cover 1-digit CC (US, etc.) and 2-digit CC
+    // (Iran, EU, etc.).
+
+    const phoneVariants = new Set<string>();
+
+    // Raw digits (no +)
+    phoneVariants.add(phoneDigits);
+
+    // +digits
+    phoneVariants.add(`+${phoneDigits}`);
+
+    // Iranian mobile numbers may arrive in international (+98...) or
+    // domestic (09...) form. Normalize both directions without treating the
+    // leading 0 of a domestic number as a one-digit country code.
+    let iranianInternationalDigits: string | null = null;
+    if (phoneDigits.startsWith("98") && phoneDigits.length === 12) {
+      iranianInternationalDigits = phoneDigits;
+    } else if (phoneDigits.startsWith("0") && phoneDigits.length === 11) {
+      iranianInternationalDigits = `98${phoneDigits.slice(1)}`;
+    }
+
+    if (iranianInternationalDigits) {
+      const national = iranianInternationalDigits.slice(2);
+      phoneVariants.add(`+${iranianInternationalDigits}`);
+      phoneVariants.add(iranianInternationalDigits);
+      phoneVariants.add(`0${national}`);
+      phoneVariants.add(`+98 ${national.slice(0, 3)} ${national.slice(3, 6)} ${national.slice(6)}`);
+      phoneVariants.add(`+98-${national.slice(0, 3)}-${national.slice(3, 6)}-${national.slice(6)}`);
+    }
+
+    // US +1 format only: do not guess a country code from a domestic number.
+    if (phoneDigits.startsWith("1") && phoneDigits.length === 11) {
+      const rest = phoneDigits.slice(1);
+      phoneVariants.add(`+1-${rest.slice(0, 3)}-${rest.slice(3, 6)}-${rest.slice(6)}`);
+      phoneVariants.add(`+1 ${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6)}`);
+    }
+
+    // Remove the original phone and empty strings
+    phoneVariants.delete(phone);
+    phoneVariants.delete("");
+
+    for (const variant of phoneVariants) {
       user = await db.user.findUnique({
-        where: { id: match.id },
+        where: { phone: variant },
         include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
       });
-      // Normalize the stored phone so future lookups match directly
-      if (user && user.phone !== phone) {
-        user = await db.user.update({
-          where: { id: user.id },
-          data: { phone },
-          include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
-        });
+      if (user) {
+        // Normalize the stored phone so future lookups match directly
+        if (user.phone !== phone) {
+          user = await db.user.update({
+            where: { id: user.id },
+            data: { phone },
+            include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
+          });
+        }
+        break;
       }
     }
   }
@@ -103,10 +176,13 @@ export async function POST(req: Request) {
     });
     created = true;
     await db.customer.create({ data: { userId: user.id } });
-    user = await db.user.findUnique({
+    // Re-fetch with includes — but keep the created user as fallback
+    // in case the re-fetch returns null (e.g. in tests or edge cases).
+    const refetched = await db.user.findUnique({
       where: { id: user.id },
       include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
     });
+    if (refetched) user = refetched;
   } else if (!user.phoneVerified) {
     user = await db.user.update({
       where: { id: user.id }, data: { phoneVerified: true },

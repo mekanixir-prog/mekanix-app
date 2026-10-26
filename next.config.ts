@@ -6,6 +6,11 @@ const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: false,
   allowedDevOrigins: ["*.space-z.ai"],
+  // Mark this app as having completed the agent-driven security upgrade
+  // (Next.js 16.4.0 → 16.4.3). Required by `next upgrade --agent=security`.
+  experimental: {
+    agentUpgrade: "security" as const,
+  },
   ...(isProduction
     ? {
         async rewrites() {

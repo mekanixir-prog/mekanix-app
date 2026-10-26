@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 
 // GET: list user's referrals + stats.
@@ -9,6 +9,7 @@ export async function GET(req: Request) {
   if (session instanceof NextResponse) return session;
 
   const userId = session.userId;
+  const db = await getDbForLib();
 
   const referrals = await db.referral.findMany({
     where: { referrerId: userId },
@@ -32,6 +33,7 @@ export async function POST(req: Request) {
   if (session instanceof NextResponse) return session;
 
   const userId = session.userId;
+  const db = await getDbForLib();
 
   // Check if user already has a referral code
   const existing = await db.referral.findFirst({ where: { referrerId: userId } });
@@ -65,6 +67,8 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   }
 
+  const db = await getDbForLib();
+
   // BOLA: the referral must belong to this user (as the referrer)
   const referral = await db.referral.findUnique({ where: { id: referralId } });
   if (!referral) return NextResponse.json({ error: "Referral not found" }, { status: 404 });
@@ -86,15 +90,20 @@ export async function PATCH(req: Request) {
     data: { rewardClaimed: true, status: "rewarded", completedAt: new Date() },
   });
 
-  await db.notification.create({
-    data: {
-      userId: updated.referrerId,
-      type: "referral_rewarded",
-      title: "Referral reward claimed!",
-      body: `You earned ${Number(updated.rewardAmount)} IRR from your referral.`,
-      category: "system",
-      link: "customer/referral",
-    },
-  });
+  // Notification — best-effort, never fail a reward claim over a notification.
+  try {
+    await db.notification.create({
+      data: {
+        userId: updated.referrerId,
+        type: "referral_rewarded",
+        title: "Referral reward claimed!",
+        body: `You earned ${Number(updated.rewardAmount)} IRR from your referral.`,
+        category: "system",
+        link: "customer/referral",
+      },
+    });
+  } catch (e) {
+    console.error("[referral/claim] Failed to create notification (reward still claimed):", e);
+  }
   return NextResponse.json({ ok: true, referral: updated });
 }

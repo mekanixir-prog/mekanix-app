@@ -1,0 +1,35 @@
+{
+  "generated_at": "2026-10-12",
+  "generated_from": "actual code scan (grep for sync db imports + getDbForLib)",
+  "summary": {
+    "migrated_files": 70,
+    "remaining_files": 7,
+    "remaining_db_calls": 26,
+    "status": "priority-3-complete, priority-4-pending-decision"
+  },
+  "migrated_lib_files": [
+    "src/lib/auth.ts", "src/lib/rate-limit.ts", "src/lib/service-write.ts",
+    "src/lib/service-unified.ts", "src/lib/notifications.ts", "src/lib/pricing.ts",
+    "src/lib/care-auth.ts", "src/lib/vip.ts", "src/lib/admin-auth.ts",
+    "src/lib/admin-api.ts", "src/lib/dispatch.ts"
+  ],
+  "remaining_files": [
+    {"file": "src/lib/db-sequential.ts", "db_calls": 1, "priority": "P4-lib", "notes": "runSequential $transaction helper, used by jobs/[id]/status. D1 has no $transaction."},
+    {"file": "src/app/api/admin-panel/auth/login/route.ts", "db_calls": 2, "priority": "P4-admin-panel", "notes": "admin login: findFirst + update(lastLoginAt)"},
+    {"file": "src/app/api/admin-panel/auth/me/route.ts", "db_calls": 1, "priority": "P4-admin-panel", "notes": "admin profile: findUnique"},
+    {"file": "src/app/api/admin-panel/onboarding/route.ts", "db_calls": 3, "priority": "P4-admin-panel", "notes": "slide management"},
+    {"file": "src/app/api/admin-panel/onboarding/[id]/route.ts", "db_calls": 5, "priority": "P4-admin-panel", "notes": "slide item CRUD"},
+    {"file": "src/app/api/admin/[resource]/route.ts", "db_calls": 7, "priority": "P4-admin", "notes": "generic admin resource list (dynamic handlers)"},
+    {"file": "src/app/api/admin/[resource]/[id]/route.ts", "db_calls": 7, "priority": "P4-admin", "notes": "generic admin resource item CRUD"}
+  ],
+  "security_fixes_during_p3": [
+    "insurance/claim: notification + policy.update best-effort",
+    "mechanic-applications/approve: reviewerId server-authoritative (was body.reviewerId)",
+    "vip/subscribe: was UNAUTHENTICATED + client userId (critical BOLA) -> requireAuth + session.userId",
+    "referral/claim, support/tickets, messages: notifications best-effort",
+    "health/ready: $queryRaw now D1-backed (was sync stub -> always unhealthy in Workers)"
+  ],
+  "constraints_maintained": [
+    "main untouched (local == remote == e4c2faf)", "PR #3 open", "no remote D1 migration", "no deploy"
+  ]
+}

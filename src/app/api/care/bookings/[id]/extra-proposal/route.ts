@@ -14,19 +14,19 @@
 //     for D1 — true batch transactions are not yet exposed through Prisma).
 
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import {
   requireAssignedTechnician,
   isValidTransition,
 } from "@/lib/care-auth";
-import { runSequential } from "@/lib/db-sequential";
 
 // Booking states in which a technician may propose an extra cost.
 // Any other state means the proposal is out-of-context for the current workflow.
 const EXTRA_PROPOSAL_ALLOWED_STATES = ["INSPECTING", "IN_SERVICE"];
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const db = await getDbForLib();
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
   const { id } = await ctx.params;

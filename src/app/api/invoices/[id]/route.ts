@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant } from "@/lib/auth";
 
@@ -15,6 +15,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
 
   // Resolve invoice + job so we can check ownership/participation
+  const db = await getDbForLib();
   const inv = await db.invoice.findUnique({
     where: { id },
     select: { id: true, jobId: true, status: true, total: true, currency: true, code: true },

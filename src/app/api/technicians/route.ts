@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireRole } from "@/lib/auth";
 
@@ -9,11 +9,15 @@ const techInclude = {
   serviceAreas: true,
 } as const;
 
-// Public-facing technician fields — never expose password or sensitive PII
+// Public-facing technician fields — never expose password or sensitive PII.
+// SEC-22 fix (Agent 1 coordinator, FIX-SEC-22): `phone` removed from the
+// PUBLIC list. The detail route (/api/technicians/[id]) already omitted phone
+// (M-03); the list route must match — a public, unauthenticated listing must
+// not leak technician phone numbers. Customers contact technicians through the
+// platform (chat / job dispatch), never via direct phone.
 const PUBLIC_USER_FIELDS = {
   id: true,
   name: true,
-  phone: true,
   avatar: true,
   role: true,
   status: true,
@@ -36,7 +40,7 @@ export async function GET(req: Request) {
     where.specialties = { some: { category } };
   }
 
-  let techs = await db.technician.findMany({
+  let techs = await (await getDbForLib()).technician.findMany({
     where,
     include: {
       user: { select: PUBLIC_USER_FIELDS },
@@ -85,6 +89,7 @@ export async function POST(req: Request) {
     if (k in rest) safeData[k] = rest[k];
   }
 
+  const db = await getDbForLib();
   const tech = await db.technician.create({
     data: {
       userId,

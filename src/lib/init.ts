@@ -17,5 +17,15 @@ if (!isWorker) {
     } catch {
       // ignore — providers are optional
     }
+
+    // Auto-seed the database if it's empty (first dev server start).
+    // This ensures demo users, technicians, vehicles, and jobs exist so
+    // the guest flow works without manual `tsx prisma/seed.ts`.
+    try {
+      const { ensureSeedData } = await import("./auto-seed");
+      await ensureSeedData();
+    } catch {
+      // ignore — seed is best-effort
+    }
   })();
 }

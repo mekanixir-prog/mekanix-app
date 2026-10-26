@@ -27,7 +27,7 @@
 // public API is the contract the migration must satisfy.
 // ============================================================================
 
-import { db } from "./db";
+import { getDbForLib } from "./db-access";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Unified Service Status
@@ -229,6 +229,7 @@ export async function getServicesForUser(
   }
 
   // Fetch jobs (via customer's service requests)
+  const db = await getDbForLib();
   const jobs = await db.job.findMany({
     where: {
       request: { customer: { userId } },
@@ -289,6 +290,7 @@ export async function getServiceById(
   id: string
 ): Promise<UnifiedService | null> {
   // Try booking first
+  const db = await getDbForLib();
   const booking = await db.serviceBooking.findUnique({
     where: { id },
     include: {
@@ -350,6 +352,7 @@ export async function getServiceStats(
   completed: number;
   cancelled: number;
 }> {
+  const db = await getDbForLib();
   const [jobs, bookings] = await Promise.all([
     db.job.count({
       where: { request: { customer: { userId } } },

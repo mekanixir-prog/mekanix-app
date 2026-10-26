@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
 
@@ -7,7 +7,6 @@ import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
 const PUBLIC_USER_FIELDS = {
   id: true,
   name: true,
-  phone: true,
   avatar: true,
   role: true,
   status: true,
@@ -21,6 +20,7 @@ const PUBLIC_USER_FIELDS = {
 // Selects only safe fields.
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const db = await getDbForLib();
   const tech = await db.technician.findUnique({
     where: { id },
     include: {
@@ -57,7 +57,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (session.role !== "TECHNICIAN") {
       return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
     }
-    const tech = await db.technician.findUnique({ where: { id }, select: { userId: true } });
+    const tech = await (await getDbForLib()).technician.findUnique({ where: { id }, select: { userId: true } });
     if (!tech) return NextResponse.json({ error: "مکانیک یافت نشد" }, { status: 404 });
     if (tech.userId !== session.userId) {
       return NextResponse.json({ error: "شما فقط می‌توانید پروفایل خودتان را ویرایش کنید" }, { status: 403 });
@@ -94,7 +94,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "هیچ فیلد قابل ویرایشی ارسال نشده" }, { status: 400 });
   }
 
-  const updated = await db.technician.update({
+  const updated = await (await getDbForLib()).technician.update({
     where: { id },
     data: safe as any,
     include: {

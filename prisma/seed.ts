@@ -1,8 +1,14 @@
 // MEKANIX — Database seed script
 // Run with: bun run prisma/seed.ts
+// Or auto-seeds on first dev server start via src/lib/auto-seed.ts
 import { PrismaClient } from "@prisma/client";
 
-const db = new PrismaClient();
+// Use the global seed db if set (by auto-seed), otherwise create our own.
+function getDb(): PrismaClient {
+  return (globalThis as any).__seedDb ?? new PrismaClient();
+}
+
+let db = getDb();
 
 const now = Date.now();
 const day = 86400000;
@@ -486,9 +492,25 @@ async function main() {
   console.log(`   Invoices: ${await db.invoice.count()}`);
 }
 
-main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(() => db.$disconnect());
+// Export the seed function so it can be called from auto-seed.ts
+// (which runs automatically on first dev server start).
+export async function seedDatabase(dbClient: any): Promise<void> {
+  // Re-use the same logic but with a passed-in db client
+  const originalDb = (globalThis as any).__seedDb;
+  (globalThis as any).__seedDb = dbClient;
+  try {
+    await main();
+  } finally {
+    (globalThis as any).__seedDb = originalDb;
+  }
+}
+
+// If this file is run directly (not imported), execute main().
+if (require.main === module) {
+  main()
+    .catch((e) => {
+      console.error(e);
+      process.exit(1);
+    })
+    .finally(() => db.$disconnect());
+}

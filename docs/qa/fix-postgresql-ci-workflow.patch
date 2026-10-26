@@ -1,0 +1,16 @@
+diff --git a/.github/workflows/postgresql-ci.yml b/.github/workflows/postgresql-ci.yml
+index d047f29..86f8c10 100755
+--- a/.github/workflows/postgresql-ci.yml
++++ b/.github/workflows/postgresql-ci.yml
+@@ -45,9 +45,8 @@ jobs:
+       - name: Replace migrations with PostgreSQL versions
+         run: |
+           rm -rf prisma/migrations
+-          mkdir -p prisma/migrations/20260925000000_init
+-          cp prisma/migrations-postgresql/20260925000000_init/migration.sql prisma/migrations/20260925000000_init/migration.sql
+-          cp prisma/migrations-postgresql/migration_lock.toml prisma/migrations/migration_lock.toml
++          # Copy ALL migrations from migrations-postgresql/ (init + additive)
++          cp -r prisma/migrations-postgresql prisma/migrations
+           echo "Migrations structure:"
+           find prisma/migrations -type f
+           echo ""

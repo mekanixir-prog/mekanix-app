@@ -1,9 +1,24 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDbForLib } from "@/lib/db-access";
 import { verifySession, requireRole } from "@/lib/auth";
 
 // POST /api/mechanic-applications/[id]/approve — ADMIN ONLY.
 // Approves a mechanic application → creates a User (TECHNICIAN) + Technician profile.
+//
+// Multi-step write (no $transaction in D1 — sequential):
+//   1. mechanicApplication.findUnique (guard: must exist + not already APPROVED)
+//   2. user.findUnique → user.create OR user.update (role=TECHNICIAN)
+//   3. technician.findUnique → technician.create (with nested specialties/certs/areas)
+//   4. mechanicApplication.update (status=APPROVED, reviewerId=session.userId)
+//   5. notification.create (best-effort, try/catch)
+//
+// Mid-failure behavior:
+//   - If step 2 or 3 fails after a partial user/tech create, a re-approve is SAFE:
+//     the `if (app.status === "APPROVED")` guard + the findUnique checks make it
+//     idempotent (won't create duplicate user/technician).
+//   - If step 4 fails (app stays PENDING) but user+tech were created, a re-approve
+//     will skip user/tech creation (they already exist) and retry the status update.
+//   - Step 5 (notification) is best-effort: never fail an approval over a notification.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = req.headers.get("authorization");
   if (!auth?.startsWith("Bearer ")) {
@@ -18,6 +33,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
+  const db = await getDbForLib();
+
   const app = await db.mechanicApplication.findUnique({ where: { id } });
   if (!app) return NextResponse.json({ error: "Application not found" }, { status: 404 });
   if (app.status === "APPROVED") return NextResponse.json({ error: "Already approved" }, { status: 400 });
@@ -74,20 +91,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const updated = await db.mechanicApplication.update({
     where: { id },
-    data: { status: "APPROVED", userId: user.id, reviewerId: body.reviewerId || null, reviewedAt: new Date(), adminNotes: body.notes || null },
+    // reviewerId is server-authoritative: the admin who approved it (from session),
+    // NEVER from the client body (prevents spoofing the reviewer identity).
+    data: { status: "APPROVED", userId: user.id, reviewerId: session.userId, reviewedAt: new Date(), adminNotes: body.notes || null },
     include: { user: { include: { technician: true } } },
   });
 
-  await db.notification.create({
-    data: {
-      userId: user.id,
-      type: "review_request",
-      title: "Welcome to MEKANIX!",
-      body: "Your application was approved. You can now receive service requests.",
-      category: "system",
-      link: "technician/requests",
-    },
-  });
+  // Notification — best-effort, never fail an approval over a notification side-effect.
+  try {
+    await db.notification.create({
+      data: {
+        userId: user.id,
+        type: "review_request",
+        title: "Welcome to MEKANIX!",
+        body: "Your application was approved. You can now receive service requests.",
+        category: "system",
+        link: "technician/requests",
+      },
+    });
+  } catch (e) {
+    console.error("[mechanic-applications/approve] Failed to create notification (approval still succeeded):", e);
+  }
 
   return NextResponse.json({ application: updated, user, technician: tech });
 }

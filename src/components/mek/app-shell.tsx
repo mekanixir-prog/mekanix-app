@@ -163,7 +163,7 @@ export function AppShell({
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button variant="ghost" size="sm" className="gap-1.5 px-2.5" onClick={switchMode}>
-                      {machineMode === "heavy" ? <Truck className="size-3.5 text-emerald-glow" /> : <Car className="size-3.5 text-amber" />}
+                      {machineMode === "heavy" ? <Truck className="size-3.5 text-amber" /> : <Car className="size-3.5 text-emerald-glow" />}
                       <span className="hidden text-[11px] font-medium sm:inline">{machineMode === "heavy" ? (isFa ? "سنگین" : "Heavy") : (isFa ? "سواری" : "Passenger")}</span>
                       <ArrowLeftRight className="size-3 text-muted-foreground" />
                     </Button>
@@ -300,7 +300,7 @@ function MobileBottomNav({ nav }: { nav: NavItem[] }) {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-background/95 backdrop-blur-xl md:hidden"
+      className="mk-liquid-glass fixed bottom-0 left-0 right-0 z-40 border-t border-border md:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       aria-label={t("common.mobileNav")}
     >

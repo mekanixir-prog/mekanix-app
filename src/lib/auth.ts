@@ -12,22 +12,34 @@
 import { SignJWT, jwtVerify } from "jose";
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
-import { db } from "./db";
+import { getDbForLib } from "./db-access";
 
 // ──────────── JWT ────────────
 
-const JWT_SECRET = process.env.JWT_SECRET;
 const encoder = new TextEncoder();
 
+/**
+ * Get the JWT signing secret.
+ *
+ * In production: JWT_SECRET MUST be set (via wrangler secret or .dev.vars).
+ * Throws if missing — no insecure fallback in production.
+ *
+ * In dev: falls back to a hardcoded dev-only secret (NEVER in production).
+ *
+ * SECURITY: JWT_SECRET is read inside the function (not at module top-level)
+ * because in Workers/OpenNext, process.env may not be fully populated at
+ * module evaluation time.
+ */
 function getSecret(): Uint8Array {
-  if (!JWT_SECRET) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
     if (process.env.NODE_ENV === "production") {
       throw new Error("JWT_SECRET environment variable is required in production");
     }
     // Dev-only fallback — NEVER in production
     return encoder.encode("mekanix-dev-secret-change-in-production");
   }
-  return encoder.encode(JWT_SECRET);
+  return encoder.encode(secret);
 }
 
 export type Session = {
@@ -86,10 +98,16 @@ export async function createSession(payload: Session, req?: Request): Promise<st
     .sign(getSecret());
 
   // Persist a Session DB record so the token can be revoked/tracked.
-  // Wrap in try/catch: if the Session table doesn't exist (pre-migration
-  // DB) or the DB is unavailable, we still return the JWT so login works.
+  //
+  // SECURITY: In production, if the Session DB record cannot be created,
+  // we throw — login FAILS. This is fail-closed: a session that can't be
+  // tracked or revoked must not be issued.
+  //
+  // In dev (NODE_ENV !== 'production'), we allow fallback: the JWT is
+  // returned even if the DB is unavailable, so local dev works without DB.
   const tokenHash = hashToken(token);
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+  const db = await getDbForLib();
   try {
     await db.session.create({
       data: {
@@ -102,6 +120,12 @@ export async function createSession(payload: Session, req?: Request): Promise<st
     });
   } catch (e) {
     console.error("[auth] Failed to create Session DB record:", e);
+    if (process.env.NODE_ENV === "production") {
+      // Fail-closed: if we can't persist the session, we can't allow
+      // revocation or tracking — so the login must fail.
+      throw new Error("Failed to create session record — login denied");
+    }
+    // Dev mode: fall through, return JWT (local dev without DB)
   }
 
   return token;
@@ -124,11 +148,17 @@ export async function verifySession(token: string): Promise<Session | null> {
     isGuest: payload.isGuest as boolean,
   };
 
-  // 2. Check the Session DB for revocation. Wrap in try/catch for backward
-  //    compat: if the Session table doesn't exist (pre-migration DB) or the
-  //    DB call throws, fall back to JWT-only auth so existing deployments
-  //    keep working.
+  // 2. Check the Session DB for revocation.
+  // SECURITY: This is fail-closed — if the DB is unreachable, the session
+  // is REJECTED (return null). A DB outage must NOT silently allow revoked
+  // or unregistered sessions to pass. The previous fallback-to-JWT-only
+  // behavior was a security risk (revoked tokens could still work during
+  // DB downtime).
+  //
+  // Exception: in dev mode (NODE_ENV !== 'production'), we allow fallback
+  // to JWT-only so local development works without a DB.
   try {
+    const db = await getDbForLib();
     const tokenHash = hashToken(token);
     const sessionRecord = await db.session.findUnique({
       where: { tokenHash },
@@ -139,7 +169,11 @@ export async function verifySession(token: string): Promise<Session | null> {
     if (sessionRecord.expiresAt.getTime() < Date.now()) return null; // expired
   } catch (e) {
     console.error("[auth] Failed to query Session DB:", e);
-    // Fall through — return the JWT-derived session (backward compat).
+    // Fail-closed in production: DB error → reject session.
+    // In dev: fall back to JWT-only so local dev works without DB.
+    if (process.env.NODE_ENV === "production") {
+      return null;
+    }
   }
 
   return session;
@@ -158,14 +192,13 @@ export async function verifySession(token: string): Promise<Session | null> {
  */
 export async function revokeSession(token: string): Promise<void> {
   const tokenHash = hashToken(token);
-  try {
-    await db.session.updateMany({
-      where: { tokenHash, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-  } catch (e) {
-    console.error("[auth] Failed to revoke session:", e);
-  }
+  const db = await getDbForLib();
+  await db.session.updateMany({
+    where: { tokenHash, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  // If this throws, the caller (logout endpoint) will see the error.
+  // We do NOT swallow it — failing to revoke is a security issue.
 }
 
 /**
@@ -177,14 +210,13 @@ export async function revokeSession(token: string): Promise<void> {
  * Idempotent: only touches sessions where `revokedAt` is still null.
  */
 export async function revokeAllUserSessions(userId: string): Promise<void> {
-  try {
-    await db.session.updateMany({
-      where: { userId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-  } catch (e) {
-    console.error("[auth] Failed to revoke all user sessions:", e);
-  }
+  const db = await getDbForLib();
+  await db.session.updateMany({
+    where: { userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  // If this throws, the caller will see the error.
+  // We do NOT swallow it — failing to revoke is a security issue.
 }
 
 // ──────────── Session Extraction ────────────
@@ -240,11 +272,13 @@ export function requireRole(
 
 export async function getCustomerFromSession(session: Session) {
   if (session.role !== "CUSTOMER") return null;
+  const db = await getDbForLib();
   return db.customer.findUnique({ where: { userId: session.userId } });
 }
 
 export async function getTechnicianFromSession(session: Session) {
   if (session.role !== "TECHNICIAN") return null;
+  const db = await getDbForLib();
   return db.technician.findUnique({ where: { userId: session.userId } });
 }
 
@@ -253,6 +287,7 @@ export async function requireVehicleOwner(session: Session, vehicleId: string): 
   if (session.role === "ADMIN") return null; // Admin can access all
   const customer = await getCustomerFromSession(session);
   if (!customer) return NextResponse.json({ error: "پروفایل مشتری یافت نشد" }, { status: 403 });
+  const db = await getDbForLib();
   const vehicle = await db.vehicle.findUnique({ where: { id: vehicleId }, select: { customerId: true } });
   if (!vehicle) return NextResponse.json({ error: "خودرو یافت نشد" }, { status: 404 });
   if (vehicle.customerId !== customer.id) {
@@ -264,6 +299,7 @@ export async function requireVehicleOwner(session: Session, vehicleId: string): 
 // Check if user is participant in a job (customer or assigned technician)
 export async function requireJobParticipant(session: Session, jobId: string): Promise<NextResponse | null> {
   if (session.role === "ADMIN") return null;
+  const db = await getDbForLib();
   const job = await db.job.findUnique({
     where: { id: jobId },
     select: { id: true, request: { select: { customerId: true } }, technicianId: true },
@@ -287,6 +323,7 @@ export async function requireJobParticipant(session: Session, jobId: string): Pr
 // Check if user owns a notification
 export async function requireNotificationOwner(session: Session, notificationId: string): Promise<NextResponse | null> {
   if (session.role === "ADMIN") return null;
+  const db = await getDbForLib();
   const notif = await db.notification.findUnique({ where: { id: notificationId }, select: { userId: true } });
   if (!notif) return NextResponse.json({ error: "اعلان یافت نشد" }, { status: 404 });
   if (notif.userId !== session.userId) {
@@ -300,6 +337,7 @@ export async function requireWalletOwner(session: Session, walletId: string): Pr
   if (session.role === "ADMIN") return null;
   const technician = await getTechnicianFromSession(session);
   if (!technician) return NextResponse.json({ error: "پروفایل مکانیک یافت نشد" }, { status: 403 });
+  const db = await getDbForLib();
   const wallet = await db.wallet.findUnique({ where: { id: walletId }, select: { technicianId: true } });
   if (!wallet) return NextResponse.json({ error: "کیف پول یافت نشد" }, { status: 404 });
   if (wallet.technicianId !== technician.id) {
@@ -311,6 +349,7 @@ export async function requireWalletOwner(session: Session, walletId: string): Pr
 // Check if user owns a support ticket
 export async function requireTicketOwner(session: Session, ticketId: string): Promise<NextResponse | null> {
   if (session.role === "ADMIN") return null;
+  const db = await getDbForLib();
   const ticket = await db.supportTicket.findUnique({ where: { id: ticketId }, select: { userId: true } });
   if (!ticket) return NextResponse.json({ error: "تیکت یافت نشد" }, { status: 404 });
   if (ticket.userId !== session.userId) {
@@ -322,6 +361,7 @@ export async function requireTicketOwner(session: Session, ticketId: string): Pr
 // Check if user owns an insurance policy
 export async function requirePolicyOwner(session: Session, policyId: string): Promise<NextResponse | null> {
   if (session.role === "ADMIN") return null;
+  const db = await getDbForLib();
   const policy = await db.insurancePolicy.findUnique({ where: { id: policyId }, select: { userId: true } });
   if (!policy) return NextResponse.json({ error: "بیمه یافت نشد" }, { status: 404 });
   if (policy.userId !== session.userId) {
@@ -419,6 +459,7 @@ export async function withIdempotency<T>(
 
   // Try D1 IdempotencyKey table (works on Cloudflare + local SQLite via Prisma)
   try {
+    const db = await getDbForLib();
     const existing = await db.idempotencyKey.findUnique({ where: { key: d1Key } });
 
     if (existing && existing.expiresAt.getTime() > now) {
