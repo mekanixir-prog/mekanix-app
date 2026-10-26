@@ -1,19 +1,22 @@
--- MEKANIX — PostgreSQL migration: add unique constraint on UserVipSubscription.paymentId
--- VIP-01 fix: prevents TOCTOU race where two concurrent subscribes with the
--- same paymentId both pass the findFirst check and both call create.
+-- MEKANIX — PostgreSQL migration: VIP payment idempotency and active-subscription guard.
+-- Preserve existing subscription history: this migration intentionally does NOT
+-- delete or rewrite duplicate rows. Run the duplicate preflight queries below
+-- against a backup first. If duplicates exist, reconcile them explicitly before
+-- applying this migration; the unique-index creation must fail rather than silently
+-- deleting financial/subscription records.
 --
--- Safety: before creating the unique index, we delete any duplicate
--- paymentId rows (keeping only the most recent one per paymentId).
--- NULL paymentIds are allowed (PostgreSQL allows multiple NULLs in unique).
+-- Preflight:
+-- SELECT "paymentId", COUNT(*) FROM "UserVipSubscription"
+-- WHERE "paymentId" IS NOT NULL GROUP BY "paymentId" HAVING COUNT(*) > 1;
+-- SELECT "userId", COUNT(*) FROM "UserVipSubscription"
+-- WHERE "status" = 'ACTIVE' GROUP BY "userId" HAVING COUNT(*) > 1;
 
--- Step 1: Delete duplicate rows (keep the one with the latest createdAt)
-DELETE FROM "UserVipSubscription"
-WHERE "paymentId" IS NOT NULL
-  AND "id" NOT IN (
-    SELECT MAX("id") FROM "UserVipSubscription"
-    WHERE "paymentId" IS NOT NULL
-    GROUP BY "paymentId"
-  );
+-- A payment may back only one subscription, regardless of subscription status.
+CREATE UNIQUE INDEX "UserVipSubscription_paymentId_key"
+ON "UserVipSubscription"("paymentId");
 
--- Step 2: Create the unique index
-CREATE UNIQUE INDEX "UserVipSubscription_paymentId_key" ON "UserVipSubscription"("paymentId");
+-- Enforce at most one ACTIVE subscription per user. Prisma schema cannot express
+-- this partial index, so keep it as an explicit provider-specific migration.
+CREATE UNIQUE INDEX "UserVipSubscription_one_active_per_user_key"
+ON "UserVipSubscription"("userId")
+WHERE "status" = 'ACTIVE';
