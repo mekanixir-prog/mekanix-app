@@ -14,18 +14,45 @@ const vazirmatn = Vazirmatn({
   variable: "--font-vazirmatn",
 });
 
+const siteName = "مکانیکس";
+const siteDescription =
+  "مکانیکس سامانه‌ای برای ثبت و پیگیری درخواست‌های تعمیر و نگهداری خودرو و ماشین‌آلات سنگین است؛ اطلاعات وسیله و شرح ایراد را ثبت کنید و امکان ارائه خدمت را در سامانه بررسی کنید.";
+
 export const metadata: Metadata = {
+  metadataBase: new URL("https://mekanix.ir"),
   title: {
-    default: "مکانیکس | تعمیر و نگهداری سیار خودرو و ماشین‌آلات سنگین در محل",
+    default: "مکانیکس | تعمیر و نگهداری سیار خودرو و ماشین‌آلات سنگین",
     template: "%s | مکانیکس",
   },
-  description:
-    "مکانیکس پلتفرم تعمیر و نگهداری سیار در ایران است. مکانیک‌های تأییدشده برای خودرو، کامیون، اتوبوس، بیل، لودر و ماشین‌آلات سنگین — عیب‌یابی، تعمیر و نگهداری در محل شما، با گارانتی ۶ ماهه و پرداخت امن.",
+  description: siteDescription,
+  applicationName: siteName,
+  category: "business",
   keywords: [
-    "مکانیک سیار", "تعمیرکار سیار", "تعمیر ماشین در محل", "تعمیر خودرو در محل",
-    "مکانیک سنگین", "تعمیر ماشین‌آلات سنگین", "تعمیر بیل", "تعمیر لودر",
-    "MEKANIX", "mobile mechanic", "on-site repair",
+    "مکانیک سیار",
+    "تعمیرکار سیار",
+    "تعمیر خودرو در محل",
+    "تعمیر ماشین‌آلات سنگین",
+    "تعمیر بیل مکانیکی",
+    "تعمیر لودر",
+    "سرویس ماشین‌آلات راه‌سازی",
+    "MEKANIX",
   ],
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    locale: "fa_IR",
+    siteName,
+    title: "مکانیکس | ثبت و پیگیری خدمات تعمیر و نگهداری",
+    description: siteDescription,
+    url: "https://mekanix.ir",
+    images: [{ url: "/logo.webp", alt: "نشان مکانیکس" }],
+  },
+  twitter: {
+    card: "summary",
+    title: "مکانیکس | تعمیر و نگهداری سیار",
+    description: siteDescription,
+    images: ["/logo.webp"],
+  },
   manifest: "/manifest.json",
   robots: { index: true, follow: true },
   icons: {
@@ -35,7 +62,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "مکانیکس",
+    title: siteName,
   },
 };
 
