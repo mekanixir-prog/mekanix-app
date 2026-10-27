@@ -83,7 +83,7 @@ export function ModeSelect() {
       </div>
 
       {/* Heading */}
-      <div className="relative z-20 mx-auto max-w-5xl px-6 pt-6 text-center" dir={isFa ? "rtl" : "ltr"}>
+      <div className="relative z-20 mx-auto max-w-4xl px-4 pt-4 text-center sm:px-6 sm:pt-6" dir={isFa ? "rtl" : "ltr"}>
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -95,7 +95,7 @@ export function ModeSelect() {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.05 }}
-          className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-4xl"
+          className="mt-2 font-display text-2xl font-bold tracking-tight sm:text-3xl"
         >
           {t("mode.title")}
         </motion.h1>
@@ -103,17 +103,15 @@ export function ModeSelect() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.1 }}
-          className="mt-2 text-sm text-muted-foreground"
+          className="mt-1 text-xs text-muted-foreground sm:text-sm"
         >
           {t("mode.subtitle")}
         </motion.p>
       </div>
 
-      {/* Two mode cards — stacked vertically (heavy on top, passenger below).
-          Each card is full-width (max-w-4xl) and its height tracks the
-          image's intrinsic aspect ratio exactly: dark cards are 1983x793
-          (≈ 2.5:1 → aspect-[1983/793]). HEAVY card is first (brand priority). */}
-      <div className="relative z-20 mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-6 sm:gap-6 sm:px-6" dir={isFa ? "rtl" : "ltr"}>
+      {/* Two mode cards — compact so both fit on mobile without scroll.
+          Fixed compact aspect ratio (16/5) shorter than natural image ratio. */}
+      <div className="relative z-20 mx-auto flex w-full max-w-4xl flex-col gap-2 px-3 pt-3 sm:gap-3 sm:px-6 sm:pt-4" dir={isFa ? "rtl" : "ltr"}>
         {modes.map((mode, i) => (
           <motion.button
             key={mode.slug}
@@ -126,13 +124,11 @@ export function ModeSelect() {
           >
             <div className="absolute -right-16 -top-16 size-48 rounded-full blur-3xl bg-amber/20" />
 
-            {/* Card hero image — uses each image's NATURAL aspect ratio.
-                Dark cards: 1983x793 (2.5:1). Light cards: 2172x724 (3:1).
-                The user provided 4 images with specific dimensions; we
-                respect them as-is, no cropping or forced ratio. */}
+            {/* Card hero image — compact aspect ratio (16/5) so both cards
+                fit on mobile without scroll. object-cover centers vehicle. */}
             <div
               className="relative w-full overflow-hidden"
-              style={{ aspectRatio: isDark ? "1983 / 793" : "2172 / 724" }}
+              style={{ aspectRatio: "16 / 5" }}
             >
               <img
                 key={cardImage(mode.slug)}
@@ -148,7 +144,7 @@ export function ModeSelect() {
                   - heavy card (amber, RTL): icon right, text left
                   - passenger card (amber, RTL): icon left, text right
                 We alternate via mode.slug so the two cards mirror each other. */}
-            <div className="relative flex items-center justify-between gap-3 p-4 sm:p-6">
+            <div className="relative flex items-center justify-between gap-2 p-2 sm:gap-3 sm:p-4">
               {/* Text block */}
               <div className={`relative min-w-0 ${mode.slug === "heavy" ? "order-2 text-right" : "order-1 text-left"}`}>
                 <h2 className="font-display text-lg font-bold tracking-tight text-foreground sm:text-2xl">
@@ -159,17 +155,17 @@ export function ModeSelect() {
                 </p>
               </div>
               {/* Icon chip — opposite side from the text */}
-              <div className={`relative grid size-12 shrink-0 place-items-center rounded-xl border sm:size-14 border-amber/40 bg-amber/10 ${mode.slug === "heavy" ? "order-1" : "order-2"}`}>
-                <MekIcon name={mode.icon} className="size-6 sm:size-7 text-amber" />
+              <div className={`relative grid size-9 shrink-0 place-items-center rounded-lg border sm:size-12 sm:rounded-xl border-amber/40 bg-amber/10 ${mode.slug === "heavy" ? "order-1" : "order-2"}`}>
+                <MekIcon name={mode.icon} className="size-4 sm:size-6 text-amber" />
               </div>
             </div>
           </motion.button>
         ))}
       </div>
 
-      {/* Helper strip — modern premium cards with amber accent */}
-      <div className="relative z-20 mx-auto w-full max-w-4xl px-4 pb-6 sm:px-6" dir={isFa ? "rtl" : "ltr"}>
-        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+      {/* Helper strip — compact */}
+      <div className="relative z-20 mx-auto w-full max-w-4xl px-3 pb-3 sm:px-6 sm:pb-4" dir={isFa ? "rtl" : "ltr"}>
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-3">
           {[
             { icon: Wrench, label: t("mode.verifiedSpecialists"), desc: t("mode.backgroundChecked") },
             { icon: ShieldCheck, label: t("mode.warranty"), desc: t("mode.onPartsLabor") },
@@ -177,20 +173,20 @@ export function ModeSelect() {
           ].map((f, i) => (
             <div
               key={i}
-              className="group/item flex flex-col items-center gap-2 rounded-2xl border border-amber/20 bg-card/80 p-3 text-center mk-card-shadow transition-all hover:border-amber/40 hover:bg-amber/5 sm:flex-row sm:items-center sm:gap-3 sm:p-4 sm:text-left"
+              className="group/item flex flex-col items-center gap-1.5 rounded-xl border border-amber/20 bg-card/80 p-2 text-center mk-card-shadow transition-all hover:border-amber/40 hover:bg-amber/5 sm:flex-row sm:items-center sm:gap-2 sm:p-3 sm:text-left"
             >
-              <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-amber/10 ring-1 ring-amber/30 transition-colors group-hover/item:bg-amber/20 sm:size-11">
-                <f.icon className="size-5 text-amber" />
+              <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-amber/10 ring-1 ring-amber/30 sm:size-9">
+                <f.icon className="size-4 text-amber sm:size-5" />
               </div>
               <div className="min-w-0">
-                <p className="truncate text-[11px] font-semibold text-foreground sm:text-xs">{f.label}</p>
+                <p className="truncate text-[10px] font-semibold text-foreground sm:text-xs">{f.label}</p>
                 <p className="hidden text-[10px] text-muted-foreground sm:block sm:text-[11px]">{f.desc}</p>
               </div>
             </div>
           ))}
         </div>
         {auth.isGuest && (
-          <p className="mt-4 text-center text-[11px] text-muted-foreground">
+          <p className="mt-2 text-center text-[11px] text-muted-foreground">
             {t("mode.guestBrowseHint")}
           </p>
         )}
