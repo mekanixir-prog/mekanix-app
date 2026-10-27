@@ -140,7 +140,7 @@ export function AppShell({
             <Menu className="size-5" />
           </button>
           <button onClick={() => reset("home")} className="flex items-center">
-            <Logo size={30} />
+            <Logo size={38} />
           </button>
 
           <div className="ml-auto flex items-center gap-1">
@@ -275,7 +275,7 @@ export function AppShell({
         <SheetContent side="left" className="w-72 p-0">
           <SheetTitle className="sr-only">{t("common.mobileNav")}</SheetTitle>
           <div className="flex h-14 items-center justify-between border-b border-border px-4">
-            <Logo size={26} />
+            <Logo size={32} />
             <Button variant="ghost" size="icon" className="size-8" onClick={() => setMobileNavOpen(false)}>
               <X className="size-4" />
             </Button>

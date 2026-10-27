@@ -46,12 +46,12 @@ export function ModeSelect() {
       <div className="absolute left-1/2 top-1/2 size-[560px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber/[0.06] blur-[140px]" />
 
       {/* Top bar */}
-      <div className="relative z-20 flex items-center justify-between p-5" dir={isFa ? "rtl" : "ltr"}>
+      <div className="relative z-20 flex items-center justify-between p-4 sm:p-5" dir={isFa ? "rtl" : "ltr"}>
         <button onClick={exitToSplash} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
           {isFa ? <LogOut className="size-4" /> : <ArrowRight className="size-4 rotate-180" />}
           {t("mode.signOut")}
         </button>
-        <Logo size={28} />
+        <Logo size={36} />
         <div className="flex items-center gap-2">
           {/* Day/Night theme toggle — applies to mode-select + persisted globally */}
           <button

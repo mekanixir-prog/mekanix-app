@@ -339,7 +339,7 @@ function HeroLogo() {
       // The container just centers the image; the image's natural
       // aspect ratio determines the rendered size.
       className="relative mx-auto flex items-center justify-center"
-      style={{ width: 240, height: 280 }}
+      style={{ width: 280, height: 320 }}
     >
       {/* Soft amber spotlight behind the mascot (brand color #F58220) */}
       <div
@@ -358,7 +358,7 @@ function HeroLogo() {
         src="/splash-logo.webp"
         alt="MEKANIX — مکانیک سیار"
         className="relative z-10 h-auto w-auto max-w-full max-h-full select-none object-contain drop-shadow-2xl"
-        style={{ maxHeight: 280 }}
+        style={{ maxHeight: 320 }}
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2, duration: 0.7 }}
