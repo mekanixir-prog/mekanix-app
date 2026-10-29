@@ -26,7 +26,7 @@ const input = {
 };
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   mockWalletFindUnique
     .mockResolvedValueOnce({ balance: 1000 })
     .mockResolvedValueOnce({ balance: 1500 });
