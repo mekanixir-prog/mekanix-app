@@ -247,3 +247,348 @@ describe("B2.2 — withdraw route orphaned-WithdrawalRequest prevention", () => 
     expect(updateArgs.data).toEqual({ balance: { decrement: 500 } });
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FAILURE-PATH TEST SUITE (PR #4 review — Task ID: 3)
+// ═══════════════════════════════════════════════════════════════════════════
+// Purpose: document the ACTUAL behavior of the compensation block and
+// idempotency gaps, so we can decide which fixes are needed before merge.
+//
+// These tests do NOT assume a specific "correct" outcome — they record what
+// the code currently does. Failures indicate either a real bug or a missing
+// feature (gap). Each test annotates which category applies.
+//
+// Key distinctions (per reviewer feedback):
+//   - Compensation success ≠ concurrency safety — tested separately
+//   - HTTP error response ≠ failed financial transaction — tested separately
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Helper: standard wallet + technician + token setup. Wallet lookups return
+// balance=1000 throughout. updateMany decrement returns count=1.
+async function standardSetup(): Promise<string> {
+  mockWalletFindUnique
+    .mockResolvedValueOnce({ id: "wallet_1", balance: 1000, technicianId: "tech_1" }) // initial lookup
+    .mockResolvedValueOnce({ id: "wallet_1", balance: 1000, technicianId: "tech_1" }) // re-check inside try
+    .mockResolvedValueOnce({ id: "wallet_1", balance: 500, technicianId: "tech_1" }); // re-read after decrement
+  mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 }); // decrement succeeds
+  return mintTechnicianToken();
+}
+
+// Helper to suppress console.error noise while still allowing spy assertions.
+function muteConsoleError() {
+  return vi.spyOn(console, "error").mockImplementation(() => {});
+}
+
+describe("W1 — compensation triggers when withdrawalRequest.create throws", () => {
+  it("refunds balance and does NOT delete ledger/withdrawal (none created yet)", async () => {
+    const errSpy = muteConsoleError();
+    const token = await standardSetup();
+    // withdrawalRequest.create throws a generic DB error (NOT P2002)
+    mockWithdrawalRequestCreate.mockRejectedValueOnce(new Error("D1 write timeout"));
+
+    const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500, method: "card" });
+    const res = await POST(req);
+
+    // HTTP 500 (compensation path returns 500 after rollback)
+    expect(res.status).toBe(500);
+
+    // Compensation: balance IS refunded (second updateMany call)
+    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(2);
+    const refundArgs = mockWalletUpdateMany.mock.calls[1][0];
+    expect(refundArgs.data).toEqual({ balance: { increment: 500 } });
+    // Refund WHERE is unconditional (no balance check) — documents current behavior
+    expect(refundArgs.where).toEqual({ id: "wallet_1" });
+
+    // Nothing to delete — withdrawal/ledger never created
+    expect(mockWithdrawalRequestDelete).not.toHaveBeenCalled();
+    expect(mockWalletLedgerDelete).not.toHaveBeenCalled();
+
+    errSpy.mockRestore();
+  });
+
+  it("distinguishes P2002 unique-code collision from generic DB error (C3 documentation)", async () => {
+    const errSpy = muteConsoleError();
+    const token = await standardSetup();
+    // Simulate Prisma P2002 (unique constraint violation on `code`)
+    const p2002 = Object.assign(new Error("Unique constraint failed on the fields: (`code`)"), {
+      code: "P2002",
+      meta: { target: ["code"] },
+    });
+    mockWithdrawalRequestCreate.mockRejectedValueOnce(p2002);
+
+    const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
+    const res = await POST(req);
+    const body = await res.json();
+
+    // CURRENT BEHAVIOR: P2002 is treated as a generic failure → 500 + compensation.
+    // This is a GAP: P2002 on the random code should be retried, not surfaced to user.
+    expect(res.status).toBe(500);
+    // Response is generic — operator cannot tell from body that this was a collision
+    expect(body.error).toContain("پشتیبانی");
+    // Balance WAS refunded (compensation ran)
+    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(2);
+
+    errSpy.mockRestore();
+  });
+});
+
+describe("W2 — compensation triggers when walletLedger.create throws", () => {
+  it("deletes the withdrawal AND refunds balance; original error preserved in log", async () => {
+    const errSpy = muteConsoleError();
+    const token = await standardSetup();
+    // withdrawal.create succeeds, ledger.create throws
+    mockWithdrawalRequestCreate.mockResolvedValueOnce({
+      id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, status: "REQUESTED",
+    });
+    mockWalletLedgerCreate.mockRejectedValueOnce(new Error("D1 ledger write timeout"));
+    // Refund updateMany (second call) must succeed for compensation to complete
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 });
+
+    const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
+    const res = await POST(req);
+
+    expect(res.status).toBe(500);
+
+    // Compensation: ledger.delete NOT called (no ledger created),
+    // withdrawal.delete IS called, balance refund IS called.
+    expect(mockWalletLedgerDelete).not.toHaveBeenCalled();
+    expect(mockWithdrawalRequestDelete).toHaveBeenCalledTimes(1);
+    expect(mockWithdrawalRequestDelete.mock.calls[0][0]).toEqual({ where: { id: "wd_1" } });
+
+    // Balance refunded (decrement + refund = 2 updateMany calls)
+    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(2);
+    expect(mockWalletUpdateMany.mock.calls[1][0].data).toEqual({ balance: { increment: 500 } });
+
+    // Log entry preserves original error message
+    const logCall = errSpy.mock.calls.find(
+      (c) => typeof c[0] === "string" && c[0].includes("compensation completed")
+    );
+    expect(logCall).toBeDefined();
+    expect(logCall![1]).toMatchObject({ walletId: "wallet_1" });
+
+    errSpy.mockRestore();
+  });
+
+  it("NOTE: compensation success does NOT prove concurrency safety (separate property)", async () => {
+    // This test documents that the compensation block executes correctly in
+    // isolation. It does NOT test what happens if a concurrent admin PATCH
+    // reads the WithdrawalRequest between withdrawal.create and
+    // withdrawal.delete. That scenario is covered in admin-withdrawals.test.ts
+    // (A9: concurrent admin PATCH during compensation).
+    const errSpy = muteConsoleError();
+    const token = await standardSetup();
+    mockWithdrawalRequestCreate.mockResolvedValueOnce({
+      id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, status: "REQUESTED",
+    });
+    mockWalletLedgerCreate.mockRejectedValueOnce(new Error("timeout"));
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 }); // refund succeeds
+
+    const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
+    await POST(req);
+
+    // In this isolated test, compensation completes — but a concurrent admin
+    // PATCH racing between create and delete would still see wd_1 as
+    // REQUESTED and could approve it. This is NOT covered here.
+    expect(mockWithdrawalRequestDelete).toHaveBeenCalledTimes(1);
+    errSpy.mockRestore();
+  });
+});
+
+describe("W3 — notification failure is best-effort (no compensation, 200 response)", () => {
+  it("returns 200 even if notification.create throws (no double-charge risk)", async () => {
+    const errSpy = muteConsoleError();
+    const token = await standardSetup();
+    mockNotificationCreate.mockRejectedValueOnce(new Error("notification service down"));
+
+    const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
+    const res = await POST(req);
+
+    // 200 — withdrawal succeeded despite notification outage
+    expect(res.status).toBe(200);
+
+    // NO compensation triggered
+    expect(mockWithdrawalRequestDelete).not.toHaveBeenCalled();
+    expect(mockWalletLedgerDelete).not.toHaveBeenCalled();
+    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(1); // only the decrement
+
+    // Notification failure logged but did not affect outcome
+    const notifLog = errSpy.mock.calls.find(
+      (c) => typeof c[0] === "string" && c[0].includes("Notification failed")
+    );
+    expect(notifLog).toBeDefined();
+
+    errSpy.mockRestore();
+  });
+});
+
+describe("W4 — compensation self-failure preserves original error in log", () => {
+  it("logs both originalError and compensationError, returns 500 with generic body (no correlation id)", async () => {
+    const errSpy = muteConsoleError();
+    const token = await standardSetup();
+    // withdrawal.create throws (decrement already queued by standardSetup).
+    // Override the refund (second updateMany call) to throw.
+    mockWithdrawalRequestCreate.mockRejectedValueOnce(new Error("create timeout"));
+    mockWalletUpdateMany.mockRejectedValueOnce(new Error("D1 unavailable during refund"));
+
+    const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(500);
+
+    // CRITICAL log entry contains BOTH errors
+    const criticalLog = errSpy.mock.calls.find(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("CRITICAL: withdrawal compensation failed")
+    );
+    expect(criticalLog).toBeDefined();
+    const logPayload = criticalLog![1] as Record<string, unknown>;
+    expect(logPayload.originalError).toBeDefined();
+    expect(logPayload.error).toBeDefined(); // note: field is `error`, not `compensationError`
+    expect(logPayload.walletId).toBe("wallet_1");
+    // Response body is generic — no correlation id (GAP: C6)
+    expect(body.error).toContain("پشتیبانی");
+    expect(body).not.toHaveProperty("correlationId");
+    expect(body).not.toHaveProperty("withdrawalId");
+
+    errSpy.mockRestore();
+  });
+});
+
+describe("W5 — refund count=0 (wallet cascade-deleted mid-request)", () => {
+  it("surfaces as 500 CRITICAL but money is silently lost (C1 confirmed)", async () => {
+    const errSpy = muteConsoleError();
+    const token = await standardSetup();
+    // withdrawal.create throws → compensation runs → refund returns count=0
+    mockWithdrawalRequestCreate.mockRejectedValueOnce(new Error("create timeout"));
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 0 }); // refund finds no row
+
+    const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
+    const res = await POST(req);
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    // CRITICAL path: response is the generic support message
+    expect(body.error).toContain("پشتیبانی");
+
+    // CRITICAL log — compensation failed
+    const criticalLog = errSpy.mock.calls.find(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("CRITICAL")
+    );
+    expect(criticalLog).toBeDefined();
+
+    // The refund "did not update exactly one row" — this is the silent-loss path.
+    // Balance was decremented (count=1) but refund found no row (count=0).
+    // Note: the log field is `error` (not `compensationError`).
+    const logPayload = criticalLog![1] as Record<string, unknown>;
+    expect(String(logPayload.error)).toMatch(/did not update exactly one row/);
+    expect(logPayload.originalError).toBeDefined();
+
+    errSpy.mockRestore();
+  });
+
+  it("also handles thrown DB error during refund (not just count=0)", async () => {
+    const errSpy = muteConsoleError();
+    const token = await standardSetup();
+    mockWithdrawalRequestCreate.mockRejectedValueOnce(new Error("create timeout"));
+    const dbErr = Object.assign(new Error("D1 connection reset"), { code: "D1_1020" });
+    mockWalletUpdateMany.mockRejectedValueOnce(dbErr);
+
+    const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
+    const res = await POST(req);
+
+    expect(res.status).toBe(500);
+    const criticalLog = errSpy.mock.calls.find(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("CRITICAL")
+    );
+    expect(criticalLog).toBeDefined();
+    const logPayload = criticalLog![1] as Record<string, unknown>;
+    // Note: the log field is `error` (not `compensationError`).
+    expect(logPayload.error).toBe(dbErr);
+
+    errSpy.mockRestore();
+  });
+});
+
+describe("W6 — compensation order: ledger.delete → withdrawal.delete → refund", () => {
+  it("documents current call order (does NOT prove admin-concurrency safety)", async () => {
+    const errSpy = muteConsoleError();
+    const token = await standardSetup();
+    // withdrawal.create succeeds, ledger.create throws (no ledgerId)
+    mockWithdrawalRequestCreate.mockResolvedValueOnce({
+      id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, status: "REQUESTED",
+    });
+    mockWalletLedgerCreate.mockRejectedValueOnce(new Error("ledger timeout"));
+    // Refund (second updateMany) succeeds — compensation completes
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 });
+
+    const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
+    const res = await POST(req);
+    const body = await res.json();
+
+    // Compensation completed → 500 with original error message (NOT generic)
+    expect(res.status).toBe(500);
+    expect(body.error).toBe("ledger timeout");
+
+    // Current order: since ledgerId is null, ledger.delete is NOT called.
+    // withdrawal.delete IS called. refund IS called.
+    expect(mockWalletLedgerDelete).not.toHaveBeenCalled();
+    expect(mockWithdrawalRequestDelete).toHaveBeenCalledTimes(1);
+    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(2);
+
+    // NOTE: this test documents compensation order in isolation. It does NOT
+    // test the race where a concurrent admin PATCH reads wd_1 between
+    // withdrawal.create and withdrawal.delete. That race is the C5 concern
+    // and requires a separate test that interleaves two event loops —
+    // covered in admin-withdrawals.test.ts A9.
+    errSpy.mockRestore();
+  });
+});
+
+describe("W7 — duplicate POST (no idempotency) documents current double-charge behavior [NEGATIVE TEST]", () => {
+  // This is a NEGATIVE test: it documents that WITHOUT an Idempotency-Key
+  // mechanism, two identical POSTs result in TWO withdrawals and TWO balance
+  // deductions. This is a known GAP (C4), not a bug to fix by changing the
+  // test expectation. When idempotency is implemented, this test should be
+  // updated to assert the second POST returns the first response.
+  it("two identical POSTs create two withdrawals and double-charge (C4 confirmed)", async () => {
+    // First POST: full happy path
+    mockWalletFindUnique
+      .mockResolvedValueOnce({ id: "wallet_1", balance: 1000, technicianId: "tech_1" })
+      .mockResolvedValueOnce({ id: "wallet_1", balance: 1000, technicianId: "tech_1" })
+      .mockResolvedValueOnce({ id: "wallet_1", balance: 500, technicianId: "tech_1" });
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 });
+    mockWithdrawalRequestCreate.mockResolvedValueOnce({
+      id: "wd_1", code: "WD-111111", walletId: "wallet_1", amount: 500, status: "REQUESTED",
+    });
+
+    // Second POST: balance is now 500 (still ≥ 500), decrement succeeds again
+    mockWalletFindUnique
+      .mockResolvedValueOnce({ id: "wallet_1", balance: 500, technicianId: "tech_1" })
+      .mockResolvedValueOnce({ id: "wallet_1", balance: 500, technicianId: "tech_1" })
+      .mockResolvedValueOnce({ id: "wallet_1", balance: 0, technicianId: "tech_1" });
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 });
+    mockWithdrawalRequestCreate.mockResolvedValueOnce({
+      id: "wd_2", code: "WD-222222", walletId: "wallet_1", amount: 500, status: "REQUESTED",
+    });
+
+    const token = await mintTechnicianToken();
+    const req1 = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
+    const req2 = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
+
+    const res1 = await POST(req1);
+    const res2 = await POST(req2);
+
+    // CURRENT BEHAVIOR (GAP): both succeed, two withdrawals created
+    expect(res1.status).toBe(200);
+    expect(res2.status).toBe(200);
+
+    const body1 = await res1.json();
+    const body2 = await res2.json();
+    expect(body1.withdrawal.id).toBe("wd_1");
+    expect(body2.withdrawal.id).toBe("wd_2");
+
+    // Two separate decrements — user double-charged
+    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(2);
+    expect(mockWithdrawalRequestCreate).toHaveBeenCalledTimes(2);
+  });
+});
