@@ -994,6 +994,10 @@ model WalletLedger {
   createdAt       DateTime @default(now())
 
   @@index([walletId, createdAt])
+  // Partial unique index: only one REFUND entry per withdrawal.
+  // Created by migration 20261031000000_add_refund_unique_index.
+  // Prisma cannot express partial indexes in schema, so it's provider-specific.
+  // The index prevents double-refund at the DB level.
 }
 
 // ───────────────────────── MEKANIX CARE ─────────────────────────
