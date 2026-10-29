@@ -52,7 +52,11 @@ const mockPaymentGatewayLogUpdate = vi.fn();
 const mockWalletFindUnique = vi.fn();
 const mockWalletUpdateMany = vi.fn();
 const mockWithdrawalRequestCreate = vi.fn();
+const mockWithdrawalRequestUpdateMany = vi.fn();
 const mockWalletLedgerCreate = vi.fn();
+const mockIdempotencyKeyCreate = vi.fn();
+const mockIdempotencyKeyFindUnique = vi.fn();
+const mockIdempotencyKeyUpdateMany = vi.fn();
 const mockTechnicianFindUnique = vi.fn();
 
 const mockVipPlanFindUnique = vi.fn();
@@ -90,8 +94,14 @@ vi.mock("@/lib/db-access", () => ({
     },
     withdrawalRequest: {
       create: (...args: any[]) => mockWithdrawalRequestCreate(...args),
+      updateMany: (...args: any[]) => mockWithdrawalRequestUpdateMany(...args),
     },
     walletLedger: { create: (...args: any[]) => mockWalletLedgerCreate(...args) },
+    idempotencyKey: {
+      create: (...args: any[]) => mockIdempotencyKeyCreate(...args),
+      findUnique: (...args: any[]) => mockIdempotencyKeyFindUnique(...args),
+      updateMany: (...args: any[]) => mockIdempotencyKeyUpdateMany(...args),
+    },
     technician: {
       findUnique: (...args: any[]) => mockTechnicianFindUnique(...args),
     },
@@ -151,10 +161,14 @@ import { POST as vipSubscribePOST } from "@/app/api/vip/subscribe/route";
 // ──────────────────────────────────────────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────────────────────────────────────────
-function makePostRequest(url: string, body: unknown): Request {
+function makePostRequest(url: string, body: unknown, withIdempotency = false): Request {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (withIdempotency) {
+    headers["Idempotency-Key"] = `test-key-${Math.random().toString(36).slice(2, 10)}`;
+  }
   return new Request(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
   });
 }
@@ -178,6 +192,14 @@ beforeEach(() => {
   // Default notification + warranty create — best-effort, never throw
   mockNotificationCreate.mockResolvedValue({});
   mockWarrantyCreate.mockResolvedValue({});
+
+  // Default idempotency + withdrawal defaults (for withdraw tests)
+  mockIdempotencyKeyCreate.mockResolvedValue({});
+  mockIdempotencyKeyFindUnique.mockResolvedValue(null);
+  mockIdempotencyKeyUpdateMany.mockResolvedValue({ count: 1 });
+  mockWithdrawalRequestUpdateMany.mockResolvedValue({ count: 1 });
+  mockWithdrawalRequestCreate.mockResolvedValue({ id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, status: "REQUESTED" });
+  mockWalletLedgerCreate.mockResolvedValue({ id: "ledger_1" });
 });
 
 afterEach(() => {
@@ -534,7 +556,7 @@ describe("/api/wallets/withdraw — exceeds-balance guard", () => {
     const req = makePostRequest("https://mekanix.test/api/wallets/withdraw", {
       amount: 500,
       method: "card",
-    });
+    }, true);
     const res = await withdrawPOST(req);
 
     expect(res.status).toBe(400);
@@ -579,7 +601,7 @@ describe("/api/wallets/withdraw — exceeds-balance guard", () => {
     const req = makePostRequest("https://mekanix.test/api/wallets/withdraw", {
       amount: 500,
       method: "card",
-    });
+    }, true);
     const res = await withdrawPOST(req);
 
     expect(res.status).toBe(200);
