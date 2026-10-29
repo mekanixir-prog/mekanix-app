@@ -48,6 +48,7 @@ const mockSessionUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
 const mockIdempotencyKeyCreate = vi.fn();
 const mockIdempotencyKeyFindUnique = vi.fn();
 const mockIdempotencyKeyUpdateMany = vi.fn();
+const mockWithdrawalRequestUpdateMany = vi.fn();
 
 // The withdraw route calls `const db = await getDbForLib();` and then uses
 // `db.wallet.*`, `db.withdrawalRequest.*`, etc. We mock getDbForLib to return
@@ -61,6 +62,7 @@ vi.mock("@/lib/db-access", () => ({
     withdrawalRequest: {
       create: (...args: any[]) => mockWithdrawalRequestCreate(...args),
       delete: (...args: any[]) => mockWithdrawalRequestDelete(...args),
+      updateMany: (...args: any[]) => mockWithdrawalRequestUpdateMany(...args),
     },
     walletLedger: {
       create: (...args: any[]) => mockWalletLedgerCreate(...args),
@@ -160,6 +162,7 @@ beforeEach(() => {
   mockIdempotencyKeyCreate.mockResolvedValue({});
   mockIdempotencyKeyFindUnique.mockResolvedValue(null);
   mockIdempotencyKeyUpdateMany.mockResolvedValue({ count: 1 });
+  mockWithdrawalRequestUpdateMany.mockResolvedValue({ count: 1 });
 
   // Default technician record (so getTechnicianFromSession returns a tech).
   mockTechnicianFindUnique.mockResolvedValue({
@@ -581,6 +584,76 @@ describe("W5 — refund count=0 (wallet cascade-deleted mid-request)", () => {
     const logPayload = criticalLog![1] as Record<string, unknown>;
     expect(logPayload.error).toBe(dbErr);
     expect(logPayload.correlationId).toBe(body.correlationId); // C6
+
+    errSpy.mockRestore();
+  });
+
+  it("C1 COMPLETE FIX: refund fails AND withdrawal exists → transition to RECONCILIATION_NEEDED", async () => {
+    // This is the key test: withdrawal was created (withdrawalId set),
+    // then ledger.create fails. Compensation tries refund, which ALSO fails.
+    // The withdrawal must be transitioned to RECONCILIATION_NEEDED (not deleted).
+    const errSpy = muteConsoleError();
+    const token = await standardSetup();
+    // withdrawal.create succeeds
+    mockWithdrawalRequestCreate.mockResolvedValueOnce({
+      id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, status: "REQUESTED",
+    });
+    // ledger.create fails (triggers compensation)
+    mockWalletLedgerCreate.mockRejectedValueOnce(new Error("ledger timeout"));
+    // Refund (second updateMany) also fails — count=0
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+    const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(500);
+    expect(body.correlationId).toBeDefined();
+
+    // C1 FIX: withdrawal is transitioned to RECONCILIATION_NEEDED (not deleted)
+    expect(mockWithdrawalRequestUpdateMany).toHaveBeenCalledTimes(1);
+    const transitionArgs = mockWithdrawalRequestUpdateMany.mock.calls[0][0];
+    expect(transitionArgs.where).toEqual({ id: "wd_1" });
+    expect(transitionArgs.data.status).toBe("RECONCILIATION_NEEDED");
+
+    // withdrawal.delete NOT called (we keep it as audit trail)
+    expect(mockWithdrawalRequestDelete).not.toHaveBeenCalled();
+
+    // CRITICAL log includes refundCount=0 + correlationId
+    const criticalLog = errSpy.mock.calls.find(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("CRITICAL: withdrawal compensation failed")
+    );
+    expect(criticalLog).toBeDefined();
+    const logPayload = criticalLog![1] as Record<string, unknown>;
+    expect(logPayload.refundCount).toBe(0);
+    expect(logPayload.withdrawalId).toBe("wd_1");
+    expect(logPayload.correlationId).toBe(body.correlationId);
+
+    errSpy.mockRestore();
+  });
+
+  it("C1: refund fails, withdrawalId is null (create failed) → no transition, only log", async () => {
+    // When withdrawalRequest.create fails, withdrawalId is null. There's no
+    // withdrawal row to transition. Only the CRITICAL log + idempotency FAILED.
+    const errSpy = muteConsoleError();
+    const token = await standardSetup();
+    mockWithdrawalRequestCreate.mockRejectedValueOnce(new Error("create timeout"));
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 0 }); // refund fails
+
+    const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
+    const res = await POST(req);
+
+    expect(res.status).toBe(500);
+
+    // No withdrawal to transition (withdrawalId is null)
+    expect(mockWithdrawalRequestUpdateMany).not.toHaveBeenCalled();
+    expect(mockWithdrawalRequestDelete).not.toHaveBeenCalled();
+
+    // CRITICAL log still fires with correlationId
+    const criticalLog = errSpy.mock.calls.find(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("CRITICAL")
+    );
+    expect(criticalLog).toBeDefined();
 
     errSpy.mockRestore();
   });
