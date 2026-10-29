@@ -145,9 +145,14 @@ async function executeAtomicRefundD1(
       `SELECT balance FROM Wallet WHERE id = ?`
     ).bind(input.walletId).first<{ balance: string }>();
 
+    if (!existingLedger) {
+      throw new Error(
+        `Withdrawal ${input.withdrawalId} is REJECTED but has no REFUND ledger; manual reconciliation required`
+      );
+    }
     return {
       success: true,
-      refundLedgerId: existingLedger?.id ?? null,
+      refundLedgerId: existingLedger.id,
       newBalance: Number(wallet?.balance ?? 0),
       alreadyRefunded: true,
     };
@@ -338,9 +343,14 @@ async function executeAtomicRefundSQLite(
           where: { id: input.walletId },
           select: { balance: true },
         });
+        if (!existingLedger) {
+          throw new Error(
+            `Withdrawal ${input.withdrawalId} is REJECTED but has no REFUND ledger; manual reconciliation required`
+          );
+        }
         return {
           success: true,
-          refundLedgerId: existingLedger?.id ?? null,
+          refundLedgerId: existingLedger.id,
           newBalance: Number(wallet?.balance ?? 0),
           alreadyRefunded: true,
         };
