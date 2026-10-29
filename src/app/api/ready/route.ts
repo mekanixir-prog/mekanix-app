@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
+import { getSmsProviderStatus } from "@/lib/sms-provider";
+import { getPaymentProviderStatus } from "@/lib/payment-provider";
 
 // GET /api/ready — readiness probe.
 //
@@ -31,25 +33,23 @@ function checkProductionGates(): GateResult[] {
 
   const gates: GateResult[] = [];
 
-  // G1 — SMS provider must not be the dev console logger.
-  if (process.env.SMS_PROVIDER === "console" || !process.env.SMS_PROVIDER) {
+  // G1 — Fail closed if SMS would fall back to the console provider,
+  // credentials are missing, or a required sender/template setting is absent.
+  const sms = getSmsProviderStatus();
+  if (sms.provider === "console" || !sms.configured) {
     gates.push({
       ok: false,
-      reason:
-        "SMS_PROVIDER is 'console' (or unset) in production — OTPs are not delivered. Set a real provider (kavenegar|melipayamak|farapayamak).",
+      reason: `SMS provider '${sms.provider}' is not fully configured in production: ${sms.warnings.join("; ") || "provider is development-only"}.`,
     });
   }
 
-  // G2 — Payment provider must not be the simulator.
-  // NOTE: payment routes already hard-404 in production (per-route guard), so
-  // this gate is advisory — it surfaces the misconfiguration on the
-  // readiness probe rather than letting a deploy silently ship without a
-  // real gateway wired.
-  if (process.env.PAYMENT_PROVIDER === "simulator" || !process.env.PAYMENT_PROVIDER) {
+  // G2 — Fail closed if payment would use the simulator, missing credentials,
+  // an unsupported provider, or the unimplemented NextPay stub.
+  const payment = getPaymentProviderStatus();
+  if (payment.provider === "simulator" || !payment.configured) {
     gates.push({
       ok: false,
-      reason:
-        "PAYMENT_PROVIDER is 'simulator' (or unset) in production — no real payment gateway is wired.",
+      reason: `Payment provider '${payment.provider}' is not fully configured or implemented in production.`,
     });
   }
 
