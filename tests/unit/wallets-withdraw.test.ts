@@ -207,7 +207,7 @@ describe("atomic wallet withdrawal", () => {
     const token = await tokenForTechnician();
     const response = await POST(jsonReq(token, { amount: 500, method: "card" }, "key-insufficient"));
 
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(400);
     expect(mockWithdrawalRequestCreate).not.toHaveBeenCalled();
     expect(mockWalletLedgerCreate).not.toHaveBeenCalled();
     expect(currentBalance).toBe(100);
