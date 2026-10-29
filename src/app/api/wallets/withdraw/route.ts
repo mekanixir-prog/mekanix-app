@@ -465,7 +465,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // Case 2: Withdrawal was NOT created — just refund balance inline
+    // Case 2: Withdrawal was NOT created — inline refund + audit ledger
     //
     // SAFETY: This path is protected by the Idempotency-Key mechanism.
     // The idempotency key was acquired (IN_PROGRESS) at the start of the
@@ -474,11 +474,19 @@ export async function POST(req: Request) {
     // If markIdempotencyFailed fails, the key stays IN_PROGRESS → retry
     // with same key gets 409. Either way, no double-refund.
     //
-    // If the client uses a DIFFERENT key for retry, a NEW withdrawal
-    // will be created (different idempotency key = different intent).
-    // The original deduction was refunded here, so no money is lost.
+    // AUDIT TRAIL: A REFUND ledger entry is created with the idempotency
+    // key as referenceId, so the compensation is traceable even without
+    // a WithdrawalRequest record.
     if (balanceDeducted && !withdrawalId) {
       try {
+        // Read balance before refund (for ledger)
+        const walletBefore = await db.wallet.findUnique({
+          where: { id: wallet.id },
+          select: { balance: true },
+        });
+        const balanceBefore = Number(walletBefore?.balance ?? 0);
+
+        // Refund the balance
         const refund = await db.wallet.updateMany({
           where: { id: wallet.id },
           data: { balance: { increment: requestedAmount } },
@@ -487,28 +495,74 @@ export async function POST(req: Request) {
           throw new Error("Wallet balance compensation did not update exactly one row");
         }
 
+        const balanceAfter = balanceBefore + requestedAmount;
+
+        // Create an audit ledger entry for this compensation
+        // referenceId = scopedKey (idempotency key) for traceability
+        try {
+          await db.walletLedger.create({
+            data: {
+              walletId: wallet.id,
+              type: "REFUND",
+              amount: requestedAmount,
+              balanceBefore,
+              balanceAfter,
+              referenceType: "Withdrawal",
+              referenceId: scopedKey, // use idempotency key as reference
+              description: `Compensation refund (no withdrawal record) — ${scopedKey}`,
+              createdBy: "system-compensation",
+            },
+          });
+        } catch (ledgerErr) {
+          // If ledger creation fails (e.g., unique constraint from a previous
+          // compensation attempt with the same key), that means the refund
+          // already happened — but we also incremented the balance again!
+          // This is a double-refund — critical.
+          console.error("[wallets/withdraw] CRITICAL: double-refund in no-withdrawal path", {
+            correlationId,
+            walletId: wallet.id,
+            scopedKey,
+            error: ledgerErr,
+            note: "Ledger entry already exists for this idempotency key — balance was incremented twice",
+          });
+          // The balance WAS incremented again — we need to undo it
+          try {
+            await db.wallet.updateMany({
+              where: { id: wallet.id },
+              data: { balance: { decrement: requestedAmount } },
+            });
+          } catch {
+            // Can't undo — manual reconciliation needed
+          }
+          await markIdempotencyFailed(db, scopedKey);
+          return NextResponse.json(
+            {
+              error: "خطای بحرانی: بازپرداخت تکراری شناسایی شد؛ بررسی فوری پشتیبانی لازم است",
+              correlationId,
+            },
+            { status: 500 }
+          );
+        }
+
         // Mark idempotency key as FAILED BEFORE returning.
-        // This ensures retry with same key gets 409, not double-refund.
         await markIdempotencyFailed(db, scopedKey);
 
         const message = e instanceof Error ? e.message : "خطا در پردازش برداشت";
-        console.error("[wallets/withdraw] Compensation (no withdrawal) succeeded — idempotency key marked FAILED", {
+        console.error("[wallets/withdraw] Compensation (no withdrawal) succeeded with audit ledger", {
           correlationId,
           walletId: wallet.id,
+          scopedKey,
           error: message,
-          note: "Inline refund safe: idempotency key prevents retry",
+          note: "Inline refund + REFUND ledger created. Idempotency key prevents retry.",
         });
         return NextResponse.json({ error: message, correlationId }, { status: 500 });
       } catch (refundError: unknown) {
-        // If inline refund failed, the balance is still deducted.
-        // The idempotency key is marked FAILED so retry won't double-refund.
-        // But the balance is lost — this needs manual reconciliation.
         console.error("[wallets/withdraw] CRITICAL: inline balance refund failed (no withdrawal record)", {
           correlationId,
           walletId: wallet.id,
           error: refundError,
           originalError: e,
-          note: "Balance was deducted but refund failed. No withdrawal record to reconcile against. Manual reconciliation required.",
+          note: "Balance was deducted but refund failed. No withdrawal record. Manual reconciliation required.",
         });
         await markIdempotencyFailed(db, scopedKey);
         return NextResponse.json(
