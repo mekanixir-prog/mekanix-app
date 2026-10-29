@@ -1,0 +1,11 @@
+-- MEKANIX: WithdrawalStatus recovery values.
+--
+-- REFUND_PENDING and RECONCILIATION_NEEDED are Prisma enum values. With the
+-- current SQLite provider (including Cloudflare D1), enum values are stored
+-- in the WithdrawalRequest.status TEXT column; adding accepted values does
+-- not require a table rebuild or data rewrite.
+--
+-- This migration is intentionally a no-op at the SQL schema level. The
+-- matching Prisma enum update is in prisma/schema.prisma.
+-- Do not apply production migrations until CI and the recovery flow review
+-- are complete.
