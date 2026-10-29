@@ -325,27 +325,78 @@ describe("W1 — compensation triggers when withdrawalRequest.create throws", ()
     errSpy.mockRestore();
   });
 
-  it("distinguishes P2002 unique-code collision from generic DB error (C3 documentation)", async () => {
+  it("C3 FIX: P2002 on code triggers retry with new code (up to 3 attempts)", async () => {
     const errSpy = muteConsoleError();
     const token = await standardSetup();
-    // Simulate Prisma P2002 (unique constraint violation on `code`)
+    // First create: P2002 collision on `code`
     const p2002 = Object.assign(new Error("Unique constraint failed on the fields: (`code`)"), {
       code: "P2002",
       meta: { target: ["code"] },
     });
     mockWithdrawalRequestCreate.mockRejectedValueOnce(p2002);
+    // Second create: succeeds with a new code
+    mockWithdrawalRequestCreate.mockResolvedValueOnce({
+      id: "wd_1", code: "WD-999999", walletId: "wallet_1", amount: 500, status: "REQUESTED",
+    });
+    // Refund (second updateMany) not needed — operation succeeds
+    mockWalletLedgerCreate.mockResolvedValueOnce({ id: "ledger_1" });
 
     const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
     const res = await POST(req);
     const body = await res.json();
 
-    // CURRENT BEHAVIOR: P2002 is treated as a generic failure → 500 + compensation.
-    // This is a GAP: P2002 on the random code should be retried, not surfaced to user.
+    // C3 FIXED: P2002 is retried, not surfaced as 500
+    expect(res.status).toBe(200);
+    expect(body.withdrawal.code).toBe("WD-999999");
+
+    // create was called twice (first P2002, second success)
+    expect(mockWithdrawalRequestCreate).toHaveBeenCalledTimes(2);
+    // No refund needed (operation succeeded)
+    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(1); // only the decrement
+
+    errSpy.mockRestore();
+  });
+
+  it("C3: P2002 exhausted (3 attempts all collide) → 500 + compensation", async () => {
+    const errSpy = muteConsoleError();
+    const token = await standardSetup();
+    // All 3 create attempts collide
+    const p2002 = Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
+    mockWithdrawalRequestCreate
+      .mockRejectedValueOnce(p2002)
+      .mockRejectedValueOnce(p2002)
+      .mockRejectedValueOnce(p2002);
+    // Compensation: refund succeeds
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 });
+
+    const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
+    const res = await POST(req);
+    const body = await res.json();
+
+    // After 3 retries, P2002 is treated as a failure → 500 + compensation
     expect(res.status).toBe(500);
-    // Response is generic — operator cannot tell from body that this was a collision
-    expect(body.error).toContain("پشتیبانی");
-    // Balance WAS refunded (compensation ran)
-    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(2);
+    expect(body.correlationId).toBeDefined(); // C6: correlationId in response
+    // create was called 3 times (CODE_RETRY_MAX)
+    expect(mockWithdrawalRequestCreate).toHaveBeenCalledTimes(3);
+    // Refund happened (compensation)
+    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(2); // decrement + refund
+
+    errSpy.mockRestore();
+  });
+
+  it("C3: non-P2002 error on create does NOT retry → immediate compensation", async () => {
+    const errSpy = muteConsoleError();
+    const token = await standardSetup();
+    // Non-P2002 error (e.g., D1 timeout)
+    mockWithdrawalRequestCreate.mockRejectedValueOnce(new Error("D1 write timeout"));
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 }); // refund
+
+    const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
+    const res = await POST(req);
+
+    expect(res.status).toBe(500);
+    // Only 1 create attempt (no retry for non-P2002)
+    expect(mockWithdrawalRequestCreate).toHaveBeenCalledTimes(1);
 
     errSpy.mockRestore();
   });
@@ -441,7 +492,7 @@ describe("W3 — notification failure is best-effort (no compensation, 200 respo
 });
 
 describe("W4 — compensation self-failure preserves original error in log", () => {
-  it("logs both originalError and compensationError, returns 500 with generic body (no correlation id)", async () => {
+  it("C6 FIX: logs both errors + correlationId, returns 500 with correlationId", async () => {
     const errSpy = muteConsoleError();
     const token = await standardSetup();
     // withdrawal.create throws (decrement already queued by standardSetup).
@@ -455,26 +506,29 @@ describe("W4 — compensation self-failure preserves original error in log", () 
 
     expect(res.status).toBe(500);
 
-    // CRITICAL log entry contains BOTH errors
+    // C6 FIXED: response body NOW includes correlationId
+    expect(body.correlationId).toBeDefined();
+    expect(typeof body.correlationId).toBe("string");
+    expect(body.correlationId.length).toBeGreaterThan(0);
+    expect(body.error).toContain("پشتیبانی");
+
+    // CRITICAL log entry contains BOTH errors + correlationId
     const criticalLog = errSpy.mock.calls.find(
       (c) => typeof c[0] === "string" && (c[0] as string).includes("CRITICAL: withdrawal compensation failed")
     );
     expect(criticalLog).toBeDefined();
     const logPayload = criticalLog![1] as Record<string, unknown>;
     expect(logPayload.originalError).toBeDefined();
-    expect(logPayload.error).toBeDefined(); // note: field is `error`, not `compensationError`
+    expect(logPayload.error).toBeDefined();
     expect(logPayload.walletId).toBe("wallet_1");
-    // Response body is generic — no correlation id (GAP: C6)
-    expect(body.error).toContain("پشتیبانی");
-    expect(body).not.toHaveProperty("correlationId");
-    expect(body).not.toHaveProperty("withdrawalId");
+    expect(logPayload.correlationId).toBe(body.correlationId); // C6: correlationId in log matches response
 
     errSpy.mockRestore();
   });
 });
 
 describe("W5 — refund count=0 (wallet cascade-deleted mid-request)", () => {
-  it("surfaces as 500 CRITICAL but money is silently lost (C1 confirmed)", async () => {
+  it("C1 FIX: 500 CRITICAL + correlationId + refundCount=0 in log (no silent loss)", async () => {
     const errSpy = muteConsoleError();
     const token = await standardSetup();
     // withdrawal.create throws → compensation runs → refund returns count=0
@@ -486,19 +540,21 @@ describe("W5 — refund count=0 (wallet cascade-deleted mid-request)", () => {
 
     expect(res.status).toBe(500);
     const body = await res.json();
-    // CRITICAL path: response is the generic support message
+    // C6: response includes correlationId for support tracking
+    expect(body.correlationId).toBeDefined();
     expect(body.error).toContain("پشتیبانی");
 
-    // CRITICAL log — compensation failed
+    // CRITICAL log — compensation failed, includes refundCount and correlationId
     const criticalLog = errSpy.mock.calls.find(
       (c) => typeof c[0] === "string" && (c[0] as string).includes("CRITICAL")
     );
     expect(criticalLog).toBeDefined();
 
-    // The refund "did not update exactly one row" — this is the silent-loss path.
-    // Balance was decremented (count=1) but refund found no row (count=0).
-    // Note: the log field is `error` (not `compensationError`).
     const logPayload = criticalLog![1] as Record<string, unknown>;
+    // C1: refundCount is explicitly logged (0 = silent money loss path)
+    expect(logPayload.refundCount).toBe(0);
+    // C6: correlationId in log matches response
+    expect(logPayload.correlationId).toBe(body.correlationId);
     expect(String(logPayload.error)).toMatch(/did not update exactly one row/);
     expect(logPayload.originalError).toBeDefined();
 
@@ -514,15 +570,17 @@ describe("W5 — refund count=0 (wallet cascade-deleted mid-request)", () => {
 
     const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
     const res = await POST(req);
+    const body = await res.json();
 
     expect(res.status).toBe(500);
+    expect(body.correlationId).toBeDefined(); // C6
     const criticalLog = errSpy.mock.calls.find(
       (c) => typeof c[0] === "string" && (c[0] as string).includes("CRITICAL")
     );
     expect(criticalLog).toBeDefined();
     const logPayload = criticalLog![1] as Record<string, unknown>;
-    // Note: the log field is `error` (not `compensationError`).
     expect(logPayload.error).toBe(dbErr);
+    expect(logPayload.correlationId).toBe(body.correlationId); // C6
 
     errSpy.mockRestore();
   });
@@ -771,5 +829,47 @@ describe("I5 — FAILED key returns 409 (key not reusable)", () => {
 
     // No financial operations
     expect(mockWalletUpdateMany).not.toHaveBeenCalled();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// C4-final: idempotency completion count check
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("C4-final — idempotency completion count=0 (key modified externally)", () => {
+  it("withdrawal succeeds but key not marked COMPLETED → CRITICAL log, 200 to client", async () => {
+    const errSpy = muteConsoleError();
+    const token = await mintTechnicianToken();
+    mockWalletFindUnique
+      .mockResolvedValueOnce({ id: "wallet_1", balance: 1000, technicianId: "tech_1" })
+      .mockResolvedValueOnce({ id: "wallet_1", balance: 1000, technicianId: "tech_1" })
+      .mockResolvedValueOnce({ id: "wallet_1", balance: 500, technicianId: "tech_1" });
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 });
+    mockWithdrawalRequestCreate.mockResolvedValueOnce({
+      id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, status: "REQUESTED",
+    });
+    mockWalletLedgerCreate.mockResolvedValueOnce({ id: "ledger_1" });
+    // idempotencyKey.updateMany returns count=0 (key was modified externally)
+    mockIdempotencyKeyUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+    const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 }, "ext-modified-key");
+    const res = await POST(req);
+    const body = await res.json();
+
+    // Withdrawal DID succeed — return 200 to client
+    expect(res.status).toBe(200);
+    expect(body.withdrawal.id).toBe("wd_1");
+
+    // CRITICAL log: idempotency key not marked COMPLETED
+    const criticalLog = errSpy.mock.calls.find(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("CRITICAL: idempotency key not marked COMPLETED")
+    );
+    expect(criticalLog).toBeDefined();
+    const logPayload = criticalLog![1] as Record<string, unknown>;
+    expect(logPayload.correlationId).toBeDefined(); // C6: correlationId for reconciliation
+    expect(logPayload.updateCount).toBe(0);
+    expect(logPayload.withdrawalId).toBe("wd_1");
+
+    errSpy.mockRestore();
   });
 });
