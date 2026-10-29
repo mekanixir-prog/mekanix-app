@@ -11,11 +11,12 @@ import { getAdminFromRequest } from "@/lib/admin-auth";
 //
 // State machine (REJECT path):
 //
-//   REQUESTED ──REJECT──► REFUND_PENDING ──refund+ledger ok──► REJECTED
-//                              │
-//                              ├──refund/ledger fail──► (stay REFUND_PENDING, retry-safe)
-//                              │
-//                              └──cannot determine outcome──► RECONCILIATION_NEEDED
+//   REQUESTED → REFUND_PENDING → REFUND_PROCESSING → REJECTED
+//                                      │
+//                                      └─ ambiguous/crash → RECONCILIATION_NEEDED
+//
+// REFUND_PROCESSING is a durable crash barrier: after claiming it, no second
+// request may increment the wallet again unless a REFUND ledger already exists.
 //
 // Idempotent recovery (the key invariant):
 //   Before incrementing the wallet balance, we check if a REFUND ledger entry
@@ -102,7 +103,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       { status: 409 }
     );
   }
-  if (request.status !== "REQUESTED" && request.status !== "REFUND_PENDING") {
+  if (request.status !== "REQUESTED" && request.status !== "REFUND_PENDING" && request.status !== "REFUND_PROCESSING") {
     return NextResponse.json({ error: "این درخواست در وضعیت قابل‌رد نیست" }, { status: 409 });
   }
 
@@ -159,8 +160,46 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     );
   }
 
-  // Step 4: If no refund ledger exists, increment the wallet balance.
-  // If the increment fails, stay in REFUND_PENDING (retry-safe).
+  // If a previous attempt entered REFUND_PROCESSING and no ledger exists,
+  // it may have crashed after incrementing the balance but before writing the
+  // ledger. Never increment again automatically: that is the exact double-
+  // credit window this durable state is intended to close.
+  if (!existingRefundLedger && request.status === "REFUND_PROCESSING") {
+    console.error("[admin/withdrawals] CRITICAL: refund outcome ambiguous after interrupted processing", {
+      withdrawalId: id,
+      walletId: request.walletId,
+      amount,
+    });
+    await db.withdrawalRequest.updateMany({
+      where: { id, status: "REFUND_PROCESSING" },
+      data: { status: "RECONCILIATION_NEEDED" },
+    });
+    return NextResponse.json(
+      { error: "بازپرداخت قبلی نیمه‌تمام مانده و نتیجه مالی مبهم است؛ بررسی دستی لازم است" },
+      { status: 409 }
+    );
+  }
+
+  // Step 4: Claim the durable processing barrier BEFORE touching the balance.
+  // Only one admin can move REFUND_PENDING → REFUND_PROCESSING. A crash after
+  // this point blocks automatic retry unless the ledger proves the refund
+  // completed. This deliberately prefers manual reconciliation over duplicate
+  // credit when D1 cannot provide a multi-write transaction.
+  if (!existingRefundLedger) {
+    const processing = await db.withdrawalRequest.updateMany({
+      where: { id, status: "REFUND_PENDING" },
+      data: { status: "REFUND_PROCESSING" },
+    });
+    if (processing.count !== 1) {
+      return NextResponse.json(
+        { error: "این بازپرداخت هم‌زمان در حال پردازش است؛ وضعیت را دوباره بررسی کنید" },
+        { status: 409 }
+      );
+    }
+  }
+
+  // Step 5: If no refund ledger exists, increment the wallet balance.
+  // Any error after the processing barrier is ambiguous and must not be retried automatically.
   if (!existingRefundLedger) {
     let refundResult;
     try {
@@ -169,18 +208,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         data: { balance: { increment: amount } },
       });
     } catch (refundError) {
-      // Balance increment failed. The refund did NOT happen (or D1 returned
-      // an error we cannot interpret). Stay in REFUND_PENDING so the admin
-      // can retry. Log CRITICAL for visibility.
+      // A D1 error can be returned after a write committed. Do not assume
+      // failure means no credit; move to manual reconciliation.
       console.error("[admin/withdrawals] Refund increment failed — retry-safe", {
         withdrawalId: id,
         walletId: request.walletId,
         amount,
         error: refundError,
       });
+      await db.withdrawalRequest.updateMany({
+        where: { id, status: "REFUND_PROCESSING" },
+        data: { status: "RECONCILIATION_NEEDED" },
+      });
       return NextResponse.json(
-        { error: "بازپرداخت موفق نبود؛ دوباره تلاش کنید" },
-        { status: 503 }
+        { error: "نتیجه بازپرداخت قابل تأیید نیست؛ بررسی دستی لازم است" },
+        { status: 500 }
       );
     }
 
@@ -194,7 +236,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         amount,
       });
       await db.withdrawalRequest.updateMany({
-        where: { id, status: "REFUND_PENDING" },
+        where: { id, status: "REFUND_PROCESSING" },
         data: { status: "RECONCILIATION_NEEDED" },
       });
       return NextResponse.json(
@@ -205,7 +247,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     // Balance incremented successfully. Fall through to ledger creation.
   }
 
-  // Step 5: Create the REFUND ledger entry if it does not exist.
+  // Step 6: Create the REFUND ledger entry if it does not exist.
   // If the ledger already existed (from step 3), skip. Otherwise create it.
   // If creation fails here, the balance WAS incremented but no ledger —
   // this is the C2-variant case. We stay in REFUND_PENDING so a retry will
@@ -248,7 +290,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         error: ledgerCreateError,
       });
       await db.withdrawalRequest.updateMany({
-        where: { id, status: "REFUND_PENDING" },
+        where: { id, status: "REFUND_PROCESSING" },
         data: { status: "RECONCILIATION_NEEDED" },
       });
       return NextResponse.json(
@@ -280,10 +322,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
   }
 
-  // Step 6: Both refund and ledger are confirmed. Transition
-  // REFUND_PENDING → REJECTED (final state).
+  // Step 7: Both refund and ledger are confirmed. Transition
+  // REFUND_PROCESSING → REJECTED (final state).
   const finalize = await db.withdrawalRequest.updateMany({
-    where: { id, status: "REFUND_PENDING" },
+    where: { id, status: existingRefundLedger ? request.status : "REFUND_PROCESSING" },
     data: { status: "REJECTED" },
   });
   if (finalize.count !== 1) {
