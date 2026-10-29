@@ -754,6 +754,7 @@ model WithdrawalRequest {
   adminNotes  String?
   reviewerId  String?
   txnId       String? // linked WalletTransaction (PAYOUT) once paid
+  refundToken String? // unique per refund attempt; guards duplicate D1 balance increments
 
   @@index([walletId, status])
   @@index([status])
