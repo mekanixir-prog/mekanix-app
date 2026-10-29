@@ -5,6 +5,7 @@ const mockWithdrawalRequestFindUnique = vi.fn();
 const mockWithdrawalRequestFindMany = vi.fn();
 const mockWithdrawalRequestUpdateMany = vi.fn();
 const mockWalletLedgerFindFirst = vi.fn();
+const mockWalletLedgerFindMany = vi.fn();
 const mockExecuteAtomicRefund = vi.fn();
 const mockGetAdminFromRequest = vi.fn();
 
@@ -17,6 +18,7 @@ vi.mock("@/lib/db-access", () => ({
     },
     walletLedger: {
       findFirst: (...args: any[]) => mockWalletLedgerFindFirst(...args),
+      findMany: (...args: any[]) => mockWalletLedgerFindMany(...args),
     },
   })),
 }));
@@ -63,6 +65,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockGetAdminFromRequest.mockResolvedValue({ adminId: "admin_1", username: "admin", role: "SUPER_ADMIN" });
   mockWalletLedgerFindFirst.mockResolvedValue(null);
+  mockWalletLedgerFindMany.mockResolvedValue([]);
   mockWithdrawalRequestFindMany.mockResolvedValue([]);
   mockWithdrawalRequestUpdateMany.mockResolvedValue({ count: 1 });
   mockExecuteAtomicRefund.mockResolvedValue({
