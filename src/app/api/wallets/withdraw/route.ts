@@ -239,7 +239,7 @@ export async function POST(req: Request) {
   } catch (error: unknown) {
     await markIdempotencyFailed(db, scopedKey);
     if (error instanceof InsufficientWithdrawalBalanceError) {
-      return NextResponse.json({ error: error.message, correlationId }, { status: 409 });
+      return NextResponse.json({ error: error.message, correlationId }, { status: 400 });
     }
     const message = error instanceof Error ? error.message : "خطا در پردازش برداشت";
     console.error("[wallets/withdraw] Atomic withdrawal failed; financial writes rolled back", {
