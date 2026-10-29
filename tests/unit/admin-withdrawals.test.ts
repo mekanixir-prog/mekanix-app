@@ -245,8 +245,10 @@ describe("A4 — REJECT: wallet row missing during refund → RECONCILIATION_NEE
     const errSpy = muteConsoleError();
     mockWithdrawalRequestFindUnique.mockResolvedValueOnce(SAMPLE_REQUEST);
     mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // acquire
-    mockWalletLedgerFindFirst.mockRejectedValueOnce(new Error("D1 read timeout")); // no credit before lookup
-    mockWalletUpdateMany.mockRejectedValueOnce(new Error("D1 timeout"));
+    mockWalletLedgerFindFirst.mockResolvedValueOnce(null);
+    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // processing claim
+    mockWalletUpdateMany.mockRejectedValueOnce(new Error("D1 timeout")); // ambiguous commit
+    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // reconcile
 
     const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
     // A thrown write may have committed; manual reconciliation prevents double-credit.
@@ -352,6 +354,7 @@ describe("A9 — concurrent admin PATCH: acquire guard", () => {
     mockWalletLedgerFindFirst
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ id: "ledger_1" }); // verify
+    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // processing claim
     mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 });
     mockWalletLedgerCreate.mockResolvedValueOnce({ id: "ledger_1" });
     mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // finalize
@@ -547,7 +550,7 @@ describe("GET /api/admin/withdrawals", () => {
 // ═══════════════════════════════════════════════════════════════════════════
 // HTTP error vs failed financial transaction (distinction)
 // These tests verify that the state-machine correctly distinguishes:
-//   - Temporary failure (503, retry-safe, status moves to REFUND_PROCESSING before credit)
+//   - Ambiguous write failure (500, manual reconciliation; no blind retry)
 //   - Permanent failure requiring manual review (500, RECONCILIATION_NEEDED)
 //   - Success (200, REJECTED)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -563,11 +566,10 @@ describe("HTTP error vs failed financial transaction (distinction)", () => {
 
     const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
 
-    // 503 = retry-safe. Status is REFUND_PENDING (acquired), not REJECTED.
-    expect(res.status).toBe(503);
-    // Only the acquire transition happened (REQUESTED → REFUND_PENDING)
-    expect(mockWithdrawalRequestUpdateMany).toHaveBeenCalledTimes(1);
-    // No RECONCILIATION_NEEDED transition — temporary failure is retry-safe
+    // The write may have committed despite throwing, so this is not retry-safe.
+    expect(res.status).toBe(500);
+    expect(mockWithdrawalRequestUpdateMany).toHaveBeenCalledTimes(3);
+    // Ambiguous refund is sent to manual reconciliation
     const reconcileCall = mockWithdrawalRequestUpdateMany.mock.calls.find(
       (c) => c[0].data.status === "RECONCILIATION_NEEDED"
     );
