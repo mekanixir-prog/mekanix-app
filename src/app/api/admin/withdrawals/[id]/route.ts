@@ -31,7 +31,7 @@ import { getAdminFromRequest } from "@/lib/admin-auth";
 //   the recovery path. The route stays in REFUND_PENDING so the admin can
 //   retry. Only when the system genuinely cannot determine whether the
 //   balance was incremented (e.g., updateMany returned count=0 unexpectedly,
-//   or ledger lookup itself threw) do we transition to RECONCILIATION_NEEDED.
+//   or a write outcome is ambiguous) do we transition to RECONCILIATION_NEEDED.
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const admin = await getAdminFromRequest(req);
@@ -325,7 +325,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // Step 7: Both refund and ledger are confirmed. Transition
   // REFUND_PROCESSING → REJECTED (final state).
   const finalize = await db.withdrawalRequest.updateMany({
-    where: { id, status: existingRefundLedger ? request.status : "REFUND_PROCESSING" },
+    where: {
+      id,
+      status: existingRefundLedger
+        ? (request.status === "REQUESTED" ? "REFUND_PENDING" : request.status)
+        : "REFUND_PROCESSING",
+    },
     data: { status: "REJECTED" },
   });
   if (finalize.count !== 1) {
