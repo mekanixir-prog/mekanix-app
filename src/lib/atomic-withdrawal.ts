@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
+import type { D1Database, D1Result } from "@cloudflare/workers-types";
 
 export type AtomicWithdrawalInput = {
   walletId: string;
