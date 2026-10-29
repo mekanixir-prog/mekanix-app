@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, feature/cloudflare-d1-validation, fix/financial-consistency-audit]
+    branches: [main, feature/cloudflare-d1-validation, fix/financial-consistency-audit, fix/withdrawal-recovery, test/withdrawal-failure-paths]
   pull_request:
-    branches: [main, feature/cloudflare-d1-validation]
+    branches: [main, feature/cloudflare-d1-validation, fix/financial-consistency-audit]
 
 jobs:
   check:

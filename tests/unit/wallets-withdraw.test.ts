@@ -659,6 +659,46 @@ describe("W5 — refund count=0 (wallet cascade-deleted mid-request)", () => {
   });
 });
 
+describe("C1-cleanup: refund succeeds but cleanup fails → money restored, orphaned records", () => {
+  it("refund ok, delete fails → 500 with moneyRestored:true (NOT money-loss)", async () => {
+    const errSpy = muteConsoleError();
+    const token = await standardSetup();
+    // withdrawal.create succeeds
+    mockWithdrawalRequestCreate.mockResolvedValueOnce({
+      id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, status: "REQUESTED",
+    });
+    // ledger.create fails (triggers compensation)
+    mockWalletLedgerCreate.mockRejectedValueOnce(new Error("ledger timeout"));
+    // Refund (second updateMany) succeeds
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 });
+    // But withdrawal.delete fails (cleanup error)
+    mockWithdrawalRequestDelete.mockRejectedValueOnce(new Error("D1 delete timeout"));
+
+    const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
+    const res = await POST(req);
+    const body = await res.json();
+
+    // 500 but moneyRestored=true — NOT a money-loss
+    expect(res.status).toBe(500);
+    expect(body.moneyRestored).toBe(true);
+    expect(body.correlationId).toBeDefined();
+    expect(body.error).toContain("موجودی بازگردانده شد");
+
+    // CRITICAL: refund DID happen (balance restored)
+    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(2); // decrement + refund
+    const refundArgs = mockWalletUpdateMany.mock.calls[1][0];
+    expect(refundArgs.data).toEqual({ balance: { increment: 500 } });
+
+    // WARNING log (not CRITICAL) — money is safe, just orphaned records
+    const warningLog = errSpy.mock.calls.find(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("WARNING: refund succeeded but cleanup failed")
+    );
+    expect(warningLog).toBeDefined();
+
+    errSpy.mockRestore();
+  });
+});
+
 describe("W6 — compensation order: ledger.delete → withdrawal.delete → refund", () => {
   it("documents current call order (does NOT prove admin-concurrency safety)", async () => {
     const errSpy = muteConsoleError();

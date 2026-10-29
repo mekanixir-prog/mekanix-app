@@ -395,10 +395,30 @@ export async function POST(req: Request) {
           await db.withdrawalRequest.delete({ where: { id: withdrawalId } });
         }
       } catch (cleanupErr) {
-        // Refund succeeded but cleanup failed. The balance is restored,
-        // but ledger/withdrawal rows remain. This is less critical (money
-        // is not lost) but still needs operator attention.
-        compensationError = cleanupErr;
+        // Refund succeeded but cleanup failed. The balance IS restored,
+        // but ledger/withdrawal rows remain. This is NOT a money-loss —
+        // it's an orphaned-record issue that needs operator attention.
+        // Log with distinct severity so operator knows money is safe.
+        console.error("[wallets/withdraw] WARNING: refund succeeded but cleanup failed (orphaned records)", {
+          correlationId,
+          walletId: wallet.id,
+          withdrawalId,
+          ledgerId,
+          refundSucceeded: true,
+          error: cleanupErr,
+        });
+        // Do NOT set compensationError — money is restored, just records remain.
+        // Return 500 so client knows the request didn't fully complete, but
+        // the error message is less severe than money-loss.
+        await markIdempotencyFailed(db, scopedKey);
+        return NextResponse.json(
+          {
+            error: "برداشت ناموفق بود اما موجودی بازگردانده شد؛ رکوردهای اضافی نیازمند پاکسازی توسط پشتیبانی است",
+            correlationId,
+            moneyRestored: true,
+          },
+          { status: 500 }
+        );
       }
     } else if (compensationError) {
       // Step 3: Refund FAILED. Transition withdrawal to RECONCILIATION_NEEDED
