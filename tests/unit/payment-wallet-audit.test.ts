@@ -66,6 +66,15 @@ const mockUserVipSubscriptionCreate = vi.fn();
 
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: vi.fn(async () => ({
+    $transaction: async (callback: (tx: any) => Promise<unknown>) => callback({
+      wallet: {
+        findUnique: (...args: any[]) => mockWalletFindUnique(...args),
+        updateMany: (...args: any[]) => mockWalletUpdateMany(...args),
+      },
+      withdrawalRequest: { create: (...args: any[]) => mockWithdrawalRequestCreate(...args) },
+      walletLedger: { create: (...args: any[]) => mockWalletLedgerCreate(...args) },
+      idempotencyKey: { updateMany: (...args: any[]) => mockIdempotencyKeyUpdateMany(...args) },
+    }),
     // payments / invoices / jobs
     invoice: {
       findUnique: (...args: any[]) => mockInvoiceFindUnique(...args),
@@ -568,7 +577,7 @@ describe("/api/wallets/withdraw — exceeds-balance guard", () => {
     expect(mockWalletLedgerCreate).not.toHaveBeenCalled();
 
     // The initial wallet lookup happened (read-only — safe).
-    expect(mockWalletFindUnique).toHaveBeenCalledTimes(1);
+    expect(mockWalletFindUnique).toHaveBeenCalledTimes(2);
   });
 
   it("returns 200 when amount <= wallet.balance (control)", async () => {
