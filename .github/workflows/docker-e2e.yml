@@ -43,7 +43,9 @@ jobs:
       - name: Build and start Docker Compose stack
         run: |
           cd /tmp/mekanix-build
-          docker compose up -d --build
+          # Bound the build/compose startup itself so a stuck Docker daemon
+          # fails with logs instead of leaving this required check indefinitely running.
+          timeout 25m docker compose up -d --build
           docker compose ps
       
       - name: Wait for health check
