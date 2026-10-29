@@ -34,9 +34,18 @@ import fs from "node:fs";
 const TEST_DB_PATH = path.join(__dirname, "../../db/test-concurrency.db");
 const TEST_DB_URL = `file:${TEST_DB_PATH}`;
 
-// Set DATABASE_URL before importing the route (which imports db.ts)
-process.env.DATABASE_URL = TEST_DB_URL;
-process.env.JWT_SECRET = "test-jwt-secret-for-integration";
+// Detect if we're in a PostgreSQL CI environment (skip this SQLite test).
+// The PostgreSQL CI workflow sets DATABASE_URL to postgresql://, which makes
+// prisma db push with a file: URL fail schema validation.
+const isPostgresEnv = (process.env.DATABASE_URL ?? "").startsWith("postgresql://") ||
+                      (process.env.DATABASE_URL ?? "").startsWith("postgres://");
+
+// Only set DATABASE_URL if we're NOT in PostgreSQL CI — otherwise leave it
+// and skip the test suite (see describe.skip below).
+if (!isPostgresEnv) {
+  process.env.DATABASE_URL = TEST_DB_URL;
+  process.env.JWT_SECRET = "test-jwt-secret-for-integration";
+}
 
 // Force the PrismaClient to use our test DB
 const testDb = new PrismaClient({
@@ -137,7 +146,10 @@ beforeEach(async () => {
   });
 });
 
-describe("C5 — Concurrent withdraw with REAL SQLite DB", () => {
+// Skip this entire suite in PostgreSQL CI — it uses SQLite-specific prisma db push.
+// PostgreSQL CI has a different schema provider and cannot run SQLite integration tests.
+const describeOrSkip = isPostgresEnv ? describe.skip : describe;
+describeOrSkip("C5 — Concurrent withdraw with REAL SQLite DB", () => {
   it("two concurrent POSTs with SAME key → only one withdrawal created", async () => {
     const token = await mintToken("user_tech");
     const body = { amount: 500, method: "card" };
