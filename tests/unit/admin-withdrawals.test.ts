@@ -135,7 +135,7 @@ describe("A2 — PATCH REJECT transitions REQUESTED → REFUND_PENDING → REJEC
     mockWithdrawalRequestFindUnique
       .mockResolvedValueOnce(SAMPLE_REQUEST) // initial
       .mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REJECTED", reviewerId: "admin_1" }); // final
-    // updateMany: acquire (REQUESTED→REFUND_PENDING) = count:1, finalize (REFUND_PENDING→REJECTED) = count:1
+    // updateMany: acquire REQUESTED→REFUND_PENDING, claim REFUND_PROCESSING, finalize REJECTED
     mockWithdrawalRequestUpdateMany
       .mockResolvedValueOnce({ count: 1 }) // acquire
       .mockResolvedValueOnce({ count: 1 }); // finalize
@@ -155,9 +155,12 @@ describe("A2 — PATCH REJECT transitions REQUESTED → REFUND_PENDING → REJEC
     const acquireArgs = mockWithdrawalRequestUpdateMany.mock.calls[0][0];
     expect(acquireArgs.where).toEqual({ id: "wd_1", status: "REQUESTED" });
     expect(acquireArgs.data.status).toBe("REFUND_PENDING");
-    // Second: REFUND_PENDING → REJECTED
-    const finalizeArgs = mockWithdrawalRequestUpdateMany.mock.calls[1][0];
-    expect(finalizeArgs.where).toEqual({ id: "wd_1", status: "REFUND_PENDING" });
+    // Second: REFUND_PENDING → REFUND_PROCESSING; third: processing → REJECTED
+    const processingArgs = mockWithdrawalRequestUpdateMany.mock.calls[1][0];
+    expect(processingArgs.where).toEqual({ id: "wd_1", status: "REFUND_PENDING" });
+    expect(processingArgs.data.status).toBe("REFUND_PROCESSING");
+    const finalizeArgs = mockWithdrawalRequestUpdateMany.mock.calls[2][0];
+    expect(finalizeArgs.where).toEqual({ id: "wd_1", status: "REFUND_PROCESSING" });
     expect(finalizeArgs.data.status).toBe("REJECTED");
 
     // Refund: increment by the original amount (500)
@@ -231,12 +234,12 @@ describe("A4 — REJECT: wallet row missing during refund → RECONCILIATION_NEE
       (c) => c[0].data.status === "RECONCILIATION_NEEDED"
     );
     expect(reconcileCall).toBeDefined();
-    expect(reconcileCall![0].where).toEqual({ id: "wd_1", status: "REFUND_PENDING" });
+    expect(reconcileCall![0].where).toEqual({ id: "wd_1", status: "REFUND_PROCESSING" });
 
     errSpy.mockRestore();
   });
 
-  it("refund updateMany throws → stays REFUND_PENDING (retry-safe, 503)", async () => {
+  it("refund updateMany throws → RECONCILIATION_NEEDED because commit outcome is ambiguous", async () => {
     const errSpy = muteConsoleError();
     mockWithdrawalRequestFindUnique.mockResolvedValueOnce(SAMPLE_REQUEST);
     mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // acquire
@@ -244,10 +247,10 @@ describe("A4 — REJECT: wallet row missing during refund → RECONCILIATION_NEE
     mockWalletUpdateMany.mockRejectedValueOnce(new Error("D1 timeout"));
 
     const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
-    // 503 = service unavailable, retry-safe (status stays REFUND_PENDING)
-    expect(res.status).toBe(503);
+    // A thrown write may have committed; manual reconciliation prevents double-credit.
+    expect(res.status).toBe(500);
 
-    // No transition to RECONCILIATION_NEEDED — temporary failure
+    // Ambiguous write transitions to RECONCILIATION_NEEDED
     const reconcileCall = mockWithdrawalRequestUpdateMany.mock.calls.find(
       (c) => c[0].data.status === "RECONCILIATION_NEEDED"
     );
@@ -374,7 +377,8 @@ describe("R1 — REJECT from REFUND_PENDING (retry after temporary failure)", ()
     mockWithdrawalRequestFindUnique
       .mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REFUND_PENDING" }) // initial
       .mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REJECTED" }); // final
-    // No acquire needed (already REFUND_PENDING), only finalize
+    // Retry claims REFUND_PROCESSING, then finalizes
+    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // processing claim
     mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // finalize
     mockWalletLedgerFindFirst
       .mockResolvedValueOnce(null) // no existing ledger
@@ -385,10 +389,10 @@ describe("R1 — REJECT from REFUND_PENDING (retry after temporary failure)", ()
     const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
     expect(res.status).toBe(200);
 
-    // Only ONE updateMany call (finalize, no acquire needed)
-    expect(mockWithdrawalRequestUpdateMany).toHaveBeenCalledTimes(1);
-    const finalizeArgs = mockWithdrawalRequestUpdateMany.mock.calls[0][0];
-    expect(finalizeArgs.where).toEqual({ id: "wd_1", status: "REFUND_PENDING" });
+    // Two guarded transitions: processing claim + finalization
+    expect(mockWithdrawalRequestUpdateMany).toHaveBeenCalledTimes(2);
+    const finalizeArgs = mockWithdrawalRequestUpdateMany.mock.calls[1][0];
+    expect(finalizeArgs.where).toEqual({ id: "wd_1", status: "REFUND_PROCESSING" });
     expect(finalizeArgs.data.status).toBe("REJECTED");
   });
 });
@@ -519,12 +523,12 @@ describe("GET /api/admin/withdrawals", () => {
 // ═══════════════════════════════════════════════════════════════════════════
 // HTTP error vs failed financial transaction (distinction)
 // These tests verify that the state-machine correctly distinguishes:
-//   - Temporary failure (503, retry-safe, status stays REFUND_PENDING)
+//   - Temporary failure (503, retry-safe, status moves to REFUND_PROCESSING before credit)
 //   - Permanent failure requiring manual review (500, RECONCILIATION_NEEDED)
 //   - Success (200, REJECTED)
 // ═══════════════════════════════════════════════════════════════════════════
 describe("HTTP error vs failed financial transaction (distinction)", () => {
-  it("temporary refund failure → 503 (retry-safe), status stays REFUND_PENDING", async () => {
+  it("temporary refund failure → 503 (retry-safe), status moves to REFUND_PROCESSING before credit", async () => {
     const errSpy = muteConsoleError();
     mockWithdrawalRequestFindUnique.mockResolvedValueOnce(SAMPLE_REQUEST);
     mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // acquire REFUND_PENDING
