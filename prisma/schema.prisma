@@ -734,6 +734,7 @@ enum WithdrawalStatus {
   PAID // sent to bank, completed
   REJECTED // admin rejected after successful refund
   REFUND_PENDING // rejection accepted; refund/ledger completion needs recovery
+  REFUND_PROCESSING // durable barrier before balance increment; never blindly retry
   RECONCILIATION_NEEDED // automated recovery cannot safely determine financial outcome
 }
 
