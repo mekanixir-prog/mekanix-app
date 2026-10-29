@@ -24,5 +24,19 @@ export async function GET(req: Request) {
     orderBy: { requestedAt: "desc" },
     take: 100,
   });
-  return NextResponse.json(requests);
+  const refundRows = requests.length
+    ? await db.walletLedger.findMany({
+        where: {
+          type: "REFUND",
+          referenceType: "Withdrawal",
+          referenceId: { in: requests.map((request) => request.id) },
+        },
+        select: { referenceId: true },
+      })
+    : [];
+  const refundedIds = new Set(refundRows.map((row) => row.referenceId).filter((id): id is string => Boolean(id)));
+  return NextResponse.json(requests.map((request) => ({
+    ...request,
+    hasRefundLedger: refundedIds.has(request.id),
+  })));
 }
