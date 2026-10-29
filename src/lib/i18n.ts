@@ -1099,6 +1099,8 @@ const DICT: Record<Lang, Record<string, string>> = {
     "tech.earnings.wdStatus.APPROVED": "Approved",
     "tech.earnings.wdStatus.PAID": "Paid",
     "tech.earnings.wdStatus.REJECTED": "Rejected",
+    "tech.earnings.wdStatus.REFUND_PENDING": "Refund pending",
+    "tech.earnings.wdStatus.RECONCILIATION_NEEDED": "Needs review",
 
     "tech.schedule.title": "Schedule & Availability",
     "tech.schedule.subtitle": "Set when you're available and where you operate",
@@ -2689,6 +2691,8 @@ const DICT: Record<Lang, Record<string, string>> = {
     "tech.earnings.wdStatus.APPROVED": "تأیید شد",
     "tech.earnings.wdStatus.PAID": "پرداخت شد",
     "tech.earnings.wdStatus.REJECTED": "رد شد",
+    "tech.earnings.wdStatus.REFUND_PENDING": "در حال بازپرداخت",
+    "tech.earnings.wdStatus.RECONCILIATION_NEEDED": "نیازمند بررسی",
 
     "tech.schedule.title": "زمان‌بندی و دسترسانی",
     "tech.schedule.subtitle": "تعیین ساعات کاری و منطقه فعالیت شما",

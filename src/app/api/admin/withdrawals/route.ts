@@ -10,14 +10,16 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const status = url.searchParams.get("status");
-  const allowed = ["REQUESTED", "APPROVED", "PAID", "REJECTED"];
+  const allowed = ["REQUESTED", "APPROVED", "PAID", "REJECTED", "REFUND_PENDING", "RECONCILIATION_NEEDED"];
   if (status && !allowed.includes(status)) {
     return NextResponse.json({ error: "وضعیت نامعتبر است" }, { status: 400 });
   }
 
   const db = await getDbForLib();
   const requests = await db.withdrawalRequest.findMany({
-    where: status ? { status: status as "REQUESTED" | "APPROVED" | "PAID" | "REJECTED" } : undefined,
+    where: status
+      ? { status: status as "REQUESTED" | "APPROVED" | "PAID" | "REJECTED" | "REFUND_PENDING" | "RECONCILIATION_NEEDED" }
+      : undefined,
     include: { wallet: { include: { technician: { include: { user: true } } } } },
     orderBy: { requestedAt: "desc" },
     take: 100,
