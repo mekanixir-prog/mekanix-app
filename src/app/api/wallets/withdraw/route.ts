@@ -4,7 +4,7 @@ import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { createHash, randomUUID } from "node:crypto";
-import { executeAtomicWithdrawal, InsufficientWithdrawalBalanceError } from "@/lib/atomic-withdrawal";
+import { executeAtomicWithdrawal, InsufficientWithdrawalBalanceError, AtomicWithdrawalOutcomeUnknownError } from "@/lib/atomic-withdrawal";
 
 // MEKANIX — Wallet withdraw with idempotency + recovery (fixes C1, C3, C4, C6)
 //
@@ -237,6 +237,23 @@ export async function POST(req: Request) {
 
     return NextResponse.json(result);
   } catch (error: unknown) {
+    if (error instanceof AtomicWithdrawalOutcomeUnknownError) {
+      // Do not make this key reusable: the financial batch may have committed
+      // even though its durable response could not be verified.
+      await db.idempotencyKey.updateMany({
+        where: { key: scopedKey, status: "IN_PROGRESS" },
+        data: { status: "RECONCILIATION_NEEDED" },
+      }).catch(() => {});
+      console.error("[wallets/withdraw] CRITICAL: atomic outcome needs reconciliation", {
+        correlationId,
+        walletId: wallet.id,
+        scopedKey,
+      });
+      return NextResponse.json(
+        { error: "نتیجه مالی برداشت مبهم است؛ دوباره درخواست ثبت نکنید و با پشتیبانی تماس بگیرید", correlationId },
+        { status: 500 }
+      );
+    }
     await markIdempotencyFailed(db, scopedKey);
     if (error instanceof InsufficientWithdrawalBalanceError) {
       return NextResponse.json({ error: error.message, correlationId }, { status: 400 });
