@@ -353,19 +353,55 @@ export async function POST(req: Request) {
     // The helper guarantees:
     //   - No double-refund (partial unique index on WalletLedger)
     //   - Atomic status guard + balance increment + ledger insert
-    //   - If status is wrong, nothing happens (conditional SQL)
+    //   - If status is wrong, nothing happens (conditional SQL via refundToken)
 
     // Case 1: Withdrawal was created — use atomic refund helper
     if (withdrawalId && balanceDeducted) {
       try {
         // Transition REQUESTED → REFUND_PENDING first (required by helper)
-        await db.withdrawalRequest.updateMany({
+        // CHECK THE RESULT — if transition failed, read current status
+        const transition = await db.withdrawalRequest.updateMany({
           where: { id: withdrawalId, status: "REQUESTED" },
           data: { status: "REFUND_PENDING" },
         });
 
+        if (transition.count !== 1) {
+          // Transition failed — read current status to decide next step
+          const current = await db.withdrawalRequest.findUnique({
+            where: { id: withdrawalId },
+            select: { status: true },
+          });
+
+          if (current?.status === "REFUND_PENDING") {
+            // Another request already transitioned — proceed with helper
+          } else if (current?.status === "REJECTED") {
+            // Already refunded — treat as already refunded
+            console.error("[wallets/withdraw] Withdrawal already REJECTED during compensation", {
+              correlationId,
+              withdrawalId,
+            });
+            await markIdempotencyFailed(db, scopedKey);
+            return NextResponse.json(
+              { error: "این برداشت قبلاً بازپرداخت شده است", correlationId },
+              { status: 500 }
+            );
+          } else {
+            // Unexpected status — RECONCILIATION_NEEDED
+            console.error("[wallets/withdraw] CRITICAL: unexpected status during compensation", {
+              correlationId,
+              withdrawalId,
+              status: current?.status,
+            });
+            await markIdempotencyFailed(db, scopedKey);
+            return NextResponse.json(
+              { error: "وضعیت برداشت نامشخص است؛ بررسی پشتیبانی لازم است", correlationId },
+              { status: 500 }
+            );
+          }
+        }
+
         // Execute atomic refund via helper
-        const refundResult = await executeAtomicRefund({
+        await executeAtomicRefund({
           withdrawalId,
           walletId: wallet.id,
           amount: requestedAmount,
@@ -373,23 +409,17 @@ export async function POST(req: Request) {
           description: `Compensation refund for failed withdrawal ${withdrawalId}`,
         });
 
-        // Refund succeeded — clean up the WITHDRAWAL ledger entry (if created)
-        // The helper created a REFUND ledger entry, but we may also have a
-        // WITHDRAWAL ledger entry from the failed attempt. Delete it.
-        if (ledgerId) {
-          try {
-            await db.walletLedger.delete({ where: { id: ledgerId } });
-          } catch {
-            // Best-effort cleanup — the REFUND ledger is the source of truth
-          }
-        }
-
-        // Delete the withdrawal request (compensation complete)
-        try {
-          await db.withdrawalRequest.delete({ where: { id: withdrawalId } });
-        } catch {
-          // Best-effort — if delete fails, withdrawal is REJECTED with REFUND ledger
-        }
+        // Refund succeeded — DO NOT delete financial records (preserve audit trail)
+        // The withdrawal is now REJECTED with a REFUND ledger entry.
+        // The WITHDRAWAL ledger entry (if created) is also kept — it shows
+        // the deduction that was reversed by the REFUND.
+        //
+        // Previously we deleted the WITHDRAWAL ledger and the withdrawal request.
+        // This destroyed the audit trail. Now we KEEP everything:
+        //   - WithdrawalRequest: status=REJECTED (audit trail preserved)
+        //   - WITHDRAWAL ledger: shows the original deduction
+        //   - REFUND ledger: shows the reversal
+        //   - The pair (WITHDRAWAL + REFUND) tells the full story.
 
         await markIdempotencyFailed(db, scopedKey);
 
@@ -399,6 +429,7 @@ export async function POST(req: Request) {
           walletId: wallet.id,
           withdrawalId,
           error: message,
+          note: "Audit trail preserved: withdrawal=REJECTED, WITHDRAWAL+REFUND ledger entries kept",
         });
         return NextResponse.json({ error: message, correlationId }, { status: 500 });
       } catch (refundError: unknown) {

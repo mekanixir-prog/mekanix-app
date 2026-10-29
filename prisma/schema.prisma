@@ -738,21 +738,22 @@ enum WithdrawalStatus {
 }
 
 model WithdrawalRequest {
-  id          String           @id @default(cuid())
-  code        String           @unique // WD-...
-  walletId    String
-  wallet      Wallet           @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  amount      Decimal  // IRR
-  method      String           @default("card") // card | bank | wallet-to-wallet
-  cardNumber  String? // masked Iranian card number (shetab)
-  bankName    String?
-  shebaNumber String? // Iranian IBAN (IR...)
-  status      WithdrawalStatus @default(REQUESTED)
-  requestedAt DateTime         @default(now())
-  processedAt DateTime?
-  adminNotes  String?
-  reviewerId  String?
-  txnId       String? // linked WalletTransaction (PAYOUT) once paid
+  id           String           @id @default(cuid())
+  code         String           @unique // WD-...
+  walletId     String
+  wallet       Wallet           @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  amount       Decimal  // IRR
+  method       String           @default("card") // card | bank | wallet-to-wallet
+  cardNumber   String? // masked Iranian card number (shetab)
+  bankName     String?
+  shebaNumber  String? // Iranian IBAN (IR...)
+  status       WithdrawalStatus @default(REQUESTED)
+  requestedAt  DateTime         @default(now())
+  processedAt  DateTime?
+  adminNotes   String?
+  reviewerId   String?
+  txnId        String? // linked WalletTransaction (PAYOUT) once paid
+  refundToken  String? // unique per refund attempt — prevents double-refund in concurrent D1 batches
 
   @@index([walletId, status])
   @@index([status])
