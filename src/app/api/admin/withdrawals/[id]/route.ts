@@ -11,26 +11,21 @@ import { getAdminFromRequest } from "@/lib/admin-auth";
 //
 // State machine (REJECT path):
 //
-//   REQUESTED ──REJECT──► REFUND_PENDING ──refund+ledger ok──► REJECTED
+//   REQUESTED ──REJECT──► REFUND_PENDING ──atomic refund+ledger──► REJECTED
 //                              │
-//                              ├──refund/ledger fail──► (stay REFUND_PENDING, retry-safe)
-//                              │
-//                              └──cannot determine outcome──► RECONCILIATION_NEEDED
+//                              └──any uncertain outcome──► manual reconciliation
 //
-// Idempotent recovery (the key invariant):
-//   Before incrementing the wallet balance, we check if a REFUND ledger entry
-//   already exists for this withdrawal.id. If it does, the refund already
-//   happened in a previous attempt — we skip the balance increment and only
-//   ensure the ledger is present. This makes retry from REFUND_PENDING safe:
-//   a second PATCH will never double-credit the wallet, even if the first
-//   attempt crashed after the increment but before the ledger write.
+// IMPORTANT: REFUND_PENDING is NOT automatically retried. Until balance +
+// ledger + final status can be committed atomically in D1, a crash between
+// sequential writes makes the financial outcome ambiguous.
 //
-// Why RECONCILIATION_NEEDED is a last resort:
-//   Temporary failures (D1 timeout, brief unavailability) should NOT destroy
-//   the recovery path. The route stays in REFUND_PENDING so the admin can
-//   retry. Only when the system genuinely cannot determine whether the
-//   balance was incremented (e.g., updateMany returned count=0 unexpectedly,
-//   or ledger lookup itself threw) do we transition to RECONCILIATION_NEEDED.
+// Safety invariant:
+//   A missing REFUND ledger does NOT prove that the wallet increment did not
+//   commit. Therefore, a second PATCH against REFUND_PENDING is blocked with
+//   409 and no financial writes. An operator must reconcile the wallet balance
+//   against the ledger before taking further action. This conservative guard
+//   prevents double-credit after a worker crash; automated retry will return
+//   only after the refund path uses one atomic D1 batch.
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const admin = await getAdminFromRequest(req);
