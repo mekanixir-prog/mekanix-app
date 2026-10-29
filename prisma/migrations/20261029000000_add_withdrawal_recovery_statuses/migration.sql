@@ -9,3 +9,6 @@
 -- matching Prisma enum update is in prisma/schema.prisma.
 -- Do not apply production migrations until CI and the recovery flow review
 -- are complete.
+
+-- REFUND_PROCESSING is a text-backed Prisma enum value on SQLite/D1.
+-- No physical schema change is required; the Prisma enum is updated in schema.prisma.
