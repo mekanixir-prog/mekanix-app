@@ -8,25 +8,17 @@
 // happen inside a SINGLE atomic unit. The status guard is ENFORCED BY SQL,
 // not by application-level checking of meta.changes after the batch.
 //
-// KEY INSIGHT: D1 batch() does NOT roll back if a statement affects 0 rows.
-// Only SQL errors (like UNIQUE constraint violations) cause rollback.
-// Therefore, we CANNOT rely on "check meta.changes after batch" — by then
-// the balance increment and ledger insert have already committed.
+// SAFETY GUARANTEES (enforced by SQL + unique index):
+//   1. Balance increment ONLY happens if status transitions REFUND_PENDING→REJECTED
+//   2. Ledger insert ONLY happens if status transitioned (conditional SQL)
+//   3. Ledger insert fails if duplicate (partial unique index) → batch rollback
+//   4. If status is already REJECTED, we verify a REFUND ledger exists
+//      — if NOT, that's a financial inconsistency (throw, not success)
+//   5. Concurrent requests: the unique index prevents double-refund at DB level
+//      even if two requests pass the pre-check simultaneously
 //
-// SOLUTION: Make balance increment and ledger insert CONDITIONAL on the
-// status guard succeeding, using SQL subqueries:
-//
-//   UPDATE Wallet SET balance = balance + ?
-//   WHERE id = ?
-//     AND EXISTS (SELECT 1 FROM WithdrawalRequest
-//                 WHERE id = ? AND status = 'REFUND_PENDING')
-//
-// This way, if the status is NOT REFUND_PENDING, the WHERE clause matches
-// 0 rows and the balance is NOT incremented — regardless of batch behavior.
-//
-// The ledger insert uses the partial unique index as the final guard:
-// if a REFUND entry already exists, the INSERT fails with UNIQUE constraint
-// violation, which DOES cause batch rollback (SQL error, not 0 rows affected).
+// NO FALLBACK: If the environment cannot provide atomicity, this helper
+// throws. We never fall back to non-atomic sequential writes.
 
 import { getDbForLib } from "@/lib/db-access";
 import type { PrismaClient } from "@prisma/client";
@@ -53,13 +45,13 @@ export type AtomicRefundResult = {
  * Execute an atomic refund for a withdrawal.
  *
  * Safety guarantees (enforced by SQL, not application logic):
- *   1. Balance increment ONLY happens if status is REFUND_PENDING (SQL WHERE)
- *   2. Ledger insert ONLY happens if status is REFUND_PENDING (SQL WHERE)
+ *   1. Balance increment ONLY happens if status transitions REFUND_PENDING→REJECTED
+ *   2. Ledger insert ONLY happens if status transitioned (conditional SQL)
  *   3. Ledger insert fails if duplicate (partial unique index) → batch rollback
- *   4. Status transition ONLY happens if status is REFUND_PENDING (SQL WHERE)
- *
- * If status is already REJECTED: returns alreadyRefunded=true (no writes)
- * If status is anything else: throws (no writes)
+ *   4. If status is already REJECTED, we verify a REFUND ledger exists
+ *      — if NOT, that's a financial inconsistency (throw, not success)
+ *   5. Concurrent requests: the unique index prevents double-refund at DB level
+ *      even if two requests pass the pre-check simultaneously
  */
 export async function executeAtomicRefund(
   input: AtomicRefundInput
@@ -79,14 +71,16 @@ export async function executeAtomicRefund(
  * All 3 statements use WHERE clauses that check status = 'REFUND_PENDING'.
  * If status is wrong, ALL statements affect 0 rows — no partial state.
  *
- * Statement order (doesn't matter for correctness — all are conditional):
+ * Statement order:
  *   1. UPDATE WithdrawalRequest SET status='REJECTED' WHERE id=? AND status='REFUND_PENDING'
- *   2. UPDATE Wallet SET balance=balance+? WHERE id=? AND EXISTS(status check)
- *   3. INSERT INTO WalletLedger ... (unique index prevents duplicate)
+ *   2. UPDATE Wallet SET balance=balance+? WHERE id=? AND status is now REJECTED
+ *   3. INSERT INTO WalletLedger ... WHERE status is REJECTED AND no existing REFUND
  *
- * After batch, we verify that statement 1 affected exactly 1 row.
- * If 0, the status was wrong — but statements 2+3 also affected 0 rows
- * (because of the EXISTS clause), so no partial state.
+ * If status is already REJECTED:
+ *   - Pre-check finds REJECTED
+ *   - We check if REFUND ledger exists
+ *   - If YES: return alreadyRefunded=true (idempotent success)
+ *   - If NO: throw financial inconsistency (REJECTED without refund = corrupted state)
  */
 async function executeAtomicRefundD1(
   _db: PrismaClient,
@@ -100,7 +94,7 @@ async function executeAtomicRefundD1(
     throw new Error("D1 binding 'DB' not found — cannot execute atomic refund");
   }
 
-  // Pre-check: is the withdrawal already REJECTED? (idempotency)
+  // Pre-check: current status
   const current = await d1.prepare(
     `SELECT status FROM WithdrawalRequest WHERE id = ?`
   ).bind(input.withdrawalId).first<{ status: string }>();
@@ -110,11 +104,21 @@ async function executeAtomicRefundD1(
   }
 
   if (current.status === "REJECTED") {
-    // Already finalized — return idempotent result (no writes)
+    // Already REJECTED — verify a REFUND ledger exists.
+    // REJECTED without a REFUND ledger is a financial inconsistency.
     const existingLedger = await d1.prepare(
       `SELECT id FROM WalletLedger WHERE referenceType = 'Withdrawal'
        AND referenceId = ? AND type = 'REFUND' LIMIT 1`
     ).bind(input.withdrawalId).first<{ id: string }>();
+
+    if (!existingLedger) {
+      // FINANCIAL INCONSISTENCY: withdrawal is REJECTED but no REFUND ledger.
+      // This should never happen in normal flow. Throw so operator can investigate.
+      throw new Error(
+        `FINANCIAL INCONSISTENCY: withdrawal ${input.withdrawalId} is REJECTED but has no REFUND ledger entry. ` +
+        `Manual reconciliation required.`
+      );
+    }
 
     const wallet = await d1.prepare(
       `SELECT balance FROM Wallet WHERE id = ?`
@@ -122,7 +126,7 @@ async function executeAtomicRefundD1(
 
     return {
       success: true,
-      refundLedgerId: existingLedger?.id ?? null,
+      refundLedgerId: existingLedger.id,
       newBalance: Number(wallet?.balance ?? 0),
       alreadyRefunded: true,
     };
@@ -138,65 +142,28 @@ async function executeAtomicRefundD1(
   const now = new Date().toISOString();
 
   // Statement 1: Status guard — transition REFUND_PENDING → REJECTED
-  // This is the PRIMARY guard. If status is wrong, count=0.
   const stmt1_statusGuard = d1.prepare(
     `UPDATE WithdrawalRequest SET status = 'REJECTED', processedAt = ?, reviewerId = ?
      WHERE id = ? AND status = 'REFUND_PENDING'`
   ).bind(now, input.reviewerId, input.withdrawalId);
 
-  // Statement 2: Balance increment — CONDITIONAL on status being REFUND_PENDING
-  // The EXISTS subquery ensures this only runs if the status is correct.
-  // Even if stmt1 hasn't committed yet within the batch, the EXISTS check
-  // reads the pre-batch state (D1 batch is atomic but reads see the
-  // transaction start state for consistency).
-  // IMPORTANT: We use a separate EXISTS check, not "status = 'REFUND_PENDING'"
-  // because stmt1 may have already changed it to REJECTED within this batch.
-  // The EXISTS check reads the CURRENT state, which may be REJECTED if stmt1
-  // ran first. To handle this, we check for REJECTED instead (stmt1 succeeded).
-  //
-  // Actually, D1 batch runs all statements in sequence within a single
-  // transaction. So if stmt1 runs first and changes status to REJECTED,
-  // stmt2's EXISTS check for 'REFUND_PENDING' would fail (0 rows).
-  // This is WRONG — we WANT the balance to increment.
-  //
-  // SOLUTION: Check for 'REJECTED' in stmt2 (stmt1 already changed it),
-  // OR use a simpler approach: just do the balance update unconditionally
-  // and rely on the unique index + status guard for safety.
-  //
-  // The REAL safety comes from:
-  //   - Unique index prevents double-refund (ledger insert fails if duplicate)
-  //   - Status guard prevents refund if not REFUND_PENDING
-  //   - If status guard affects 0 rows, we throw AFTER the batch, but
-  //     the balance increment already happened...
-  //
-  // CORRECT SOLUTION: Put the status guard FIRST, then check its result
-  // BEFORE running balance + ledger. But D1 batch doesn't support this.
-  //
-  // FINAL SOLUTION: Use a single statement that combines everything,
-  // or use D1's SAVEPOINT mechanism.
-  //
-  // For now, we use the approach that IS safe:
-  //   - stmt1: status guard (affects 0 or 1 row)
-  //   - stmt2: balance increment (unconditional, but guarded by unique index)
-  //   - stmt3: ledger insert (unique index prevents duplicate)
-  //
-  // If status was wrong (stmt1 count=0), we detect it AFTER the batch
-  // and throw. The balance increment DID happen, but the ledger insert
-  // also happened — so there's a ledger entry without a status change.
-  // This is a problem.
-  //
-  // The ONLY way to prevent this with D1 batch is to make stmt2+stmt3
-  // conditional on stmt1 succeeding. We do this with a CASE expression:
+  // Statement 2: Balance increment — CONDITIONAL on status being REJECTED
+  // (stmt1 already changed it from REFUND_PENDING to REJECTED within this batch)
+  // Also verify walletId matches the withdrawal's walletId (not just any wallet)
   const stmt2_balance = d1.prepare(
     `UPDATE Wallet SET balance = balance + ?
      WHERE id = ?
-       AND (SELECT COUNT(*) FROM WithdrawalRequest WHERE id = ? AND status = 'REJECTED') = 1`
-  ).bind(input.amount, input.walletId, input.withdrawalId);
+       AND EXISTS (SELECT 1 FROM WithdrawalRequest
+                   WHERE id = ? AND status = 'REJECTED' AND walletId = ?)`
+  ).bind(input.amount, input.walletId, input.withdrawalId, input.walletId);
 
+  // Statement 3: Ledger insert — CONDITIONAL on status being REJECTED
+  // AND no existing REFUND ledger (idempotency guard at SQL level)
+  // The partial unique index is the final atomic guard
   const stmt3_ledger = d1.prepare(
     `INSERT INTO WalletLedger (id, walletId, type, amount, balanceBefore, balanceAfter, referenceType, referenceId, description, createdBy, createdAt)
      SELECT ?, ?, 'REFUND', ?, 0, 0, 'Withdrawal', ?, ?, ?, ?
-     WHERE EXISTS (SELECT 1 FROM WithdrawalRequest WHERE id = ? AND status = 'REJECTED')
+     WHERE EXISTS (SELECT 1 FROM WithdrawalRequest WHERE id = ? AND status = 'REJECTED' AND walletId = ?)
        AND NOT EXISTS (SELECT 1 FROM WalletLedger WHERE referenceType = 'Withdrawal' AND referenceId = ? AND type = 'REFUND')`
   ).bind(
     ledgerId,
@@ -207,6 +174,7 @@ async function executeAtomicRefundD1(
     input.reviewerId,
     now,
     input.withdrawalId,
+    input.walletId,
     input.withdrawalId
   );
 
@@ -215,10 +183,10 @@ async function executeAtomicRefundD1(
   try {
     results = await d1.batch([stmt1_statusGuard, stmt2_balance, stmt3_ledger]);
   } catch (batchError: unknown) {
-    // Unique constraint violation = duplicate refund attempt
+    // Unique constraint violation = duplicate refund attempt (concurrent request won)
     const errMsg = String((batchError as Error)?.message ?? "");
     if (errMsg.includes("UNIQUE constraint") || errMsg.includes("already exists")) {
-      // Re-check state
+      // Re-check state — another request should have completed the refund
       const recheck = await d1.prepare(
         `SELECT status FROM WithdrawalRequest WHERE id = ?`
       ).bind(input.withdrawalId).first<{ status: string }>();
@@ -229,13 +197,19 @@ async function executeAtomicRefundD1(
            AND referenceId = ? AND type = 'REFUND' LIMIT 1`
         ).bind(input.withdrawalId).first<{ id: string }>();
 
+        if (!existingLedger) {
+          throw new Error(
+            `FINANCIAL INCONSISTENCY: withdrawal ${input.withdrawalId} is REJECTED after batch error but has no REFUND ledger.`
+          );
+        }
+
         const wallet = await d1.prepare(
           `SELECT balance FROM Wallet WHERE id = ?`
         ).bind(input.walletId).first<{ balance: string }>();
 
         return {
           success: true,
-          refundLedgerId: existingLedger?.id ?? null,
+          refundLedgerId: existingLedger.id,
           newBalance: Number(wallet?.balance ?? 0),
           alreadyRefunded: true,
         };
@@ -256,12 +230,25 @@ async function executeAtomicRefundD1(
   // Check that the status guard affected exactly 1 row
   const statusChanges = (results[0].meta as { changes?: number }).changes ?? 0;
   if (statusChanges !== 1) {
-    // Status was not REFUND_PENDING. But because stmt2+stmt3 were
+    // Status was not REFUND_PENDING — but because stmt2+stmt3 were
     // conditional (they check for status='REJECTED'), they affected 0 rows.
     // No balance change, no ledger entry — safe to throw.
     throw new Error(
       `Atomic refund: status guard affected ${statusChanges} rows for withdrawal ${input.withdrawalId}. ` +
       `Expected 1 (status was not REFUND_PENDING). No balance or ledger changes were made.`
+    );
+  }
+
+  // Verify ledger was actually created (stmt3 should have affected 1 row)
+  const ledgerChanges = (results[2].meta as { changes?: number }).changes ?? 0;
+  if (ledgerChanges !== 1) {
+    // This shouldn't happen if status guard succeeded — but if it does,
+    // it means the conditional INSERT didn't match. This could be:
+    //   - A REFUND ledger already existed (race condition with another request)
+    //   - Some other inconsistency
+    throw new Error(
+      `Atomic refund: ledger insert affected ${ledgerChanges} rows for withdrawal ${input.withdrawalId}. ` +
+      `Status transitioned but ledger was not created. Manual reconciliation required.`
     );
   }
 
@@ -286,6 +273,9 @@ async function executeAtomicRefundD1(
  *
  * Order: status guard FIRST, then balance, then ledger.
  * If status guard affects 0 rows, we throw — transaction rolls back.
+ *
+ * Also: if status is already REJECTED, we verify a REFUND ledger exists.
+ * REJECTED without ledger = financial inconsistency (throw).
  */
 async function executeAtomicRefundSQLite(
   db: PrismaClient,
@@ -310,6 +300,8 @@ async function executeAtomicRefundSQLite(
       });
 
       if (current?.status === "REJECTED") {
+        // Already REJECTED — verify a REFUND ledger exists.
+        // REJECTED without a REFUND ledger is a financial inconsistency.
         const existingLedger = await tx.walletLedger.findFirst({
           where: {
             referenceType: "Withdrawal",
@@ -317,13 +309,21 @@ async function executeAtomicRefundSQLite(
             type: "REFUND",
           },
         });
+
+        if (!existingLedger) {
+          throw new Error(
+            `FINANCIAL INCONSISTENCY: withdrawal ${input.withdrawalId} is REJECTED but has no REFUND ledger entry. ` +
+            `Manual reconciliation required.`
+          );
+        }
+
         const wallet = await tx.wallet.findUnique({
           where: { id: input.walletId },
           select: { balance: true },
         });
         return {
           success: true,
-          refundLedgerId: existingLedger?.id ?? null,
+          refundLedgerId: existingLedger.id,
           newBalance: Number(wallet?.balance ?? 0),
           alreadyRefunded: true,
         };
@@ -348,6 +348,8 @@ async function executeAtomicRefundSQLite(
     }
 
     // 3. Insert REFUND ledger entry (unique index prevents duplicate)
+    // If this throws P2002 (unique constraint), the entire transaction
+    // rolls back — including the balance increment and status transition.
     const ledger = await tx.walletLedger.create({
       data: {
         walletId: input.walletId,
