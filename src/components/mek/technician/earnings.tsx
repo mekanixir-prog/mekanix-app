@@ -328,6 +328,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
                           w.status === "PAID" ? "border-emerald-glow/30 bg-emerald-glow/10 text-emerald-glow"
                           : w.status === "APPROVED" ? "border-amber/30 bg-amber/10 text-amber"
                           : w.status === "REJECTED" ? "border-destructive/30 bg-destructive/10 text-destructive"
+                          : w.status === "REFUND_PROCESSING" ? "border-amber/40 bg-amber/15 text-amber animate-pulse"
                           : w.status === "REFUND_PENDING" ? "border-amber/30 bg-amber/10 text-amber animate-pulse"
                           : w.status === "RECONCILIATION_NEEDED" ? "border-destructive/30 bg-destructive/10 text-destructive animate-pulse"
                           : "border-border bg-muted text-muted-foreground"
