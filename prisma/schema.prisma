@@ -1345,12 +1345,28 @@ model RateLimit {
 }
 
 // ──────────── Cloudflare D1: Idempotency Keys (replaces Redis) ────────────
+// Used by /api/wallets/withdraw (and potentially other mutating endpoints)
+// to prevent duplicate writes on client retry.
+//
+// Atomic reserve pattern (D1 has no $transaction):
+//   1. INSERT with key @unique — only one insert succeeds (P2002 signals existing)
+//   2. On P2002: findUnique to read status
+//      - IN_PROGRESS → 409 (another request is running)
+//      - COMPLETED   → return cached response (no re-execute)
+//      - FAILED      → 409 (key not reusable, client must generate new key)
+//      - requestHash mismatch → 409 (same key, different payload = misuse)
+//   3. On success: execute the operation, then update status + response
 model IdempotencyKey {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  response  String   // JSON serialized response
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  id           String    @id @default(cuid())
+  key          String   @unique
+  status       String   @default("IN_PROGRESS") // IN_PROGRESS | COMPLETED | FAILED
+  response     String?  // JSON serialized response (null until COMPLETED)
+  requestHash  String   // hash of request body (prevents payload mutation reuse)
+  userId       String?  // scope key to user (null = global)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@index([key, expiresAt])
+  @@index([userId, status])
 }

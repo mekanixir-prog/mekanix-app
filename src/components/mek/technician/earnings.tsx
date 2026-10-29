@@ -126,9 +126,15 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
     }
     setWithdrawing(true);
     try {
+      // Generate a unique Idempotency-Key per withdraw attempt.
+      // This prevents double-charge on network retry or double-tap.
+      const idempotencyKey = `wd_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
       const res = await authFetch("/api/wallets/withdraw", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
+        },
         body: JSON.stringify({
           technicianId: user.technician!.id,
           amount: amt,

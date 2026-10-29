@@ -462,7 +462,7 @@ export async function withIdempotency<T>(
     const db = await getDbForLib();
     const existing = await db.idempotencyKey.findUnique({ where: { key: d1Key } });
 
-    if (existing && existing.expiresAt.getTime() > now) {
+    if (existing && existing.expiresAt.getTime() > now && existing.response) {
       return { cached: true, data: JSON.parse(existing.response) as T };
     }
 
@@ -473,10 +473,13 @@ export async function withIdempotency<T>(
       where: { key: d1Key },
       create: {
         key: d1Key,
+        status: "COMPLETED",
         response: JSON.stringify(result),
+        requestHash: "legacy-withIdempotency",
         expiresAt,
       },
       update: {
+        status: "COMPLETED",
         response: JSON.stringify(result),
         expiresAt,
       },

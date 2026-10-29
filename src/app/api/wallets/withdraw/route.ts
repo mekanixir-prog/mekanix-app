@@ -3,6 +3,35 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
+import { createHash } from "node:crypto";
+
+// MEKANIX — Wallet withdraw with idempotency (fix C4)
+//
+// CRITICAL: D1 does NOT support Prisma's $transaction. The atomic-reserve
+// pattern uses the IdempotencyKey.key @unique constraint as the atomic
+// primitive: only one INSERT can succeed for a given key. P2002 (unique
+// constraint violation) signals that another request already owns the key.
+//
+// Flow:
+//   1. Validate Idempotency-Key header (required)
+//   2. Compute requestHash (hash of body) — prevents payload mutation reuse
+//   3. Try: db.idempotencyKey.create({ key, status:"IN_PROGRESS", ... })
+//      - Success: we own the key → proceed to withdraw
+//      - P2002: key exists → findUnique to read status
+//        - COMPLETED + hash match → return cached response (no re-execute)
+//        - IN_PROGRESS → 409 (another request is running)
+//        - FAILED → 409 (key not reusable)
+//        - hash mismatch → 409 (same key, different payload = misuse)
+//   4. Execute withdraw (existing B2.2 logic)
+//   5. Update idempotencyKey: status="COMPLETED", response=JSON.stringify(result)
+//      On failure: status="FAILED" (key not reusable; client must generate new)
+
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+
+function computeRequestHash(body: unknown): string {
+  const json = JSON.stringify(body);
+  return createHash("sha256").update(json).digest("hex").slice(0, 32);
+}
 
 export async function POST(req: Request) {
   const session = await requireAuth(req);
@@ -12,8 +41,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "فقط مکانیک‌ها می‌توانند برداشت کنند" }, { status: 403 });
   }
 
-  // Rate limit: 3 per hour — uses Redis-backed `rateLimitAsync()` so the
-  // withdrawal budget is shared across instances when REDIS_URL is set.
+  // Idempotency-Key header is REQUIRED for withdraw.
+  // Prevents double-charge on client retry (network blip, double-tap).
+  const idempotencyKey = req.headers.get("x-idempotency-key") || req.headers.get("Idempotency-Key");
+  if (!idempotencyKey) {
+    return NextResponse.json(
+      { error: "هدر Idempotency-Key الزامی است" },
+      { status: 400 }
+    );
+  }
+
+  // Rate limit: 3 per hour.
   const clientId = getClientId(req);
   const rl = await rateLimitAsync(
     `withdraw:${clientId}`,
@@ -59,42 +97,116 @@ export async function POST(req: Request) {
   }
 
   const db = await getDbForLib();
+
+  // ──────────── Atomic reserve: try to INSERT the idempotency key ────────────
+  // This is the atomic primitive: key @unique means only one INSERT succeeds.
+  const requestHash = computeRequestHash(body);
+  const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_MS);
+  const scopedKey = `withdraw:${session.userId}:${idempotencyKey}`;
+
+  try {
+    await db.idempotencyKey.create({
+      data: {
+        key: scopedKey,
+        status: "IN_PROGRESS",
+        requestHash,
+        userId: session.userId,
+        expiresAt,
+      },
+    });
+    // We own the key. Proceed to withdraw.
+  } catch (createError: unknown) {
+    // P2002 = unique constraint violation = key already exists.
+    const code = (createError as { code?: string })?.code;
+    if (code !== "P2002") {
+      // Unexpected error — log and fail safe (no withdraw executed).
+      console.error("[wallets/withdraw] IdempotencyKey create failed (non-P2002)", {
+        userId: session.userId,
+        error: createError,
+      });
+      return NextResponse.json(
+        { error: "خطا در ثبت کلید یکتایی؛ دوباره با کلید جدید تلاش کنید" },
+        { status: 500 }
+      );
+    }
+
+    // P2002: key exists. findUnique to read status.
+    const existing = await db.idempotencyKey.findUnique({ where: { key: scopedKey } });
+    if (!existing) {
+      // Should not happen (P2002 means row exists). Race edge case.
+      return NextResponse.json(
+        { error: "خطای هم‌زمانی؛ دوباره تلاش کنید" },
+        { status: 409 }
+      );
+    }
+
+    // Expired? Treat as if it doesn't exist — but we cannot reuse the key
+    // (another request might be mid-flight). Tell client to use a new key.
+    if (existing.expiresAt.getTime() < Date.now()) {
+      return NextResponse.json(
+        { error: "کلید یکتایی منقضی شده؛ کلید جدید تولید کنید" },
+        { status: 410 }
+      );
+    }
+
+    // Hash mismatch = same key, different payload = misuse.
+    if (existing.requestHash !== requestHash) {
+      return NextResponse.json(
+        { error: "کلید یکتایی قبلاً با محتوای متفاوت استفاده شده" },
+        { status: 409 }
+      );
+    }
+
+    if (existing.status === "COMPLETED" && existing.response) {
+      // Return cached response — this is the idempotent replay.
+      const cached = JSON.parse(existing.response);
+      return NextResponse.json(cached, { status: 200 });
+    }
+
+    if (existing.status === "IN_PROGRESS") {
+      // Another request is mid-flight. Client should retry after a delay.
+      return NextResponse.json(
+        { error: "درخواست قبلی در حال اجرا است؛ کمی بعد تلاش کنید" },
+        { status: 409 }
+      );
+    }
+
+    if (existing.status === "FAILED") {
+      // Previous attempt failed. Key is not reusable — client must use new key.
+      return NextResponse.json(
+        { error: "درخواست قبلی با این کلید ناموفق بوده؛ کلید جدید تولید کنید" },
+        { status: 409 }
+      );
+    }
+
+    // Unknown status — fail safe.
+    return NextResponse.json(
+      { error: "وضعیت کلید یکتایی نامشخص" },
+      { status: 409 }
+    );
+  }
+
+  // ──────────── We own the key. Execute the withdraw. ────────────
   const wallet = await db.wallet.findUnique({ where: { technicianId: technician.id } });
   if (!wallet) {
+    await markIdempotencyFailed(db, scopedKey);
     return NextResponse.json({ error: "کیف پول یافت نشد" }, { status: 404 });
   }
 
   if (Number(wallet.balance) < requestedAmount) {
+    await markIdempotencyFailed(db, scopedKey);
     return NextResponse.json({ error: "موجودی کافی نیست" }, { status: 400 });
   }
 
-  // Sequential writes (D1-compatible: no $transaction wrapper).
-  // B2.2 fix: the atomic balance decrement now happens BEFORE the
-  // WithdrawalRequest.create. This ensures no orphaned WithdrawalRequest
-  // can exist in the DB without a corresponding balance deduction.
-  //
-  // Before B2.2: WithdrawalRequest was created FIRST, then balance was
-  // decremented. If the decrement returned count=0 (race loser in concurrent
-  // withdraw scenario), the route threw and returned 400, but the
-  // WithdrawalRequest row remained in DB with status=REQUESTED. An admin
-  // could later approve this orphaned request, causing a payout without
-  // a corresponding balance deduction.
-  //
-  // After B2.2: the atomic decrement happens first. If it fails (count=0),
-  // we return 400 immediately — no WithdrawalRequest exists. If it succeeds,
-  // the balance IS deducted, and we then create the WithdrawalRequest,
-  // ledger, and notification. Even if a later step fails, the balance is
-  // deducted but no request exists — a recoverable state (admin can
-  // reconcile) rather than an unrecoverable one (payout without deduction).
   let balanceDeducted = false;
   let withdrawalId: string | null = null;
   let ledgerId: string | null = null;
   let balanceBefore = Number(wallet.balance);
 
   try {
-    // Re-check before mutation, then use a conditional atomic decrement.
     const lockedWallet = await db.wallet.findUnique({ where: { id: wallet.id } });
     if (!lockedWallet || Number(lockedWallet.balance) < requestedAmount) {
+      await markIdempotencyFailed(db, scopedKey);
       return NextResponse.json({ error: "موجودی کافی نیست" }, { status: 400 });
     }
     balanceBefore = Number(lockedWallet.balance);
@@ -104,8 +216,9 @@ export async function POST(req: Request) {
       data: { balance: { decrement: requestedAmount } },
     });
     if (deductResult.count !== 1) {
+      await markIdempotencyFailed(db, scopedKey);
       return NextResponse.json(
-        { error: "موجودی توسط درخواست هم‌زمان تغییر کرد — دوباره تلاش کنید" },
+        { error: "موجودی توسط درخواست هم‌زمان تغییر کرد — دوباره با کلید جدید تلاش کنید" },
         { status: 409 }
       );
     }
@@ -144,8 +257,7 @@ export async function POST(req: Request) {
     });
     ledgerId = ledger.id;
 
-    // Notifications are best-effort: a notification outage must not make a
-    // completed withdrawal look failed and encourage a duplicate retry.
+    // Notifications are best-effort.
     try {
       await db.notification.create({
         data: {
@@ -164,11 +276,20 @@ export async function POST(req: Request) {
       });
     }
 
-    return NextResponse.json({ withdrawal, newBalance: actualBalanceAfter });
+    const successResponse = { withdrawal, newBalance: actualBalanceAfter };
+
+    // Mark idempotency key as COMPLETED with the cached response.
+    await db.idempotencyKey.updateMany({
+      where: { key: scopedKey, status: "IN_PROGRESS" },
+      data: {
+        status: "COMPLETED",
+        response: JSON.stringify(successResponse),
+      },
+    });
+
+    return NextResponse.json(successResponse);
   } catch (e: unknown) {
-    // Best-effort compensation for failures before the operation is fully
-    // recorded. Never refund while a withdrawal or ledger record still exists:
-    // doing so could permit an admin payout without the matching debit.
+    // Compensation (same as before B2.2 fix).
     let compensationError: unknown = null;
     try {
       if (ledgerId) {
@@ -196,11 +317,17 @@ export async function POST(req: Request) {
         error: compensationError,
         originalError: e,
       });
+      // Mark idempotency as FAILED (key not reusable).
+      await markIdempotencyFailed(db, scopedKey);
       return NextResponse.json(
         { error: "وضعیت برداشت نیازمند بررسی پشتیبانی است؛ دوباره درخواست برداشت ثبت نکنید" },
         { status: 500 }
       );
     }
+
+    // Compensation succeeded — the operation effectively did not happen.
+    // Mark idempotency as FAILED so the client knows to use a new key.
+    await markIdempotencyFailed(db, scopedKey);
 
     const message = e instanceof Error ? e.message : "خطا در پردازش برداشت";
     console.error("[wallets/withdraw] Withdrawal failed and compensation completed", {
@@ -208,5 +335,19 @@ export async function POST(req: Request) {
       error: message,
     });
     return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+// Helper: mark idempotency key as FAILED (not reusable).
+// Best-effort: if this fails, the key stays IN_PROGRESS and the client
+// will get a 409 on retry, prompting them to generate a new key.
+async function markIdempotencyFailed(db: Awaited<ReturnType<typeof getDbForLib>>, scopedKey: string) {
+  try {
+    await db.idempotencyKey.updateMany({
+      where: { key: scopedKey, status: "IN_PROGRESS" },
+      data: { status: "FAILED" },
+    });
+  } catch {
+    // Best-effort — logged but not surfaced to client.
   }
 }

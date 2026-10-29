@@ -45,6 +45,9 @@ const mockSessionFindUnique = vi.fn().mockResolvedValue({
 });
 const mockSessionCreate = vi.fn().mockResolvedValue({});
 const mockSessionUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
+const mockIdempotencyKeyCreate = vi.fn();
+const mockIdempotencyKeyFindUnique = vi.fn();
+const mockIdempotencyKeyUpdateMany = vi.fn();
 
 // The withdraw route calls `const db = await getDbForLib();` and then uses
 // `db.wallet.*`, `db.withdrawalRequest.*`, etc. We mock getDbForLib to return
@@ -74,6 +77,11 @@ vi.mock("@/lib/db-access", () => ({
       findUnique: (...args: any[]) => mockSessionFindUnique(...args),
       updateMany: (...args: any[]) => mockSessionUpdateMany(...args),
     },
+    idempotencyKey: {
+      create: (...args: any[]) => mockIdempotencyKeyCreate(...args),
+      findUnique: (...args: any[]) => mockIdempotencyKeyFindUnique(...args),
+      updateMany: (...args: any[]) => mockIdempotencyKeyUpdateMany(...args),
+    },
   })),
 }));
 
@@ -96,13 +104,19 @@ vi.mock("@/lib/rate-limit", () => ({
 import { POST } from "@/app/api/wallets/withdraw/route";
 
 // ──────────── Helpers ────────────
-function jsonReq(url: string, token: string, body: unknown): Request {
+// Default: generate a unique Idempotency-Key per request (required by route).
+// Tests that need to test idempotency behavior (e.g. duplicate POST) pass
+// an explicit key.
+function jsonReq(url: string, token: string, body: unknown, idempotencyKey?: string): Request {
+  const key = idempotencyKey ?? `test-key-${Math.random().toString(36).slice(2, 10)}`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    authorization: `Bearer ${token}`,
+    "Idempotency-Key": key,
+  };
   return new Request(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      authorization: `Bearer ${token}`,
-    },
+    headers,
     body: JSON.stringify(body),
   });
 }
@@ -141,6 +155,11 @@ beforeEach(() => {
   mockWithdrawalRequestDelete.mockResolvedValue({});
   mockWalletLedgerDelete.mockResolvedValue({});
   mockSessionUpdateMany.mockResolvedValue({ count: 0 });
+
+  // Default: idempotencyKey.create succeeds (we own the key).
+  mockIdempotencyKeyCreate.mockResolvedValue({});
+  mockIdempotencyKeyFindUnique.mockResolvedValue(null);
+  mockIdempotencyKeyUpdateMany.mockResolvedValue({ count: 1 });
 
   // Default technician record (so getTechnicianFromSession returns a tech).
   mockTechnicianFindUnique.mockResolvedValue({
@@ -544,13 +563,10 @@ describe("W6 — compensation order: ledger.delete → withdrawal.delete → ref
   });
 });
 
-describe("W7 — duplicate POST (no idempotency) documents current double-charge behavior [NEGATIVE TEST]", () => {
-  // This is a NEGATIVE test: it documents that WITHOUT an Idempotency-Key
-  // mechanism, two identical POSTs result in TWO withdrawals and TWO balance
-  // deductions. This is a known GAP (C4), not a bug to fix by changing the
-  // test expectation. When idempotency is implemented, this test should be
-  // updated to assert the second POST returns the first response.
-  it("two identical POSTs create two withdrawals and double-charge (C4 confirmed)", async () => {
+describe("W7 — duplicate POST with DIFFERENT keys documents current behavior (each key = one withdrawal)", () => {
+  // Two POSTs with DIFFERENT Idempotency-Keys = two withdrawals (correct).
+  // Two POSTs with the SAME key = one withdrawal (tested in I1 below).
+  it("two POSTs with different keys create two withdrawals (correct, not a bug)", async () => {
     // First POST: full happy path
     mockWalletFindUnique
       .mockResolvedValueOnce({ id: "wallet_1", balance: 1000, technicianId: "tech_1" })
@@ -572,13 +588,13 @@ describe("W7 — duplicate POST (no idempotency) documents current double-charge
     });
 
     const token = await mintTechnicianToken();
-    const req1 = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
-    const req2 = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
+    // Different keys = different intents
+    const req1 = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 }, "key-aaa");
+    const req2 = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 }, "key-bbb");
 
     const res1 = await POST(req1);
     const res2 = await POST(req2);
 
-    // CURRENT BEHAVIOR (GAP): both succeed, two withdrawals created
     expect(res1.status).toBe(200);
     expect(res2.status).toBe(200);
 
@@ -587,8 +603,173 @@ describe("W7 — duplicate POST (no idempotency) documents current double-charge
     expect(body1.withdrawal.id).toBe("wd_1");
     expect(body2.withdrawal.id).toBe("wd_2");
 
-    // Two separate decrements — user double-charged
+    // Two separate decrements — this is CORRECT (different keys = different intents)
     expect(mockWalletUpdateMany).toHaveBeenCalledTimes(2);
     expect(mockWithdrawalRequestCreate).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// I1-I4 — Idempotency tests (the FIX for C4)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("I1 — POST without Idempotency-Key returns 400", () => {
+  it("rejects request without idempotency header", async () => {
+    const token = await mintTechnicianToken();
+    // Manually craft a request WITHOUT the Idempotency-Key header
+    const req = new Request("https://mekanix.test/api/wallets/withdraw", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ amount: 500, method: "card" }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("Idempotency-Key");
+
+    // No financial operations should have run
+    expect(mockWalletUpdateMany).not.toHaveBeenCalled();
+    expect(mockWithdrawalRequestCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("I2 — duplicate POST with SAME key returns cached response (no double-charge)", () => {
+  it("second POST with same key returns cached response, only one withdrawal created", async () => {
+    // First POST: succeeds, creates withdrawal, marks idempotency COMPLETED
+    mockWalletFindUnique
+      .mockResolvedValueOnce({ id: "wallet_1", balance: 1000, technicianId: "tech_1" })
+      .mockResolvedValueOnce({ id: "wallet_1", balance: 1000, technicianId: "tech_1" })
+      .mockResolvedValueOnce({ id: "wallet_1", balance: 500, technicianId: "tech_1" });
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 });
+    mockWithdrawalRequestCreate.mockResolvedValueOnce({
+      id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, status: "REQUESTED",
+    });
+
+    const token = await mintTechnicianToken();
+    const reqBody = { amount: 500, method: "card" };
+    const req1 = jsonReq("https://mekanix.test/api/wallets/withdraw", token, reqBody, "same-key-123");
+    const res1 = await POST(req1);
+    expect(res1.status).toBe(200);
+
+    // Compute the same requestHash the route will compute for the second request
+    const { createHash } = await import("node:crypto");
+    const expectedHash = createHash("sha256").update(JSON.stringify(reqBody)).digest("hex").slice(0, 32);
+
+    // Second POST with SAME key: idempotencyKey.create throws P2002
+    const p2002 = Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
+    mockIdempotencyKeyCreate.mockRejectedValueOnce(p2002);
+    // findUnique returns COMPLETED with cached response, matching requestHash
+    mockIdempotencyKeyFindUnique.mockResolvedValueOnce({
+      key: "withdraw:user_tech:same-key-123",
+      status: "COMPLETED",
+      response: JSON.stringify({
+        withdrawal: { id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, status: "REQUESTED" },
+        newBalance: 500,
+      }),
+      requestHash: expectedHash,
+      expiresAt: new Date(Date.now() + 1000000),
+    });
+
+    const req2 = jsonReq("https://mekanix.test/api/wallets/withdraw", token, reqBody, "same-key-123");
+    const res2 = await POST(req2);
+
+    // Returns 200 with cached response
+    expect(res2.status).toBe(200);
+    const body2 = await res2.json();
+    expect(body2.withdrawal.id).toBe("wd_1");
+
+    // CRITICAL: only ONE withdrawal created (no double-charge)
+    expect(mockWithdrawalRequestCreate).toHaveBeenCalledTimes(1);
+    // Only ONE balance decrement
+    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("I3 — same key with DIFFERENT payload returns 409 (misuse)", () => {
+  it("same key, different amount → 409", async () => {
+    const p2002 = Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
+    mockIdempotencyKeyCreate.mockRejectedValueOnce(p2002);
+    // Existing entry has a different requestHash than what we're sending
+    mockIdempotencyKeyFindUnique.mockResolvedValueOnce({
+      key: "withdraw:user_tech:reuse-key",
+      status: "COMPLETED",
+      response: JSON.stringify({ withdrawal: { id: "wd_1" }, newBalance: 500 }),
+      requestHash: "different-hash-than-current-request",
+      expiresAt: new Date(Date.now() + 1000000),
+    });
+
+    const token = await mintTechnicianToken();
+    const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 }, "reuse-key");
+    const res = await POST(req);
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error).toContain("محتوای متفاوت");
+
+    // No financial operations
+    expect(mockWalletUpdateMany).not.toHaveBeenCalled();
+    expect(mockWithdrawalRequestCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("I4 — IN_PROGRESS key returns 409 (concurrent request)", () => {
+  it("another request with same key while first is running → 409", async () => {
+    const reqBody = { amount: 500 };
+    const { createHash } = await import("node:crypto");
+    const expectedHash = createHash("sha256").update(JSON.stringify(reqBody)).digest("hex").slice(0, 32);
+
+    const p2002 = Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
+    mockIdempotencyKeyCreate.mockRejectedValueOnce(p2002);
+    mockIdempotencyKeyFindUnique.mockResolvedValueOnce({
+      key: "withdraw:user_tech:in-progress-key",
+      status: "IN_PROGRESS",
+      response: null,
+      requestHash: expectedHash,
+      expiresAt: new Date(Date.now() + 1000000),
+    });
+
+    const token = await mintTechnicianToken();
+    const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, reqBody, "in-progress-key");
+    const res = await POST(req);
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error).toContain("در حال اجرا");
+
+    // No financial operations
+    expect(mockWalletUpdateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("I5 — FAILED key returns 409 (key not reusable)", () => {
+  it("previous attempt failed → 409, client must use new key", async () => {
+    const reqBody = { amount: 500 };
+    const { createHash } = await import("node:crypto");
+    const expectedHash = createHash("sha256").update(JSON.stringify(reqBody)).digest("hex").slice(0, 32);
+
+    const p2002 = Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
+    mockIdempotencyKeyCreate.mockRejectedValueOnce(p2002);
+    mockIdempotencyKeyFindUnique.mockResolvedValueOnce({
+      key: "withdraw:user_tech:failed-key",
+      status: "FAILED",
+      response: null,
+      requestHash: expectedHash,
+      expiresAt: new Date(Date.now() + 1000000),
+    });
+
+    const token = await mintTechnicianToken();
+    const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, reqBody, "failed-key");
+    const res = await POST(req);
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error).toContain("کلید جدید");
+
+    // No financial operations
+    expect(mockWalletUpdateMany).not.toHaveBeenCalled();
   });
 });
