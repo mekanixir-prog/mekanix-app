@@ -217,9 +217,16 @@ export async function verifyPayment(authority: string, amount: number): Promise<
 
 export function getPaymentProviderStatus(): { configured: boolean; provider: string } {
   const provider = process.env.PAYMENT_PROVIDER?.toLowerCase().trim() || "simulator";
-  let configured = true;
-  if (provider === "zarinpal" && !process.env.ZARINPAL_MERCHANT_ID) configured = false;
-  if (provider === "idpay" && !process.env.IDPAY_API_KEY) configured = false;
-  if (provider === "nextpay" && !process.env.NEXTPAY_API_KEY) configured = false;
-  return { configured, provider };
+
+  if (provider === "simulator") return { configured: true, provider };
+  if (provider === "zarinpal") {
+    return { configured: Boolean(process.env.ZARINPAL_MERCHANT_ID), provider };
+  }
+  if (provider === "idpay") {
+    return { configured: Boolean(process.env.IDPAY_API_KEY), provider };
+  }
+
+  // NextPay is intentionally not production-ready: the implementation is a
+  // stub and falls back to the simulator even if a key is present.
+  return { configured: false, provider };
 }
