@@ -96,13 +96,31 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       { status: 409 }
     );
   }
+  // SAFETY GUARD: never automatically retry a REFUND_PENDING operation.
+  // D1 cannot atomically commit the wallet increment and ledger insert through
+  // Prisma. A worker crash between those writes can leave no REFUND ledger
+  // even though the balance was already incremented. Retrying the increment
+  // based only on a missing ledger could double-credit the wallet.
+  // Until the refund is executed in a single atomic D1 batch, pending records
+  // must be reconciled by an operator rather than automatically retried.
+  if (request.status === "REFUND_PENDING") {
+    console.error("[admin/withdrawals] CRITICAL: REFUND_PENDING requires manual reconciliation before retry", {
+      withdrawalId: id,
+      walletId: request.walletId,
+      amount: Number(request.amount),
+    });
+    return NextResponse.json(
+      { error: "وضعیت بازپرداخت قبلی نامشخص است؛ برای جلوگیری از بازپرداخت تکراری، بررسی دستی پشتیبانی لازم است" },
+      { status: 409 }
+    );
+  }
   if (request.status === "RECONCILIATION_NEEDED") {
     return NextResponse.json(
       { error: "این درخواست نیازمند بررسی دستی است؛ retry خودکار مسدود است" },
       { status: 409 }
     );
   }
-  if (request.status !== "REQUESTED" && request.status !== "REFUND_PENDING") {
+  if (request.status !== "REQUESTED") {
     return NextResponse.json({ error: "این درخواست در وضعیت قابل‌رد نیست" }, { status: 409 });
   }
 
