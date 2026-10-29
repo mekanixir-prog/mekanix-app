@@ -466,6 +466,17 @@ export async function POST(req: Request) {
     }
 
     // Case 2: Withdrawal was NOT created — just refund balance inline
+    //
+    // SAFETY: This path is protected by the Idempotency-Key mechanism.
+    // The idempotency key was acquired (IN_PROGRESS) at the start of the
+    // request. If this inline refund succeeds, markIdempotencyFailed is
+    // called → key becomes FAILED → retry with same key gets 409.
+    // If markIdempotencyFailed fails, the key stays IN_PROGRESS → retry
+    // with same key gets 409. Either way, no double-refund.
+    //
+    // If the client uses a DIFFERENT key for retry, a NEW withdrawal
+    // will be created (different idempotency key = different intent).
+    // The original deduction was refunded here, so no money is lost.
     if (balanceDeducted && !withdrawalId) {
       try {
         const refund = await db.wallet.updateMany({
@@ -475,20 +486,29 @@ export async function POST(req: Request) {
         if (refund.count !== 1) {
           throw new Error("Wallet balance compensation did not update exactly one row");
         }
+
+        // Mark idempotency key as FAILED BEFORE returning.
+        // This ensures retry with same key gets 409, not double-refund.
         await markIdempotencyFailed(db, scopedKey);
+
         const message = e instanceof Error ? e.message : "خطا در پردازش برداشت";
-        console.error("[wallets/withdraw] Compensation (no withdrawal) succeeded", {
+        console.error("[wallets/withdraw] Compensation (no withdrawal) succeeded — idempotency key marked FAILED", {
           correlationId,
           walletId: wallet.id,
           error: message,
+          note: "Inline refund safe: idempotency key prevents retry",
         });
         return NextResponse.json({ error: message, correlationId }, { status: 500 });
       } catch (refundError: unknown) {
-        console.error("[wallets/withdraw] CRITICAL: balance refund failed (no withdrawal)", {
+        // If inline refund failed, the balance is still deducted.
+        // The idempotency key is marked FAILED so retry won't double-refund.
+        // But the balance is lost — this needs manual reconciliation.
+        console.error("[wallets/withdraw] CRITICAL: inline balance refund failed (no withdrawal record)", {
           correlationId,
           walletId: wallet.id,
           error: refundError,
           originalError: e,
+          note: "Balance was deducted but refund failed. No withdrawal record to reconcile against. Manual reconciliation required.",
         });
         await markIdempotencyFailed(db, scopedKey);
         return NextResponse.json(
