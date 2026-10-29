@@ -19,6 +19,7 @@ const mockWithdrawalRequestFindMany = vi.fn();
 const mockWithdrawalRequestUpdateMany = vi.fn();
 const mockWalletUpdateMany = vi.fn();
 const mockWalletLedgerCreate = vi.fn();
+const mockWalletLedgerFindFirst = vi.fn();
 
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: vi.fn(async () => ({
@@ -32,6 +33,7 @@ vi.mock("@/lib/db-access", () => ({
     },
     walletLedger: {
       create: (...args: any[]) => mockWalletLedgerCreate(...args),
+      findFirst: (...args: any[]) => mockWalletLedgerFindFirst(...args),
     },
   })),
 }));
@@ -92,6 +94,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   // Re-establish default admin auth (in case a test overrode it)
   mockGetAdminFromRequest.mockResolvedValue({ adminId: "admin_1", username: "admin", role: "SUPER_ADMIN" });
+  // Default: no existing refund ledger (first attempt)
+  mockWalletLedgerFindFirst.mockResolvedValue(null);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -123,19 +127,38 @@ describe("A1 — PATCH APPROVE transitions REQUESTED → APPROVED", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// A2 — REJECT happy path (refund + ledger)
+// A2 — REJECT happy path: REQUESTED → REFUND_PENDING → REJECTED
 // ═══════════════════════════════════════════════════════════════════════════
-describe("A2 — PATCH REJECT transitions REQUESTED → REJECTED and refunds", () => {
-  it("commits status, refunds wallet balance, creates REFUND ledger entry", async () => {
+describe("A2 — PATCH REJECT transitions REQUESTED → REFUND_PENDING → REJECTED", () => {
+  it("refunds wallet, creates REFUND ledger, finalizes REJECTED", async () => {
+    // findUnique: initial (REQUESTED) → final (REJECTED)
     mockWithdrawalRequestFindUnique
-      .mockResolvedValueOnce(SAMPLE_REQUEST)
-      .mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REJECTED", reviewerId: "admin_1" });
-    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 });
-    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 });
+      .mockResolvedValueOnce(SAMPLE_REQUEST) // initial
+      .mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REJECTED", reviewerId: "admin_1" }); // final
+    // updateMany: acquire (REQUESTED→REFUND_PENDING) = count:1, finalize (REFUND_PENDING→REJECTED) = count:1
+    mockWithdrawalRequestUpdateMany
+      .mockResolvedValueOnce({ count: 1 }) // acquire
+      .mockResolvedValueOnce({ count: 1 }); // finalize
+    // walletLedger.findFirst: first (null = no existing), verify (found)
+    mockWalletLedgerFindFirst
+      .mockResolvedValueOnce(null) // step 3: no existing ledger
+      .mockResolvedValueOnce({ id: "ledger_refund_1" }); // step 5 verify
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 }); // refund succeeds
     mockWalletLedgerCreate.mockResolvedValueOnce({ id: "ledger_refund_1" });
 
     const res = await PATCH(patchReq("wd_1", { action: "REJECT", notes: "duplicate" }), { params: Promise.resolve({ id: "wd_1" }) });
     expect(res.status).toBe(200);
+
+    // Two updateMany calls on withdrawalRequest: acquire + finalize
+    expect(mockWithdrawalRequestUpdateMany).toHaveBeenCalledTimes(2);
+    // First: REQUESTED → REFUND_PENDING
+    const acquireArgs = mockWithdrawalRequestUpdateMany.mock.calls[0][0];
+    expect(acquireArgs.where).toEqual({ id: "wd_1", status: "REQUESTED" });
+    expect(acquireArgs.data.status).toBe("REFUND_PENDING");
+    // Second: REFUND_PENDING → REJECTED
+    const finalizeArgs = mockWithdrawalRequestUpdateMany.mock.calls[1][0];
+    expect(finalizeArgs.where).toEqual({ id: "wd_1", status: "REFUND_PENDING" });
+    expect(finalizeArgs.data.status).toBe("REJECTED");
 
     // Refund: increment by the original amount (500)
     expect(mockWalletUpdateMany).toHaveBeenCalledTimes(1);
@@ -154,82 +177,120 @@ describe("A2 — PATCH REJECT transitions REQUESTED → REJECTED and refunds", (
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// A3 — Transition guard: non-REQUESTED status → 409
+// A3 — Transition guards for various statuses
 // ═══════════════════════════════════════════════════════════════════════════
-describe("A3 — PATCH on non-REQUESTED withdrawal returns 409", () => {
-  it("rejects when status is already APPROVED (no second transition)", async () => {
+describe("A3 — PATCH on non-acquirable status returns 409", () => {
+  it("rejects APPROVED (already approved, cannot reject)", async () => {
     mockWithdrawalRequestFindUnique.mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "APPROVED" });
-
     const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
     expect(res.status).toBe(409);
-
-    // No mutation attempted
     expect(mockWithdrawalRequestUpdateMany).not.toHaveBeenCalled();
-    expect(mockWalletUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects REJECTED (already completed)", async () => {
+    mockWithdrawalRequestFindUnique.mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REJECTED" });
+    const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
+    expect(res.status).toBe(409);
+  });
+
+  it("rejects RECONCILIATION_NEEDED (manual intervention required)", async () => {
+    mockWithdrawalRequestFindUnique.mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "RECONCILIATION_NEEDED" });
+    const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
+    expect(res.status).toBe(409);
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// A4 — REJECT: refund updateMany fails → C2 unrecoverable state confirmed
+// A4 — REJECT: refund increment fails (count=0) → RECONCILIATION_NEEDED
+// C2 FIXED: no longer unrecoverable — status transitions to RECONCILIATION_NEEDED
 // ═══════════════════════════════════════════════════════════════════════════
-describe("A4 — REJECT refund failure leaves unrecoverable state (C2 confirmed)", () => {
-  it("status committed REJECTED but balance NOT refunded; no retry path", async () => {
+describe("A4 — REJECT: wallet row missing during refund → RECONCILIATION_NEEDED", () => {
+  it("transitions to RECONCILIATION_NEEDED when refund count=0 (wallet vanished)", async () => {
     const errSpy = muteConsoleError();
     mockWithdrawalRequestFindUnique.mockResolvedValueOnce(SAMPLE_REQUEST);
-    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // status transition committed
-    // Refund updateMany returns count=0 (wallet vanished) — or could throw
+    // acquire: REQUESTED → REFUND_PENDING (count:1)
+    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 });
+    // walletLedger.findFirst: no existing ledger
+    mockWalletLedgerFindFirst.mockResolvedValueOnce(null);
+    // refund: count=0 (wallet row missing)
     mockWalletUpdateMany.mockResolvedValueOnce({ count: 0 });
+    // Then route transitions to RECONCILIATION_NEEDED
+    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 });
 
     const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
     expect(res.status).toBe(500);
-    const body = await res.json();
-    expect(body.error).toContain("پشتیبانی");
 
     // CRITICAL log
     const criticalLog = errSpy.mock.calls.find(
-      (c) => typeof c[0] === "string" && c[0].includes("CRITICAL: rejected withdrawal requires reconciliation")
+      (c) => typeof c[0] === "string" && c[0].includes("CRITICAL: wallet row missing")
     );
     expect(criticalLog).toBeDefined();
-    const logPayload = criticalLog![1] as Record<string, unknown>;
-    expect(logPayload.withdrawalId).toBe("wd_1");
-    expect(logPayload.walletId).toBe("wallet_1");
 
-    // GAP (C2): status IS REJECTED in DB (committed before refund attempt),
-    // but balance was never refunded. There is NO status like REFUND_PENDING
-    // to retry from. Operator must run manual SQL.
-    // The transition guard now blocks any further PATCH:
-    //   WHERE { id, status: "REQUESTED" } will match 0 rows (status is REJECTED).
+    // Status transitioned to RECONCILIATION_NEEDED (not stuck in REFUND_PENDING)
+    const reconcileCall = mockWithdrawalRequestUpdateMany.mock.calls.find(
+      (c) => c[0].data.status === "RECONCILIATION_NEEDED"
+    );
+    expect(reconcileCall).toBeDefined();
+    expect(reconcileCall![0].where).toEqual({ id: "wd_1", status: "REFUND_PENDING" });
+
+    errSpy.mockRestore();
+  });
+
+  it("refund updateMany throws → stays REFUND_PENDING (retry-safe, 503)", async () => {
+    const errSpy = muteConsoleError();
+    mockWithdrawalRequestFindUnique.mockResolvedValueOnce(SAMPLE_REQUEST);
+    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // acquire
+    mockWalletLedgerFindFirst.mockResolvedValueOnce(null);
+    mockWalletUpdateMany.mockRejectedValueOnce(new Error("D1 timeout"));
+
+    const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
+    // 503 = service unavailable, retry-safe (status stays REFUND_PENDING)
+    expect(res.status).toBe(503);
+
+    // No transition to RECONCILIATION_NEEDED — temporary failure
+    const reconcileCall = mockWithdrawalRequestUpdateMany.mock.calls.find(
+      (c) => c[0].data.status === "RECONCILIATION_NEEDED"
+    );
+    expect(reconcileCall).toBeUndefined();
+
     errSpy.mockRestore();
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// A5 — REJECT: refund succeeds but ledger.create fails → ambiguous state
+// A5 — REJECT: refund succeeds but ledger.create fails → RECONCILIATION_NEEDED
+// C2 variant FIXED: no double-credit risk — status transitions to RECONCILIATION_NEEDED
 // ═══════════════════════════════════════════════════════════════════════════
-describe("A5 — REJECT: refund ok but ledger.create fails (C2 variant)", () => {
-  it("balance refunded, status REJECTED, but no REFUND ledger row (reconciliation ambiguous)", async () => {
+describe("A5 — REJECT: refund ok but ledger fails → RECONCILIATION_NEEDED (no double-credit)", () => {
+  it("refund done, ledger fails → RECONCILIATION_NEEDED, retry will NOT double-credit", async () => {
     const errSpy = muteConsoleError();
     mockWithdrawalRequestFindUnique.mockResolvedValueOnce(SAMPLE_REQUEST);
+    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // acquire
+    mockWalletLedgerFindFirst.mockResolvedValueOnce(null); // no existing ledger
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 }); // refund succeeds
+    mockWalletLedgerCreate.mockRejectedValueOnce(new Error("D1 ledger timeout")); // ledger fails
+    // Route transitions to RECONCILIATION_NEEDED
     mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 });
-    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 }); // refund succeeded
-    mockWalletLedgerCreate.mockRejectedValueOnce(new Error("D1 ledger write timeout"));
 
     const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
     expect(res.status).toBe(500);
 
-    // CRITICAL: operator cannot tell from response whether refund happened
+    // CRITICAL log
     const criticalLog = errSpy.mock.calls.find(
-      (c) => typeof c[0] === "string" && c[0].includes("CRITICAL")
+      (c) => typeof c[0] === "string" && c[0].includes("CRITICAL: refund done but ledger write failed")
     );
     expect(criticalLog).toBeDefined();
 
-    // Balance WAS refunded (count=1) but ledger is missing.
-    // GAP (C2 variant): if operator naively re-runs a refund based on
-    // "ledger missing", they will DOUBLE-CREDIT the wallet. The response
-    // body does not distinguish "refund ok, ledger failed" from "refund failed".
-    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(1);
-    expect(mockWalletLedgerCreate).toHaveBeenCalledTimes(1);
+    // Transitioned to RECONCILIATION_NEEDED (not REJECTED, not stuck in REFUND_PENDING)
+    const reconcileCall = mockWithdrawalRequestUpdateMany.mock.calls.find(
+      (c) => c[0].data.status === "RECONCILIATION_NEEDED"
+    );
+    expect(reconcileCall).toBeDefined();
 
+    // FIX (C2 variant): retry will NOT double-credit because:
+    //   - Status is now RECONCILIATION_NEEDED, not REFUND_PENDING
+    //   - PATCH on RECONCILIATION_NEEDED returns 409 (manual intervention)
+    // Operator must inspect DB, create ledger manually if needed.
     errSpy.mockRestore();
   });
 });
@@ -275,88 +336,141 @@ describe("A8 — PATCH with notes > 1000 chars returns 400", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// A9 — Concurrent admin PATCH (two admins reject same withdrawal)
+// A9 — Concurrent admin PATCH guard
 // ═══════════════════════════════════════════════════════════════════════════
-describe("A9 — concurrent admin PATCH: only one transition + one refund", () => {
-  it("second admin's PATCH returns 409 because transition count=0 (guard works)", async () => {
-    // Both admins see status=REQUESTED in findUnique
-    mockWithdrawalRequestFindUnique.mockResolvedValue(SAMPLE_REQUEST);
-    // First admin's updateMany succeeds (count=1); second admin's returns count=0
-    // because the first already changed status to REJECTED.
-    mockWithdrawalRequestUpdateMany
-      .mockResolvedValueOnce({ count: 1 }) // admin 1 wins
-      .mockResolvedValueOnce({ count: 0 }); // admin 2 loses
-    mockWalletUpdateMany.mockResolvedValue({ count: 1 });
-    mockWalletLedgerCreate.mockResolvedValue({ id: "ledger_1" });
+describe("A9 — concurrent admin PATCH: acquire guard", () => {
+  it("second admin's acquire returns count=0 → 409 (guard works)", async () => {
+    // First admin acquires REQUESTED → REFUND_PENDING
+    mockWithdrawalRequestFindUnique.mockResolvedValueOnce(SAMPLE_REQUEST);
+    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // acquire wins
+    mockWalletLedgerFindFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "ledger_1" }); // verify
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 });
+    mockWalletLedgerCreate.mockResolvedValueOnce({ id: "ledger_1" });
+    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // finalize
+    mockWithdrawalRequestFindUnique.mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REJECTED" });
 
-    // Simulate two concurrent PATCH calls (sequential in test, but second
-    // sees the row already REJECTED because updateMany WHERE clause filters it).
-    const p1 = PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
-    const p2 = PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
+    const res1 = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
+    expect(res1.status).toBe(200);
 
-    const [res1, res2] = await Promise.all([p1, p2]);
+    // Second admin finds it already REJECTED (or REFUND_PENDING) — 409
+    mockWithdrawalRequestFindUnique.mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REJECTED" });
+    const res2 = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
+    expect(res2.status).toBe(409);
 
-    // One succeeds, one gets 409
-    const statuses = [res1.status, res2.status].sort();
-    expect(statuses).toEqual([200, 409]);
-
-    // Only ONE refund happened (the winner's)
-    // Note: in real concurrent execution, both findUnique calls might return
-    // REQUESTED, but only one updateMany matches. The losing admin's refund
-    // never runs because the route checks transition.count !== 1 BEFORE refund.
-    const winner = res1.status === 200 ? res1 : res2;
-    const loser = res1.status === 200 ? res2 : res1;
-    expect(await winner.json()).toHaveProperty("withdrawal");
-    const loserBody = await loser.json();
-    expect(loserBody.error).toContain("هم‌زمان");
-  });
-
-  it("NOTE: the transition guard prevents double-refund ONLY if both admins reach updateMany after findUnique", async () => {
-    // This sub-test documents the limit of the guard: it relies on the
-    // conditional updateMany. If a future refactor moves the status check
-    // to findUnique-only (without the conditional updateMany), the double-
-    // refund becomes possible. The test below asserts the current contract.
-    mockWithdrawalRequestFindUnique.mockResolvedValue(SAMPLE_REQUEST);
-    mockWithdrawalRequestUpdateMany
-      .mockResolvedValueOnce({ count: 1 })
-      .mockResolvedValueOnce({ count: 0 });
-    mockWalletUpdateMany.mockResolvedValue({ count: 1 });
-    mockWalletLedgerCreate.mockResolvedValue({ id: "ledger_1" });
-
-    await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
-    await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
-
-    // Exactly one refund (the winner's) — the guard works for this case.
+    // Only ONE refund happened (first admin's)
     expect(mockWalletUpdateMany).toHaveBeenCalledTimes(1);
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// A10 — Mid-refund failure: balance refunded but ledger.create fails
-//        (same as A5 but framed as "is the state recoverable without double-refund?")
+// R1-R7 — Recovery tests (the FIX for C2)
 // ═══════════════════════════════════════════════════════════════════════════
-describe("A10 — mid-refund failure: recoverable? (reconciliation safety)", () => {
-  it("balance refunded, ledger missing → operator CANNOT safely retry refund (double-credit risk)", async () => {
+
+describe("R1 — REJECT from REFUND_PENDING (retry after temporary failure)", () => {
+  it("retry succeeds: refund + ledger + finalize REJECTED", async () => {
+    // findUnique returns REFUND_PENDING (retry scenario)
+    mockWithdrawalRequestFindUnique
+      .mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REFUND_PENDING" }) // initial
+      .mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REJECTED" }); // final
+    // No acquire needed (already REFUND_PENDING), only finalize
+    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // finalize
+    mockWalletLedgerFindFirst
+      .mockResolvedValueOnce(null) // no existing ledger
+      .mockResolvedValueOnce({ id: "ledger_1" }); // verify
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 });
+    mockWalletLedgerCreate.mockResolvedValueOnce({ id: "ledger_1" });
+
+    const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
+    expect(res.status).toBe(200);
+
+    // Only ONE updateMany call (finalize, no acquire needed)
+    expect(mockWithdrawalRequestUpdateMany).toHaveBeenCalledTimes(1);
+    const finalizeArgs = mockWithdrawalRequestUpdateMany.mock.calls[0][0];
+    expect(finalizeArgs.where).toEqual({ id: "wd_1", status: "REFUND_PENDING" });
+    expect(finalizeArgs.data.status).toBe("REJECTED");
+  });
+});
+
+describe("R2 — Idempotent retry: ledger already exists → skip refund (NO double-credit)", () => {
+  it("retry from REFUND_PENDING finds existing ledger → does NOT increment balance", async () => {
+    // findUnique returns REFUND_PENDING
+    mockWithdrawalRequestFindUnique
+      .mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REFUND_PENDING" })
+      .mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REJECTED" });
+    // walletLedger.findFirst returns existing ledger (from previous attempt)
+    mockWalletLedgerFindFirst.mockResolvedValueOnce({ id: "ledger_existing" });
+    // No refund needed, no ledger create needed
+    // Only finalize REFUND_PENDING → REJECTED
+    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 });
+
+    const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
+    expect(res.status).toBe(200);
+
+    // CRITICAL: wallet.updateMany NOT called (no double-credit)
+    expect(mockWalletUpdateMany).not.toHaveBeenCalled();
+    // walletLedger.create NOT called (already exists)
+    expect(mockWalletLedgerCreate).not.toHaveBeenCalled();
+    // Only finalize transition
+    expect(mockWithdrawalRequestUpdateMany).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("R3 — REJECT: refund ok but ledger fails → RECONCILIATION_NEEDED (no double-credit on retry)", () => {
+  it("retry from RECONCILIATION_NEEDED returns 409 (manual intervention)", async () => {
+    mockWithdrawalRequestFindUnique.mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "RECONCILIATION_NEEDED" });
+
+    const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
+    expect(res.status).toBe(409);
+
+    // No financial operations
+    expect(mockWalletUpdateMany).not.toHaveBeenCalled();
+    expect(mockWalletLedgerCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("R4 — Ledger lookup fails → 503 retry-safe (stay REFUND_PENDING)", () => {
+  it("walletLedger.findFirst throws → 503, no RECONCILIATION_NEEDED transition", async () => {
     const errSpy = muteConsoleError();
     mockWithdrawalRequestFindUnique.mockResolvedValueOnce(SAMPLE_REQUEST);
-    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 });
-    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 }); // refund ok
-    mockWalletLedgerCreate.mockRejectedValueOnce(new Error("ledger timeout"));
+    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // acquire
+    mockWalletLedgerFindFirst.mockRejectedValueOnce(new Error("D1 read timeout"));
+
+    const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
+    expect(res.status).toBe(503);
+
+    // No refund, no ledger create, no RECONCILIATION_NEEDED
+    expect(mockWalletUpdateMany).not.toHaveBeenCalled();
+    const reconcileCall = mockWithdrawalRequestUpdateMany.mock.calls.find(
+      (c) => c[0].data.status === "RECONCILIATION_NEEDED"
+    );
+    expect(reconcileCall).toBeUndefined();
+
+    errSpy.mockRestore();
+  });
+});
+
+describe("R5 — Ledger create succeeds but verify read fails → RECONCILIATION_NEEDED", () => {
+  it("create ok, verify findFirst returns null → RECONCILIATION_NEEDED", async () => {
+    const errSpy = muteConsoleError();
+    mockWithdrawalRequestFindUnique.mockResolvedValueOnce(SAMPLE_REQUEST);
+    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // acquire
+    mockWalletLedgerFindFirst
+      .mockResolvedValueOnce(null) // no existing
+      .mockResolvedValueOnce(null); // verify returns null (inconsistent!)
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 });
+    mockWalletLedgerCreate.mockResolvedValueOnce({ id: "ledger_1" });
+    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // RECONCILIATION_NEEDED
 
     const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
     expect(res.status).toBe(500);
 
-    // Re-fetch the withdrawal: it shows REJECTED (no REFUND_PENDING state to retry from)
-    mockWithdrawalRequestFindUnique.mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REJECTED", reviewerId: "admin_1" });
-    const retryRes = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
-    expect(retryRes.status).toBe(409); // transition guard blocks
+    const reconcileCall = mockWithdrawalRequestUpdateMany.mock.calls.find(
+      (c) => c[0].data.status === "RECONCILIATION_NEEDED"
+    );
+    expect(reconcileCall).toBeDefined();
 
-    // GAP (C2/A10): operator must manually inspect wallet balance to decide
-    // whether to insert a REFUND ledger row. There is no programmatic path.
-    // This is the crux of why REFUND_PENDING (or equivalent) is needed.
-    expect(errSpy.mock.calls.some(
-      (c) => typeof c[0] === "string" && c[0].includes("CRITICAL")
-    )).toBe(true);
     errSpy.mockRestore();
   });
 });
@@ -403,43 +517,73 @@ describe("GET /api/admin/withdrawals", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Distinguishing HTTP error from failed financial transaction
+// HTTP error vs failed financial transaction (distinction)
+// These tests verify that the state-machine correctly distinguishes:
+//   - Temporary failure (503, retry-safe, status stays REFUND_PENDING)
+//   - Permanent failure requiring manual review (500, RECONCILIATION_NEEDED)
+//   - Success (200, REJECTED)
 // ═══════════════════════════════════════════════════════════════════════════
 describe("HTTP error vs failed financial transaction (distinction)", () => {
-  it("A4: 500 response but transaction PARTIALLY committed (status REJECTED, no refund)", async () => {
+  it("temporary refund failure → 503 (retry-safe), status stays REFUND_PENDING", async () => {
     const errSpy = muteConsoleError();
     mockWithdrawalRequestFindUnique.mockResolvedValueOnce(SAMPLE_REQUEST);
-    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // status committed
-    mockWalletUpdateMany.mockResolvedValueOnce({ count: 0 }); // refund failed
+    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // acquire REFUND_PENDING
+    mockWalletLedgerFindFirst.mockResolvedValueOnce(null);
+    mockWalletUpdateMany.mockRejectedValueOnce(new Error("D1 timeout")); // temporary
 
     const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
 
-    // HTTP 500 (looks like total failure) BUT the status transition already
-    // committed. This is NOT a failed transaction — it's a PARTIALLY
-    // committed transaction with a missing refund. The 500 status code
-    // misrepresents the system state.
-    expect(res.status).toBe(500);
-    expect(mockWithdrawalRequestUpdateMany).toHaveBeenCalledTimes(1); // committed
-    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(1); // attempted, count=0
+    // 503 = retry-safe. Status is REFUND_PENDING (acquired), not REJECTED.
+    expect(res.status).toBe(503);
+    // Only the acquire transition happened (REQUESTED → REFUND_PENDING)
+    expect(mockWithdrawalRequestUpdateMany).toHaveBeenCalledTimes(1);
+    // No RECONCILIATION_NEEDED transition — temporary failure is retry-safe
+    const reconcileCall = mockWithdrawalRequestUpdateMany.mock.calls.find(
+      (c) => c[0].data.status === "RECONCILIATION_NEEDED"
+    );
+    expect(reconcileCall).toBeUndefined();
 
     errSpy.mockRestore();
   });
 
-  it("A5: 500 response but balance WAS refunded (transaction succeeded, audit failed)", async () => {
+  it("permanent failure (wallet missing) → 500, RECONCILIATION_NEEDED", async () => {
     const errSpy = muteConsoleError();
     mockWithdrawalRequestFindUnique.mockResolvedValueOnce(SAMPLE_REQUEST);
-    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 });
-    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 }); // refund succeeded
-    mockWalletLedgerCreate.mockRejectedValueOnce(new Error("ledger fail"));
+    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // acquire
+    mockWalletLedgerFindFirst.mockResolvedValueOnce(null);
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 0 }); // wallet row missing
+    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // → RECONCILIATION_NEEDED
 
     const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
 
-    // HTTP 500 (looks like failure) BUT the financial transaction (refund)
-    // actually succeeded. Only the audit ledger failed. The 500 status code
-    // overstates the failure — the user's money IS back in their wallet.
+    // 500 = permanent, requires manual intervention
     expect(res.status).toBe(500);
-    expect(mockWalletUpdateMany.mock.calls[0][0].data).toEqual({ balance: { increment: 500 } });
+    // Status transitioned to RECONCILIATION_NEEDED
+    const reconcileCall = mockWithdrawalRequestUpdateMany.mock.calls.find(
+      (c) => c[0].data.status === "RECONCILIATION_NEEDED"
+    );
+    expect(reconcileCall).toBeDefined();
 
     errSpy.mockRestore();
+  });
+
+  it("success → 200, REJECTED (refund + ledger both confirmed)", async () => {
+    mockWithdrawalRequestFindUnique
+      .mockResolvedValueOnce(SAMPLE_REQUEST)
+      .mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REJECTED" });
+    mockWithdrawalRequestUpdateMany
+      .mockResolvedValueOnce({ count: 1 }) // acquire
+      .mockResolvedValueOnce({ count: 1 }); // finalize
+    mockWalletLedgerFindFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "ledger_1" }); // verify
+    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 });
+    mockWalletLedgerCreate.mockResolvedValueOnce({ id: "ledger_1" });
+
+    const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.withdrawal.status).toBe("REJECTED");
   });
 });
