@@ -186,6 +186,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         refund: { success: true, alreadyRefunded: true },
       });
     }
+    if (current?.status === "REJECTED" && !ledger) {
+      await db.withdrawalRequest.updateMany({
+        where: { id, status: "REJECTED" },
+        data: { status: "RECONCILIATION_NEEDED" },
+      });
+      return NextResponse.json(
+        { error: "وضعیت رد برداشت بدون سند بازپرداخت مبهم است؛ بررسی دستی لازم است", withdrawalId: id },
+        { status: 500 }
+      );
+    }
     if (current?.status === "REFUND_PENDING") {
       // The helper uses a transaction/batch for all financial writes. Leave
       // this state retryable when no refund ledger proves a committed refund.
