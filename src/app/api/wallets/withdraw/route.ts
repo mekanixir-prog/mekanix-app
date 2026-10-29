@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { createHash, randomUUID } from "node:crypto";
+import { executeAtomicWithdrawal, InsufficientWithdrawalBalanceError } from "@/lib/atomic-withdrawal";
 
 // MEKANIX — Wallet withdraw with idempotency + recovery (fixes C1, C3, C4, C6)
 //
@@ -193,107 +194,28 @@ export async function POST(req: Request) {
     );
   }
 
-  // ──────────── We own the key. Execute the withdraw. ────────────
+  // ──────────── Atomic withdrawal unit ────────────
   const wallet = await db.wallet.findUnique({ where: { technicianId: technician.id } });
   if (!wallet) {
     await markIdempotencyFailed(db, scopedKey);
     return NextResponse.json({ error: "کیف پول یافت نشد", correlationId }, { status: 404 });
   }
 
-  if (Number(wallet.balance) < requestedAmount) {
-    await markIdempotencyFailed(db, scopedKey);
-    return NextResponse.json({ error: "موجودی کافی نیست", correlationId }, { status: 400 });
-  }
-
-  let balanceDeducted = false;
-  let withdrawalId: string | null = null;
-  let ledgerId: string | null = null;
-  let balanceBefore = Number(wallet.balance);
-
   try {
-    const lockedWallet = await db.wallet.findUnique({ where: { id: wallet.id } });
-    if (!lockedWallet || Number(lockedWallet.balance) < requestedAmount) {
-      await markIdempotencyFailed(db, scopedKey);
-      return NextResponse.json({ error: "موجودی کافی نیست", correlationId }, { status: 400 });
-    }
-    balanceBefore = Number(lockedWallet.balance);
-
-    const deductResult = await db.wallet.updateMany({
-      where: { id: wallet.id, balance: { gte: requestedAmount } },
-      data: { balance: { decrement: requestedAmount } },
+    const result = await executeAtomicWithdrawal(db, {
+      walletId: wallet.id,
+      idempotencyKey: scopedKey,
+      amount: requestedAmount,
+      method: typeof method === "string" ? method : "card",
+      cardNumber: typeof cardNumber === "string" ? cardNumber.replace(/.(?=.{4})/g, "*") : null,
+      bankName: typeof bankName === "string" ? bankName : null,
+      shebaNumber: typeof shebaNumber === "string" ? shebaNumber : null,
+      userId: session.userId,
+      correlationId,
     });
-    if (deductResult.count !== 1) {
-      await markIdempotencyFailed(db, scopedKey);
-      return NextResponse.json(
-        { error: "موجودی توسط درخواست هم‌زمان تغییر کرد — دوباره با کلید جدید تلاش کنید", correlationId },
-        { status: 409 }
-      );
-    }
-    balanceDeducted = true;
 
-    const updatedWallet = await db.wallet.findUnique({ where: { id: wallet.id } });
-    const actualBalanceAfter = updatedWallet
-      ? Number(updatedWallet.balance)
-      : balanceBefore - requestedAmount;
-
-    // ─── C3 fix: retry WithdrawalCode on P2002 ───
-    // The random 6-digit code may collide with an existing row. On P2002,
-    // generate a new code and retry up to CODE_RETRY_MAX times.
-    let withdrawal;
-    let lastCreateError: unknown;
-    for (let attempt = 1; attempt <= CODE_RETRY_MAX; attempt++) {
-      const code = `WD-${Math.floor(100000 + Math.random() * 900000)}`;
-      try {
-        withdrawal = await db.withdrawalRequest.create({
-          data: {
-            code,
-            walletId: wallet.id,
-            amount: requestedAmount,
-            method: typeof method === "string" ? method : "card",
-            cardNumber: typeof cardNumber === "string" ? cardNumber.replace(/.(?=.{4})/g, "*") : undefined,
-            bankName: typeof bankName === "string" ? bankName : undefined,
-            shebaNumber: typeof shebaNumber === "string" ? shebaNumber : undefined,
-            status: "REQUESTED",
-          },
-        });
-        lastCreateError = undefined;
-        break; // success
-      } catch (createErr: unknown) {
-        const errCode = (createErr as { code?: string })?.code;
-        if (errCode === "P2002" && attempt < CODE_RETRY_MAX) {
-          // C3: collision on `code @unique` — retry with a new code
-          console.warn("[wallets/withdraw] WithdrawalCode collision, retrying", {
-            attempt,
-            correlationId,
-          });
-          lastCreateError = createErr;
-          continue;
-        }
-        // Non-P2002 error, or exhausted retries — rethrow to compensation
-        throw createErr;
-      }
-    }
-    if (!withdrawal) {
-      // Exhausted all retries — treat as a failure (will compensate)
-      throw lastCreateError ?? new Error("WithdrawalCode generation exhausted");
-    }
-    withdrawalId = withdrawal.id;
-
-    const ledger = await db.walletLedger.create({
-      data: {
-        walletId: wallet.id,
-        type: "WITHDRAWAL",
-        amount: -requestedAmount,
-        balanceBefore,
-        balanceAfter: actualBalanceAfter,
-        referenceType: "Withdrawal",
-        referenceId: withdrawal.id,
-        description: `Withdrawal request ${withdrawal.code}`,
-      },
-    });
-    ledgerId = ledger.id;
-
-    // Notifications are best-effort.
+    // Notification is deliberately outside the financial atomic unit:
+    // notification failure must never undo or compensate a committed debit.
     try {
       await db.notification.create({
         data: {
@@ -306,173 +228,29 @@ export async function POST(req: Request) {
         },
       });
     } catch (notificationError) {
-      console.error("[wallets/withdraw] Notification failed after withdrawal was recorded", {
-        withdrawalId: withdrawal.id,
+      console.error("[wallets/withdraw] Notification failed after atomic withdrawal commit", {
         correlationId,
+        withdrawalId: result.withdrawal.id,
         error: notificationError,
       });
     }
 
-    const successResponse = { withdrawal, newBalance: actualBalanceAfter };
-
-    // ─── C4 final fix: check updateMany count ───
-    // If count=0, the key was modified out from under us (should not happen
-    // in normal flow, but could if an operator manually changed the status).
-    // The withdrawal DID succeed, so we must NOT refund. Log CRITICAL with
-    // correlationId so the operator can reconcile the idempotency key state.
-    const completed = await db.idempotencyKey.updateMany({
-      where: { key: scopedKey, status: "IN_PROGRESS" },
-      data: {
-        status: "COMPLETED",
-        response: JSON.stringify(successResponse),
-      },
-    });
-    if (completed.count !== 1) {
-      console.error("[wallets/withdraw] CRITICAL: idempotency key not marked COMPLETED", {
-        correlationId,
-        scopedKey,
-        withdrawalId: withdrawal.id,
-        updateCount: completed.count,
-      });
-      // The withdrawal succeeded — return success to the client.
-      // The idempotency key may be stuck in IN_PROGRESS; a retry will get 409.
-      // Operator must reconcile using the correlationId.
-    }
-
-    return NextResponse.json(successResponse);
-  } catch (e: unknown) {
-    // ─── Compensation with C1 fix (restructured) ───
-    //
-    // CRITICAL DESIGN: refund BEFORE deleting withdrawal/ledger.
-    //
-    // Previous order (delete ledger → delete withdrawal → refund) had a
-    // silent money-loss gap: if refund failed, the withdrawal was already
-    // deleted, leaving no DB row to mark as RECONCILIATION_NEEDED.
-    //
-    // New order (refund → delete ledger → delete withdrawal):
-    //   1. Try refund FIRST (before any deletes)
-    //   2. If refund succeeds: delete ledger + withdrawal (clean up)
-    //   3. If refund fails:
-    //      - If withdrawalId exists: transition to RECONCILIATION_NEEDED
-    //        (DON'T delete — it's the audit trail for the lost money).
-    //        The admin transition guard (WHERE status:"REQUESTED") blocks
-    //        approval, so no payout-without-deduction risk.
-    //      - If withdrawalId is null: no withdrawal row exists, only the
-    //        CRITICAL log + idempotency key (FAILED) as trace.
-    //      - Log CRITICAL with correlationId + refundCount
-    //      - Mark idempotency FAILED
-    //      - Return 500 with correlationId
-    let compensationError: unknown = null;
-    let refundCount = -1;
-    let refundSucceeded = false;
-
-    // Step 1: Try refund FIRST (if balance was deducted)
-    if (balanceDeducted) {
-      try {
-        const refund = await db.wallet.updateMany({
-          where: { id: wallet.id },
-          data: { balance: { increment: requestedAmount } },
-        });
-        refundCount = refund.count;
-        if (refund.count !== 1) {
-          // C1: refund did not update exactly one row — silent money-loss path.
-          // Do NOT delete the withdrawal (if it exists) — we need it as audit trail.
-          throw new Error("Wallet balance compensation did not update exactly one row");
-        }
-        refundSucceeded = true;
-      } catch (refundErr) {
-        compensationError = refundErr;
-      }
-    }
-
-    // Step 2: If refund succeeded, clean up ledger + withdrawal
-    if (refundSucceeded) {
-      try {
-        if (ledgerId) {
-          await db.walletLedger.delete({ where: { id: ledgerId } });
-        }
-        if (withdrawalId) {
-          await db.withdrawalRequest.delete({ where: { id: withdrawalId } });
-        }
-      } catch (cleanupErr) {
-        // Refund succeeded but cleanup failed. The balance IS restored,
-        // but ledger/withdrawal rows remain. This is NOT a money-loss —
-        // it's an orphaned-record issue that needs operator attention.
-        // Log with distinct severity so operator knows money is safe.
-        console.error("[wallets/withdraw] WARNING: refund succeeded but cleanup failed (orphaned records)", {
-          correlationId,
-          walletId: wallet.id,
-          withdrawalId,
-          ledgerId,
-          refundSucceeded: true,
-          error: cleanupErr,
-        });
-        // Do NOT set compensationError — money is restored, just records remain.
-        // Return 500 so client knows the request didn't fully complete, but
-        // the error message is less severe than money-loss.
-        await markIdempotencyFailed(db, scopedKey);
-        return NextResponse.json(
-          {
-            error: "برداشت ناموفق بود اما موجودی بازگردانده شد؛ رکوردهای اضافی نیازمند پاکسازی توسط پشتیبانی است",
-            correlationId,
-            moneyRestored: true,
-          },
-          { status: 500 }
-        );
-      }
-    } else if (compensationError) {
-      // Step 3: Refund FAILED. Transition withdrawal to RECONCILIATION_NEEDED
-      // (if it exists) so operator has a DB row to find and reconcile.
-      if (withdrawalId) {
-        try {
-          await db.withdrawalRequest.updateMany({
-            where: { id: withdrawalId },
-            data: { status: "RECONCILIATION_NEEDED" },
-          });
-        } catch (transitionErr) {
-          // Cannot even transition — log but don't mask the original error
-          console.error("[wallets/withdraw] CRITICAL: cannot transition to RECONCILIATION_NEEDED", {
-            correlationId,
-            withdrawalId,
-            error: transitionErr,
-          });
-        }
-      }
-    }
-
-    if (compensationError) {
-      // C1: refund failed (count=0 or threw). The withdrawal (if it exists)
-      // is now RECONCILIATION_NEEDED. Log CRITICAL with all context.
-      console.error("[wallets/withdraw] CRITICAL: withdrawal compensation failed", {
-        correlationId,
-        walletId: wallet.id,
-        withdrawalId,
-        ledgerId,
-        refundCount,
-        refundSucceeded,
-        error: compensationError,
-        originalError: e,
-      });
-      await markIdempotencyFailed(db, scopedKey);
-      return NextResponse.json(
-        {
-          error: "وضعیت برداشت نیازمند بررسی پشتیبانی است؛ دوباره درخواست برداشت ثبت نکنید",
-          correlationId,
-        },
-        { status: 500 }
-      );
-    }
-
-    // Compensation succeeded — the operation effectively did not happen.
+    return NextResponse.json(result);
+  } catch (error: unknown) {
     await markIdempotencyFailed(db, scopedKey);
-
-    const message = e instanceof Error ? e.message : "خطا در پردازش برداشت";
-    console.error("[wallets/withdraw] Withdrawal failed and compensation completed", {
+    if (error instanceof InsufficientWithdrawalBalanceError) {
+      return NextResponse.json({ error: error.message, correlationId }, { status: 409 });
+    }
+    const message = error instanceof Error ? error.message : "خطا در پردازش برداشت";
+    console.error("[wallets/withdraw] Atomic withdrawal failed; financial writes rolled back", {
       correlationId,
       walletId: wallet.id,
       error: message,
     });
-    return NextResponse.json({ error: message, correlationId }, { status: 500 });
+    return NextResponse.json(
+      { error: "برداشت ثبت نشد؛ در صورت تکرار خطا با پشتیبانی تماس بگیرید", correlationId },
+      { status: 500 }
+    );
   }
 }
 
