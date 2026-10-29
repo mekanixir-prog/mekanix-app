@@ -157,29 +157,39 @@ export async function sendOtp(phone: string, code: string): Promise<SmsResult> {
 export function getSmsProviderStatus(): { configured: boolean; provider: string; warnings: string[] } {
   const provider = process.env.SMS_PROVIDER?.toLowerCase().trim() || "console";
   const warnings: string[] = [];
-  let configured = true;
+  let configured = false;
 
   if (provider === "kavenegar") {
-    if (!process.env.KAVENEGAR_API_KEY) {
-      warnings.push("KAVENEGAR_API_KEY not set");
-      configured = false;
-    }
+    configured = Boolean(process.env.KAVENEGAR_API_KEY);
+    if (!configured) warnings.push("KAVENEGAR_API_KEY not set");
   } else if (provider === "melipayamak") {
+    configured = Boolean(
+      process.env.MELIPAYAMAK_USERNAME &&
+      process.env.MELIPAYAMAK_PASSWORD &&
+      process.env.MELIPAYAMAK_SENDER
+    );
     if (!process.env.MELIPAYAMAK_USERNAME || !process.env.MELIPAYAMAK_PASSWORD) {
       warnings.push("MELIPAYAMAK_USERNAME or MELIPAYAMAK_PASSWORD not set");
-      configured = false;
     }
     if (!process.env.MELIPAYAMAK_SENDER) {
       warnings.push("MELIPAYAMAK_SENDER not set — SMS will fail");
     }
   } else if (provider === "farapayamak") {
+    configured = Boolean(
+      process.env.FARAPAYAMAK_USERNAME &&
+      process.env.FARAPAYAMAK_PASSWORD &&
+      process.env.FARAPAYAMAK_SENDER
+    );
     if (!process.env.FARAPAYAMAK_USERNAME || !process.env.FARAPAYAMAK_PASSWORD) {
       warnings.push("FARAPAYAMAK_USERNAME or FARAPAYAMAK_PASSWORD not set");
-      configured = false;
     }
     if (!process.env.FARAPAYAMAK_SENDER) {
       warnings.push("FARAPAYAMAK_SENDER not set — SMS will fail");
     }
+  } else if (provider === "console") {
+    warnings.push("Console SMS provider is development-only");
+  } else {
+    warnings.push(`Unsupported SMS provider: ${provider}`);
   }
 
   return { configured, provider, warnings };
