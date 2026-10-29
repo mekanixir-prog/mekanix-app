@@ -34,6 +34,13 @@ export type AtomicWithdrawalResult = {
   newBalance: number;
 };
 
+export class AtomicWithdrawalOutcomeUnknownError extends Error {
+  constructor() {
+    super("Atomic withdrawal committed but its durable response could not be verified");
+    this.name = "AtomicWithdrawalOutcomeUnknownError";
+  }
+}
+
 export class InsufficientWithdrawalBalanceError extends Error {
   constructor() {
     super("موجودی کافی نیست یا هم‌زمان تغییر کرده است");
@@ -208,7 +215,7 @@ async function executeD1Withdrawal(input: AtomicWithdrawalInput): Promise<Atomic
 
       const rows = (results[4] as D1Result<{ response: string }>).results;
       const serialized = rows?.[0]?.response;
-      if (!serialized) throw new Error("Atomic withdrawal batch did not finalize its idempotency response");
+      if (!serialized) throw new AtomicWithdrawalOutcomeUnknownError();
       return JSON.parse(serialized) as AtomicWithdrawalResult;
     } catch (error) {
       if (error instanceof InsufficientWithdrawalBalanceError) throw error;
