@@ -125,7 +125,7 @@ describe("A1 — PATCH APPROVE transitions REQUESTED → APPROVED", () => {
 // ═══════════════════════════════════════════════════════════════════════════
 // A2 — REJECT happy path (refund + ledger)
 // ═══════════════════════════════════════════════════════════════════════════
-describe("A2 — PATCH REJECT transitions REQUESTED → REJECTED and refunds", async () => {
+describe("A2 — PATCH REJECT transitions REQUESTED → REJECTED and refunds", () => {
   it("commits status, refunds wallet balance, creates REFUND ledger entry", async () => {
     mockWithdrawalRequestFindUnique
       .mockResolvedValueOnce(SAMPLE_REQUEST)
