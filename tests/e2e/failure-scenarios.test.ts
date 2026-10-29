@@ -212,10 +212,11 @@ describe("Failure Scenarios", () => {
       expect(result.messageId).toMatch(/^console_\d+$/);
     });
 
-    it("should report provider status as console (configured=true) when SMS_PROVIDER is unset", () => {
+    it("should report the console SMS provider as unconfigured when SMS_PROVIDER is unset", () => {
       const status = getSmsProviderStatus();
       expect(status.provider).toBe("console");
-      expect(status.configured).toBe(true);
+      // Console logging is a development fallback, not a production SMS provider.
+      expect(status.configured).toBe(false);
     });
 
     it("should NOT crash when phone is null-ish (provider returns success with dev-mode logging)", async () => {
