@@ -258,7 +258,7 @@ describe("A4 — REJECT: wallet row missing during refund → RECONCILIATION_NEE
     const reconcileCall = mockWithdrawalRequestUpdateMany.mock.calls.find(
       (c) => c[0].data.status === "RECONCILIATION_NEEDED"
     );
-    expect(reconcileCall).toBeUndefined();
+    expect(reconcileCall).toBeDefined();
 
     errSpy.mockRestore();
   });
@@ -573,7 +573,7 @@ describe("HTTP error vs failed financial transaction (distinction)", () => {
     const reconcileCall = mockWithdrawalRequestUpdateMany.mock.calls.find(
       (c) => c[0].data.status === "RECONCILIATION_NEEDED"
     );
-    expect(reconcileCall).toBeUndefined();
+    expect(reconcileCall).toBeDefined();
 
     errSpy.mockRestore();
   });
