@@ -234,12 +234,6 @@ describe("atomic wallet withdrawal", () => {
 
   it("returns cached response for a completed idempotency key without another transaction", async () => {
     mockIdempotencyKeyCreate.mockRejectedValueOnce(Object.assign(new Error("unique"), { code: "P2002" }));
-    mockIdempotencyKeyFindUnique.mockResolvedValueOnce({
-      expiresAt: new Date(Date.now() + 60_000),
-      requestHash: "placeholder",
-      status: "COMPLETED",
-      response: JSON.stringify({ withdrawal: { id: "wd_cached" }, newBalance: 700 }),
-    });
     // The request hash is computed from the body; set up a matching record below.
     const body = { amount: 300, method: "card" };
     const { createHash } = await import("node:crypto");
