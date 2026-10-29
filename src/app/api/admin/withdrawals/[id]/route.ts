@@ -312,7 +312,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         walletId: request.walletId,
       });
       await db.withdrawalRequest.updateMany({
-        where: { id, status: "REFUND_PENDING" },
+        where: { id, status: "REFUND_PROCESSING" },
         data: { status: "RECONCILIATION_NEEDED" },
       });
       return NextResponse.json(
