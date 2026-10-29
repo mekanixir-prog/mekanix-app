@@ -85,122 +85,46 @@ async function executeAtomicRefundD1(
   const { getCloudflareContext } = await import("@opennextjs/cloudflare");
   const ctx = await getCloudflareContext({ async: true });
   const d1 = ctx.env.DB;
+  if (!d1) throw new Error("D1 binding 'DB' not found — cannot execute atomic refund");
 
-  if (!d1) {
-    throw new Error("D1 binding 'DB' not found — cannot execute atomic refund");
-  }
-
-  // Pre-check: current status + refundToken
   const current = await d1.prepare(
-    `SELECT status, refundToken FROM WithdrawalRequest WHERE id = ?`
-  ).bind(input.withdrawalId).first<{ status: string; refundToken: string | null }>();
+    `SELECT status, refundToken, walletId FROM WithdrawalRequest WHERE id = ?`
+  ).bind(input.withdrawalId).first<{ status: string; refundToken: string | null; walletId: string }>();
 
-  if (!current) {
-    throw new Error(`Withdrawal ${input.withdrawalId} not found`);
+  if (!current) throw new Error(`Withdrawal ${input.withdrawalId} not found`);
+  if (current.walletId !== input.walletId) {
+    throw new Error(`FINANCIAL INCONSISTENCY: wallet mismatch for withdrawal ${input.withdrawalId}`);
   }
 
-  if (current.status === "REJECTED") {
-    // Check if a REFUND ledger exists
-    const existingLedger = await d1.prepare(
-      `SELECT id FROM WalletLedger WHERE referenceType = 'Withdrawal'
-       AND referenceId = ? AND type = 'REFUND' LIMIT 1`
-    ).bind(input.withdrawalId).first<{ id: string }>();
+  const existingLedger = await d1.prepare(
+    `SELECT id FROM WalletLedger
+     WHERE referenceType = 'Withdrawal' AND referenceId = ? AND type = 'REFUND' LIMIT 1`
+  ).bind(input.withdrawalId).first<{ id: string }>();
 
-    if (existingLedger) {
-      // Normal idempotent retry — refund is complete
-      const wallet = await d1.prepare(
-        `SELECT balance FROM Wallet WHERE id = ?`
-      ).bind(input.walletId).first<{ balance: string }>();
-
-      return {
-        success: true,
-        refundLedgerId: existingLedger.id,
-        newBalance: Number(wallet?.balance ?? 0),
-        alreadyRefunded: true,
-      };
-    }
-
-    // REJECTED but no REFUND ledger — two sub-cases:
-    if (current.refundToken) {
-      // CRASH RECOVERY: refundToken is set → Phase 1 completed (balance was incremented)
-      // but Phase 2 (ledger insert) didn't happen (crash or timeout)
-      //
-      // Recovery: create the missing ledger WITHOUT re-incrementing balance.
-      // The balance was already incremented in Phase 1.
-      // Use current wallet balance for balanceAfter.
-      const wallet = await d1.prepare(
-        `SELECT balance FROM Wallet WHERE id = ?`
-      ).bind(input.walletId).first<{ balance: string }>();
-      const balanceAfter = Number(wallet?.balance ?? 0);
-      const balanceBefore = balanceAfter - input.amount;
-
-      const ledgerId = `ledger_recovery_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-      const now = new Date().toISOString();
-
-      try {
-        await d1.prepare(
-          `INSERT INTO WalletLedger (id, walletId, type, amount, balanceBefore, balanceAfter, referenceType, referenceId, description, createdBy, createdAt)
-           VALUES (?, ?, 'REFUND', ?, ?, ?, 'Withdrawal', ?, ?, ?, ?)`
-        ).bind(
-          ledgerId,
-          input.walletId,
-          input.amount,
-          balanceBefore,
-          balanceAfter,
-          input.withdrawalId,
-          `${input.description} [CRASH RECOVERY — ledger created on retry, balance was already incremented]`,
-          input.reviewerId,
-          now
-        ).run();
-
-        console.error("[atomic-refund] CRASH RECOVERY: created missing REFUND ledger", {
-          withdrawalId: input.withdrawalId,
-          walletId: input.walletId,
-          refundToken: current.refundToken,
-          ledgerId,
-          note: "Phase 1 completed but Phase 2 was interrupted. Ledger created without re-incrementing balance.",
-        });
-
-        return {
-          success: true,
-          refundLedgerId: ledgerId,
-          newBalance: balanceAfter,
-          alreadyRefunded: false,
-        };
-      } catch (ledgerError: unknown) {
-        // If UNIQUE constraint — another recovery request already created the ledger
-        const errMsg = String((ledgerError as Error)?.message ?? "");
-        if (errMsg.includes("UNIQUE constraint") || errMsg.includes("already exists")) {
-          // Re-read the ledger
-          const recheckLedger = await d1.prepare(
-            `SELECT id FROM WalletLedger WHERE referenceType = 'Withdrawal'
-             AND referenceId = ? AND type = 'REFUND' LIMIT 1`
-          ).bind(input.withdrawalId).first<{ id: string }>();
-
-          if (recheckLedger) {
-            return {
-              success: true,
-              refundLedgerId: recheckLedger.id,
-              newBalance: balanceAfter,
-              alreadyRefunded: true,
-            };
-          }
-        }
-        throw new Error(
-          `CRASH RECOVERY failed: cannot create missing ledger for withdrawal ${input.withdrawalId}. ` +
-          `Balance was incremented but ledger creation failed. Manual reconciliation required. ` +
-          `Error: ${errMsg}`
-        );
-      }
-    } else {
-      // refundToken is NULL → this is a pre-existing inconsistency (not a crash)
+  if (existingLedger) {
+    if (current.status !== "REJECTED") {
       throw new Error(
-        `FINANCIAL INCONSISTENCY: withdrawal ${input.withdrawalId} is REJECTED but has no REFUND ledger and no refundToken. ` +
-        `This is not a crash recovery scenario — the refund was never started. Manual reconciliation required.`
+        `FINANCIAL INCONSISTENCY: refund ledger exists while withdrawal ${input.withdrawalId} is ${current.status}. Manual reconciliation required.`
       );
     }
+    const wallet = await d1.prepare(
+      `SELECT balance FROM Wallet WHERE id = ?`
+    ).bind(input.walletId).first<{ balance: number | string }>();
+    return {
+      success: true,
+      refundLedgerId: existingLedger.id,
+      newBalance: Number(wallet?.balance ?? 0),
+      alreadyRefunded: true,
+    };
   }
 
+  // Never infer that money moved from refundToken alone. Legacy REJECTED rows
+  // without a ledger are ambiguous and require reconciliation, not a synthetic ledger.
+  if (current.status === "REJECTED") {
+    throw new Error(
+      `FINANCIAL INCONSISTENCY: withdrawal ${input.withdrawalId} is REJECTED without a REFUND ledger. Manual reconciliation required.`
+    );
+  }
   if (current.status !== "REFUND_PENDING") {
     throw new Error(
       `Withdrawal ${input.withdrawalId} status is ${current.status}, expected REFUND_PENDING or REJECTED`
@@ -209,126 +133,89 @@ async function executeAtomicRefundD1(
 
   const refundToken = generateToken();
   const now = new Date().toISOString();
+  const ledgerId = `ledger_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
-  // ════════ Phase 1: Status transition + balance increment (batch) ════════
+  // One D1 batch makes the state transition, balance increment, and ledger
+  // insert atomic. All three statements share the same guards, so a missing
+  // wallet, stale status, or pre-existing ledger makes the entire transition
+  // a no-op; a SQL/unique-index error rolls the whole batch back.
+  const results = await d1.batch([
+    d1.prepare(
+      `UPDATE WithdrawalRequest
+       SET status = 'REJECTED', processedAt = ?, reviewerId = ?, refundToken = ?
+       WHERE id = ? AND status = 'REFUND_PENDING' AND walletId = ?
+         AND EXISTS (SELECT 1 FROM Wallet WHERE id = ?)
+         AND NOT EXISTS (SELECT 1 FROM WalletLedger
+                         WHERE referenceType = 'Withdrawal' AND referenceId = ? AND type = 'REFUND')`
+    ).bind(now, input.reviewerId, refundToken, input.withdrawalId, input.walletId, input.walletId, input.withdrawalId),
+    d1.prepare(
+      `UPDATE Wallet SET balance = balance + ?, updatedAt = ?
+       WHERE id = ?
+         AND EXISTS (SELECT 1 FROM WithdrawalRequest
+                     WHERE id = ? AND status = 'REJECTED' AND refundToken = ? AND walletId = ?)
+         AND NOT EXISTS (SELECT 1 FROM WalletLedger
+                         WHERE referenceType = 'Withdrawal' AND referenceId = ? AND type = 'REFUND')
+       RETURNING balance`
+    ).bind(input.amount, now, input.walletId, input.withdrawalId, refundToken, input.walletId, input.withdrawalId),
+    d1.prepare(
+      `INSERT INTO WalletLedger
+       (id, walletId, type, amount, balanceBefore, balanceAfter, referenceType, referenceId, description, createdBy, createdAt)
+       SELECT ?, ?, 'REFUND', ?, balance - ?, balance, 'Withdrawal', ?, ?, ?, ?
+       FROM Wallet
+       WHERE id = ?
+         AND EXISTS (SELECT 1 FROM WithdrawalRequest
+                     WHERE id = ? AND status = 'REJECTED' AND refundToken = ? AND walletId = ?)
+         AND NOT EXISTS (SELECT 1 FROM WalletLedger
+                         WHERE referenceType = 'Withdrawal' AND referenceId = ? AND type = 'REFUND')`
+    ).bind(
+      ledgerId, input.walletId, input.amount, input.amount, input.withdrawalId,
+      input.description, input.reviewerId, now, input.walletId,
+      input.withdrawalId, refundToken, input.walletId, input.withdrawalId
+    ),
+  ]);
 
-  const stmt1_statusGuard = d1.prepare(
-    `UPDATE WithdrawalRequest
-     SET status = 'REJECTED', processedAt = ?, reviewerId = ?, refundToken = ?
-     WHERE id = ? AND status = 'REFUND_PENDING'`
-  ).bind(now, input.reviewerId, refundToken, input.withdrawalId);
-
-  // stmt2 uses RETURNING to get the ACTUAL post-increment balance atomically.
-  // This eliminates the race between increment and read.
-  // The EXISTS subquery ensures this only runs if OUR refundToken was set.
-  const stmt2_balance = d1.prepare(
-    `UPDATE Wallet SET balance = balance + ?
-     WHERE id = ?
-       AND EXISTS (SELECT 1 FROM WithdrawalRequest
-                   WHERE id = ? AND refundToken = ? AND walletId = ?)
-     RETURNING balance`
-  ).bind(input.amount, input.walletId, input.withdrawalId, refundToken, input.walletId);
-
-  const phase1Results = await d1.batch([stmt1_statusGuard, stmt2_balance]);
-
-  // Verify Phase 1 succeeded
-  for (let i = 0; i < phase1Results.length; i++) {
-    if (!phase1Results[i].success) {
-      throw new Error(
-        `Atomic refund Phase 1 statement ${i} failed for withdrawal ${input.withdrawalId}`
-      );
+  for (const result of results) {
+    if (!result.success) {
+      throw new Error(`Atomic refund batch statement failed for withdrawal ${input.withdrawalId}`);
     }
   }
 
-  const statusChanges = (phase1Results[0].meta as { changes?: number }).changes ?? 0;
-  if (statusChanges !== 1) {
-    throw new Error(
-      `Atomic refund: status guard affected ${statusChanges} rows for withdrawal ${input.withdrawalId}. ` +
-      `Expected 1 (status was not REFUND_PENDING). No financial changes were made.`
-    );
-  }
+  const statusChanges = results[0].meta.changes ?? 0;
+  const balanceRows = (results[1].results ?? []) as Array<{ balance: number | string }>;
+  const ledgerChanges = results[2].meta.changes ?? 0;
 
-  // Get the ACTUAL balance from stmt2's RETURNING clause
-  // The results array contains the returned rows
-  const stmt2Results = phase1Results[1].results as Array<{ balance: string }> | undefined;
-  if (!stmt2Results || stmt2Results.length !== 1) {
-    // stmt2 affected 0 rows (refundToken verification failed — walletId mismatch)
-    // Transition to RECONCILIATION_NEEDED
-    await d1.prepare(
-      `UPDATE WithdrawalRequest SET status = 'RECONCILIATION_NEEDED'
-       WHERE id = ? AND status = 'REJECTED' AND refundToken = ?`
-    ).bind(input.withdrawalId, refundToken).run();
-
-    throw new Error(
-      `Atomic refund: balance increment returned 0 rows for withdrawal ${input.withdrawalId}. ` +
-      `Status transitioned but balance was NOT incremented (walletId mismatch?). ` +
-      `Transitioned to RECONCILIATION_NEEDED.`
-    );
-  }
-
-  // We have the actual post-increment balance from RETURNING
-  const balanceAfter = Number(stmt2Results[0].balance);
-  const balanceBefore = balanceAfter - input.amount;
-
-  // ════════ Phase 2: Ledger insert (single statement) ════════
-  const ledgerId = `ledger_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-
-  try {
-    await d1.prepare(
-      `INSERT INTO WalletLedger (id, walletId, type, amount, balanceBefore, balanceAfter, referenceType, referenceId, description, createdBy, createdAt)
-       VALUES (?, ?, 'REFUND', ?, ?, ?, 'Withdrawal', ?, ?, ?, ?)`
-    ).bind(
-      ledgerId,
-      input.walletId,
-      input.amount,
-      balanceBefore,
-      balanceAfter,
-      input.withdrawalId,
-      input.description,
-      input.reviewerId,
-      now
-    ).run();
-
+  if (statusChanges === 1 && balanceRows.length === 1 && ledgerChanges === 1) {
     return {
       success: true,
       refundLedgerId: ledgerId,
-      newBalance: balanceAfter,
+      newBalance: Number(balanceRows[0].balance),
       alreadyRefunded: false,
     };
-  } catch (ledgerError: unknown) {
-    // Ledger insert failed after Phase 1 succeeded.
-    // The balance WAS incremented, and refundToken IS set.
-    // Transition to RECONCILIATION_NEEDED.
-    const errMsg = String((ledgerError as Error)?.message ?? "");
-
-    await d1.prepare(
-      `UPDATE WithdrawalRequest SET status = 'RECONCILIATION_NEEDED'
-       WHERE id = ? AND status = 'REJECTED' AND refundToken = ?`
-    ).bind(input.withdrawalId, refundToken).run();
-
-    if (errMsg.includes("UNIQUE constraint") || errMsg.includes("already exists")) {
-      // Another request already created a REFUND ledger for this withdrawal.
-      // Our balance increment was a double-refund — critical!
-      console.error("[atomic-refund] CRITICAL: double-refund detected", {
-        withdrawalId: input.withdrawalId,
-        walletId: input.walletId,
-        ourToken: refundToken,
-        balanceAfter,
-      });
-      throw new Error(
-        `CRITICAL: double-refund detected for withdrawal ${input.withdrawalId}. ` +
-        `Balance was incremented twice. Transitioned to RECONCILIATION_NEEDED. ` +
-        `Manual reconciliation required immediately.`
-      );
-    }
-
-    throw new Error(
-      `Atomic refund: ledger insert failed for withdrawal ${input.withdrawalId}. ` +
-      `Balance was incremented (balanceAfter=${balanceAfter}) but ledger not created. ` +
-      `Transitioned to RECONCILIATION_NEEDED. ` +
-      `Error: ${errMsg}`
-    );
   }
+
+  // No partial refund is expected: the guards are equivalent and D1 batch is
+  // atomic. Re-read state only to distinguish a concurrent completed refund
+  // from a stale/invalid state; never synthesize a ledger from a token.
+  const recheckLedger = await d1.prepare(
+    `SELECT id FROM WalletLedger
+     WHERE referenceType = 'Withdrawal' AND referenceId = ? AND type = 'REFUND' LIMIT 1`
+  ).bind(input.withdrawalId).first<{ id: string }>();
+
+  if (recheckLedger) {
+    const wallet = await d1.prepare(
+      `SELECT balance FROM Wallet WHERE id = ?`
+    ).bind(input.walletId).first<{ balance: number | string }>();
+    return {
+      success: true,
+      refundLedgerId: recheckLedger.id,
+      newBalance: Number(wallet?.balance ?? 0),
+      alreadyRefunded: true,
+    };
+  }
+
+  throw new Error(
+    `Atomic refund did not complete all three statements for withdrawal ${input.withdrawalId}. No refund ledger exists; manual reconciliation required.`
+  );
 }
 
 /**
@@ -337,10 +224,9 @@ async function executeAtomicRefundD1(
  * In SQLite, $transaction provides real ACID guarantees. All operations
  * run in a single transaction — if any throws, everything rolls back.
  *
- * Crash recovery is handled by the pre-check in executeAtomicRefundD1:
- * if REJECTED + refundToken + no ledger, we create the ledger.
- * For SQLite, the same recovery logic applies (the pre-check runs
- * regardless of environment).
+ * The wallet increment, ledger insert, and status transition commit together.
+ * Legacy REJECTED rows without a refund ledger are ambiguous and are not
+ * auto-recovered from refundToken; the caller must route them to reconciliation.
  *
  * balanceBefore is read INSIDE the transaction (not before), so it
  * reflects the actual state at the time of the refund.
@@ -389,42 +275,9 @@ async function executeAtomicRefundSQLite(
         });
 
         if (!existingLedger) {
-          if (current.refundToken) {
-            // CRASH RECOVERY: refundToken is set → Phase 1 completed
-            // Create the missing ledger without re-incrementing balance
-            const wallet = await tx.wallet.findUnique({
-              where: { id: input.walletId },
-              select: { balance: true },
-            });
-            const balanceAfter = Number(wallet?.balance ?? 0);
-            const balanceBeforeRecovery = balanceAfter - input.amount;
-            const ledgerId = `ledger_recovery_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-
-            const ledger = await tx.walletLedger.create({
-              data: {
-                walletId: input.walletId,
-                type: "REFUND",
-                amount: input.amount,
-                balanceBefore: balanceBeforeRecovery,
-                balanceAfter,
-                referenceType: "Withdrawal",
-                referenceId: input.withdrawalId,
-                description: `${input.description} [CRASH RECOVERY]`,
-                createdBy: input.reviewerId,
-              },
-            });
-
-            return {
-              success: true,
-              refundLedgerId: ledger.id,
-              newBalance: balanceAfter,
-              alreadyRefunded: false,
-            };
-          } else {
-            throw new Error(
-              `FINANCIAL INCONSISTENCY: withdrawal ${input.withdrawalId} is REJECTED but has no REFUND ledger and no refundToken.`
-            );
-          }
+          throw new Error(
+            `FINANCIAL INCONSISTENCY: withdrawal ${input.withdrawalId} is REJECTED without a REFUND ledger. Manual reconciliation required.`
+          );
         }
 
         const wallet = await tx.wallet.findUnique({

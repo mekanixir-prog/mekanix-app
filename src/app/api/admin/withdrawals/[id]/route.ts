@@ -142,15 +142,29 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const current = await db.withdrawalRequest.findUnique({ where: { id } });
 
     if (current?.status === "REJECTED") {
-      // Another request won the race and completed the refund.
-      return NextResponse.json({
-        withdrawal: current,
-        message: "درخواست قبلاً توسط مدیر دیگری رد شده است",
+      // REJECTED alone is not proof of a completed refund. Require the ledger.
+      const refundLedger = await db.walletLedger.findFirst({
+        where: { referenceType: "Withdrawal", referenceId: id, type: "REFUND" },
       });
+      if (refundLedger) {
+        return NextResponse.json({
+          withdrawal: current,
+          message: "درخواست قبلاً توسط مدیر دیگری رد و بازپرداخت آن ثبت شده است",
+        });
+      }
+
+      await db.withdrawalRequest.updateMany({
+        where: { id, status: "REJECTED" },
+        data: { status: "RECONCILIATION_NEEDED" },
+      });
+      return NextResponse.json(
+        { error: "وضعیت رد برداشت بدون سند بازپرداخت مبهم است؛ بررسی دستی لازم است", withdrawalId: id },
+        { status: 500 }
+      );
     }
 
     // If still REFUND_PENDING, transition to RECONCILIATION_NEEDED.
-    // The atomic refund failed but no partial state was committed.
+    // The atomic batch failed before a complete refund was committed.
     if (current?.status === "REFUND_PENDING") {
       await db.withdrawalRequest.updateMany({
         where: { id, status: "REFUND_PENDING" },

@@ -339,12 +339,13 @@ describe("W1 — compensation triggers when withdrawalRequest.create throws", ()
     // HTTP 500 (compensation path returns 500 after rollback)
     expect(res.status).toBe(500);
 
-    // Compensation: balance IS refunded (second updateMany call)
-    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(2);
-    const refundArgs = mockWalletUpdateMany.mock.calls[1][0];
-    expect(refundArgs.data).toEqual({ balance: { increment: 500 } });
-    // Refund WHERE is unconditional (no balance check) — documents current behavior
-    expect(refundArgs.where).toEqual({ id: "wallet_1" });
+    // Compensation uses the atomic helper; the route itself only performed the debit.
+    expect(mockExecuteAtomicNoWithdrawalCompensation).toHaveBeenCalledTimes(1);
+    expect(mockExecuteAtomicNoWithdrawalCompensation.mock.calls[0][0]).toMatchObject({
+      walletId: "wallet_1",
+      amount: 500,
+    });
+    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(1);
 
     // Nothing to delete — withdrawal/ledger never created
     expect(mockWithdrawalRequestDelete).not.toHaveBeenCalled();
@@ -394,9 +395,6 @@ describe("W1 — compensation triggers when withdrawalRequest.create throws", ()
       .mockRejectedValueOnce(p2002)
       .mockRejectedValueOnce(p2002)
       .mockRejectedValueOnce(p2002);
-    // Compensation: refund succeeds
-    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 });
-
     const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
     const res = await POST(req);
     const body = await res.json();
@@ -406,8 +404,9 @@ describe("W1 — compensation triggers when withdrawalRequest.create throws", ()
     expect(body.correlationId).toBeDefined(); // C6: correlationId in response
     // create was called 3 times (CODE_RETRY_MAX)
     expect(mockWithdrawalRequestCreate).toHaveBeenCalledTimes(3);
-    // Refund happened (compensation)
-    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(2); // decrement + refund
+    // Refund happened through the atomic helper, not a second route-level update.
+    expect(mockExecuteAtomicNoWithdrawalCompensation).toHaveBeenCalledTimes(1);
+    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(1);
 
     errSpy.mockRestore();
   });
@@ -417,7 +416,6 @@ describe("W1 — compensation triggers when withdrawalRequest.create throws", ()
     const token = await standardSetup();
     // Non-P2002 error (e.g., D1 timeout)
     mockWithdrawalRequestCreate.mockRejectedValueOnce(new Error("D1 write timeout"));
-    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 }); // refund
 
     const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
     const res = await POST(req);

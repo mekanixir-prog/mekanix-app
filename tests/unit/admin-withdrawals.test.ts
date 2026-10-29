@@ -233,18 +233,24 @@ describe("A4 — REJECT: atomic refund fails → RECONCILIATION_NEEDED", () => {
     errSpy.mockRestore();
   });
 
-  it("executeAtomicRefund throws but status already REJECTED → return success (race won by another)", async () => {
+  it("executeAtomicRefund throws and status is REJECTED without a refund ledger → reconciliation, not success", async () => {
     mockWithdrawalRequestFindUnique
       .mockResolvedValueOnce(SAMPLE_REQUEST) // initial
       .mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REJECTED", reviewerId: "admin_2" }); // after error
-    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // acquire
+    mockWithdrawalRequestUpdateMany
+      .mockResolvedValueOnce({ count: 1 }) // acquire
+      .mockResolvedValueOnce({ count: 1 }); // transition REJECTED → RECONCILIATION_NEEDED
+    mockWalletLedgerFindFirst.mockResolvedValueOnce(null);
     mockExecuteAtomicRefund.mockRejectedValueOnce(new Error("race lost"));
 
     const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body.withdrawal.status).toBe("REJECTED");
-    expect(body.message).toContain("مدیر دیگری");
+    expect(body.error).toContain("مبهم");
+    expect(mockWithdrawalRequestUpdateMany).toHaveBeenCalledWith({
+      where: { id: "wd_1", status: "REJECTED" },
+      data: { status: "RECONCILIATION_NEEDED" },
+    });
   });
 });
 
