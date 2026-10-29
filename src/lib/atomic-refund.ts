@@ -485,3 +485,186 @@ async function executeAtomicRefundSQLite(
     };
   });
 }
+
+/**
+ * Compensate a wallet debit when WithdrawalRequest creation failed.
+ *
+ * Unlike the withdrawal-rejection flow, this path has no WithdrawalRequest row
+ * to act as a durable state machine. Therefore all writes that make the refund
+ * visible (wallet increment, unique REFUND ledger row, idempotency finalization)
+ * must commit together. If a crash occurs before this operation begins, the
+ * original debit remains ambiguous and must be manually reconciled; a marker is
+ * never treated as proof that money moved.
+ */
+export type AtomicNoWithdrawalCompensationInput = {
+  walletId: string;
+  amount: number;
+  scopedKey: string;
+  description: string;
+  createdBy: string;
+};
+
+export async function executeAtomicNoWithdrawalCompensation(
+  input: AtomicNoWithdrawalCompensationInput
+): Promise<AtomicRefundResult> {
+  const db = await getDbForLib();
+
+  if (isCloudflareWorkers) {
+    const { getCloudflareContext } = await import("@opennextjs/cloudflare");
+    const ctx = await getCloudflareContext({ async: true });
+    const d1 = ctx.env.DB;
+    if (!d1) throw new Error("D1 binding 'DB' not found — cannot compensate wallet debit");
+
+    const now = new Date().toISOString();
+    const ledgerId = `ledger_comp_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    const response = JSON.stringify({ compensation: "completed", ledgerId });
+
+    // D1 batch is transactional. If the unique REFUND index rejects the insert,
+    // the wallet increment and idempotency update are rolled back with it.
+    const results = await d1.batch([
+      d1.prepare(
+        `UPDATE Wallet
+         SET balance = balance + ?, updatedAt = ?
+         WHERE id = ?
+           AND EXISTS (SELECT 1 FROM IdempotencyKey WHERE key = ? AND status = 'IN_PROGRESS')
+           AND NOT EXISTS (SELECT 1 FROM WalletLedger
+                           WHERE referenceType = 'Withdrawal' AND referenceId = ? AND type = 'REFUND')
+         RETURNING balance`
+      ).bind(input.amount, now, input.walletId, input.scopedKey, input.scopedKey),
+      d1.prepare(
+        `INSERT INTO WalletLedger
+         (id, walletId, type, amount, balanceBefore, balanceAfter, referenceType, referenceId, description, createdBy, createdAt)
+         SELECT ?, ?, 'REFUND', ?, balance - ?, balance, 'Withdrawal', ?, ?, ?, ?
+         FROM Wallet
+         WHERE id = ?
+           AND EXISTS (SELECT 1 FROM IdempotencyKey WHERE key = ? AND status = 'IN_PROGRESS')
+           AND NOT EXISTS (SELECT 1 FROM WalletLedger
+                           WHERE referenceType = 'Withdrawal' AND referenceId = ? AND type = 'REFUND')`
+      ).bind(
+        ledgerId, input.walletId, input.amount, input.amount, input.scopedKey,
+        input.description, input.createdBy, now, input.walletId, input.scopedKey, input.scopedKey
+      ),
+      d1.prepare(
+        `UPDATE IdempotencyKey
+         SET status = 'FAILED', response = ?, updatedAt = ?
+         WHERE key = ? AND status = 'IN_PROGRESS'
+           AND EXISTS (SELECT 1 FROM WalletLedger
+                       WHERE referenceType = 'Withdrawal' AND referenceId = ? AND type = 'REFUND')`
+      ).bind(response, now, input.scopedKey, input.scopedKey),
+    ]);
+
+    const updatedBalanceRows = (results[0].results ?? []) as Array<{ balance: number | string }>;
+    const ledgerChanges = results[1].meta.changes ?? 0;
+    const keyChanges = results[2].meta.changes ?? 0;
+
+    if (updatedBalanceRows.length === 1 && ledgerChanges === 1 && keyChanges === 1) {
+      const balanceAfter = Number(updatedBalanceRows[0].balance);
+      return {
+        success: true,
+        refundLedgerId: ledgerId,
+        newBalance: balanceAfter,
+        alreadyRefunded: false,
+      };
+    }
+
+    // A previous atomic compensation may already have committed. Never increment
+    // again when the unique ledger exists; just make the idempotency state terminal.
+    const existingLedger = await d1.prepare(
+      `SELECT id FROM WalletLedger
+       WHERE referenceType = 'Withdrawal' AND referenceId = ? AND type = 'REFUND' LIMIT 1`
+    ).bind(input.scopedKey).first<{ id: string }>();
+    if (existingLedger) {
+      await d1.prepare(
+        `UPDATE IdempotencyKey SET status = 'FAILED', updatedAt = ?
+         WHERE key = ? AND status = 'IN_PROGRESS'`
+      ).bind(now, input.scopedKey).run();
+      const walletRow = await d1.prepare(
+        `SELECT balance FROM Wallet WHERE id = ?`
+      ).bind(input.walletId).first<{ balance: number | string }>();
+      return {
+        success: true,
+        refundLedgerId: existingLedger.id,
+        newBalance: Number(walletRow?.balance ?? 0),
+        alreadyRefunded: true,
+      };
+    }
+
+    throw new Error(
+      `Atomic no-withdrawal compensation made no complete transition for key ${input.scopedKey}; no refund ledger exists. Manual reconciliation required.`
+    );
+  }
+
+  return db.$transaction(async (tx) => {
+    const existingLedger = await tx.walletLedger.findFirst({
+      where: {
+        referenceType: "Withdrawal",
+        referenceId: input.scopedKey,
+        type: "REFUND",
+      },
+    });
+    if (existingLedger) {
+      await tx.idempotencyKey.updateMany({
+        where: { key: input.scopedKey, status: "IN_PROGRESS" },
+        data: {
+          status: "FAILED",
+          response: JSON.stringify({ compensation: "completed", ledgerId: existingLedger.id }),
+        },
+      });
+      const wallet = await tx.wallet.findUnique({
+        where: { id: input.walletId },
+        select: { balance: true },
+      });
+      return {
+        success: true,
+        refundLedgerId: existingLedger.id,
+        newBalance: Number(wallet?.balance ?? 0),
+        alreadyRefunded: true,
+      };
+    }
+
+    const walletBefore = await tx.wallet.findUnique({
+      where: { id: input.walletId },
+      select: { balance: true },
+    });
+    if (!walletBefore) throw new Error(`Wallet ${input.walletId} not found`);
+
+    const refund = await tx.wallet.updateMany({
+      where: { id: input.walletId },
+      data: { balance: { increment: input.amount } },
+    });
+    if (refund.count !== 1) throw new Error("Wallet compensation did not update exactly one row");
+
+    const balanceBefore = Number(walletBefore.balance);
+    const balanceAfter = balanceBefore + input.amount;
+    const ledger = await tx.walletLedger.create({
+      data: {
+        walletId: input.walletId,
+        type: "REFUND",
+        amount: input.amount,
+        balanceBefore,
+        balanceAfter,
+        referenceType: "Withdrawal",
+        referenceId: input.scopedKey,
+        description: input.description,
+        createdBy: input.createdBy,
+      },
+    });
+    const keyUpdate = await tx.idempotencyKey.updateMany({
+      where: { key: input.scopedKey, status: "IN_PROGRESS" },
+      data: {
+        status: "FAILED",
+        response: JSON.stringify({ compensation: "completed", ledgerId: ledger.id }),
+      },
+    });
+    if (keyUpdate.count !== 1) {
+      throw new Error("Idempotency key changed during atomic compensation; transaction rolled back");
+    }
+
+    return {
+      success: true,
+      refundLedgerId: ledger.id,
+      newBalance: balanceAfter,
+      alreadyRefunded: false,
+    };
+  });
+}

@@ -4,7 +4,7 @@ import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { createHash, randomUUID } from "node:crypto";
-import { executeAtomicRefund } from "@/lib/atomic-refund";
+import { executeAtomicRefund, executeAtomicNoWithdrawalCompensation } from "@/lib/atomic-refund";
 
 // MEKANIX — Wallet withdraw with idempotency + recovery (fixes C1, C3, C4, C6)
 //
@@ -465,207 +465,46 @@ export async function POST(req: Request) {
       }
     }
 
-    // Case 2: Withdrawal was NOT created — two-phase compensation with crash recovery
+    // Case 2: Wallet was debited but no WithdrawalRequest was created.
     //
-    // DESIGN: Same two-phase pattern as the withdrawal path, but uses the
-    // IdempotencyKey as the persistent record instead of WithdrawalRequest.
+    // IMPORTANT: Do not use a marker + separate writes here. A marker written
+    // before the increment cannot prove the increment happened, and a sequential
+    // increment/ledger pair can leave money without an audit record after a crash.
+    // The helper performs the refund, unique REFUND ledger insert, and idempotency
+    // finalization in one SQLite transaction or one atomic D1 batch.
     //
-    // Phase 1: Store compensation marker in IdempotencyKey + increment balance
-    //   (RETURNING gives actual post-increment balance atomically)
-    // Phase 2: Create REFUND ledger with accurate balanceBefore/balanceAfter
-    //
-    // CRASH RECOVERY:
-    //   If crash between Phase 1 and Phase 2:
-    //   - IdempotencyKey has response containing compensation marker
-    //   - Balance was incremented (Phase 1 succeeded)
-    //   - No REFUND ledger exists
-    //   → On next request with same key: detect marker, create ledger WITHOUT re-incrementing
-    //
-    //   If crash after Phase 2:
-    //   - Ledger exists with referenceId=scopedKey
-    //   - Key still IN_PROGRESS
-    //   → On next request: detect ledger, mark as FAILED
+    // If the process crashes BEFORE this atomic compensation starts, the original
+    // debit remains ambiguous and the IN_PROGRESS key deliberately blocks retries.
+    // That case requires manual reconciliation; we never infer a refund from a marker.
     if (balanceDeducted && !withdrawalId) {
       try {
-        // Check if a REFUND ledger already exists for this idempotency key
-        // (crash recovery: Phase 2 may have completed but markIdempotencyFailed didn't)
-        const existingLedger = await db.walletLedger.findFirst({
-          where: {
-            referenceType: "Withdrawal",
-            referenceId: scopedKey,
-            type: "REFUND",
-          },
+        const result = await executeAtomicNoWithdrawalCompensation({
+          walletId: wallet.id,
+          amount: requestedAmount,
+          scopedKey,
+          description: `Compensation refund (no withdrawal record) — ${scopedKey}`,
+          createdBy: "system-compensation",
         });
 
-        if (existingLedger) {
-          // Phase 2 already completed — just mark the key as FAILED
-          console.error("[wallets/withdraw] Crash recovery: ledger exists, marking key FAILED", {
-            correlationId,
-            walletId: wallet.id,
-            scopedKey,
-            ledgerId: existingLedger.id,
-            note: "Phase 2 completed but markIdempotencyFailed didn't run. Completing now.",
-          });
-          await markIdempotencyFailed(db, scopedKey);
-          const message = e instanceof Error ? e.message : "خطا در پردازش برداشت";
-          return NextResponse.json({ error: message, correlationId }, { status: 500 });
-        }
-
-        // Check if Phase 1 already ran (compensation marker in IdempotencyKey response)
-        const idemKey = await db.idempotencyKey.findUnique({
-          where: { key: scopedKey },
-          select: { response: true },
-        });
-
-        const isCompensating = idemKey?.response?.includes('"compensating":true');
-
-        if (isCompensating) {
-          // CRASH RECOVERY: Phase 1 ran (balance was incremented) but Phase 2 didn't
-          // Create the missing ledger WITHOUT re-incrementing balance
-          const walletNow = await db.wallet.findUnique({
-            where: { id: wallet.id },
-            select: { balance: true },
-          });
-          const balanceAfter = Number(walletNow?.balance ?? 0);
-          const balanceBefore = balanceAfter - requestedAmount;
-          const ledgerId = `ledger_recovery_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-
-          try {
-            await db.walletLedger.create({
-              data: {
-                walletId: wallet.id,
-                type: "REFUND",
-                amount: requestedAmount,
-                balanceBefore,
-                balanceAfter,
-                referenceType: "Withdrawal",
-                referenceId: scopedKey,
-                description: `Compensation refund (no withdrawal) [CRASH RECOVERY — Phase 1 completed, ledger created on retry] — ${scopedKey}`,
-                createdBy: "system-compensation",
-              },
-            });
-
-            console.error("[wallets/withdraw] CRASH RECOVERY: created missing compensation ledger", {
-              correlationId,
-              walletId: wallet.id,
-              scopedKey,
-              ledgerId,
-              note: "Phase 1 (balance increment) completed but Phase 2 (ledger) was interrupted. Ledger created without re-incrementing balance.",
-            });
-          } catch (ledgerErr) {
-            // UNIQUE constraint = another recovery request already created the ledger
-            const errMsg = String((ledgerErr as Error)?.message ?? "");
-            if (errMsg.includes("UNIQUE constraint") || errMsg.includes("already exists")) {
-              // Already recovered — just mark as FAILED
-              await markIdempotencyFailed(db, scopedKey);
-              const message = e instanceof Error ? e.message : "خطا در پردازش برداشت";
-              return NextResponse.json({ error: message, correlationId }, { status: 500 });
-            }
-            throw ledgerErr;
-          }
-
-          await markIdempotencyFailed(db, scopedKey);
-          const message = e instanceof Error ? e.message : "خطا در پردازش برداشت";
-          return NextResponse.json({ error: message, correlationId }, { status: 500 });
-        }
-
-        // ══════ Normal Phase 1: store marker + increment balance ══════
-        // Store compensation marker BEFORE incrementing balance.
-        // This marker enables crash recovery.
-        await db.idempotencyKey.updateMany({
-          where: { key: scopedKey, status: "IN_PROGRESS" },
-          data: {
-            response: JSON.stringify({
-              compensating: true,
-              walletId: wallet.id,
-              amount: requestedAmount,
-              correlationId,
-            }),
-          },
-        });
-
-        // Phase 1: Increment balance and get actual post-increment value
-        const refund = await db.wallet.updateMany({
-          where: { id: wallet.id },
-          data: { balance: { increment: requestedAmount } },
-        });
-        if (refund.count !== 1) {
-          throw new Error("Wallet balance compensation did not update exactly one row");
-        }
-
-        // Read actual balance AFTER increment (for accurate ledger values)
-        const walletAfter = await db.wallet.findUnique({
-          where: { id: wallet.id },
-          select: { balance: true },
-        });
-        const balanceAfter = Number(walletAfter?.balance ?? 0);
-        const balanceBefore = balanceAfter - requestedAmount;
-
-        // ══════ Phase 2: Create REFUND ledger entry ══════
-        try {
-          await db.walletLedger.create({
-            data: {
-              walletId: wallet.id,
-              type: "REFUND",
-              amount: requestedAmount,
-              balanceBefore,
-              balanceAfter,
-              referenceType: "Withdrawal",
-              referenceId: scopedKey,
-              description: `Compensation refund (no withdrawal record) — ${scopedKey}`,
-              createdBy: "system-compensation",
-            },
-          });
-        } catch (ledgerErr) {
-          // UNIQUE constraint = double-refund detected
-          const errMsg = String((ledgerErr as Error)?.message ?? "");
-          if (errMsg.includes("UNIQUE constraint") || errMsg.includes("already exists")) {
-            console.error("[wallets/withdraw] CRITICAL: double-refund in no-withdrawal path", {
-              correlationId,
-              walletId: wallet.id,
-              scopedKey,
-              note: "Ledger already exists — balance was incremented twice. Attempting undo.",
-            });
-            // Undo the balance increment
-            try {
-              await db.wallet.updateMany({
-                where: { id: wallet.id },
-                data: { balance: { decrement: requestedAmount } },
-              });
-            } catch {
-              // Can't undo — manual reconciliation
-            }
-            await markIdempotencyFailed(db, scopedKey);
-            return NextResponse.json(
-              {
-                error: "خطای بحرانی: بازپرداخت تکراری شناسایی شد؛ بررسی فوری پشتیبانی لازم است",
-                correlationId,
-              },
-              { status: 500 }
-            );
-          }
-          throw ledgerErr;
-        }
-
-        // Phase 2 succeeded — mark key as FAILED
-        await markIdempotencyFailed(db, scopedKey);
-
-        const message = e instanceof Error ? e.message : "خطا در پردازش برداشت";
-        console.error("[wallets/withdraw] Compensation (no withdrawal) completed with audit ledger", {
+        console.error("[wallets/withdraw] No-withdrawal compensation finalized", {
           correlationId,
           walletId: wallet.id,
           scopedKey,
-          error: message,
-          note: "Two-phase compensation: marker stored, balance incremented, ledger created.",
+          alreadyRefunded: result.alreadyRefunded,
+          refundLedgerId: result.refundLedgerId,
+          error: e,
         });
+
+        const message = e instanceof Error ? e.message : "خطا در پردازش برداشت";
         return NextResponse.json({ error: message, correlationId }, { status: 500 });
       } catch (refundError: unknown) {
-        console.error("[wallets/withdraw] CRITICAL: compensation failed (no withdrawal record)", {
+        console.error("[wallets/withdraw] CRITICAL: atomic compensation failed (no withdrawal record)", {
           correlationId,
           walletId: wallet.id,
+          scopedKey,
           error: refundError,
           originalError: e,
-          note: "Manual reconciliation required.",
+          note: "No automatic retry is safe until the financial state is reconciled.",
         });
         await markIdempotencyFailed(db, scopedKey);
         return NextResponse.json(

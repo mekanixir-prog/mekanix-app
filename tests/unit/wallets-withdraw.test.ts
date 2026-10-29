@@ -89,10 +89,12 @@ vi.mock("@/lib/db-access", () => ({
   })),
 }));
 
-// Mock atomic-refund helper (used by compensation path)
+// Mock atomic-refund helpers (used by compensation paths)
 const mockExecuteAtomicRefund = vi.fn();
+const mockExecuteAtomicNoWithdrawalCompensation = vi.fn();
 vi.mock("@/lib/atomic-refund", () => ({
   executeAtomicRefund: (...args: any[]) => mockExecuteAtomicRefund(...args),
+  executeAtomicNoWithdrawalCompensation: (...args: any[]) => mockExecuteAtomicNoWithdrawalCompensation(...args),
 }));
 
 // Mock rate-limit so withdraw budget isn't exhausted across tests.
@@ -173,10 +175,16 @@ beforeEach(() => {
   mockIdempotencyKeyUpdateMany.mockResolvedValue({ count: 1 });
   mockWithdrawalRequestUpdateMany.mockResolvedValue({ count: 1 });
 
-  // Default: atomic refund succeeds (for compensation path)
+  // Default: atomic refund helpers succeed (for compensation paths)
   mockExecuteAtomicRefund.mockResolvedValue({
     success: true,
     refundLedgerId: "ledger_refund_1",
+    newBalance: 1000,
+    alreadyRefunded: false,
+  });
+  mockExecuteAtomicNoWithdrawalCompensation.mockResolvedValue({
+    success: true,
+    refundLedgerId: "ledger_compensation_1",
     newBalance: 1000,
     alreadyRefunded: false,
   });
@@ -503,14 +511,13 @@ describe("W4 — executeAtomicRefund throws → RECONCILIATION_NEEDED + correlat
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// W5 — compensation: no withdrawal created → inline balance refund
+// W5 — compensation: no withdrawal created → atomic compensation helper
 // ═══════════════════════════════════════════════════════════════════════════
-describe("W5 — no withdrawal → inline balance refund (no helper)", () => {
-  it("withdrawalRequest.create throws → inline refund, no executeAtomicRefund", async () => {
+describe("W5 — no withdrawal → atomic compensation", () => {
+  it("withdrawalRequest.create throws → atomic helper, no inline balance mutation", async () => {
     const errSpy = muteConsoleError();
     const token = await standardSetup();
     mockWithdrawalRequestCreate.mockRejectedValueOnce(new Error("create timeout"));
-    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 }); // refund succeeds
 
     const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
     const res = await POST(req);
@@ -518,21 +525,24 @@ describe("W5 — no withdrawal → inline balance refund (no helper)", () => {
 
     expect(res.status).toBe(500);
     expect(body.correlationId).toBeDefined();
-
-    // executeAtomicRefund NOT called (no withdrawal to refund)
-    expect(mockExecuteAtomicRefund).not.toHaveBeenCalled();
-
-    // Inline refund happened
-    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(2); // decrement + refund
+    expect(mockExecuteAtomicNoWithdrawalCompensation).toHaveBeenCalledTimes(1);
+    expect(mockExecuteAtomicNoWithdrawalCompensation.mock.calls[0][0]).toMatchObject({
+      walletId: "wallet_1",
+      amount: 500,
+      createdBy: "system-compensation",
+    });
+    // Only the original debit uses the route-level updateMany; refund is atomic in the helper.
+    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(1);
+    expect(mockWalletLedgerCreate).not.toHaveBeenCalled();
 
     errSpy.mockRestore();
   });
 
-  it("inline refund fails (count=0) → 500 CRITICAL with correlationId", async () => {
+  it("atomic compensation failure → 500 CRITICAL with support guidance and correlationId", async () => {
     const errSpy = muteConsoleError();
     const token = await standardSetup();
     mockWithdrawalRequestCreate.mockRejectedValueOnce(new Error("create timeout"));
-    mockWalletUpdateMany.mockResolvedValueOnce({ count: 0 }); // refund fails
+    mockExecuteAtomicNoWithdrawalCompensation.mockRejectedValueOnce(new Error("D1 batch failed"));
 
     const req = jsonReq("https://mekanix.test/api/wallets/withdraw", token, { amount: 500 });
     const res = await POST(req);
@@ -541,12 +551,12 @@ describe("W5 — no withdrawal → inline balance refund (no helper)", () => {
     expect(res.status).toBe(500);
     expect(body.correlationId).toBeDefined();
     expect(body.error).toContain("پشتیبانی");
+    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(1);
 
     errSpy.mockRestore();
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
 // W6 — compensation: no balance deducted → no refund needed
 // ═══════════════════════════════════════════════════════════════════════════
 describe("W6 — no balance deducted → no compensation", () => {
@@ -559,6 +569,7 @@ describe("W6 — no balance deducted → no compensation", () => {
 
     expect(res.status).toBe(400); // insufficient balance
     expect(mockExecuteAtomicRefund).not.toHaveBeenCalled();
+    expect(mockExecuteAtomicNoWithdrawalCompensation).not.toHaveBeenCalled();
     expect(mockWalletUpdateMany).not.toHaveBeenCalled();
   });
 });
