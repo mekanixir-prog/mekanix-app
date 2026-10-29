@@ -26,6 +26,7 @@ const mockWalletFindUnique = vi.fn();
 const mockWalletUpdateMany = vi.fn();
 const mockWithdrawalRequestCreate = vi.fn();
 const mockWalletLedgerCreate = vi.fn();
+const mockWalletLedgerFindFirst = vi.fn();
 const mockWalletLedgerDelete = vi.fn();
 const mockWithdrawalRequestDelete = vi.fn();
 const mockNotificationCreate = vi.fn();
@@ -67,6 +68,7 @@ vi.mock("@/lib/db-access", () => ({
     walletLedger: {
       create: (...args: any[]) => mockWalletLedgerCreate(...args),
       delete: (...args: any[]) => mockWalletLedgerDelete(...args),
+      findFirst: (...args: any[]) => mockWalletLedgerFindFirst(...args),
     },
     notification: {
       create: (...args: any[]) => mockNotificationCreate(...args),
@@ -162,6 +164,7 @@ beforeEach(() => {
   mockWalletLedgerCreate.mockResolvedValue({ id: "ledger_1" });
   mockWithdrawalRequestDelete.mockResolvedValue({});
   mockWalletLedgerDelete.mockResolvedValue({});
+  mockWalletLedgerFindFirst.mockResolvedValue(null);
   mockSessionUpdateMany.mockResolvedValue({ count: 0 });
 
   // Default: idempotencyKey.create succeeds (we own the key).
