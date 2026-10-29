@@ -732,7 +732,9 @@ enum WithdrawalStatus {
   REQUESTED // mechanic requested
   APPROVED // admin approved, queued for payout
   PAID // sent to bank, completed
-  REJECTED // admin rejected
+  REJECTED // admin rejected after successful refund
+  REFUND_PENDING // rejection accepted; refund/ledger completion needs recovery
+  RECONCILIATION_NEEDED // automated recovery cannot safely determine financial outcome
 }
 
 model WithdrawalRequest {
