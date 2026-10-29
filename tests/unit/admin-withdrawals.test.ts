@@ -368,52 +368,28 @@ describe("A9 — concurrent admin PATCH: acquire guard", () => {
 // R1-R7 — Recovery tests (the FIX for C2)
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("R1 — REJECT from REFUND_PENDING (retry after temporary failure)", () => {
-  it("retry succeeds: refund + ledger + finalize REJECTED", async () => {
-    // findUnique returns REFUND_PENDING (retry scenario)
-    mockWithdrawalRequestFindUnique
-      .mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REFUND_PENDING" }) // initial
-      .mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REJECTED" }); // final
-    // No acquire needed (already REFUND_PENDING), only finalize
-    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 }); // finalize
-    mockWalletLedgerFindFirst
-      .mockResolvedValueOnce(null) // no existing ledger
-      .mockResolvedValueOnce({ id: "ledger_1" }); // verify
-    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 });
-    mockWalletLedgerCreate.mockResolvedValueOnce({ id: "ledger_1" });
+describe("R1 — REFUND_PENDING retry is blocked pending reconciliation", () => {
+  it("returns 409 and performs no financial writes", async () => {
+    mockWithdrawalRequestFindUnique.mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REFUND_PENDING" });
 
     const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
-    expect(res.status).toBe(200);
-
-    // Only ONE updateMany call (finalize, no acquire needed)
-    expect(mockWithdrawalRequestUpdateMany).toHaveBeenCalledTimes(1);
-    const finalizeArgs = mockWithdrawalRequestUpdateMany.mock.calls[0][0];
-    expect(finalizeArgs.where).toEqual({ id: "wd_1", status: "REFUND_PENDING" });
-    expect(finalizeArgs.data.status).toBe("REJECTED");
+    expect(res.status).toBe(409);
+    expect(mockWalletUpdateMany).not.toHaveBeenCalled();
+    expect(mockWalletLedgerCreate).not.toHaveBeenCalled();
+    expect(mockWithdrawalRequestUpdateMany).not.toHaveBeenCalled();
   });
 });
 
-describe("R2 — Idempotent retry: ledger already exists → skip refund (NO double-credit)", () => {
-  it("retry from REFUND_PENDING finds existing ledger → does NOT increment balance", async () => {
-    // findUnique returns REFUND_PENDING
-    mockWithdrawalRequestFindUnique
-      .mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REFUND_PENDING" })
-      .mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REJECTED" });
-    // walletLedger.findFirst returns existing ledger (from previous attempt)
-    mockWalletLedgerFindFirst.mockResolvedValueOnce({ id: "ledger_existing" });
-    // No refund needed, no ledger create needed
-    // Only finalize REFUND_PENDING → REJECTED
-    mockWithdrawalRequestUpdateMany.mockResolvedValueOnce({ count: 1 });
+describe("R2 — REFUND_PENDING with an existing ledger is also blocked pending reconciliation", () => {
+  it("does not infer whether the balance increment committed from ledger presence alone", async () => {
+    mockWithdrawalRequestFindUnique.mockResolvedValueOnce({ ...SAMPLE_REQUEST, status: "REFUND_PENDING" });
 
     const res = await PATCH(patchReq("wd_1", { action: "REJECT" }), { params: Promise.resolve({ id: "wd_1" }) });
-    expect(res.status).toBe(200);
-
-    // CRITICAL: wallet.updateMany NOT called (no double-credit)
+    expect(res.status).toBe(409);
     expect(mockWalletUpdateMany).not.toHaveBeenCalled();
-    // walletLedger.create NOT called (already exists)
+    expect(mockWalletLedgerFindFirst).not.toHaveBeenCalled();
     expect(mockWalletLedgerCreate).not.toHaveBeenCalled();
-    // Only finalize transition
-    expect(mockWithdrawalRequestUpdateMany).toHaveBeenCalledTimes(1);
+    expect(mockWithdrawalRequestUpdateMany).not.toHaveBeenCalled();
   });
 });
 
