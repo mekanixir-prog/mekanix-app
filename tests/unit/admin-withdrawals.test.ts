@@ -188,7 +188,7 @@ describe("GET /api/admin/withdrawals", () => {
     mockWithdrawalRequestFindMany.mockResolvedValueOnce([{ id: "wd_1" }]);
     const response = await GET(getReq("status=REQUESTED"));
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual([{ id: "wd_1" }]);
+    expect(await response.json()).toEqual([{ id: "wd_1", hasRefundLedger: false }]);
     expect(mockWithdrawalRequestFindMany.mock.calls[0][0].where).toEqual({ status: "REQUESTED" });
 
     const invalid = await GET(getReq("status=UNKNOWN"));
