@@ -151,7 +151,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     if (!["APPROVED", "REJECTED", "PAID"].includes(action)) {
       return NextResponse.json({ error: "وضعیت عملیات برداشت نامعتبر است" }, { status: 400 });
     }
-    const adminNotes = body.adminNotes === undefined ? null : body.adminNotes;
+    const adminNotes = requestedWithdrawalAdminNotes === undefined ? null : requestedWithdrawalAdminNotes;
     if (adminNotes !== null && (typeof adminNotes !== "string" || adminNotes.length > 500)) {
       return NextResponse.json({ error: "یادداشت مدیر نامعتبر است" }, { status: 400 });
     }
