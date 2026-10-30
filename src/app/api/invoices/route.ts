@@ -110,7 +110,7 @@ export async function POST(req: Request) {
       taxRate,
       taxTotal,
       total,
-      currency: "IRR",
+      currency: "USD",
       status: "SENT",
       notes: "Parts & labor covered by 6-month MEKANIX warranty.",
     },
