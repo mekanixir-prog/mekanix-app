@@ -65,6 +65,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
   // S3 FIX: validate user.status BEFORE stripping FORBIDDEN_FIELDS.
   const requestedUserStatus = body.status;
   const requestedWithdrawalStatus = body.status;
+  const requestedWithdrawalAdminNotes = body.adminNotes;
   if (resource === "customers" && requestedUserStatus !== undefined) {
     if (
       typeof requestedUserStatus !== "string" ||
