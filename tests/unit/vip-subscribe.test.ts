@@ -162,7 +162,9 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       id: "pay-1",
       userId: "user-1",
       status: "PENDING", // not SUCCEEDED
-      amount: 100_000,
+      amount: 10,
+      currency: "USD",
+      currency: "USD",
     });
     const req = makePostRequest({ planId: "plan-1", paymentId: "pay-1" });
     const res = await POST(req);
@@ -177,6 +179,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       userId: "user-1",
       status: "SUCCEEDED",
       amount: 5, // less than plan.priceUsd (10)
+      currency: "USD",
     });
     const req = makePostRequest({ planId: "plan-1", paymentId: "pay-1" });
     const res = await POST(req);
