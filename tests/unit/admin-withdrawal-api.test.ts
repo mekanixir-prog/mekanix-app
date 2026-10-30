@@ -29,7 +29,7 @@ import { PATCH } from "@/app/api/admin/[resource]/[id]/route";
 
 const admin = { adminId: "admin-1", username: "operator", role: "ADMIN" };
 const before = {
-  id: "wd-1", walletId: "wallet-1", amount: 500, status: "REQUESTED",
+  id: "wd-1", walletId: "wallet-1", amount: 500, method: "bank", shebaNumber: "IR123456789012345678901234", status: "REQUESTED",
   wallet: { technician: { userId: "tech-user-1", user: { name: "Technician" } } },
 };
 const after = { ...before, status: "APPROVED" };
