@@ -60,8 +60,23 @@ export async function POST(req: Request) {
   });
   if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
 
-  // Idempotency: if already paid, return current state
+  // A paid marker without all four idempotent financial records is a legacy
+  // partial-write state. Do not guess whether to credit again; surface it for
+  // explicit reconciliation instead of silently claiming the wallet is correct.
   if (job.prepayPaid) {
+    const [prepayTxn, commissionTxn, holdLedger, commissionLedger] = await Promise.all([
+      db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${job.id}:PREPAY` } }),
+      db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${job.id}:COMMISSION` } }),
+      db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_HOLD` } }),
+      db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_COMMISSION` } }),
+    ]);
+    if (!prepayTxn || !commissionTxn || !holdLedger || !commissionLedger) {
+      return NextResponse.json({
+        error: "Pre-service payment requires financial reconciliation",
+        reconciliationRequired: true,
+        jobId: job.id,
+      }, { status: 409 });
+    }
     return NextResponse.json({
       ok: true,
       alreadyPaid: true,
@@ -135,35 +150,40 @@ export async function POST(req: Request) {
     },
   });
 
-  // 6. Notify customer + mechanic, system message
-  await db.notification.create({
-    data: {
-      userId: job.request.customer.user.id,
-      type: "payment_required",
-      title: "Pre-service payment received",
-      body: `Chat & call with ${tech.user.name} is now active for ${job.code}`,
-      category: "payment",
-      link: "customer/track",
-    },
-  });
-  await db.notification.create({
-    data: {
-      userId: tech.userId,
-      type: "payment_required",
-      title: "Pre-service payment received",
-      body: `${job.code} — customer paid inspection + travel fee. You can start moving now.`,
-      category: "payment",
-      link: "technician/requests",
-    },
-  });
-  await db.message.create({
-    data: {
-      jobId: job.id,
-      fromUserId: job.request.customer.user.id,
-      kind: "system",
-      body: "Pre-service payment received — chat unlocked.",
-    },
-  });
+  // Notifications are intentionally best-effort: a notification outage must
+  // never turn a committed financial transaction into an apparent payment failure.
+  try {
+    await db.notification.create({
+      data: {
+        userId: job.request.customer.user.id,
+        type: "payment_required",
+        title: "Pre-service payment received",
+        body: `Chat & call with ${tech.user.name} is now active for ${job.code}`,
+        category: "payment",
+        link: "customer/track",
+      },
+    });
+    await db.notification.create({
+      data: {
+        userId: tech.userId,
+        type: "payment_required",
+        title: "Pre-service payment received",
+        body: `${job.code} — customer paid inspection + travel fee. You can start moving now.`,
+        category: "payment",
+        link: "technician/requests",
+      },
+    });
+    await db.message.create({
+      data: {
+        jobId: job.id,
+        fromUserId: job.request.customer.user.id,
+        kind: "system",
+        body: "Pre-service payment received — chat unlocked.",
+      },
+    });
+  } catch (notificationError) {
+    console.error("[prepay] financial commit succeeded but notification delivery failed", notificationError);
+  }
 
   return NextResponse.json({ ok: true, job: updatedJob, amount: gross, commission, net });
 }
