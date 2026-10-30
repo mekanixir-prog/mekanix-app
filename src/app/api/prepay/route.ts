@@ -96,8 +96,6 @@ export async function POST(req: Request) {
     jobId: job.id,
     jobCode: job.code,
     technicianId: tech.id,
-    customerUserId: job.request.customer.user.id,
-    technicianUserId: tech.userId,
     gross,
     commission,
     net,
