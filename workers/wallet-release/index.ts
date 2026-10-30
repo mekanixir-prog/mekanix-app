@@ -1,13 +1,11 @@
-import { releaseWalletTransactionWithD1 } from "../../src/lib/wallet-release-d1";
+import { releaseWalletTransactionWithD1, type D1Binding, type D1PreparedStatement as ReleaseStatement } from "../../src/lib/wallet-release-d1";
 
 type DueTransaction = { id: string; walletId: string };
-type D1PreparedStatement = {
-  bind: (...values: unknown[]) => D1PreparedStatement;
+type D1PreparedStatement = ReleaseStatement & {
   all: <T = unknown>() => Promise<{ results?: T[] }>;
 };
-type D1Database = {
+type D1Database = Omit<D1Binding, "prepare"> & {
   prepare: (sql: string) => D1PreparedStatement;
-  batch: (statements: D1PreparedStatement[]) => Promise<Array<{ meta?: { changes?: number } }>>;
 };
 type Env = { DB: D1Database };
 type ScheduledController = { scheduledTime: number };
@@ -52,7 +50,7 @@ async function releaseDueTransactions(env: Env, now: Date): Promise<void> {
   });
 }
 
-export default {
+const walletReleaseWorker = {
   scheduled(
     controller: ScheduledController,
     env: Env,
@@ -64,3 +62,5 @@ export default {
     return new Response("Not Found", { status: 404 });
   },
 };
+
+export default walletReleaseWorker;
