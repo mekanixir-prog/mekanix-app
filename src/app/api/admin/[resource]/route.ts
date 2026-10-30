@@ -38,6 +38,14 @@ const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
     });
     return list;
   },
+  withdrawals: async (db) => {
+    return db.withdrawalRequest.findMany({
+      include: {
+        wallet: { include: { technician: { include: { user: true } } } },
+      },
+      orderBy: { requestedAt: "desc" },
+    });
+  },
   reviews: async (db) => {
     const list = await db.review.findMany({
       include: { fromUser: true, technician: { include: { user: true } }, job: true },
