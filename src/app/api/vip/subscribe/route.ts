@@ -45,7 +45,7 @@ export async function POST(req: Request) {
 
   // 3. Validate paymentId — must be a real SUCCEEDED payment by this user
   //    that covers the plan price. This closes the free-VIP bypass.
-  //    Note: VipPlan stores price as `priceIrr` (Decimal, Iranian Rial).
+  //    Note: VipPlan stores price as `priceUsd` (Decimal, Iranian Rial).
   if (typeof paymentId !== "string" || !paymentId) {
     return NextResponse.json({ error: "paymentId is required" }, { status: 400 });
   }
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
     !payment ||
     payment.userId !== userId ||
     payment.status !== "SUCCEEDED" ||
-    Number(payment.amount) < Number(plan.priceIrr)
+    Number(payment.amount) < Number(plan.priceUsd)
   ) {
     return NextResponse.json({ error: "Invalid or insufficient payment" }, { status: 400 });
   }
