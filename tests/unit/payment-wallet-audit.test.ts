@@ -52,6 +52,8 @@ const mockPaymentGatewayLogUpdate = vi.fn();
 const mockWalletFindUnique = vi.fn();
 const mockWalletUpdateMany = vi.fn();
 const mockWithdrawalRequestCreate = vi.fn();
+const mockWithdrawalRequestFindUnique = vi.fn();
+const mockCreateWithdrawalAtomically = vi.fn();
 const mockWalletLedgerCreate = vi.fn();
 const mockTechnicianFindUnique = vi.fn();
 
@@ -90,6 +92,7 @@ vi.mock("@/lib/db-access", () => ({
     },
     withdrawalRequest: {
       create: (...args: any[]) => mockWithdrawalRequestCreate(...args),
+      findUnique: (...args: any[]) => mockWithdrawalRequestFindUnique(...args),
     },
     walletLedger: { create: (...args: any[]) => mockWalletLedgerCreate(...args) },
     technician: {
@@ -113,6 +116,10 @@ vi.mock("@/lib/api-helpers", () => ({
 }));
 
 // rate-limit mock — always succeeds (route rate-limit checks bypassed)
+vi.mock("@/lib/withdrawal-atomic", () => ({
+  createWithdrawalAtomically: (...args: any[]) => mockCreateWithdrawalAtomically(...args),
+}));
+
 vi.mock("@/lib/rate-limit", () => ({
   rateLimitAsync: vi.fn().mockResolvedValue({ success: true, resetMs: 60_000 }),
   rateLimit: vi.fn(() => ({ success: true, resetMs: 60_000 })),
