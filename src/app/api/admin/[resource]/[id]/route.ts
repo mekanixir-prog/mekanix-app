@@ -3,6 +3,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { getAdminFromRequest } from "@/lib/admin-auth";
 import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/admin-api";
+import { updateWithdrawalAtomically } from "@/lib/withdrawal-admin-atomic";
 
 // Mass-assignment protection: define per-resource whitelists.
 const RESOURCE_ALLOWED_FIELDS: Record<string, readonly string[]> = {
@@ -143,6 +144,71 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     const before = await db.review.findUnique({ where: { id } });
     result = await db.review.update({ where: { id }, data: safe as any });
     await safeAudit({ session: adminSession, action: "UPDATE_REVIEW", entity: "review", entityId: id, before, after: result, req });
+  } else if (resource === "withdrawals") {
+    const action = body.status;
+    if (!["APPROVED", "REJECTED", "PAID"].includes(action)) {
+      return NextResponse.json({ error: "وضعیت عملیات برداشت نامعتبر است" }, { status: 400 });
+    }
+    if (action === "PAID" && adminSession.role !== "SUPER_ADMIN") {
+      return NextResponse.json({ error: "ثبت پرداخت نهایی فقط برای مدیر ارشد مجاز است" }, { status: 403 });
+    }
+    const adminNotes = body.adminNotes === undefined ? null : body.adminNotes;
+    if (adminNotes !== null && (typeof adminNotes !== "string" || adminNotes.length > 500)) {
+      return NextResponse.json({ error: "یادداشت مدیر نامعتبر است" }, { status: 400 });
+    }
+
+    const before = await db.withdrawalRequest.findUnique({
+      where: { id },
+      include: { wallet: { include: { technician: { include: { user: true } } } } },
+    });
+    if (!before) return NextResponse.json({ error: "درخواست برداشت پیدا نشد" }, { status: 404 });
+
+    const changed = await updateWithdrawalAtomically(db, {
+      withdrawalId: id,
+      action,
+      adminId: adminSession.adminId,
+      adminNotes,
+      at: new Date(),
+    });
+    if (!changed) {
+      return NextResponse.json({ error: "وضعیت درخواست تغییر کرده یا عملیات قبلاً انجام شده است" }, { status: 409 });
+    }
+
+    result = await db.withdrawalRequest.findUnique({
+      where: { id },
+      include: { wallet: { include: { technician: { include: { user: true } } } } },
+    });
+    await safeAudit({
+      session: adminSession,
+      action: `WITHDRAWAL_${action}`,
+      entity: "withdrawalRequest",
+      entityId: id,
+      before,
+      after: result,
+      req,
+    });
+
+    // Notify the technician after the financial state has committed.
+    try {
+      const userId = before.wallet.technician.userId;
+      const message = action === "APPROVED"
+        ? "درخواست برداشت شما تأیید شد و در صف پرداخت قرار گرفت."
+        : action === "REJECTED"
+          ? "درخواست برداشت رد شد و مبلغ به کیف پول شما بازگشت."
+          : "پرداخت درخواست برداشت شما ثبت شد.";
+      await db.notification.create({
+        data: {
+          userId,
+          type: action === "PAID" ? "payout_processed" : "withdrawal_updated",
+          title: action === "APPROVED" ? "درخواست برداشت تأیید شد" : action === "REJECTED" ? "مبلغ برداشت بازگشت داده شد" : "پرداخت برداشت انجام شد",
+          body: message,
+          category: "payment",
+          link: "technician/earnings",
+        },
+      });
+    } catch {
+      // Notifications are best-effort and cannot undo a committed financial action.
+    }
   } else if (resource === "payments") {
     const allowed = RESOURCE_ALLOWED_FIELDS.payments ?? ALLOWED_FIELDS.review;
     const safe = sanitizeInput(body, allowed);
