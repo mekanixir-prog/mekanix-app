@@ -1,4 +1,4 @@
-import { releaseWalletTransactionWithD1 } from "../../src/lib/wallet-release";
+import { releaseWalletTransactionWithD1 } from "../../src/lib/wallet-release-d1";
 
 type DueTransaction = { id: string; walletId: string };
 type D1PreparedStatement = {
@@ -7,6 +7,7 @@ type D1PreparedStatement = {
 };
 type D1Database = {
   prepare: (sql: string) => D1PreparedStatement;
+  batch: (statements: D1PreparedStatement[]) => Promise<Array<{ meta?: { changes?: number } }>>;
 };
 type Env = { DB: D1Database };
 type ScheduledController = { scheduledTime: number };
@@ -28,7 +29,7 @@ async function releaseDueTransactions(env: Env, now: Date): Promise<void> {
   for (const transaction of due.results ?? []) {
     try {
       const didRelease = await releaseWalletTransactionWithD1(
-        env.DB as never,
+        env.DB,
         transaction.walletId,
         transaction.id,
         now
