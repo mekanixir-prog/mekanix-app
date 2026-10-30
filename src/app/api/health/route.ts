@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
+import { getSmsProviderStatus } from "@/lib/sms-provider";
+import { getPaymentProviderStatus } from "@/lib/payment-provider";
 
 // GET /api/health — health check (200 if DB is reachable, 503 if not)
 // Returns service metadata + DB check.
@@ -22,6 +24,8 @@ export async function GET() {
   }
 
   const ok = dbStatus === "healthy";
+  const sms = getSmsProviderStatus();
+  const payment = getPaymentProviderStatus();
   return NextResponse.json(
     {
       ok,
@@ -29,7 +33,16 @@ export async function GET() {
       services: {
         database: dbStatus,
         redis: "not-configured",
-        sms: process.env.SMS_PROVIDER ?? "console",
+        sms: sms.provider,
+        smsConfigured: sms.configured,
+        smsLiveReady: sms.liveReady,
+        payment: {
+          provider: payment.provider,
+          configured: payment.configured,
+          integrationWired: payment.integrationWired,
+          liveReady: payment.liveReady,
+          warnings: payment.warnings,
+        },
         eta: "simulator",
       },
       timestamp: new Date().toISOString(),
