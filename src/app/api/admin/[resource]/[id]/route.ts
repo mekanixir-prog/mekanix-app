@@ -149,9 +149,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     if (!["APPROVED", "REJECTED", "PAID"].includes(action)) {
       return NextResponse.json({ error: "وضعیت عملیات برداشت نامعتبر است" }, { status: 400 });
     }
-    if (action === "PAID" && adminSession.role !== "SUPER_ADMIN") {
-      return NextResponse.json({ error: "ثبت پرداخت نهایی فقط برای مدیر ارشد مجاز است" }, { status: 403 });
-    }
     const adminNotes = body.adminNotes === undefined ? null : body.adminNotes;
     if (adminNotes !== null && (typeof adminNotes !== "string" || adminNotes.length > 500)) {
       return NextResponse.json({ error: "یادداشت مدیر نامعتبر است" }, { status: 400 });
