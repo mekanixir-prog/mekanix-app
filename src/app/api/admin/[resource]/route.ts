@@ -40,8 +40,25 @@ const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
   },
   withdrawals: async (db) => {
     return db.withdrawalRequest.findMany({
-      include: {
-        wallet: { include: { technician: { include: { user: { select: { name: true, phone: true } } } } } },
+      select: {
+        id: true,
+        code: true,
+        amount: true,
+        method: true,
+        cardNumber: true,
+        bankName: true,
+        shebaNumber: true,
+        status: true,
+        requestedAt: true,
+        processedAt: true,
+        adminNotes: true,
+        wallet: {
+          select: {
+            technician: {
+              select: { user: { select: { name: true } } },
+            },
+          },
+        },
       },
       orderBy: { requestedAt: "desc" },
     });
