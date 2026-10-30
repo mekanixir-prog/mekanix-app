@@ -100,7 +100,23 @@ After deploying preview:
 
 Save actual status codes, sanitized logs, timestamps and evidence URLs. Do not record secret values.
 
-## 5. Production approval gate
+## 5. Scheduled wallet escrow release
+
+Wallet reads must remain read-only. Matured technician escrow entries are released by the protected scheduler endpoint POST /api/internal/wallet-release, not by GET /api/wallets.
+
+Before enabling the scheduled workflow in a target environment:
+
+1. Generate a unique random secret with at least 32 characters (for example, openssl rand -hex 32). Never commit it or place it in wrangler.toml.
+2. Configure the same value as the Cloudflare Worker secret CRON_SECRET using the approved environment's Wrangler secret process.
+3. Configure GitHub Actions repository/environment secrets:
+   - CRON_SECRET: the exact same secret value.
+   - MEKANIX_CRON_URL: the HTTPS base URL of that specific Worker environment, without an API path.
+4. Manually run the Scheduled wallet escrow release workflow against staging first. Confirm its response reports scanned/released/skipped counts and verify the matching wallet transaction and wallet balances in the isolated staging database.
+5. Only enable the scheduled workflow for production after the normal production approval gate is complete.
+
+The endpoint processes at most 100 due entries per invocation; the workflow runs every 10 minutes and may be manually dispatched. Each entry is independently idempotent and atomically updates the transaction and wallet. Concurrent runs are safe, but monitor repeated failures and hasMore responses. If either secret is absent, the workflow intentionally skips and the endpoint fails closed with 503. Do not expose the endpoint token to browsers or technician clients.
+
+## 6. Production approval gate
 
 Production deployment requires all of the following:
 - [ ] PR approved and merged according to repository policy.
@@ -116,7 +132,7 @@ Production deployment requires all of the following:
 
 If any item is unchecked, do not call the release production-ready.
 
-## 6. Deployment and smoke test
+## 7. Deployment and smoke test
 
 Only after approval:
 1. Verify the target Worker, production D1 database and secrets one last time.
@@ -131,7 +147,7 @@ Only after approval:
 
 A successful command alone is insufficient; the application and business paths must pass smoke tests.
 
-## 7. Rollback and incident response
+## 8. Rollback and incident response
 
 - Stop or disable new traffic/feature exposure if a critical error, authorization leak, duplicate charge, lost write, or widespread OTP failure appears.
 - Roll back the Worker to the last known-good deployment where supported.
@@ -140,7 +156,7 @@ A successful command alone is insufficient; the application and business paths m
 - For authentication incidents, rotate affected secrets, revoke sessions/tokens where possible, and inspect access logs.
 - Record timeline, impact, affected users, actions, and follow-up tasks in an incident report.
 
-## 8. Post-release
+## 9. Post-release
 
 - Monitor 5xx rate, `/api/ready`, DB errors, OTP delivery latency/failure rate, payment callback success, idempotency conflicts, and service-request completion.
 - Verify backups and restore access remain available.
@@ -148,7 +164,7 @@ A successful command alone is insufficient; the application and business paths m
 - Review incidents and user support reports after the initial release window.
 - Update [Release Readiness Audit](RELEASE_READINESS_AUDIT.md) with the actual commit, deploy ID, migration evidence and remaining known issues.
 
-## 9. Release record template
+## 10. Release record template
 
 ```text
 Release date/time:
