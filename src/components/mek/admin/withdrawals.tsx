@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { fmtDateTime } from "@/lib/format";
 import { useT } from "@/lib/use-t";
 import { toast } from "sonner";
+import { isValidIranianSheba } from "@/lib/iranian-iban";
 
 type Row = {
   id: string; code: string; amount: number | string; method: string;
@@ -68,7 +69,7 @@ export function AdminWithdrawals() {
                 <Button size="sm" variant="destructive" disabled={busy === row.id} onClick={() => act(row, "REJECTED")}>{t("admin.withdrawals.reject")}</Button>
               </>}
               {row.status === "APPROVED" && <>
-                {row.method === "bank" && /^IR\d{24}$/.test(row.shebaNumber ?? "") ? (
+                {row.method === "bank" && isValidIranianSheba(row.shebaNumber) ? (
                   <Button size="sm" disabled={busy === row.id} onClick={() => act(row, "PAID")}>{busy === row.id ? t("common.loading") : t("admin.withdrawals.markPaid")}</Button>
                 ) : (
                   <p className="w-full text-xs text-muted-foreground">{t("admin.withdrawals.destinationRequired")}</p>
