@@ -7,6 +7,18 @@ export const dynamic = "force-dynamic";
 
 const MAX_RELEASES_PER_RUN = 100;
 
+async function getConfiguredCronSecret(): Promise<string | undefined> {
+  const isWorker = typeof navigator !== "undefined" &&
+    navigator.userAgent === "Cloudflare-Workers";
+  if (!isWorker) return process.env.CRON_SECRET;
+
+  // Read Worker secrets from the actual environment binding. This avoids
+  // depending on process.env compatibility behavior across Wrangler dates.
+  const { getCloudflareContext } = await import("@opennextjs/cloudflare");
+  const context = await getCloudflareContext({ async: true });
+  return (context.env as unknown as { CRON_SECRET?: string }).CRON_SECRET;
+}
+
 async function constantTimeSecretMatch(provided: string, expected: string): Promise<boolean> {
   const encoder = new TextEncoder();
   const [a, b] = await Promise.all([
@@ -26,7 +38,7 @@ async function constantTimeSecretMatch(provided: string, expected: string): Prom
  * Each escrow release is independently atomic and safe to retry.
  */
 export async function POST(req: Request) {
-  const expected = process.env.CRON_SECRET;
+  const expected = await getConfiguredCronSecret();
   if (!expected || expected.length < 32) {
     return NextResponse.json({ error: "Scheduled wallet release is not configured" }, { status: 503 });
   }
