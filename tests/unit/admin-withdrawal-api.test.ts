@@ -82,13 +82,33 @@ describe("admin withdrawal API", () => {
   it("rejects malformed Iranian IBANs before marking a payout paid", async () => {
     mocks.find.mockReset();
     mocks.find.mockResolvedValueOnce(before).mockResolvedValueOnce({
-      method: "bank", shebaNumber: "IR\\\\d123",
+      method: "bank", shebaNumber: "IR002960000000100324200001",
     });
     const response = await PATCH(request({ status: "PAID" }), {
       params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
     });
     expect(response.status).toBe(409);
     expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it("records PAID only when the bank destination has a valid Sheba checksum", async () => {
+    const validSheba = "IR062960000000100324200001";
+    const validBefore = { ...before, shebaNumber: validSheba };
+    mocks.find.mockReset();
+    mocks.find
+      .mockResolvedValueOnce(validBefore)
+      .mockResolvedValueOnce({ method: "bank", shebaNumber: validSheba })
+      .mockResolvedValueOnce({ ...validBefore, status: "PAID" });
+
+    const response = await PATCH(request({ status: "PAID" }), {
+      params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.update).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      withdrawalId: "wd-1", action: "PAID", adminId: "admin-1",
+    }));
+    expect(mocks.audit).toHaveBeenCalledTimes(1);
+    expect(mocks.notify).toHaveBeenCalledTimes(1);
   });
 
   it("does not mark a masked card destination as paid", async () => {
