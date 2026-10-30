@@ -18,9 +18,9 @@ Wallet escrow is currently released when the technician wallet is read. That mak
 
 ## Processing behavior
 
-- Each scheduled run scans at most 100 matured PENDING transactions ordered by hold time. Remaining entries are handled by later runs.
+- Each scheduled run scans matured PENDING transactions in keyset-paginated pages of 100, up to 1,000 per run. Ordering is by `holdUntil` and `id`; a failed early row cannot prevent later rows in the same run from being attempted. If the 1,000-row cap is reached, the next cron run continues from the oldest still-pending rows.
 - Each release uses the same atomic D1 batch helper as the application path. A transaction is changed to AVAILABLE only when its matching wallet pending-to-available balance transfer succeeds.
-- One failed transaction is logged and does not prevent later due entries from being attempted.
+- One failed transaction is logged and does not prevent later due entries from being attempted. A permanently inconsistent row is retried on later cron runs and remains visible in `failed`/`unchanged` telemetry; operational reconciliation is still required.
 - The worker exposes no public HTTP action; fetch requests return 404.
 - This worker does not call a bank or payment provider.
 
