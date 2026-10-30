@@ -41,7 +41,7 @@ beforeEach(() => {
 
 describe("atomic withdrawal route", () => {
   it("commits a withdrawal and returns the updated balance", async () => {
-    const withdrawal = { id: "wd-1", walletId: "wallet-1", amount: 500, status: "REQUESTED" };
+    const withdrawal = { id: "wd-1", walletId: "wallet-1", amount: 500, method: "card", cardNumber: null, bankName: null, shebaNumber: null, status: "REQUESTED" };
     atomic.mockResolvedValue(true);
     db.withdrawalRequest.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(withdrawal);
     db.wallet.findUnique.mockResolvedValueOnce({ id: "wallet-1", balance: 1000 })
