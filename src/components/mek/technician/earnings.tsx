@@ -1,6 +1,6 @@
 "use client";
 import { authFetch } from "@/lib/fetch-with-auth";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Wallet, TrendingUp, Clock, Banknote, Calendar, Lock, AlertCircle,
@@ -72,6 +72,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
   const [withdrawSheba, setWithdrawSheba] = useState("");
   const [withdrawBank, setWithdrawBank] = useState("");
   const [withdrawing, setWithdrawing] = useState(false);
+  const withdrawalIdempotencyKey = useRef<string | null>(null);
 
   const loadWallet = async (techId: string) => {
     try {
@@ -125,10 +126,12 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
       return;
     }
     setWithdrawing(true);
+    const idempotencyKey = withdrawalIdempotencyKey.current ?? crypto.randomUUID();
+    withdrawalIdempotencyKey.current = idempotencyKey;
     try {
       const res = await authFetch("/api/wallets/withdraw", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
         body: JSON.stringify({
           technicianId: user.technician!.id,
           amount: amt,
@@ -142,6 +145,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
       if (!res.ok) throw new Error(data.error);
       toast.success(t("tech.earnings.withdrawSubmitted"));
       setWithdrawOpen(false);
+      withdrawalIdempotencyKey.current = null;
       setWithdrawAmount(""); setWithdrawCard(""); setWithdrawSheba(""); setWithdrawBank("");
       await loadWallet(user.technician!.id);
     } catch (e: any) {
@@ -356,14 +360,14 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
                 min={MIN_WITHDRAWAL}
                 max={balance}
                 value={withdrawAmount}
-                onChange={(e) => setWithdrawAmount(e.target.value)}
+                onChange={(e) => { withdrawalIdempotencyKey.current = null; setWithdrawAmount(e.target.value); }}
                 className="mt-1"
                 placeholder={`Min $${MIN_WITHDRAWAL}`}
               />
             </div>
             <div>
               <Label className="text-xs">{t("tech.earnings.withdrawMethod")}</Label>
-              <Select value={withdrawMethod} onValueChange={setWithdrawMethod}>
+              <Select value={withdrawMethod} onValueChange={(value) => { withdrawalIdempotencyKey.current = null; setWithdrawMethod(value); }}>
                 <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="card">{t("pay.card")}</SelectItem>
@@ -396,7 +400,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
                 </div>
                 <div>
                   <Label className="text-xs">{t("tech.earnings.withdrawBank")}</Label>
-                  <Input value={withdrawBank} onChange={(e) => setWithdrawBank(e.target.value)} className="mt-1" placeholder="بانک ملت" />
+                  <Input value={withdrawBank} onChange={(e) => { withdrawalIdempotencyKey.current = null; setWithdrawBank(e.target.value); }} className="mt-1" placeholder="بانک ملت" />
                 </div>
               </>
             )}
