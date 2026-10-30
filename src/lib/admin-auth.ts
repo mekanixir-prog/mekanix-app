@@ -120,8 +120,9 @@ export async function getAdminFromRequest(req: Request): Promise<AdminSession | 
   const db = await getDbForLib();
   const user = await db.user.findUnique({
     where: { id: userSession.userId },
-    select: { name: true },
+    select: { name: true, role: true, status: true },
   });
+  if (!user || user.role !== "ADMIN" || user.status !== "ACTIVE") return null;
   return {
     adminId: userSession.userId,
     username: user?.name ?? "",
