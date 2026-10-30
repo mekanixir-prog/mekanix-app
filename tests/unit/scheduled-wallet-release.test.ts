@@ -59,6 +59,16 @@ describe("POST /api/internal/wallet-release", () => {
     expect(mocks.release).toHaveBeenCalledTimes(2);
   });
 
+  it("reports backlog when the per-run safety limit is reached", async () => {
+    mocks.findMany.mockResolvedValue(
+      Array.from({ length: 100 }, (_, index) => ({ id: `txn-${index}`, walletId: "wallet-1" }))
+    );
+    mocks.release.mockResolvedValue(false);
+    const response = await POST(request(secret));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ scanned: 100, released: 0, skipped: 100, hasMore: true });
+  });
+
   it("propagates a failed atomic release so the scheduler retries the remaining entries", async () => {
     mocks.release.mockRejectedValueOnce(new Error("wallet release failed"));
     await expect(POST(request(secret))).rejects.toThrow("wallet release failed");
