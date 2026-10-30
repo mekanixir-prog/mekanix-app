@@ -178,7 +178,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
 
     result = await db.withdrawalRequest.findUnique({
       where: { id },
-      include: { wallet: { include: { technician: { include: { user: true } } } } },
+      select: {
+        id: true, code: true, walletId: true, amount: true, method: true,
+        status: true, requestedAt: true, processedAt: true, reviewerId: true,
+        adminNotes: true,
+        wallet: { select: { technician: { select: { userId: true } } } },
+      },
     });
     await safeAudit({
       session: adminSession,
