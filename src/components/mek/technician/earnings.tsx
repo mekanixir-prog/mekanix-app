@@ -380,7 +380,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
                 <Label className="text-xs">{t("tech.earnings.withdrawCard")}</Label>
                 <Input
                   value={withdrawCard}
-                  onChange={(e) => setWithdrawCard(e.target.value.replace(/\D/g, "").slice(0, 16))}
+                  onChange={(e) => { withdrawalIdempotencyKey.current = null; setWithdrawCard(e.target.value.replace(/\D/g, "").slice(0, 16)); }}
                   className="mt-1 font-mono"
                   placeholder="6037 9911 2233 4455"
                   inputMode="numeric"
@@ -393,7 +393,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
                   <Label className="text-xs">{t("tech.earnings.withdrawSheba")}</Label>
                   <Input
                     value={withdrawSheba}
-                    onChange={(e) => setWithdrawSheba(e.target.value.slice(0, 26))}
+                    onChange={(e) => { withdrawalIdempotencyKey.current = null; setWithdrawSheba(e.target.value.slice(0, 26)); }}
                     className="mt-1 font-mono"
                     placeholder="IR000000000000000000000000"
                   />
