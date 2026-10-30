@@ -79,6 +79,18 @@ describe("admin withdrawal API", () => {
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
+  it("does not mark a masked card destination as paid", async () => {
+    mocks.find.mockReset();
+    mocks.find.mockResolvedValueOnce(before).mockResolvedValueOnce({
+      method: "card", shebaNumber: null,
+    });
+    const response = await PATCH(request({ status: "PAID" }), {
+      params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
+    });
+    expect(response.status).toBe(409);
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
   it("returns conflict when another administrator already changed the state", async () => {
     mocks.update.mockResolvedValue(false);
     const response = await PATCH(request({ status: "PAID" }), {
