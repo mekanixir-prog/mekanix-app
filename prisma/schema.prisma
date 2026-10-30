@@ -21,6 +21,10 @@ datasource db {
 
 // ───────────────────────── Users & Roles ─────────────────────────
 
+// Currency convention: commercial prices, invoices, payments and wallet ledgers are stored in USD.
+// Persian UI converts those USD base values to IRR for display. Only PaymentGatewayLog.amount
+// is the converted IRR amount sent to a Shaparak-compatible gateway; baseAmountUsd preserves
+// the canonical order amount and exchangeRate locks the conversion used for that attempt.
 model User {
   id            String     @id @default(cuid())
   // Email is OPTIONAL — OTP-first users authenticate by phone only.
@@ -987,9 +991,9 @@ model WalletLedger {
   walletId        String
   wallet          Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
   type            String   // CREDIT | DEBIT | HOLD | RELEASE | REFUND | COMMISSION | WITHDRAWAL
-  amount          Decimal    @default(0)
-  balanceBefore   Decimal    @default(0)
-  balanceAfter    Decimal    @default(0)
+  amount          Decimal    @default(0) // USD base units
+  balanceBefore   Decimal    @default(0) // USD base units
+  balanceAfter    Decimal    @default(0) // USD base units
   referenceType   String?  // Job | Payment | Withdrawal | Manual
   referenceId     String?
   description     String?
