@@ -722,6 +722,7 @@ model WalletTransaction {
   holdUntil        DateTime? // when funds become AVAILABLE (12h after job completion)
   releasedAt       DateTime? // when actually released
   description      String?
+  idempotencyKey   String?   @unique
   createdAt        DateTime  @default(now())
 
   @@index([walletId, status])
@@ -988,6 +989,7 @@ model WalletLedger {
   referenceType   String?  // Job | Payment | Withdrawal | Manual
   referenceId     String?
   description     String?
+  idempotencyKey  String?  @unique
   createdBy       String?  // admin/user id
   createdAt       DateTime @default(now())
 
