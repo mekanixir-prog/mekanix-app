@@ -12,6 +12,8 @@ on:
   pull_request:
     branches:
       - main
+      - 'fix/**'
+      - 'feat/**'
     paths:
       - 'scripts/build-cloudflare.sh'
       - 'scripts/cf-pages-fix.sh'
@@ -22,6 +24,7 @@ on:
       - 'src/lib/db.worker.ts'
       - 'src/lib/db-worker.ts'
       - 'src/lib/db-access.ts'
+      - 'src/**'
       - 'prisma/**'
       - 'package.json'
       - 'bun.lock'
