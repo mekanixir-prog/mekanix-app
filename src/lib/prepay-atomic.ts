@@ -55,8 +55,8 @@ export async function recordPrepayWithPrisma(
 
     const prepayKey = `prepay:${input.jobId}:PREPAY`;
     const commissionKey = `prepay:${input.jobId}:COMMISSION`;
-    const prepayTxn = await tx.walletTransaction.createMany({
-      data: [{
+    await tx.walletTransaction.create({
+      data: {
         walletId: wallet.id,
         jobId: input.jobId,
         kind: "PREPAY",
@@ -67,11 +67,10 @@ export async function recordPrepayWithPrisma(
         holdUntil: null,
         description: `Pre-service payment — ${input.jobCode} (${input.machineLabel})`,
         idempotencyKey: prepayKey,
-      }],
-      skipDuplicates: true,
+      },
     });
-    const commissionTxn = await tx.walletTransaction.createMany({
-      data: [{
+    await tx.walletTransaction.create({
+      data: {
         walletId: wallet.id,
         jobId: input.jobId,
         kind: "COMMISSION",
@@ -81,18 +80,11 @@ export async function recordPrepayWithPrisma(
         netAmount: -input.commission,
         description: `Platform commission (10%) — ${input.jobCode}`,
         idempotencyKey: commissionKey,
-      }],
-      skipDuplicates: true,
+      },
     });
 
-    // A winning Job transition must create both unique transaction records.
-    // Any mismatch throws and rolls back the Job marker and wallet creation.
-    if (prepayTxn.count !== 1 || commissionTxn.count !== 1) {
-      throw new Error("Prepay idempotency conflict; financial transaction rolled back");
-    }
-
-    const holdLedger = await tx.walletLedger.createMany({
-      data: [{
+    const holdLedger = await tx.walletLedger.create({
+      data: {
         walletId: wallet.id,
         type: "HOLD",
         amount: input.net,
@@ -102,11 +94,10 @@ export async function recordPrepayWithPrisma(
         referenceId: input.jobId,
         description: `Prepay escrow — ${input.jobCode}`,
         idempotencyKey: `prepay:${input.jobId}:LEDGER_HOLD`,
-      }],
-      skipDuplicates: true,
+      },
     });
-    const commissionLedger = await tx.walletLedger.createMany({
-      data: [{
+    await tx.walletLedger.create({
+      data: {
         walletId: wallet.id,
         type: "COMMISSION",
         amount: -input.commission,
@@ -116,12 +107,8 @@ export async function recordPrepayWithPrisma(
         referenceId: input.jobId,
         description: `Platform commission — ${input.jobCode}`,
         idempotencyKey: `prepay:${input.jobId}:LEDGER_COMMISSION`,
-      }],
-      skipDuplicates: true,
+      },
     });
-    if (holdLedger.count !== 1 || commissionLedger.count !== 1) {
-      throw new Error("Prepay ledger conflict; financial transaction rolled back");
-    }
 
     await tx.wallet.update({
       where: { id: wallet.id },
