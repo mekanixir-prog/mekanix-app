@@ -66,6 +66,17 @@ export async function releaseWalletTransactionWithPrisma(
   now: Date
 ): Promise<boolean> {
   return db.$transaction(async (tx) => {
+    const transaction = await tx.walletTransaction.findFirst({
+      where: {
+        id: transactionId,
+        walletId,
+        status: "PENDING",
+        holdUntil: { not: null, lte: now },
+      },
+      select: { netAmount: true },
+    });
+    if (!transaction) return false;
+
     const transition = await tx.walletTransaction.updateMany({
       where: {
         id: transactionId,
@@ -75,23 +86,13 @@ export async function releaseWalletTransactionWithPrisma(
       },
       data: { status: "AVAILABLE", releasedAt: now },
     });
-
     if (transition.count !== 1) return false;
 
     const walletUpdate = await tx.wallet.updateMany({
-      where: { id: walletId, pendingBalance: { gte: (await tx.walletTransaction.findUniqueOrThrow({
-        where: { id: transactionId },
-        select: { netAmount: true },
-      })).netAmount } },
+      where: { id: walletId, pendingBalance: { gte: transaction.netAmount } },
       data: {
-        pendingBalance: { decrement: (await tx.walletTransaction.findUniqueOrThrow({
-          where: { id: transactionId },
-          select: { netAmount: true },
-        })).netAmount },
-        balance: { increment: (await tx.walletTransaction.findUniqueOrThrow({
-          where: { id: transactionId },
-          select: { netAmount: true },
-        })).netAmount },
+        pendingBalance: { decrement: transaction.netAmount },
+        balance: { increment: transaction.netAmount },
       },
     });
 
