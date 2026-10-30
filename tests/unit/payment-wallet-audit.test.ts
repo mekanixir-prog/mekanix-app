@@ -398,6 +398,28 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
     }));
   });
 
+  it("refuses to create a USD payment when the locked USD amount is missing", async () => {
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "legacy-log-1",
+      code: "PG-LEGACY",
+      userId: "user-1",
+      amount: 54_000_000,
+      currency: "IRR",
+      baseAmountUsd: null,
+      exchangeRate: null,
+      status: "REDIRECTED",
+      purpose: "vip",
+      verifiedAt: null,
+    });
+    const response = await verifyPOST(makePostRequest("http://localhost/api/gateway/verify", {
+      code: "PG-LEGACY",
+      otp: "1234",
+    }));
+    expect(response.status).toBe(409);
+    expect((await response.json()).reconciliationRequired).toBe(true);
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
+  });
+
   it("replays the same successful payment instead of rejecting or creating a duplicate", async () => {
     mockPaymentFindUnique
       .mockResolvedValueOnce(null)
