@@ -135,6 +135,16 @@ describe("admin withdrawal API", () => {
     expect(mocks.notify).not.toHaveBeenCalled();
   });
 
+  it("keeps a committed approval successful when the notification service is unavailable", async () => {
+    mocks.notify.mockRejectedValueOnce(new Error("notification provider unavailable"));
+    const response = await PATCH(request({ status: "APPROVED" }), {
+      params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+    expect(mocks.audit).toHaveBeenCalledTimes(1);
+  });
+
   it("returns conflict when another administrator already changed the state", async () => {
     mocks.update.mockResolvedValue(false);
     const response = await PATCH(request({ status: "PAID" }), {
