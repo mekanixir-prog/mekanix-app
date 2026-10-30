@@ -6,7 +6,7 @@
 > - ⬜ Pending — needs a real production server (cannot be completed from dev sandbox)
 > - ⚠️ Partial — some sub-tasks done, others pending
 
-This checklist tracks all 31 phases required to take MEKANIX from the dev sandbox to a public production launch. Items marked 🛠️ are **fully prepared** in this repo and activate automatically once the corresponding env vars / domain / server are provisioned.
+This checklist tracks all 31 phases required to take MEKANIX from the dev sandbox to a public production launch. Items marked 🛠️ mean code/config preparation exists; they do **not** prove a live provider round-trip or production deployment. See [RELEASE_GATE_CURRENT.md](./RELEASE_GATE_CURRENT.md) for the current Go/No-Go status.
 
 ---
 
