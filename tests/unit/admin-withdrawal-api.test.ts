@@ -79,6 +79,18 @@ describe("admin withdrawal API", () => {
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
+  it("rejects malformed Iranian IBANs before marking a payout paid", async () => {
+    mocks.find.mockReset();
+    mocks.find.mockResolvedValueOnce(before).mockResolvedValueOnce({
+      method: "bank", shebaNumber: "IR\\\\d123",
+    });
+    const response = await PATCH(request({ status: "PAID" }), {
+      params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
+    });
+    expect(response.status).toBe(409);
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
   it("does not mark a masked card destination as paid", async () => {
     mocks.find.mockReset();
     mocks.find.mockResolvedValueOnce(before).mockResolvedValueOnce({
