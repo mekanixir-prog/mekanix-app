@@ -1,6 +1,6 @@
 "use client";
 import {
-  LayoutDashboard, Users, Wrench, Briefcase, CreditCard, Star, AlertTriangle,
+  LayoutDashboard, Users, Wrench, Briefcase, CreditCard, WalletCards, Star, AlertTriangle,
   Layers, ShieldCheck, Settings, UserPlus,
 } from "lucide-react";
 import { AppShell, type NavItem } from "@/components/mek/app-shell";
@@ -11,6 +11,7 @@ import { AdminCustomers } from "./customers";
 import { AdminTechnicians } from "./technicians";
 import { AdminJobs } from "./jobs";
 import { AdminPayments } from "./payments";
+import { AdminWithdrawals } from "./withdrawals";
 import { AdminReviews } from "./reviews";
 import { AdminDisputes } from "./disputes";
 import { AdminCategories } from "./categories";
@@ -29,6 +30,7 @@ export function AdminApp() {
     { view: "technicians", label: t("nav.technicians"), icon: Wrench },
     { view: "jobs", label: t("nav.jobs"), icon: Briefcase },
     { view: "payments", label: t("nav.payments"), icon: CreditCard },
+    { view: "withdrawals", label: t("nav.withdrawals"), icon: WalletCards },
     { view: "reviews", label: t("nav.reviews"), icon: Star },
     { view: "disputes", label: t("nav.disputes"), icon: AlertTriangle },
     { view: "categories", label: t("nav.categories"), icon: Layers },
@@ -43,6 +45,7 @@ export function AdminApp() {
       case "technicians": return <AdminTechnicians />;
       case "jobs": return <AdminJobs />;
       case "payments": return <AdminPayments />;
+      case "withdrawals": return <AdminWithdrawals />;
       case "reviews": return <AdminReviews />;
       case "disputes": return <AdminDisputes />;
       case "categories": return <AdminCategories />;
