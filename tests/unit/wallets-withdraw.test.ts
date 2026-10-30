@@ -1,12 +1,14 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const db = {
-  wallet: { findUnique: vi.fn() },
-  withdrawalRequest: { findUnique: vi.fn() },
-  notification: { create: vi.fn() },
-};
-const atomic = vi.fn();
+const { db, atomic } = vi.hoisted(() => ({
+  db: {
+    wallet: { findUnique: vi.fn() },
+    withdrawalRequest: { findUnique: vi.fn() },
+    notification: { create: vi.fn() },
+  },
+  atomic: vi.fn(),
+}));
 vi.mock("@/lib/db-access", () => ({ getDbForLib: async () => db }));
 vi.mock("@/lib/api-helpers", () => ({
   requireAuth: async () => ({ userId: "user-1", role: "TECHNICIAN" }),
