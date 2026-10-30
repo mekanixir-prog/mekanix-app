@@ -1,7 +1,8 @@
 import { releaseWalletTransactionWithD1, type D1Binding, type D1PreparedStatement as ReleaseStatement } from "../../src/lib/wallet-release-d1";
 
 type DueTransaction = { id: string; walletId: string };
-type D1PreparedStatement = ReleaseStatement & {
+type D1PreparedStatement = Omit<ReleaseStatement, "bind"> & {
+  bind: (...values: unknown[]) => D1PreparedStatement;
   all: <T = unknown>() => Promise<{ results?: T[] }>;
 };
 type D1Database = Omit<D1Binding, "prepare"> & {
