@@ -215,11 +215,42 @@ export async function verifyPayment(authority: string, amount: number): Promise<
 
 // ──────────── Health-check helper (used by /api/health + security-audit.sh) ────────────
 
-export function getPaymentProviderStatus(): { configured: boolean; provider: string } {
+export type PaymentProviderStatus = {
+  configured: boolean;
+  provider: string;
+  liveReady: boolean;
+  integrationWired: boolean;
+  warnings: string[];
+};
+
+export function getPaymentProviderStatus(): PaymentProviderStatus {
   const provider = process.env.PAYMENT_PROVIDER?.toLowerCase().trim() || "simulator";
-  let configured = true;
-  if (provider === "zarinpal" && !process.env.ZARINPAL_MERCHANT_ID) configured = false;
-  if (provider === "idpay" && !process.env.IDPAY_API_KEY) configured = false;
-  if (provider === "nextpay" && !process.env.NEXTPAY_API_KEY) configured = false;
-  return { configured, provider };
+  const warnings: string[] = [];
+  let configured = false;
+
+  if (provider === "zarinpal") {
+    configured = Boolean(process.env.ZARINPAL_MERCHANT_ID?.trim());
+    if (!configured) warnings.push("ZARINPAL_MERCHANT_ID is not configured");
+  } else if (provider === "idpay") {
+    configured = Boolean(process.env.IDPAY_API_KEY?.trim());
+    if (!configured) warnings.push("IDPAY_API_KEY is not configured");
+  } else if (provider === "simulator") {
+    configured = true;
+    warnings.push("Simulator is not a live payment provider");
+  } else if (provider === "nextpay") {
+    warnings.push("NextPay adapter is a stub and is not implemented");
+  } else {
+    warnings.push(`Unsupported PAYMENT_PROVIDER: ${provider}`);
+  }
+
+  // The provider adapters exist, but /api/gateway/* still hard-blocks in
+  // production and is not yet wired to provider create/callback/verify.
+  const integrationWired = false;
+  return {
+    configured,
+    provider,
+    integrationWired,
+    liveReady: configured && integrationWired && provider !== "simulator",
+    warnings,
+  };
 }
