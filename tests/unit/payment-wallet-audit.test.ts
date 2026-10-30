@@ -210,7 +210,7 @@ describe("PAY-01 — /api/payments production guard", () => {
       id: "inv-1",
       status: "SENT",
       total: 100,
-      currency: "IRR",
+      currency: "USD",
       jobId: "job-1",
       code: "INV-1",
       job: {
@@ -246,7 +246,7 @@ describe("/api/payments — BOLA (payment for another user's invoice)", () => {
       id: "inv-1",
       status: "SENT",
       total: 100,
-      currency: "IRR",
+      currency: "USD",
       jobId: "job-1",
       code: "INV-1",
       job: {
@@ -276,7 +276,7 @@ describe("/api/payments — BOLA (payment for another user's invoice)", () => {
       id: "inv-1",
       status: "SENT",
       total: 100,
-      currency: "IRR",
+      currency: "USD",
       jobId: "job-1",
       code: "INV-1",
       job: {
@@ -312,7 +312,7 @@ describe("/api/payments — duplicate POST idempotency (sequential)", () => {
       id: "inv-1",
       status: "PAID", // already paid
       total: 100,
-      currency: "IRR",
+      currency: "USD",
       jobId: "job-1",
       code: "INV-1",
       job: {
@@ -348,8 +348,8 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
     id: "pay-1",
     code: "PAY-PG-7001",
     userId: "user-1",
-    amount: 100_000,
-    currency: "IRR",
+    amount: 10,
+    currency: "USD",
     status: "SUCCEEDED",
   };
 
@@ -366,6 +366,8 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
       userId: "user-1",
       amount: 100_000,
       currency: "IRR",
+      baseAmountUsd: 10,
+      exchangeRate: 10_000,
       status: "REDIRECTED",
       purpose: "vip",
       verifiedAt: null,
@@ -385,7 +387,8 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
     expect(mockPaymentCreate).toHaveBeenCalledTimes(1);
     expect(mockPaymentCreate.mock.calls[0][0].data).toMatchObject({
       userId: "user-1",
-      amount: 100_000,
+      amount: 10,
+      currency: "USD",
       status: "SUCCEEDED",
       gatewayLogId: "log-1",
     });
@@ -606,7 +609,7 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
     mockVipPlanFindUnique.mockResolvedValue({
       id: "plan-1",
       name: "Gold",
-      priceIrr: 100_000,
+      priceUsd: 10,
       durationDays: 30,
       active: true,
     });
@@ -614,7 +617,8 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
       id: "pay-1",
       userId: "user-1",
       status: "SUCCEEDED",
-      amount: 100_000,
+      amount: 10,
+      currency: "USD",
     });
     mockUserVipSubscriptionUpdateMany.mockResolvedValue({ count: 0 });
     mockUserVipSubscriptionCreate.mockResolvedValue({
@@ -705,7 +709,8 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
         id: where.id,
         userId: "user-1",
         status: "SUCCEEDED",
-        amount: 100_000,
+        amount: 10,
+        currency: "USD",
       }));
       mockUserVipSubscriptionFindFirst.mockResolvedValue(null);
       mockUserVipSubscriptionCreate
