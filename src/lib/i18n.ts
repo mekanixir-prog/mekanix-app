@@ -1393,7 +1393,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     "admin.withdrawals.approve": "Approve",
     "admin.withdrawals.reject": "Reject",
     "admin.withdrawals.markPaid": "Mark as paid",
-    "admin.withdrawals.cardMaskedNotice": "Card number is masked; ask the technician for a valid Sheba account before payout.",
+    "admin.withdrawals.destinationRequired": "A valid Iranian Sheba/IBAN is required to confirm a bank payout. Ask the technician to update the destination.",
 
     "admin.reviews.title": "Reviews",
     "admin.reviews.subtitle": "All customer reviews on the platform",
@@ -3006,7 +3006,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     "admin.withdrawals.approve": "تأیید درخواست",
     "admin.withdrawals.reject": "رد و بازگشت وجه",
     "admin.withdrawals.markPaid": "ثبت پرداخت",
-    "admin.withdrawals.cardMaskedNotice": "شماره کارت به‌صورت امن ماسک شده است؛ برای پرداخت، از مکانیک شبای معتبر دریافت کنید.",
+    "admin.withdrawals.destinationRequired": "برای ثبت پرداخت بانکی، شبای معتبر ایران لازم است؛ از مکانیک بخواهید مقصد پرداخت را اصلاح کند.",
 
     "admin.reviews.title": "نظرات",
     "admin.reviews.subtitle": "همه نظرات مشتریان در پلتفرم",
