@@ -1,55 +1,70 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
+import { getUsdToIrrRate } from "@/lib/exchange-rate";
 
-// ⚠️ DEV MODE: Amount comes from client in dev mode for testing.
-// In production, this route returns 404 — real gateway integration
-// must resolve amount from the linked entity (invoice/plan), not from client.
-
+// Simulator-only checkout accepts canonical USD amounts. The gateway log stores
+// both the locked USD order value and the converted Rial amount.
 export async function POST(req: Request) {
-  // Hard block in production — simulator must not be reachable
   if (process.env.NODE_ENV === "production") {
     return new NextResponse(null, { status: 404 });
   }
 
-  // Require authentication — userId must come from session, not client
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
-  const body = await req.json();
-  const { amount, purpose, description, mobile, cardNumber } = body;
-
-  if (!amount || amount <= 0) {
-    return NextResponse.json({ error: "مبلغ معتبر الزامی است" }, { status: 400 });
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "بدنه درخواست نامعتبر است" }, { status: 400 });
   }
 
-  // Validate amount is reasonable (prevent extreme spoofing)
-  if (amount > 100_000_000) { // 100M IRR = ~$200 USD max single payment
-    return NextResponse.json({ error: "مبلغ غیرمجاز" }, { status: 400 });
+  const amountUsd = typeof body.amount === "number" ? body.amount : Number.NaN;
+  if (!Number.isFinite(amountUsd) || amountUsd <= 0 || amountUsd > 100_000) {
+    return NextResponse.json({ error: "مبلغ دلاری نامعتبر است" }, { status: 400 });
   }
 
-  const code = `PG-${Math.floor(7000 + Math.random() * 2000)}`;
-  const referenceId = `SIM-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+  const purpose = typeof body.purpose === "string" &&
+    ["vip", "prepay", "invoice", "wallet_topup"].includes(body.purpose)
+    ? body.purpose
+    : "vip";
+  const exchange = await getUsdToIrrRate();
+  const amountIrr = Math.round(amountUsd * exchange.rate);
+  if (!Number.isSafeInteger(amountIrr) || amountIrr <= 0) {
+    return NextResponse.json({ error: "مبلغ تبدیل‌شده برای درگاه معتبر نیست" }, { status: 400 });
+  }
+
+  const code = `PG-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`;
+  const referenceId = `SIM-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 
   const db = await getDbForLib();
   const log = await db.paymentGatewayLog.create({
     data: {
       code,
-      userId: session.userId, // server-authoritative — NOT from client
-      amount,
+      userId: session.userId,
+      amount: amountIrr,
       currency: "IRR",
+      baseAmountUsd: amountUsd,
+      exchangeRate: exchange.rate,
       gateway: "SHAPARAK_SIM",
       status: "REDIRECTED",
-      purpose: purpose || "vip",
+      purpose,
       referenceId,
-      cardNumber: cardNumber ? maskCard(cardNumber) : null,
-      mobile: mobile ?? null,
-      description: description ?? null,
+      cardNumber: typeof body.cardNumber === "string" ? maskCard(body.cardNumber) : null,
+      mobile: typeof body.mobile === "string" ? body.mobile : null,
+      description: typeof body.description === "string" ? body.description.slice(0, 300) : null,
     },
   });
 
-  // Return the reference; frontend simulates the OTP step then calls /verify
-  return NextResponse.json({ ok: true, code: log.code, referenceId, amount });
+  return NextResponse.json({
+    ok: true,
+    code: log.code,
+    referenceId,
+    amount: amountUsd,
+    amountIrr,
+    exchangeRate: exchange.rate,
+  });
 }
 
 function maskCard(card: string): string {
