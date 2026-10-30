@@ -117,7 +117,7 @@ export async function releaseWalletTransaction(
   if (isCloudflareWorkers) {
     const { getCloudflareContext } = await import("@opennextjs/cloudflare");
     const context = await getCloudflareContext({ async: true });
-    const d1 = (context.env as { DB?: D1Binding }).DB;
+    const d1 = (context.env as unknown as { DB?: D1Binding }).DB;
     if (!d1) throw new Error("D1 binding 'DB' is unavailable for atomic escrow release");
     return releaseWalletTransactionWithD1(d1, walletId, transactionId, now);
   }
