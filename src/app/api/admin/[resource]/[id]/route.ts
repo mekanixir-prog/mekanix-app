@@ -167,6 +167,19 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     });
     if (!before) return NextResponse.json({ error: "درخواست برداشت پیدا نشد" }, { status: 404 });
 
+    if (action === "PAID") {
+      const destination = await db.withdrawalRequest.findUnique({
+        where: { id },
+        select: { method: true, shebaNumber: true },
+      });
+      if (destination?.method !== "bank" || !/^IR\\d{24}$/.test(destination.shebaNumber ?? "")) {
+        return NextResponse.json(
+          { error: "برای ثبت پرداخت، درخواست باید دارای شبای معتبر باشد؛ شماره کارت به‌صورت امن ماسک شده است" },
+          { status: 409 }
+        );
+      }
+    }
+
     const changed = await updateWithdrawalAtomically(db, {
       withdrawalId: id,
       action,
