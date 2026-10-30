@@ -54,6 +54,7 @@ export async function POST(req: Request) {
     !payment ||
     payment.userId !== userId ||
     payment.status !== "SUCCEEDED" ||
+    payment.currency !== "USD" ||
     Number(payment.amount) < Number(plan.priceUsd)
   ) {
     return NextResponse.json({ error: "Invalid or insufficient payment" }, { status: 400 });
