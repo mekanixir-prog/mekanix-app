@@ -71,7 +71,7 @@ export function AdminWithdrawals() {
                 {row.method === "bank" && /^IR\d{24}$/.test(row.shebaNumber ?? "") ? (
                   <Button size="sm" disabled={busy === row.id} onClick={() => act(row, "PAID")}>{busy === row.id ? t("common.loading") : t("admin.withdrawals.markPaid")}</Button>
                 ) : (
-                  <p className="w-full text-xs text-muted-foreground">{t("admin.withdrawals.cardMaskedNotice")}</p>
+                  <p className="w-full text-xs text-muted-foreground">{t("admin.withdrawals.destinationRequired")}</p>
                 )}
                 <Button size="sm" variant="destructive" disabled={busy === row.id} onClick={() => act(row, "REJECTED")}>{t("admin.withdrawals.reject")}</Button>
               </>}
