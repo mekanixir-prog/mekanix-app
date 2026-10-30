@@ -1,10 +1,15 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const dbMocks = vi.hoisted(() => ({ queryRaw: vi.fn() }));
+vi.mock("@/lib/db-access", () => ({
+  getDbForLib: async () => ({ $queryRaw: dbMocks.queryRaw }),
+}));
 import { getPaymentProviderStatus } from "@/lib/payment-provider";
 import { getSmsProviderStatus } from "@/lib/sms-provider";
-import { checkProductionGates } from "@/app/api/ready/route";
+import { GET as readyGET, checkProductionGates } from "@/app/api/ready/route";
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks(); });
 
 describe("SMS provider live readiness", () => {
   it("does not treat console logging as live SMS delivery", () => {
@@ -115,6 +120,23 @@ describe("production readiness gates", () => {
     expect(gates).toHaveLength(3);
     expect(gates.some((gate) => gate.reason.includes("FARAPAYAMAK_PASSWORD"))).toBe(true);
     expect(gates.some((gate) => gate.reason.includes("local SQLite"))).toBe(true);
+  });
+
+  it("returns 503 from /api/ready when database is healthy but live checkout is not wired", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SMS_PROVIDER", "kavenegar");
+    vi.stubEnv("KAVENEGAR_API_KEY", "test-key");
+    vi.stubEnv("PAYMENT_PROVIDER", "zarinpal");
+    vi.stubEnv("ZARINPAL_MERCHANT_ID", "merchant-id");
+    vi.stubEnv("DATABASE_URL", "postgresql://db.example/mekanix");
+    dbMocks.queryRaw.mockResolvedValue(1);
+
+    const response = await readyGET();
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      checks: { database: true, productionGates: false },
+    });
   });
 
   it("does not apply production-only gates in development", () => {
