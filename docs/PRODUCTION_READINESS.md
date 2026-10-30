@@ -95,13 +95,13 @@ This checklist tracks all 31 phases required to take MEKANIX from the dev sandbo
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
 | 6.1 | Payment provider abstraction | ✅ | `src/lib/payment-provider.ts` (Zarinpal + IDPay + simulator dev) |
-| 6.2 | Auto-init on server boot | 🛠️ | `initPaymentProvider()` exists; TODO: wire into `src/lib/init.ts` once the existing `/api/gateway/*` simulator flow is migrated |
-| 6.3 | Simulator flow live | ✅ | `src/app/api/gateway/initiate/route.ts` + `verify/route.ts` write `PaymentGatewayLog` rows; existing UI uses Shaparak simulator |
-| 6.4 | Zarinpal create + verify | ✅ | `createZarinpalProvider` calls `api.zarinpal.com/pg/v4/payment/request.json` + `verify.json` |
-| 6.5 | IDPay create + verify | ✅ | `createIdpayProvider` calls `api.idpay.ir/v1.3/payment` + `verify` |
+| 6.2 | Provider initialization + live checkout wiring | ⚠️ | Zarinpal/IDPay adapters exist, but `/api/gateway/*` is still simulator-only and hard-404s in production; provider adapters are not connected to production checkout/callback/verify |
+| 6.3 | Simulator flow live | 🛠️ | Simulator works only in development/test; production routes intentionally return 404 |
+| 6.4 | Zarinpal create + verify | ⚠️ | Provider adapter methods exist, but end-to-end order binding, callback handling, locked-amount verification, and production route wiring remain pending |
+| 6.5 | IDPay create + verify | ⚠️ | Adapter is incomplete: verification currently does not preserve the original `order_id`; end-to-end callback and production route wiring remain pending |
 | 6.6 | Live payment test (real card) | ⬜ | Needs real `ZARINPAL_MERCHANT_ID` or `IDPAY_API_KEY` + sandbox card |
-| 6.7 | Idempotent verify (no double-spend) | ✅ | `gateway/verify` checks `log.status === "VERIFIED"` and rejects re-verify |
-| 6.8 | Payment status surfaced in `/api/health` | 🛠️ | `getPaymentProviderStatus()` exported; TODO: surface in `/api/health` response |
+| 6.7 | Idempotent verify (no double-spend) | ⚠️ | Simulator verification has idempotency protection; provider callback/verification flow is not yet wired |
+| 6.8 | Payment status surfaced in `/api/health` and `/api/ready` | 🛠️ | Provider configuration, live-readiness, and integration-wired status are surfaced; `/api/ready` deliberately remains blocked until production checkout is wired |
 
 ---
 
