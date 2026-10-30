@@ -17,7 +17,7 @@ type VipPlan = {
   id: string;
   slug: string;
   name: string;
-  priceIrr: number;
+  priceUsd: number;
   durationDays: number;
   discountPct: number;
   priorityBoost: number;
@@ -155,7 +155,7 @@ export function CustomerVip({ userId }: { userId: string }) {
                   <p className="mt-1 text-[11px] text-muted-foreground">{t(`vip.plan.${plan.slug}Desc`)}</p>
 
                   <div className="mt-4 flex items-baseline gap-1">
-                    <span className="font-display text-2xl font-bold text-foreground">{money(plan.priceIrr)}</span>
+                    <span className="font-display text-2xl font-bold text-foreground">{money(plan.priceUsd)}</span>
                     <span className="text-[11px] text-muted-foreground">
                       / {t("vip.plan.duration").replace("{days}", isFa ? toPersianDigits(plan.durationDays) : String(plan.durationDays))}
                     </span>
@@ -198,7 +198,7 @@ export function CustomerVip({ userId }: { userId: string }) {
         <PaymentGatewayDialog
           open={gatewayOpen}
           onOpenChange={setGatewayOpen}
-          amount={selectedPlan.priceIrr}
+          amount={selectedPlan.priceUsd}
           purpose="vip"
           userId={userId}
           description={t(`vip.plan.${selectedPlan.slug}`)}
