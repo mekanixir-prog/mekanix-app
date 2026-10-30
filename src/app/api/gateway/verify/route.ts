@@ -51,6 +51,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, paymentId: payment.id, amount: payment.amount, purpose: log.purpose, alreadyVerified: true });
   }
 
+  // Payment.amount is always canonical USD. PaymentGatewayLog.amount is the
+  // converted Rial amount sent to the gateway; baseAmountUsd is the locked order value.
   // Create first with a unique idempotency key. If two callbacks race, the
   // database permits exactly one Payment row. The losing request reloads it.
   try {
@@ -59,8 +61,8 @@ export async function POST(req: Request) {
         code: `PAY-${log.code}`,
         invoiceId: null,
         userId: session.userId,
-        amount: log.amount,
-        currency: log.currency || "IRR",
+        amount: log.baseAmountUsd ?? log.amount,
+        currency: "USD",
         method: "card",
         status: "SUCCEEDED",
         gatewayLogId: log.id,
