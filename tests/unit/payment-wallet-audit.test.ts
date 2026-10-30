@@ -166,6 +166,14 @@ function makePostRequest(url: string, body: unknown): Request {
   });
 }
 
+function makeWithdrawalRequest(body: unknown, key: string): Request {
+  return new Request("https://mekanix.test/api/wallets/withdraw", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+    body: JSON.stringify(body),
+  });
+}
+
 const ORIGINAL_ENV = process.env.NODE_ENV;
 
 beforeEach(() => {
@@ -516,7 +524,7 @@ describe("GW-02 — /api/gateway/verify concurrent verify (race)", () => {
 // ──────────────────────────────────────────────────────────────────────────
 // 6. /api/wallets/withdraw — withdraw exceeds balance → 400, no mutation
 // ──────────────────────────────────────────────────────────────────────────
-describe("/api/wallets/withdraw — exceeds-balance guard", () => {
+describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
   beforeEach(() => {
     mockRequireAuth.mockResolvedValue({
       userId: "user_tech",
@@ -524,81 +532,46 @@ describe("/api/wallets/withdraw — exceeds-balance guard", () => {
       phone: "+989121234567",
       isGuest: false,
     });
-    mockGetTechnicianFromSession.mockResolvedValue({
-      id: "tech_1",
-      userId: "user_tech",
-    });
+    mockGetTechnicianFromSession.mockResolvedValue({ id: "tech_1", userId: "user_tech" });
+    mockWithdrawalRequestFindUnique.mockResolvedValue(null);
   });
 
-  it("returns 400 when amount > wallet.balance, with NO balance mutation (no updateMany)", async () => {
-    // Wallet balance = 100, withdraw = 500 → exceeds balance.
-    mockWalletFindUnique.mockResolvedValue({
-      id: "wallet_1",
-      balance: 100,
-      technicianId: "tech_1",
-    });
+  it("returns 400 when the wallet cannot cover the withdrawal", async () => {
+    mockWalletFindUnique.mockResolvedValue({ id: "wallet_1", balance: 100, technicianId: "tech_1" });
+    mockCreateWithdrawalAtomically.mockResolvedValue(false);
 
-    const req = makePostRequest("https://mekanix.test/api/wallets/withdraw", {
-      amount: 500,
-      method: "card",
-    });
-    const res = await withdrawPOST(req);
+    const res = await withdrawPOST(makeWithdrawalRequest(
+      { amount: 500, method: "card" }, "test-withdrawal-key-001"
+    ));
 
     expect(res.status).toBe(400);
-
-    // CRITICAL: NO balance mutation occurred (pre-try guard at line 48-50
-    // short-circuits BEFORE the atomic decrement is attempted).
+    expect(mockCreateWithdrawalAtomically).toHaveBeenCalledTimes(1);
     expect(mockWalletUpdateMany).not.toHaveBeenCalled();
     expect(mockWithdrawalRequestCreate).not.toHaveBeenCalled();
     expect(mockWalletLedgerCreate).not.toHaveBeenCalled();
-
-    // The initial wallet lookup happened (read-only — safe).
-    expect(mockWalletFindUnique).toHaveBeenCalledTimes(1);
   });
 
-  it("returns 200 when amount <= wallet.balance (control)", async () => {
-    // Wallet balance = 1000, withdraw = 500 → OK.
+  it("returns the committed request after an atomic withdrawal", async () => {
+    const withdrawal = {
+      id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, status: "REQUESTED",
+    };
     mockWalletFindUnique
-      .mockResolvedValueOnce({
-        id: "wallet_1",
-        balance: 1000,
-        technicianId: "tech_1",
-      }) // initial lookup
-      .mockResolvedValueOnce({
-        id: "wallet_1",
-        balance: 1000,
-        technicianId: "tech_1",
-      }) // re-check inside try (line 72)
-      .mockResolvedValueOnce({
-        id: "wallet_1",
-        balance: 500,
-        technicianId: "tech_1",
-      }); // re-read after decrement
-    mockWalletUpdateMany.mockResolvedValueOnce({ count: 1 });
-    mockWithdrawalRequestCreate.mockResolvedValueOnce({
-      id: "wd_1",
-      code: "WD-123456",
-      walletId: "wallet_1",
-      amount: 500,
-      status: "REQUESTED",
-    });
+      .mockResolvedValueOnce({ id: "wallet_1", balance: 1000, technicianId: "tech_1" })
+      .mockResolvedValueOnce({ id: "wallet_1", balance: 500 });
+    mockWithdrawalRequestFindUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(withdrawal);
+    mockCreateWithdrawalAtomically.mockResolvedValue(true);
 
-    const req = makePostRequest("https://mekanix.test/api/wallets/withdraw", {
-      amount: 500,
-      method: "card",
-    });
-    const res = await withdrawPOST(req);
+    const res = await withdrawPOST(makeWithdrawalRequest(
+      { amount: 500, method: "card" }, "test-withdrawal-key-002"
+    ));
 
     expect(res.status).toBe(200);
-    expect(mockWalletUpdateMany).toHaveBeenCalledTimes(1);
-    // Verify the WHERE clause uses balance >= amount (prevents negative balance).
-    const updateArgs = mockWalletUpdateMany.mock.calls[0][0];
-    expect(updateArgs.where).toEqual({ id: "wallet_1", balance: { gte: 500 } });
-    expect(updateArgs.data).toEqual({ balance: { decrement: 500 } });
+    expect((await res.json()).newBalance).toBe(500);
+    expect(mockCreateWithdrawalAtomically).toHaveBeenCalledTimes(1);
+    expect(mockNotificationCreate).toHaveBeenCalledTimes(1);
   });
 });
 
-// ──────────────────────────────────────────────────────────────────────────
 // 7. VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId reuse)
 //
 // This test documents a KNOWN race condition in the VIP-01 fix: the
