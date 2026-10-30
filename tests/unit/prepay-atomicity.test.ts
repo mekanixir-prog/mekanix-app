@@ -102,7 +102,7 @@ describe("atomic prepay recording", () => {
     expect(d1.batch.mock.calls[0][0]).toHaveLength(7);
     expect(statements[5].sql).toContain("changes() = 1");
     expect(statements[2].sql).toContain('"idempotencyKey"');
-    expect(statements[4].sql).toContain('"LEDGER_HOLD"');
+    expect(statements[4].sql).toContain("'HOLD'");
   });
 
   it("does not report success when the guarded Job update loses a race", async () => {
