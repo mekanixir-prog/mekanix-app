@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "بدنه درخواست نامعتبر است" }, { status: 400 });
   }
 
-  const amount = Number(body.amount);
+  const amount = typeof body.amount === "number" ? body.amount : Number.NaN;
   const method = typeof body.method === "string" && body.method.trim()
     ? body.method.trim()
     : "card";
