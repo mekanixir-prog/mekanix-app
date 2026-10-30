@@ -151,7 +151,7 @@ export async function POST(req: Request) {
       invoiceId,
       userId,
       amount: inv.total, // server-authoritative — from invoice, NOT client
-      currency: inv.currency,
+      currency: "USD",
       method: safeMethod,
       status,
     },
