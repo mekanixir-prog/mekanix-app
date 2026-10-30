@@ -298,6 +298,10 @@ describe("/api/payments — BOLA (payment for another user's invoice)", () => {
 
     expect(res.status).toBe(200);
     expect(mockPaymentCreate).toHaveBeenCalledTimes(1);
+    expect(mockPaymentCreate.mock.calls[0][0].data).toMatchObject({
+      amount: 100,
+      currency: "USD",
+    });
   });
 });
 
