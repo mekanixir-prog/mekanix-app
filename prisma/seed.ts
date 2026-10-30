@@ -142,9 +142,9 @@ async function main() {
 
   // ── VIP Plans ──
   const vipPlans = [
-    { slug: "silver", name: "Silver", priceIrr: 9, durationDays: 30, discountPct: 10, priorityBoost: 1, warrantyMonths: 6, dedicatedSupport: false, freeInspectionsPerMonth: 0, order: 1 },
-    { slug: "gold", name: "Gold", priceIrr: 19, durationDays: 30, discountPct: 20, priorityBoost: 3, warrantyMonths: 12, dedicatedSupport: true, freeInspectionsPerMonth: 2, order: 2 },
-    { slug: "platinum", name: "Platinum", priceIrr: 39, durationDays: 90, discountPct: 30, priorityBoost: 5, warrantyMonths: 24, dedicatedSupport: true, freeInspectionsPerMonth: 5, order: 3 },
+    { slug: "silver", name: "Silver", priceUsd: 9, durationDays: 30, discountPct: 10, priorityBoost: 1, warrantyMonths: 6, dedicatedSupport: false, freeInspectionsPerMonth: 0, order: 1 },
+    { slug: "gold", name: "Gold", priceUsd: 19, durationDays: 30, discountPct: 20, priorityBoost: 3, warrantyMonths: 12, dedicatedSupport: true, freeInspectionsPerMonth: 2, order: 2 },
+    { slug: "platinum", name: "Platinum", priceUsd: 39, durationDays: 90, discountPct: 30, priorityBoost: 5, warrantyMonths: 24, dedicatedSupport: true, freeInspectionsPerMonth: 5, order: 3 },
   ];
   for (const p of vipPlans) {
     await db.vipPlan.create({ data: p });
@@ -328,7 +328,7 @@ async function main() {
           taxTotal,
           discount: 0,
           total,
-          currency: "IRR",
+          currency: "USD",
           notes: "Parts covered by 6-month warranty.",
           status: s.status === "COMPLETED" ? "PAID" : "SENT",
           createdAt: iso(-day),
@@ -341,7 +341,7 @@ async function main() {
             invoiceId: inv.id,
             userId: cust.user.id,
             amount: total,
-            currency: "IRR",
+            currency: "USD",
             method: "card",
             status: "SUCCEEDED",
             createdAt: iso(-day * 0.5),
@@ -443,13 +443,13 @@ async function main() {
         taxTotal,
         discount: 0,
         total,
-        currency: "IRR",
+        currency: "USD",
         status: "PAID",
         createdAt: iso(-ago + day * 0.5),
       },
     });
     await db.payment.create({
-      data: { code: `PAY-${4900 + i}`, invoiceId: inv.id, userId: cust.user.id, amount: total, currency: "IRR", method: "card", status: "SUCCEEDED", createdAt: iso(-ago + day * 0.45) },
+      data: { code: `PAY-${4900 + i}`, invoiceId: inv.id, userId: cust.user.id, amount: total, currency: "USD", method: "card", status: "SUCCEEDED", createdAt: iso(-ago + day * 0.45) },
     });
     await db.warranty.create({ data: { jobId: job.id, months: 6, active: true } });
     await db.review.create({
