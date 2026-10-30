@@ -553,7 +553,7 @@ describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
 
   it("returns the committed request after an atomic withdrawal", async () => {
     const withdrawal = {
-      id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, status: "REQUESTED",
+      id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, method: "card", cardNumber: null, bankName: null, shebaNumber: null, status: "REQUESTED",
     };
     mockWalletFindUnique
       .mockResolvedValueOnce({ id: "wallet_1", balance: 1000, technicianId: "tech_1" })
