@@ -26,7 +26,18 @@ export function AdminWithdrawals() {
     try { setRows(await api.adminList("withdrawals") as Row[]); }
     catch { setRows([]); toast.error(t("admin.withdrawals.loadFailed")); }
   };
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    let active = true;
+    api.adminList("withdrawals")
+      .then((data) => { if (active) setRows(data as Row[]); })
+      .catch(() => {
+        if (active) {
+          setRows([]);
+          toast.error("بارگذاری درخواست‌های برداشت ناموفق بود");
+        }
+      });
+    return () => { active = false; };
+  }, []);
 
   const act = async (row: Row, status: "APPROVED" | "REJECTED" | "PAID") => {
     const message = status === "PAID" ? t("admin.withdrawals.confirmPaid")
