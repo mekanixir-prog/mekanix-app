@@ -18,7 +18,7 @@ describe("wallet escrow release atomicity", () => {
       },
     };
     const db = {
-      $transaction: vi.fn(async (callback: (tx: typeof tx) => Promise<boolean>) => callback(tx)),
+      $transaction: vi.fn(async (callback: (tx: any) => Promise<boolean>) => callback(tx)),
     } as any;
 
     await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-1", new Date())).resolves.toBe(true);
