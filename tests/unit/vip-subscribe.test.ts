@@ -72,7 +72,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     mockVipPlanFindUnique.mockResolvedValue({
       id: "plan-1",
       name: "Gold",
-      priceIrr: 100_000, // 100k IRR
+      priceUsd: 10, // $10 USD
       durationDays: 30,
       active: true,
     });
@@ -80,7 +80,8 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       id: "pay-1",
       userId: "user-1",
       status: "SUCCEEDED",
-      amount: 100_000, // exactly covers plan price
+      amount: 10, // exactly covers plan price
+      currency: "USD",
     });
     mockUserVipSubscriptionUpdateMany.mockResolvedValue({ count: 0 });
     mockUserVipSubscriptionFindFirst.mockResolvedValue(null); // no existing sub using this payment
@@ -146,7 +147,8 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       id: "pay-1",
       userId: "other-user", // different from session.userId = "user-1"
       status: "SUCCEEDED",
-      amount: 100_000,
+      amount: 10,
+      currency: "USD",
     });
     const req = makePostRequest({ planId: "plan-1", paymentId: "pay-1" });
     const res = await POST(req);
@@ -168,13 +170,13 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
   });
 
   // ──────────── 7. payment amount must cover plan price ────────────
-  it("returns 400 when payment amount is insufficient (less than plan.priceIrr)", async () => {
+  it("returns 400 when payment amount is insufficient (less than plan.priceUsd)", async () => {
     vi.stubEnv("NODE_ENV", "test");
     mockPaymentFindUnique.mockResolvedValue({
       id: "pay-1",
       userId: "user-1",
       status: "SUCCEEDED",
-      amount: 50_000, // less than plan.priceIrr (100_000)
+      amount: 5, // less than plan.priceUsd (10)
     });
     const req = makePostRequest({ planId: "plan-1", paymentId: "pay-1" });
     const res = await POST(req);
