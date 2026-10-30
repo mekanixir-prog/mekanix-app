@@ -215,6 +215,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     "notif.type.review_request": "Rate Your Service",
     "notif.type.payment_received": "Payment Received",
     "notif.type.payout_processed": "Payout Processed",
+    "notif.type.withdrawal_updated": "Withdrawal Updated",
     "notif.type.application_approved": "Application Approved",
     "notif.type.application_rejected": "Application Rejected",
     "notif.type.dispute_opened": "Dispute Opened",
