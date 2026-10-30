@@ -55,7 +55,7 @@ describe("atomic withdrawal route", () => {
 
   it("returns the existing request on retry without debiting again", async () => {
     db.withdrawalRequest.findUnique.mockResolvedValue({
-      id: "wd-existing", walletId: "wallet-1", amount: 500, status: "REQUESTED",
+      id: "wd-existing", walletId: "wallet-1", amount: 500, method: "card", cardNumber: null, bankName: null, shebaNumber: null, status: "REQUESTED",
     });
     const response = await POST(request({ amount: 500 }));
     expect(response.status).toBe(200);
