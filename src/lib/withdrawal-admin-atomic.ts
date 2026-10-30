@@ -187,16 +187,16 @@ export async function updateWithdrawalWithD1(d1: D1Database, input: Input): Prom
     ),
     d1.prepare(`
       UPDATE "Wallet"
-      SET "totalWithdrawn" = "totalWithdrawn" + ?, "updatedAt" = ?
+      SET "totalWithdrawn" = "totalWithdrawn" + (
+        SELECT "amount" FROM "WithdrawalRequest"
+        WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?
+      ), "updatedAt" = ?
       WHERE "id" = (
         SELECT "walletId" FROM "WithdrawalRequest"
         WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?
       ) AND changes() = 1
-    `).bind(0, at, input.withdrawalId, payoutId),
+    `).bind(input.withdrawalId, payoutId, at, input.withdrawalId, payoutId),
   ]);
-  // Replace the zero placeholder with the amount only after a request transition
-  // is established by the first statement. The follow-up correction is handled
-  // in the prepared SQL below in the production query path.
   return results[0]?.meta?.changes === 1 &&
     results[1]?.meta?.changes === 1 &&
     results[2]?.meta?.changes === 1;
