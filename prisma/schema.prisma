@@ -388,7 +388,7 @@ model Invoice {
   taxTotal   Decimal       @default(0)
   discount   Decimal       @default(0)
   total      Decimal       @default(0)
-  currency   String        @default("IRR")
+  currency   String        @default("USD")
   notes      String?
   status     InvoiceStatus @default(DRAFT)
   createdAt  DateTime      @default(now())
@@ -414,7 +414,7 @@ model Payment {
   userId    String
   user      User          @relation(fields: [userId], references: [id])
   amount    Decimal
-  currency  String        @default("IRR")
+  currency  String        @default("USD")
   method    String        @default("card")
   status       PaymentStatus @default(PENDING)
   // Unique idempotency key for gateway-originated payments. A single gateway
@@ -682,11 +682,11 @@ model Wallet {
   id              String     @id @default(cuid())
   technicianId    String     @unique
   technician      Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
-  balance         Decimal    @default(0) // current withdrawable balance (IRR)
-  pendingBalance  Decimal    @default(0) // held balance (in 12h escrow, IRR)
-  totalEarned     Decimal    @default(0) // lifetime gross earnings (IRR)
-  totalCommission Decimal    @default(0) // lifetime platform commission (IRR)
-  totalWithdrawn  Decimal    @default(0) // lifetime withdrawn amount (IRR)
+  balance         Decimal    @default(0) // current withdrawable balance (USD base units)
+  pendingBalance  Decimal    @default(0) // held balance (in 12h escrow, USD base units)
+  totalEarned     Decimal    @default(0) // lifetime gross earnings (USD base units)
+  totalCommission Decimal    @default(0) // lifetime platform commission (USD base units)
+  totalWithdrawn  Decimal    @default(0) // lifetime withdrawn amount (USD base units)
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
@@ -719,9 +719,9 @@ model WalletTransaction {
   job              Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
   kind             TxnKind
   status           TxnStatus @default(PENDING)
-  grossAmount      Decimal   @default(0) // amount paid by customer (IRR)
-  commissionAmount Decimal   @default(0) // 10% platform cut (IRR)
-  netAmount        Decimal   @default(0) // amount credited to technician (IRR)
+  grossAmount      Decimal   @default(0) // amount paid by customer (USD base units)
+  commissionAmount Decimal   @default(0) // 10% platform cut (USD base units)
+  netAmount        Decimal   @default(0) // amount credited to tech (USD base units)nician (IRR)
   holdUntil        DateTime? // when funds become AVAILABLE (12h after job completion)
   releasedAt       DateTime? // when actually released
   description      String?
@@ -743,7 +743,7 @@ model WithdrawalRequest {
   code        String           @unique // WD-...
   walletId    String
   wallet      Wallet           @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  amount      Decimal  // IRR
+  amount      Decimal  // USD base units
   method      String           @default("card") // card | bank | wallet-to-wallet
   cardNumber  String? // masked Iranian card number (shetab)
   bankName    String?
@@ -767,7 +767,7 @@ model VipPlan {
   id                      String   @id @default(cuid())
   slug                    String   @unique // silver | gold | platinum
   name                    String // display name (en) — UI uses i18n key vip.plan.<slug>
-  priceIrr                Decimal  // one-time price per duration (IRR)
+  priceUsd                Decimal  // one-time price per duration (USD base units)
   durationDays            Int // validity period
   discountPct             Float    @default(0) // % off inspection fees
   priorityBoost           Int      @default(0) // matching priority boost
@@ -828,8 +828,10 @@ model PaymentGatewayLog {
   code            String        @unique // PG-...
   userId          String?
   user            User?         @relation(fields: [userId], references: [id])
-  amount          Decimal  // IRR
+  amount          Decimal  // amount sent to the payment gateway (IRR)
   currency        String        @default("IRR")
+  baseAmountUsd   Decimal? // canonical order amount before FX conversion (USD)
+  exchangeRate    Decimal? // locked USD → IRR rate used for this gateway attempt
   gateway         GatewayType   @default(SHAPARAK_SIM)
   status          GatewayStatus @default(INITIATED)
   purpose         String // vip | prepay | invoice | wallet_topup
