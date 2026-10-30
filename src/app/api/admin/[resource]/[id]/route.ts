@@ -64,6 +64,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
 
   // S3 FIX: validate user.status BEFORE stripping FORBIDDEN_FIELDS.
   const requestedUserStatus = body.status;
+  const requestedWithdrawalStatus = body.status;
   if (resource === "customers" && requestedUserStatus !== undefined) {
     if (
       typeof requestedUserStatus !== "string" ||
@@ -145,7 +146,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     result = await db.review.update({ where: { id }, data: safe as any });
     await safeAudit({ session: adminSession, action: "UPDATE_REVIEW", entity: "review", entityId: id, before, after: result, req });
   } else if (resource === "withdrawals") {
-    const action = body.status;
+    const action = requestedWithdrawalStatus;
     if (!["APPROVED", "REJECTED", "PAID"].includes(action)) {
       return NextResponse.json({ error: "وضعیت عملیات برداشت نامعتبر است" }, { status: 400 });
     }
