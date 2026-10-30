@@ -4,8 +4,6 @@ type PrepayInput = {
   jobId: string;
   jobCode: string;
   technicianId: string;
-  customerUserId: string;
-  technicianUserId: string;
   gross: number;
   commission: number;
   net: number;
@@ -83,7 +81,7 @@ export async function recordPrepayWithPrisma(
       },
     });
 
-    const holdLedger = await tx.walletLedger.create({
+    await tx.walletLedger.create({
       data: {
         walletId: wallet.id,
         type: "HOLD",
