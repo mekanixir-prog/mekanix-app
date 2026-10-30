@@ -752,6 +752,7 @@ model WithdrawalRequest {
   adminNotes  String?
   reviewerId  String?
   txnId       String? // linked WalletTransaction (PAYOUT) once paid
+  idempotencyKey String? @unique
 
   @@index([walletId, status])
   @@index([status])
