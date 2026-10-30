@@ -53,6 +53,17 @@ export async function POST(req: Request) {
 
   // Payment.amount is always canonical USD. PaymentGatewayLog.amount is the
   // converted Rial amount sent to the gateway; baseAmountUsd is the locked order value.
+  // A gateway log created by the new flow always carries the canonical USD
+  // order amount. Never reinterpret an IRR gateway amount as USD if the
+  // conversion snapshot is missing; require explicit reconciliation instead.
+  const baseAmountUsd = log.baseAmountUsd == null ? Number.NaN : Number(log.baseAmountUsd);
+  if (!Number.isFinite(baseAmountUsd) || baseAmountUsd <= 0) {
+    return NextResponse.json(
+      { error: "مبلغ پایه دلاری این تراکنش موجود نیست و نیاز به تطبیق دارد", reconciliationRequired: true },
+      { status: 409 }
+    );
+  }
+
   // Create first with a unique idempotency key. If two callbacks race, the
   // database permits exactly one Payment row. The losing request reloads it.
   try {
@@ -61,7 +72,7 @@ export async function POST(req: Request) {
         code: `PAY-${log.code}`,
         invoiceId: null,
         userId: session.userId,
-        amount: log.baseAmountUsd ?? log.amount,
+        amount: baseAmountUsd,
         currency: "USD",
         method: "card",
         status: "SUCCEEDED",
