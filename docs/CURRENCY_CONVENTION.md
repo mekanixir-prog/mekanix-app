@@ -10,7 +10,7 @@ The core MEKANIX marketplace uses **USD as its canonical accounting unit** for:
 
 Persist these values as USD base amounts. Do not multiply or divide them when writing invoices, payments, wallets, or ledger entries.
 
-The Persian UI converts USD values to Iranian Rial for display through the shared USD → IRR rate service. The English UI may display the selected display currency, but the stored amount remains USD.
+The current UI formats USD values as Iranian Rial through the shared USD → IRR rate service. Other display-currency preferences are not yet wired end-to-end; the stored amount remains USD.
 
 ## Gateway boundary
 
