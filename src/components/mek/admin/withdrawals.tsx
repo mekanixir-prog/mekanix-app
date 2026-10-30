@@ -22,20 +22,16 @@ export function AdminWithdrawals() {
   const { t, isFa, money, lang } = useT();
   const [rows, setRows] = useState<Row[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const load = async () => {
-    try { setRows(await api.adminList("withdrawals") as Row[]); }
-    catch { setRows([]); toast.error(t("admin.withdrawals.loadFailed")); }
+    try { setRows(await api.adminList("withdrawals") as Row[]); setLoadFailed(false); }
+    catch { setRows([]); setLoadFailed(true); toast.error(t("admin.withdrawals.loadFailed")); }
   };
   useEffect(() => {
     let active = true;
     api.adminList("withdrawals")
-      .then((data) => { if (active) setRows(data as Row[]); })
-      .catch(() => {
-        if (active) {
-          setRows([]);
-          toast.error("بارگذاری درخواست‌های برداشت ناموفق بود");
-        }
-      });
+      .then((data) => { if (active) { setRows(data as Row[]); setLoadFailed(false); } })
+      .catch(() => { if (active) { setRows([]); setLoadFailed(true); } });
     return () => { active = false; };
   }, []);
 
@@ -58,7 +54,7 @@ export function AdminWithdrawals() {
     <div className="space-y-4" dir={isFa ? "rtl" : "ltr"}>
       <SectionHeader title={t("admin.withdrawals.title")} subtitle={t("admin.withdrawals.subtitle")} />
       {rows === null ? <div className="grid h-40 place-items-center"><Loader2 className="size-6 animate-spin text-amber" /></div>
-        : rows.length === 0 ? <EmptyState icon={WalletCards} title={t("admin.withdrawals.empty")} />
+        : rows.length === 0 ? <EmptyState icon={WalletCards} title={t(loadFailed ? "admin.withdrawals.loadFailed" : "admin.withdrawals.empty")} />
         : <div className="space-y-3">{rows.map((row) => (
           <article key={row.id} className="rounded-xl border border-border bg-card p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
