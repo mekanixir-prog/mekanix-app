@@ -164,11 +164,25 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       status: "PENDING", // not SUCCEEDED
       amount: 10,
       currency: "USD",
-      currency: "USD",
     });
     const req = makePostRequest({ planId: "plan-1", paymentId: "pay-1" });
     const res = await POST(req);
     expect(res.status).toBe(400);
+  });
+
+  it("rejects an otherwise sufficient payment denominated in IRR", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockPaymentFindUnique.mockResolvedValue({
+      id: "pay-1",
+      userId: "user-1",
+      status: "SUCCEEDED",
+      amount: 10_000_000,
+      currency: "IRR",
+    });
+    const req = makePostRequest({ planId: "plan-1", paymentId: "pay-1" });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
   });
 
   // ──────────── 7. payment amount must cover plan price ────────────
