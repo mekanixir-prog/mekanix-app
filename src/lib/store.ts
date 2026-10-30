@@ -46,6 +46,7 @@ export type AdminView =
   | "technicians"
   | "jobs"
   | "payments"
+  | "withdrawals"
   | "reviews"
   | "disputes"
   | "categories"
