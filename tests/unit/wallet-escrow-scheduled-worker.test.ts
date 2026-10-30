@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { release } = vi.hoisted(() => ({ release: vi.fn() }));
-vi.mock("../../src/lib/wallet-release", () => ({
+vi.mock("../../src/lib/wallet-release-d1", () => ({
   releaseWalletTransactionWithD1: release,
 }));
 
