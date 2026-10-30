@@ -32,7 +32,7 @@ export function useT() {
           setUsdToIrrRate(data.rate);
         }
       } catch {
-        // Silent — keep the default rate (60,000)
+        // Silent — keep the default rate (6,000,000)
       }
     };
     fetchRate();
