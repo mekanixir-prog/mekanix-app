@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
-import { releaseWalletTransaction } from "@/lib/wallet-release";
 
 // GET /api/wallets
 // Returns the wallet + recent transactions for the authenticated technician.
@@ -48,25 +47,7 @@ export async function GET(req: Request) {
     });
   }
 
-  // Auto-release matured escrow entries. The helper commits the transaction
-  // state transition and both wallet balance changes atomically for D1 and
-  // transactional Node databases. A failed balance update cannot strand an
-  // AVAILABLE transaction without its matching wallet credit.
-  const now = new Date();
-  const releasable = wallet.transactions.filter(
-    (t) => t.status === "PENDING" && t.holdUntil && t.holdUntil.getTime() <= now.getTime()
-  );
-  for (const transaction of releasable) {
-    await releaseWalletTransaction(db, wallet.id, transaction.id, now);
-  }
-
-  const fresh = await db.wallet.findUnique({
-    where: { technicianId },
-    include: {
-      transactions: { orderBy: { createdAt: "desc" }, take: 50 },
-      withdrawals: { orderBy: { requestedAt: "desc" }, take: 20 },
-    },
-  });
-
-  return NextResponse.json(fresh);
+  // Reading a wallet must never move money. Matured escrow entries are
+  // released by the authenticated scheduled job at /api/internal/wallet-release.
+  return NextResponse.json(wallet);
 }
