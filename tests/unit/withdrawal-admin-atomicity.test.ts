@@ -135,7 +135,7 @@ describe("admin withdrawal transitions", () => {
     expect(d1.batch.mock.calls[0][0]).toHaveLength(3);
     expect(statements[1].sql).toContain("changes() = 1");
     expect(statements[2].sql).toContain("changes() = 1");
-    expect(statements[2].sql).toContain("REJECT_REFUND");
+    expect(statements[2].values).toContain("withdrawal:wd-1:REJECT_REFUND");
   });
 
   it("uses the request amount for D1 payout accounting", async () => {
