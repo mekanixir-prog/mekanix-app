@@ -4,6 +4,7 @@ import { getAdminFromRequest } from "@/lib/admin-auth";
 import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/admin-api";
 import { updateWithdrawalAtomically } from "@/lib/withdrawal-admin-atomic";
+import { isValidIranianSheba } from "@/lib/iranian-iban";
 
 // Mass-assignment protection: define per-resource whitelists.
 const RESOURCE_ALLOWED_FIELDS: Record<string, readonly string[]> = {
@@ -172,7 +173,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
         where: { id },
         select: { method: true, shebaNumber: true },
       });
-      if (destination?.method !== "bank" || !/^IR\d{24}$/.test(destination.shebaNumber ?? "")) {
+      if (destination?.method !== "bank" || !isValidIranianSheba(destination.shebaNumber)) {
         return NextResponse.json(
           { error: "برای ثبت پرداخت، درخواست باید دارای شبای معتبر باشد؛ شماره کارت به‌صورت امن ماسک شده است" },
           { status: 409 }
