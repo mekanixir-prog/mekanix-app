@@ -20,6 +20,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "بدنه درخواست نامعتبر است" }, { status: 400 });
   }
 
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "بدنه درخواست نامعتبر است" }, { status: 400 });
+  }
+
   const amount = typeof body.amount === "number" ? body.amount : Number.NaN;
   const method = typeof body.method === "string" && body.method.trim()
     ? body.method.trim()
@@ -28,8 +32,8 @@ export async function POST(req: Request) {
   const bankName = typeof body.bankName === "string" ? body.bankName : null;
   const shebaNumber = typeof body.shebaNumber === "string" ? body.shebaNumber : null;
   const maskedCardNumber = cardNumber?.replace(/.(?=.{4})/g, "*") ?? null;
-  const idempotencyKey = req.headers.get("idempotency-key") ||
-    (typeof body.idempotencyKey === "string" ? body.idempotencyKey : "");
+  const idempotencyKey = (req.headers.get("idempotency-key") ||
+    (typeof body.idempotencyKey === "string" ? body.idempotencyKey : "")).trim();
 
   if (!Number.isFinite(amount) || amount <= 0 || amount > 10_000) {
     return NextResponse.json({ error: "مبلغ نامعتبر است" }, { status: 400 });
