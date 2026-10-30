@@ -9,7 +9,7 @@ Wallet escrow is currently released when the technician wallet is read. That mak
 1. Merge the atomic escrow-release implementation (PR #12) first.
 2. Deploy the dedicated worker from the repository root:
 
-   `bunx wrangler deploy --config wrangler.wallet-release.toml`
+   `bun run deploy:wallet-release`
 
 3. In Cloudflare, verify that the Worker `mekanix-wallet-escrow-release` has the Cron Trigger `*/15 * * * *` and is bound to the existing `mekanix` D1 database.
 4. Inspect Worker logs for `[wallet-escrow-release] run complete`. Confirm that scanned/released/failed counts are plausible.
