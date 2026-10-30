@@ -30,7 +30,7 @@ export async function POST(req: Request) {
   const idempotencyKey = req.headers.get("idempotency-key") ||
     (typeof body.idempotencyKey === "string" ? body.idempotencyKey : "");
 
-  if (!Number.isSafeInteger(amount) || amount <= 0) {
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 10_000) {
     return NextResponse.json({ error: "مبلغ نامعتبر است" }, { status: 400 });
   }
   if (!idempotencyKey || idempotencyKey.length < 8 || idempotencyKey.length > 128) {
@@ -39,8 +39,9 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-  if (method.length > 40 || (cardNumber && cardNumber.length > 40) ||
-      (bankName && bankName.length > 120) || (shebaNumber && shebaNumber.length > 40)) {
+  if (!["card", "wallet", "bank", "cash"].includes(method) ||
+      (cardNumber && cardNumber.length > 30) ||
+      (bankName && bankName.length > 100) || (shebaNumber && shebaNumber.length > 30)) {
     return NextResponse.json({ error: "اطلاعات حساب بانکی نامعتبر است" }, { status: 400 });
   }
 
