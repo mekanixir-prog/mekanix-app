@@ -41,7 +41,7 @@ describe("wallet escrow release atomicity", () => {
       },
       wallet: { updateMany: vi.fn() },
     };
-    const db = { $transaction: vi.fn(async (callback: (tx: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
+    const db = { $transaction: vi.fn(async (callback: (tx: any) => Promise<boolean>) => callback(tx)) } as any;
 
     await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-1", new Date())).resolves.toBe(false);
     expect(tx.wallet.updateMany).not.toHaveBeenCalled();
@@ -55,7 +55,7 @@ describe("wallet escrow release atomicity", () => {
       },
       wallet: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
     };
-    const db = { $transaction: vi.fn(async (callback: (tx: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
+    const db = { $transaction: vi.fn(async (callback: (tx: any) => Promise<boolean>) => callback(tx)) } as any;
 
     await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-1", new Date()))
       .rejects.toThrow("escrow release rolled back");
