@@ -117,7 +117,6 @@ export async function createWithdrawalWithD1(
       JOIN "WithdrawalRequest" wr ON wr."idempotencyKey" = ?
       WHERE w."id" = ? AND wr."walletId" = w."id"
         AND wr."amount" = ? AND changes() = 1
-      ON CONFLICT("idempotencyKey") DO NOTHING
     `).bind(
       crypto.randomUUID(), -input.amount, input.amount,
       `Withdrawal request ${input.code}`, ledgerKey, at,
