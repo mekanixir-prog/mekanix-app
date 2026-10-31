@@ -4,6 +4,8 @@
 **Commit:** `21fe440` (Release Candidate)
 **Baseline:** main @ `e4c2faf` (untouched)
 
+> **Historical snapshot warning (2026-10-30):** the staging, load-test, and CI claims below refer to the older commit listed above. They are not current production Go/No-Go evidence. The current release remains blocked by unmerged financial hardening PRs, isolated D1 validation, and live SMS/payment integration. See [RELEASE_GATE_CURRENT.md](./RELEASE_GATE_CURRENT.md).
+
 > ✅ Release Candidate — all checks passed.
 > CI: 4/4 workflows green on `21fe440`.
 > D1 Staging: Worker deployed, smoke test passed.

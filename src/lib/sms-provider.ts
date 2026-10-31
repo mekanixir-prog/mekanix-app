@@ -154,33 +154,46 @@ export async function sendOtp(phone: string, code: string): Promise<SmsResult> {
 
 // ──────────── Health check ────────────
 
-export function getSmsProviderStatus(): { configured: boolean; provider: string; warnings: string[] } {
+export function getSmsProviderStatus(): {
+  configured: boolean;
+  provider: string;
+  liveReady: boolean;
+  warnings: string[];
+} {
   const provider = process.env.SMS_PROVIDER?.toLowerCase().trim() || "console";
   const warnings: string[] = [];
-  let configured = true;
+  let configured = false;
 
   if (provider === "kavenegar") {
-    if (!process.env.KAVENEGAR_API_KEY) {
-      warnings.push("KAVENEGAR_API_KEY not set");
-      configured = false;
-    }
+    configured = Boolean(process.env.KAVENEGAR_API_KEY?.trim());
+    if (!configured) warnings.push("KAVENEGAR_API_KEY is not configured");
   } else if (provider === "melipayamak") {
-    if (!process.env.MELIPAYAMAK_USERNAME || !process.env.MELIPAYAMAK_PASSWORD) {
-      warnings.push("MELIPAYAMAK_USERNAME or MELIPAYAMAK_PASSWORD not set");
-      configured = false;
-    }
-    if (!process.env.MELIPAYAMAK_SENDER) {
-      warnings.push("MELIPAYAMAK_SENDER not set — SMS will fail");
-    }
+    const hasUsername = Boolean(process.env.MELIPAYAMAK_USERNAME?.trim());
+    const hasPassword = Boolean(process.env.MELIPAYAMAK_PASSWORD?.trim());
+    const hasSender = Boolean(process.env.MELIPAYAMAK_SENDER?.trim());
+    configured = hasUsername && hasPassword && hasSender;
+    if (!hasUsername) warnings.push("MELIPAYAMAK_USERNAME is not configured");
+    if (!hasPassword) warnings.push("MELIPAYAMAK_PASSWORD is not configured");
+    if (!hasSender) warnings.push("MELIPAYAMAK_SENDER is not configured");
   } else if (provider === "farapayamak") {
-    if (!process.env.FARAPAYAMAK_USERNAME || !process.env.FARAPAYAMAK_PASSWORD) {
-      warnings.push("FARAPAYAMAK_USERNAME or FARAPAYAMAK_PASSWORD not set");
-      configured = false;
-    }
-    if (!process.env.FARAPAYAMAK_SENDER) {
-      warnings.push("FARAPAYAMAK_SENDER not set — SMS will fail");
-    }
+    const hasUsername = Boolean(process.env.FARAPAYAMAK_USERNAME?.trim());
+    const hasPassword = Boolean(process.env.FARAPAYAMAK_PASSWORD?.trim());
+    const hasSender = Boolean(process.env.FARAPAYAMAK_SENDER?.trim());
+    configured = hasUsername && hasPassword && hasSender;
+    if (!hasUsername) warnings.push("FARAPAYAMAK_USERNAME is not configured");
+    if (!hasPassword) warnings.push("FARAPAYAMAK_PASSWORD is not configured");
+    if (!hasSender) warnings.push("FARAPAYAMAK_SENDER is not configured");
+  } else if (provider === "console") {
+    configured = true;
+    warnings.push("Console SMS only logs OTPs; it cannot deliver real messages");
+  } else {
+    warnings.push(`Unsupported SMS_PROVIDER: ${provider}`);
   }
 
-  return { configured, provider, warnings };
+  return {
+    configured,
+    provider,
+    liveReady: configured && provider !== "console",
+    warnings,
+  };
 }
