@@ -113,7 +113,7 @@ describe("read-only offline reconciliation endpoints", () => {
     mocks.auth.mockResolvedValue(customerSession);
     const response = await getPrepayStatus(request("/api/prepay/status?jobId=job-1"));
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ state: "NOT_COMMITTED", jobId: "job-1" });
+    await expect(response.json()).resolves.toEqual({ state: "NOT_COMMITTED", jobId: "job-1", retryAllowed: true });
   });
 
   it("returns reconciliation-required for an inconsistent partial financial state", async () => {
