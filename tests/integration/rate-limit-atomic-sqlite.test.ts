@@ -34,7 +34,8 @@ describe("atomic shared rate-limit D1/SQLite upsert", () => {
       );
     `);
     state.execute = async (query: any) => {
-      const rows = sqlite.prepare(query.sql).all(...query.values);
+      const values = query.values.map((value: unknown) => value instanceof Date ? value.toISOString() : value);
+      const rows = sqlite.prepare(query.sql).all(...values);
       return rows.map((row: any) => ({ ...row, count: Number(row.count) }));
     };
   });
@@ -58,7 +59,7 @@ describe("atomic shared rate-limit D1/SQLite upsert", () => {
 
   it("starts exactly one new window at the expiry boundary", async () => {
     expect(await rateLimitAsync("otp:expiry", 3, 60_000)).toMatchObject({ success: true });
-    vi.spyOn(Date, "now").mockReturnValue(1_060_000);
+    vi.mocked(Date.now).mockReturnValue(1_060_000);
     const results = await Promise.all(
       Array.from({ length: 5 }, () => rateLimitAsync("otp:expiry", 3, 60_000))
     );
