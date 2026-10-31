@@ -14,8 +14,8 @@ const TECHNICIAN_INCLUDE = {
 
 export async function POST(req: Request) {
   // Rate limit by client IP (5 verify attempts per minute) — uses the
-  // Redis-backed `rateLimitAsync()` so the budget is shared across instances
-  // when REDIS_URL is set. Falls back to in-memory in dev mode.
+  // D1-backed `rateLimitAsync()` so the budget is shared across Worker isolates.
+  // Falls back to in-memory only in non-production development.
   const clientId = getClientId(req);
   const limited = await rateLimitAsync(
     `otp-verify:${clientId}`,
