@@ -1,8 +1,12 @@
 # Local development secrets for Cloudflare Workers (wrangler dev --local)
-# This file is NOT committed to Git — see .gitignore
-#
-# Copy this to .dev.vars and fill in your local values.
-# wrangler automatically loads .dev.vars for `wrangler dev --local`.
+# Copy this file to .dev.vars and replace development-only values.
+# Never commit .dev.vars or use these example values in production.
 
 JWT_SECRET=dev-jwt-secret-not-for-production
+ADMIN_JWT_SECRET=dev-admin-jwt-secret-not-for-production
+# Optional local-only bootstrap credentials; use a strong one-time secret if testing bootstrap.
+ADMIN_BOOTSTRAP_PASSWORD=
+ADMIN_BOOTSTRAP_USERNAME=admin
+ADMIN_BOOTSTRAP_EMAIL=admin@mekanix.ir
+
 DATABASE_URL=file:./db/custom.db

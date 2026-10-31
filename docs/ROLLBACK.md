@@ -229,3 +229,28 @@ Before declaring the rollback complete:
 - **Rollback drill:** Run once per quarter (use staging environment + a real backup restore)
 - **Backup restore drill:** Run monthly (verify backup integrity)
 - **Document review:** Update this file after every rollback (real or drill)
+
+
+## Cloudflare Workers Rollback (production)
+
+Use this procedure for the Cloudflare Workers deployment. Do not use the Docker/VPS commands above for a Worker.
+
+1. Identify the last known-good version in Cloudflare Dashboard → Workers & Pages → the MEKANIX Worker → Deployments.
+2. Prefer the dashboard's rollback/rollback-to-version action for the last known-good deployment when available. Confirm the selected version and environment before applying it.
+3. If dashboard rollback is unavailable, redeploy the previously reviewed commit through the approved CI workflow. Do not deploy an unreviewed local build.
+4. A code rollback does not reverse D1 schema changes. Do not drop tables, delete payment/subscription records, or attempt an unreviewed reverse migration. For schema/data incidents, preserve evidence and follow the environment's approved D1 backup/restore plan.
+5. Verify the Worker version, then check `/api/health` and `/api/ready`. A 503 may correctly indicate production SMS/payment/database gates are not configured; do not bypass those gates to make the probe green.
+6. Run smoke tests for OTP, customer/technician access, bookings, VIP/payment status, and admin access with test accounts where possible. Review Worker logs and D1 errors.
+7. Record incident timeline, old/new deployment identifiers, migration state, validation results, and follow-up actions.
+
+### Cloudflare emergency contacts
+
+| Role | Contact |
+|------|---------|
+| Cloudflare account owner / billing | [TODO: fill before launch] |
+| Worker / D1 on-call owner | [TODO: fill before launch] |
+| Domain registrar / DNS owner | [TODO: fill before launch] |
+| SMS provider support | Fill after provider selection |
+| Payment provider support | Fill after gateway selection |
+
+**Release gate:** fill all TODO contacts and rehearse a rollback in staging before production launch.
