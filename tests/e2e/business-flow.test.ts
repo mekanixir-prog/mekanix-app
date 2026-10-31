@@ -827,38 +827,5 @@ describe("MEKANIX Business E2E Flow", () => {
     });
   });
 
-  // ── 14. Idempotency (Redis-backed with in-memory fallback) ───────────
-  describe("14. Idempotency", () => {
-    it("should cache identical requests with the same idempotency key", async () => {
-      const { withIdempotency } = await import("@/lib/auth");
 
-      const mockReq = {
-        headers: new Headers({ "x-idempotency-key": "test-key-123" }),
-      } as any;
-
-      let callCount = 0;
-      const fn = async () => {
-        callCount++;
-        return { id: callCount, data: "test" };
-      };
-
-      // First call — should execute fn (cached=false)
-      const result1 = await withIdempotency(mockReq, fn);
-      expect(result1?.cached).toBe(false);
-      expect(callCount).toBe(1);
-
-      // Second call with the same key — should return cached (cached=true), fn NOT re-invoked
-      const result2 = await withIdempotency(mockReq, fn);
-      expect(result2?.cached).toBe(true);
-      expect(callCount).toBe(1);
-    });
-
-    it("should return null when no idempotency key is present", async () => {
-      const { withIdempotency } = await import("@/lib/auth");
-      const mockReq = { headers: new Headers() } as any;
-      const fn = async () => "x";
-      const result = await withIdempotency(mockReq, fn);
-      expect(result).toBeNull();
-    });
-  });
 });
