@@ -251,9 +251,13 @@ describe("offline-queue — getQueuedActions()", () => {
     expect(queue[0].body).toEqual({ foo: 1 });
   });
 
-  it("returns [] when localStorage holds invalid JSON (safe parse)", () => {
+  it("quarantines invalid JSON instead of silently dropping the queued data", () => {
     localStorage.setItem("mekanix-offline-queue", "not-json{");
-    expect(getQueuedActions()).toEqual([]);
+    expect(getQueuedActions()).toMatchObject([{
+      url: "",
+      needsReconciliation: true,
+      reconciliationReason: "legacy_unknown",
+    }]);
   });
 });
 
@@ -277,6 +281,6 @@ describe("offline-queue — reconciliation gate", () => {
   it("refuses to retry an action that has not been flagged for reconciliation", () => {
     const id = enqueueAction({ url: "/api/service-requests", method: "POST", body: {} });
     expect(retryAfterReconciliation(id)).toBe(false);
-    expect(getQueuedActions()[0].needsReconciliation).toBeUndefined();
+    expect(getQueuedActions()[0].needsReconciliation).toBe(false);
   });
 });
