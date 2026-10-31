@@ -84,8 +84,8 @@ SQLite integration tests cover the same rate-limit concurrency cases and the D1 
 ### 3.8 Production SMS delivery safety
 
 - Issue #53 records that the old SMS abstraction could fall back to console logging in production when SMS_PROVIDER was missing/invalid, and the OTP endpoint could return success even when provider delivery failed.
-- PR #54 makes missing/console/unsupported/incomplete SMS configuration fail closed before OTP persistence; delivery failures consume the newly stored OTP hash and return 502/503; recipient, OTP, and provider error payloads are withheld from logs.
-- PR #54 is open on head `e8344e6342f19abfd13bcc219dc7e7a572c4f04d`; all five workflows are pending/in progress at this audit snapshot. No result is claimed until they complete.
+- PR #54 makes missing/console/unsupported/incomplete SMS configuration fail closed before OTP persistence; delivery failures consume the newly stored OTP hash and return 502/503; recipient, OTP, and provider error payloads are withheld from logs. Its Docker E2E gate now asserts production returns 503 and leaves the OtpCode table empty when no real provider is configured.
+- PR #54 is open on head `74a74346cf4b8bdee06065fadeb369495c3d9f69`; all five workflows are pending/in progress at this audit snapshot. No result is claimed until they complete.
 - This does not activate a provider. Select the SMS vendor and set credentials, sender/template, delivery monitoring, and alerting only at the planned pre-release activation gate.
 
 ### 3.9 Currency contract
