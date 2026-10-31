@@ -82,7 +82,7 @@ describe("admin withdrawal API", () => {
   it("rejects malformed Iranian IBANs before marking a payout paid", async () => {
     mocks.find.mockReset();
     mocks.find.mockResolvedValueOnce({ ...before, status: "APPROVED", shebaNumber: "IR002960000000100324200001" });
-    const response = await PATCH(request({ status: "PAID" }), {
+    const response = await PATCH(request({ status: "PAID", transactionReference: "BANK-TRX-2026-0001" }), {
       params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
     });
     expect(response.status).toBe(409);
@@ -122,7 +122,7 @@ describe("admin withdrawal API", () => {
   it("does not mark a masked card destination as paid", async () => {
     mocks.find.mockReset();
     mocks.find.mockResolvedValueOnce({ ...before, status: "APPROVED", method: "card", shebaNumber: null });
-    const response = await PATCH(request({ status: "PAID" }), {
+    const response = await PATCH(request({ status: "PAID", transactionReference: "BANK-TRX-2026-0001" }), {
       params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
     });
     expect(response.status).toBe(409);
@@ -132,7 +132,7 @@ describe("admin withdrawal API", () => {
   it("refuses to mark a card-only withdrawal as paid because the full card number is not stored", async () => {
     mocks.find.mockReset()
       .mockResolvedValueOnce({ ...before, status: "APPROVED", method: "card", shebaNumber: null });
-    const response = await PATCH(request({ status: "PAID" }), {
+    const response = await PATCH(request({ status: "PAID", transactionReference: "BANK-TRX-2026-0001" }), {
       params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
     });
     expect(response.status).toBe(409);
@@ -152,7 +152,10 @@ describe("admin withdrawal API", () => {
 
   it("returns conflict when another administrator already changed the state", async () => {
     mocks.update.mockResolvedValue(false);
-    const response = await PATCH(request({ status: "PAID" }), {
+    mocks.find.mockReset().mockResolvedValueOnce({
+      ...before, status: "APPROVED", shebaNumber: "IR062960000000100324200001",
+    });
+    const response = await PATCH(request({ status: "PAID", transactionReference: "BANK-TRX-2026-0001" }), {
       params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
     });
     expect(response.status).toBe(409);
