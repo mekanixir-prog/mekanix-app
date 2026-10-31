@@ -138,16 +138,20 @@ describe("offline-queue — incrementRetry()", () => {
     expect(getQueuedActions()[0].retryCount).toBe(2);
   });
 
-  it("removes the action and returns false once retryCount >= maxRetries (3)", () => {
+  it("retains the action for reconciliation once retryCount reaches maxRetries (3)", () => {
     const id = enqueueAction({ url: "/api/a", method: "POST", body: {} });
     // Three increments → 1, 2, 3 — the third crosses the maxRetries threshold
     expect(incrementRetry(id)).toBe(true); // 1
     expect(incrementRetry(id)).toBe(true); // 2
     expect(incrementRetry(id)).toBe(false); // 3 → removed
 
-    // The action is no longer in the queue
-    expect(getQueueSize()).toBe(0);
-    expect(getQueuedActions().find((a) => a.id === id)).toBeUndefined();
+    // The unresolved action remains visible; it is never silently discarded.
+    expect(getQueueSize()).toBe(1);
+    expect(getQueuedActions().find((a) => a.id === id)).toMatchObject({
+      needsReconciliation: true,
+      reconciliationReason: "retry_limit",
+      retryCount: 3,
+    });
   });
 
   it("does NOT affect other actions in the queue", () => {
@@ -158,15 +162,14 @@ describe("offline-queue — incrementRetry()", () => {
     // Burn through retries on id1 only
     incrementRetry(id1);
     incrementRetry(id1);
-    incrementRetry(id1); // removed
+    incrementRetry(id1); // retained for reconciliation
 
-    // id2 + id3 untouched
-    expect(getQueueSize()).toBe(2);
+    // All three remain; only id1 is gated for review.
+    expect(getQueueSize()).toBe(3);
     const queue = getQueuedActions();
-    expect(queue[0].id).toBe(id2);
-    expect(queue[0].retryCount).toBe(0);
-    expect(queue[1].id).toBe(id3);
-    expect(queue[1].retryCount).toBe(0);
+    expect(queue[0]).toMatchObject({ id: id1, needsReconciliation: true });
+    expect(queue[1]).toMatchObject({ id: id2, retryCount: 0 });
+    expect(queue[2]).toMatchObject({ id: id3, retryCount: 0 });
   });
 
   it("returns false if the action id is not in the queue", () => {
