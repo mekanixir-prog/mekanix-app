@@ -9,19 +9,20 @@
 //     dequeued and counted as a conflict rather than a failure. The caller
 //     can surface a UI prompt to refresh the local resource.
 
-import { getQueuedActions, dequeueAction, incrementRetry, getQueueSize } from "./offline-queue";
+import { getQueuedActions, dequeueAction, incrementRetry, getQueueSize, markNeedsReconciliation } from "./offline-queue";
 
 export interface SyncResult {
   synced: number;
   failed: number;
   conflicts: number;
   remaining: number;
+  reconciliationRequired: number;
 }
 
 let syncing = false;
 
 export async function syncQueue(): Promise<SyncResult> {
-  const empty: SyncResult = { synced: 0, failed: 0, conflicts: 0, remaining: 0 };
+  const empty: SyncResult = { synced: 0, failed: 0, conflicts: 0, remaining: 0, reconciliationRequired: 0 };
   if (typeof window === "undefined") return empty;
   if (syncing) return { ...empty, remaining: getQueueSize() };
   if (!navigator.onLine) return { ...empty, remaining: getQueueSize() };
@@ -30,9 +31,19 @@ export async function syncQueue(): Promise<SyncResult> {
   let synced = 0;
   let failed = 0;
   let conflicts = 0;
+  let reconciliationRequired = 0;
   const queue = getQueuedActions();
 
   for (const action of queue) {
+    if (action.needsReconciliation) {
+      reconciliationRequired++;
+      continue;
+    }
+    const url = new URL(action.url, window.location.origin);
+    const supportsDurableIdempotency =
+      (action.method === "POST" && url.pathname === "/api/wallets/withdraw") ||
+      (action.method === "POST" && url.pathname === "/api/prepay");
+
     try {
       const res = await fetch(action.url, {
         method: action.method,
@@ -56,6 +67,21 @@ export async function syncQueue(): Promise<SyncResult> {
         // prompt the user to refresh their local state.
         dequeueAction(action.id);
         conflicts++;
+      } else if (res.status === 429) {
+        // Explicit rate-limit responses mean the handler rejected the attempt.
+        const stillQueued = incrementRetry(action.id);
+        if (!stillQueued) failed++;
+      } else if (res.status >= 500) {
+        if (supportsDurableIdempotency) {
+          const stillQueued = incrementRetry(action.id);
+          if (!stillQueued) failed++;
+        } else if (markNeedsReconciliation(action.id)) {
+          // A server error may occur after a non-idempotent side effect committed.
+          // Do not blindly replay; keep the action for explicit state reconciliation.
+          reconciliationRequired++;
+        } else {
+          failed++;
+        }
       } else if (res.status >= 400 && res.status < 500) {
         // Client error (non-conflict) — don't retry, just remove.
         dequeueAction(action.id);
@@ -66,14 +92,20 @@ export async function syncQueue(): Promise<SyncResult> {
         if (!stillQueued) failed++;
       }
     } catch {
-      // Network error — retry
-      const stillQueued = incrementRetry(action.id);
-      if (!stillQueued) failed++;
+      // A network failure is ambiguous: the server may have committed already.
+      if (supportsDurableIdempotency) {
+        const stillQueued = incrementRetry(action.id);
+        if (!stillQueued) failed++;
+      } else if (markNeedsReconciliation(action.id)) {
+        reconciliationRequired++;
+      } else {
+        failed++;
+      }
     }
   }
 
   syncing = false;
-  return { synced, failed, conflicts, remaining: getQueueSize() };
+  return { synced, failed, conflicts, remaining: getQueueSize(), reconciliationRequired };
 }
 
 // Auto-sync when coming online
