@@ -81,9 +81,7 @@ describe("admin withdrawal API", () => {
 
   it("rejects malformed Iranian IBANs before marking a payout paid", async () => {
     mocks.find.mockReset();
-    mocks.find.mockResolvedValueOnce(before).mockResolvedValueOnce({
-      method: "bank", shebaNumber: "IR002960000000100324200001",
-    });
+    mocks.find.mockResolvedValueOnce({ ...before, status: "APPROVED", shebaNumber: "IR002960000000100324200001" });
     const response = await PATCH(request({ status: "PAID" }), {
       params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
     });
@@ -123,9 +121,7 @@ describe("admin withdrawal API", () => {
 
   it("does not mark a masked card destination as paid", async () => {
     mocks.find.mockReset();
-    mocks.find.mockResolvedValueOnce(before).mockResolvedValueOnce({
-      method: "card", shebaNumber: null,
-    });
+    mocks.find.mockResolvedValueOnce({ ...before, status: "APPROVED", method: "card", shebaNumber: null });
     const response = await PATCH(request({ status: "PAID" }), {
       params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
     });
@@ -135,8 +131,7 @@ describe("admin withdrawal API", () => {
 
   it("refuses to mark a card-only withdrawal as paid because the full card number is not stored", async () => {
     mocks.find.mockReset()
-      .mockResolvedValueOnce(before)
-      .mockResolvedValueOnce({ method: "card", shebaNumber: null });
+      .mockResolvedValueOnce({ ...before, status: "APPROVED", method: "card", shebaNumber: null });
     const response = await PATCH(request({ status: "PAID" }), {
       params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
     });
