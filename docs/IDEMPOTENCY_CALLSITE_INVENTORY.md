@@ -3,7 +3,7 @@
 **Audit date:** 2026-10-31  
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Audited main commit:** `a641cddb880df262980f2d7cff4ce77fb6903c05`  
-**Scope:** all 69 files under `src/app/api/`, all 50 modules under `src/lib/`, plus offline queue/sync code.  
+**Scope:** all 69 files under `src/app/api/`, all 50 modules under `src/lib/`, the auth barrel under `src/modules/`, and offline queue/sync code plus the E2E tests that previously exercised the generic helper.  
 **Decision:** the generic `withIdempotency()` helper had no production call sites and was removed. Issue #29 remains open until a reviewed durable state machine is required by a real caller and passes crash/concurrency tests.
 
 ## 1. Generic helper inventory
@@ -12,7 +12,9 @@ The old `src/lib/auth.ts` helper performed read → callback → upsert and had 
 
 The repository-wide source inventory found:
 
-- No imports or invocations of `withIdempotency()` in the API route tree or shared library modules.
+- No production imports or invocations of `withIdempotency()` in the API route tree or shared library modules.
+- The auth barrel only re-exported the helper; those exports were removed.
+- The only remaining references were helper-only E2E tests. Those tests were removed because they tested a utility that no production endpoint called, not a real route-level guarantee.
 - No callers of `getIdempotencyKey()` outside the helper.
 - The helper was therefore not protecting any production endpoint. It has been removed rather than retained as a misleading security primitive.
 - The `IdempotencyKey` schema/table and historical migrations are intentionally retained for now; removing a persisted table requires a separate compatibility and data-retention review.
