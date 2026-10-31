@@ -124,8 +124,8 @@ export async function syncQueue(): Promise<SyncResult> {
         if (supportsRetry) {
           const stillQueued = incrementRetry(action.id);
           if (!stillQueued) failed++;
-        } else if (markNeedsReconciliation(action.id, "unexpected_response", res.status)) {
-            reconciliationRequired++;
+        } else if (markNeedsReconciliation(action.id, "network_error")) {
+          reconciliationRequired++;
         } else {
           failed++;
         }
