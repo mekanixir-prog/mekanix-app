@@ -72,13 +72,6 @@ SQLite integration tests cover the same rate-limit concurrency cases and the D1 
 - PR #35 and #38 make the shared rate limiter atomic and fail closed; PR #40 adds real PostgreSQL concurrency evidence.
 - Issue #28 remains open until isolated Cloudflare D1 staging verifies the same upsert behavior, production bindings, and outage handling under the actual Worker runtime.
 
-### 3.8 Production SMS delivery safety
-
-- Issue #53 records that the old SMS abstraction could fall back to console logging in production when SMS_PROVIDER was missing/invalid, and the OTP endpoint could return success even when provider delivery failed.
-- PR #54 makes missing/console/unsupported/incomplete SMS configuration fail closed before OTP persistence; delivery failures consume the newly stored OTP hash and return 502/503; recipient, OTP, and provider error payloads are withheld from logs.
-- PR #54 is open on head `e8344e6342f19abfd13bcc219dc7e7a572c4f04d`; all five workflows are pending/in progress at this audit snapshot. No result is claimed until they complete.
-- This does not activate a provider. Select the SMS vendor and set credentials, sender/template, delivery monitoring, and alerting only at the planned pre-release activation gate.
-
 ### 3.7 Booking, service-request, and claim recovery
 
 - Issue #52 records three additional multi-write create flows that lack a complete route-specific recovery contract: CARE booking creation, service-request creation (including ad-hoc vehicle creation), and insurance claim creation.
@@ -88,7 +81,14 @@ SQLite integration tests cover the same rate-limit concurrency cases and the D1 
 - PR #50's reconciliation center deliberately keeps unsupported operations behind manual review. It does not invent server status or enable automatic retry for these endpoints.
 - Treat issue #52 as a release blocker for broad offline mutation sync and for enabling these flows at production scale until route-specific idempotency, atomicity/recovery, read-only status endpoints, and failure-injection tests are complete.
 
-### 3.7 Currency contract
+### 3.8 Production SMS delivery safety
+
+- Issue #53 records that the old SMS abstraction could fall back to console logging in production when SMS_PROVIDER was missing/invalid, and the OTP endpoint could return success even when provider delivery failed.
+- PR #54 makes missing/console/unsupported/incomplete SMS configuration fail closed before OTP persistence; delivery failures consume the newly stored OTP hash and return 502/503; recipient, OTP, and provider error payloads are withheld from logs.
+- PR #54 is open on head `e8344e6342f19abfd13bcc219dc7e7a572c4f04d`; all five workflows are pending/in progress at this audit snapshot. No result is claimed until they complete.
+- This does not activate a provider. Select the SMS vendor and set credentials, sender/template, delivery monitoring, and alerting only at the planned pre-release activation gate.
+
+### 3.9 Currency contract
 
 - Any USD canonicalization or historical-value conversion remains owner-gated. Do not merge or backfill currency changes until the canonical unit, display policy, and historical reconciliation are explicitly approved.
 
