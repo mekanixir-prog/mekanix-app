@@ -112,6 +112,22 @@ describe("offline sync retry safety", () => {
     expect(result.reconciliationRequired).toBe(0);
   });
 
+  it("supports a targeted retry without sending unrelated queued actions", async () => {
+    mocks.getQueuedActions.mockReturnValue([
+      action({ id: "qa-target", url: "/api/wallets/withdraw" }),
+      action({ id: "qa-other", url: "/api/service-requests" }),
+    ]);
+    mocks.getQueueSize.mockReturnValue(2);
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+    await syncQueue(["qa-target"]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/wallets/withdraw"),
+      expect.anything()
+    );
+  });
+
   it("dequeues a successfully synchronized action", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200 }));
     const result = await syncQueue();
