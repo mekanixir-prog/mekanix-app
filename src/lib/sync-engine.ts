@@ -92,7 +92,7 @@ export async function syncQueue(): Promise<SyncResult> {
         } else if (res.status === 429) {
           // Explicit rate-limit responses mean the handler rejected the attempt.
           const stillQueued = incrementRetry(action.id);
-          if (!stillQueued) failed++;
+          if (!stillQueued) { failed++; reconciliationRequired++; }
         } else if (res.status >= 500) {
           if (supportsRetry) {
             const stillQueued = incrementRetry(action.id);
