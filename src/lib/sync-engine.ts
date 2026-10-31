@@ -96,7 +96,7 @@ export async function syncQueue(): Promise<SyncResult> {
         } else if (res.status >= 500) {
           if (supportsRetry) {
             const stillQueued = incrementRetry(action.id);
-            if (!stillQueued) failed++;
+            if (!stillQueued) { failed++; reconciliationRequired++; }
           } else if (markNeedsReconciliation(action.id, "server_error", res.status)) {
             // A server error may occur after a non-idempotent side effect committed.
             // Do not blindly replay; keep the action for explicit state reconciliation.
@@ -112,7 +112,7 @@ export async function syncQueue(): Promise<SyncResult> {
           // Unexpected response class: avoid replay unless this route is allowlisted.
           if (supportsRetry) {
             const stillQueued = incrementRetry(action.id);
-            if (!stillQueued) failed++;
+            if (!stillQueued) { failed++; reconciliationRequired++; }
           } else if (markNeedsReconciliation(action.id, "unexpected_response", res.status)) {
             reconciliationRequired++;
           } else {
@@ -123,7 +123,7 @@ export async function syncQueue(): Promise<SyncResult> {
         // A network failure is ambiguous: the server may have committed already.
         if (supportsRetry) {
           const stillQueued = incrementRetry(action.id);
-          if (!stillQueued) failed++;
+          if (!stillQueued) { failed++; reconciliationRequired++; }
         } else if (markNeedsReconciliation(action.id, "network_error")) {
           reconciliationRequired++;
         } else {
