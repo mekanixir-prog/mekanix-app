@@ -134,6 +134,14 @@ describe("read-only offline reconciliation endpoints", () => {
     });
   });
 
+  it("rejects fleet and partner roles before participant lookup", async () => {
+    mocks.auth.mockResolvedValue({ userId: "fleet-1", role: "FLEET_MANAGER" });
+    const response = await getPrepayStatus(request("/api/prepay/status?jobId=job-1"));
+    expect(response.status).toBe(403);
+    expect(mocks.participant).not.toHaveBeenCalled();
+    expect(mocks.job).not.toHaveBeenCalled();
+  });
+
   it("does not inspect a prepay job when participant authorization fails", async () => {
     mocks.auth.mockResolvedValue(customerSession);
     mocks.participant.mockResolvedValue(new Response("Forbidden", { status: 403 }));
