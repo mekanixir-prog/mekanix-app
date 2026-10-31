@@ -20,6 +20,12 @@ export async function POST(req: Request) {
     RATE_LIMITS.WITHDRAW.max,
     RATE_LIMITS.WITHDRAW.windowMs
   );
+  if (rl.unavailable) {
+    return NextResponse.json(
+      { error: "سرویس محدودسازی درخواست موقتاً در دسترس نیست" },
+      { status: 503, headers: { "Retry-After": "30" } }
+    );
+  }
   if (!rl.success) {
     return NextResponse.json(
       { error: "درخواست‌های برداشت بیش از حد، بعداً دوباره تلاش کنید" },
