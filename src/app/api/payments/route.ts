@@ -32,13 +32,19 @@ export async function POST(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
-  // Rate limit on payments
+  // Rate limit on payments using the shared D1 counter in Workers.
   const clientId = getClientId(req);
   const rl = await rateLimitAsync(
     `payment:${clientId}`,
     RATE_LIMITS.PAYMENT.max,
     RATE_LIMITS.PAYMENT.windowMs
   );
+  if (rl.unavailable) {
+    return NextResponse.json(
+      { error: "سرویس محدودسازی درخواست موقتاً در دسترس نیست" },
+      { status: 503, headers: { "Retry-After": "30" } }
+    );
+  }
   if (!rl.success) {
     return NextResponse.json(
       { error: "درخواست‌های پرداخت بیش از حد، بعداً دوباره تلاش کنید" },

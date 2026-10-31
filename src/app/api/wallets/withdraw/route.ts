@@ -12,14 +12,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "فقط مکانیک‌ها می‌توانند برداشت کنند" }, { status: 403 });
   }
 
-  // Rate limit: 3 per hour — uses Redis-backed `rateLimitAsync()` so the
-  // withdrawal budget is shared across instances when REDIS_URL is set.
+  // Rate limit: 3 per hour — uses the shared D1-backed counter across Worker isolates.
   const clientId = getClientId(req);
   const rl = await rateLimitAsync(
     `withdraw:${clientId}`,
     RATE_LIMITS.WITHDRAW.max,
     RATE_LIMITS.WITHDRAW.windowMs
   );
+  if (rl.unavailable) {
+    return NextResponse.json(
+      { error: "سرویس محدودسازی درخواست موقتاً در دسترس نیست" },
+      { status: 503, headers: { "Retry-After": "30" } }
+    );
+  }
   if (!rl.success) {
     return NextResponse.json(
       { error: "درخواست‌های برداشت بیش از حد، بعداً دوباره تلاش کنید" },
