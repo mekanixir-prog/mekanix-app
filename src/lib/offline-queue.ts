@@ -18,7 +18,7 @@ export interface QueuedAction {
   needsReconciliation?: boolean;
   lastAttemptAt?: number;
   lastStatus?: number;
-  reconciliationReason?: "network_error" | "server_error" | "conflict" | "cross_origin" | "unexpected_response" | "legacy_unknown";
+  reconciliationReason?: "network_error" | "server_error" | "conflict" | "cross_origin" | "unexpected_response" | "legacy_unknown" | "retry_limit" | "rate_limited";
 }
 
 const STORAGE_KEY = "mekanix-offline-queue";
@@ -61,18 +61,27 @@ export function dequeueAction(id: string): void {
 }
 
 // Increment retry count, remove if exceeded
-export function incrementRetry(id: string): boolean {
+export function incrementRetry(
+  id: string,
+  reason: QueuedAction["reconciliationReason"] = "retry_limit",
+  lastStatus?: number
+): boolean {
   if (typeof window === "undefined") return false;
   const queue = getQueuedActions();
   const action = queue.find((a) => a.id === id);
   if (!action) return false;
   action.retryCount++;
+  if (lastStatus !== undefined) action.lastStatus = lastStatus;
   if (action.retryCount >= action.maxRetries) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(queue.filter((a) => a.id !== id)));
-    return false; // removed
+    // Never silently discard an action after a bounded retry budget. Keep it
+    // visible for an authoritative status check or explicit user cancellation.
+    action.needsReconciliation = true;
+    action.reconciliationReason = "retry_limit";
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
+    return false;
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
-  return true; // still in queue
+  return true;
 }
 
 // Get queue size
