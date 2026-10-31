@@ -61,11 +61,7 @@ export function dequeueAction(id: string): void {
 }
 
 // Increment retry count, remove if exceeded
-export function incrementRetry(
-  id: string,
-  reason: QueuedAction["reconciliationReason"] = "retry_limit",
-  lastStatus?: number
-): boolean {
+export function incrementRetry(id: string, lastStatus?: number): boolean {
   if (typeof window === "undefined") return false;
   const queue = getQueuedActions();
   const action = queue.find((a) => a.id === id);
@@ -97,7 +93,11 @@ export function clearQueue(): void {
 
 
 /** Mark an ambiguous non-idempotent action for operator/user reconciliation. */
-export function markNeedsReconciliation(\n  id: string,\n  reason: QueuedAction["reconciliationReason"] = "legacy_unknown",\n  lastStatus?: number\n): boolean {
+export function markNeedsReconciliation(
+  id: string,
+  reason: QueuedAction["reconciliationReason"] = "legacy_unknown",
+  lastStatus?: number
+): boolean {
   const queue = getQueuedActions();
   const action = queue.find((item) => item.id === id);
   if (!action) return false;
