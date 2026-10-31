@@ -43,8 +43,6 @@ export function getClientId(req: Request, userId?: string): string {
     if (rightMost) return rightMost;
   }
 
-  const realIp = req.headers.get("x-real-ip")?.trim();
-  if (realIp) return realIp;
   return "anonymous";
 }
 
