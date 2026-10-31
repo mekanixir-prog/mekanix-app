@@ -30,7 +30,7 @@ describe("offline-queue — enqueueAction()", () => {
     });
 
     expect(id).toBeTruthy();
-    expect(id).toMatch(/^qa_\d+_[a-z0-9]+$/);
+    expect(id).toMatch(/^qa_[0-9a-f-]{36}$/);
   });
 
   it("stores the action with id / timestamp / retryCount=0 / maxRetries=3", () => {
