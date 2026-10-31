@@ -7,6 +7,7 @@ type Input = {
   adminId: string;
   adminNotes: string | null;
   at: Date;
+  payoutReference?: string | null;
 };
 type D1Result = { meta?: { changes?: number } };
 type D1Statement = { bind: (...values: unknown[]) => D1Statement };
@@ -77,6 +78,10 @@ export async function updateWithdrawalWithPrisma(db: PrismaClient, input: Input)
     }
 
     if (withdrawal.status !== "APPROVED") return false;
+    const payoutReference = input.payoutReference?.trim();
+    if (!payoutReference || payoutReference.length < 3 || payoutReference.length > 128) {
+      throw new Error("شناسه پیگیری واقعی انتقال بانکی الزامی است");
+    }
     const payoutId = crypto.randomUUID();
     const transition = await tx.withdrawalRequest.updateMany({
       where: { id: withdrawal.id, status: "APPROVED" },
@@ -85,7 +90,7 @@ export async function updateWithdrawalWithPrisma(db: PrismaClient, input: Input)
         reviewerId: input.adminId,
         adminNotes: input.adminNotes,
         processedAt: input.at,
-        txnId: payoutId,
+        txnId: payoutReference,
       },
     });
     if (transition.count !== 1) return false;
@@ -99,7 +104,7 @@ export async function updateWithdrawalWithPrisma(db: PrismaClient, input: Input)
         grossAmount: withdrawal.amount,
         commissionAmount: 0,
         netAmount: -Number(withdrawal.amount),
-        description: `Payout for withdrawal ${withdrawal.id}`,
+        description: `Payout for withdrawal ${withdrawal.id}; bank reference ${payoutReference}`,
         idempotencyKey: `withdrawal:${withdrawal.id}:PAYOUT`,
       },
     });
@@ -165,6 +170,10 @@ export async function updateWithdrawalWithD1(d1: D1Database, input: Input): Prom
       results[2]?.meta?.changes === 1;
   }
 
+  const payoutReference = input.payoutReference?.trim();
+  if (!payoutReference || payoutReference.length < 3 || payoutReference.length > 128) {
+    throw new Error("شناسه پیگیری واقعی انتقال بانکی الزامی است");
+  }
   const payoutId = crypto.randomUUID();
   const results = await d1.batch([
     d1.prepare(`
@@ -172,7 +181,7 @@ export async function updateWithdrawalWithD1(d1: D1Database, input: Input): Prom
       SET "status" = 'PAID', "reviewerId" = ?, "adminNotes" = ?,
           "processedAt" = ?, "txnId" = ?
       WHERE "id" = ? AND "status" = 'APPROVED'
-    `).bind(input.adminId, input.adminNotes, at, payoutId, input.withdrawalId),
+    `).bind(input.adminId, input.adminNotes, at, payoutReference, input.withdrawalId),
     d1.prepare(`
       INSERT INTO "WalletTransaction"
         ("id", "walletId", "kind", "status", "grossAmount", "commissionAmount",
@@ -182,8 +191,8 @@ export async function updateWithdrawalWithD1(d1: D1Database, input: Input): Prom
       FROM "WithdrawalRequest" wr
       WHERE wr."id" = ? AND wr."status" = 'PAID' AND wr."txnId" = ? AND changes() = 1
     `).bind(
-      payoutId, `Payout for withdrawal ${input.withdrawalId}`,
-      `withdrawal:${input.withdrawalId}:PAYOUT`, at, input.withdrawalId, payoutId
+      payoutId, `Payout for withdrawal ${input.withdrawalId}; bank reference ${payoutReference}`,
+      `withdrawal:${input.withdrawalId}:PAYOUT`, at, input.withdrawalId, payoutReference
     ),
     d1.prepare(`
       UPDATE "Wallet"
