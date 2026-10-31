@@ -71,7 +71,7 @@ describe("offline reconciliation center", () => {
     const retry = screen.getByRole("button", { name: "ارسال دوباره امن" });
     expect(retry).toBeTruthy();
     fireEvent.click(retry);
-    await waitFor(() => expect(sync).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(sync).toHaveBeenCalledWith([getQueuedActions()[0].id]));
     expect(getQueuedActions()[0].needsReconciliation).toBe(false);
   });
 
