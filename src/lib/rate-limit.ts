@@ -64,7 +64,7 @@ export function rateLimit(key: string, max: number, windowMs: number): { success
 }
 
 // Async version that uses D1 `RateLimit` table.
-// In-memory fallback is development-only. Production fails closed if the shared store is unavailable.
+// In-memory fallback is development-only. Production returns an explicit unavailable result; every route caller must map it to HTTP 503.
 //
 // The D1 table stores: { key, count, expiresAt }.
 // Each request increments count; if count > max → deny.
