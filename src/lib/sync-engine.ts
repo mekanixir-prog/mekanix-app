@@ -42,80 +42,82 @@ export async function syncQueue(): Promise<SyncResult> {
   let reconciliationRequired = 0;
   const queue = getQueuedActions();
 
-  for (const action of queue) {
-    if (action.needsReconciliation) {
-      reconciliationRequired++;
-      continue;
-    }
-    const supportsRetry = supportsDurableIdempotency(action);
-
-    try {
-      const res = await fetch(action.url, {
-        method: action.method,
-        headers: {
-          "Content-Type": "application/json",
-          // Forward the key. It is meaningful only to endpoints that implement
-          // their own durable idempotency contract.
-          ...(action.idempotencyKey ? { "Idempotency-Key": action.idempotencyKey } : {}),
-        },
-        credentials: "include",
-        body: action.body ? JSON.stringify(action.body) : undefined,
-      });
-
-      if (res.ok) {
-        dequeueAction(action.id);
-        synced++;
-      } else if (res.status === 409) {
-        // Conflict — server has a newer version (or the action was already
-        // applied with a different outcome). Server wins: dequeue and
-        // surface as a conflict rather than a hard failure, so the UI can
-        // prompt the user to refresh their local state.
-        dequeueAction(action.id);
-        conflicts++;
-      } else if (res.status === 429) {
-        // Explicit rate-limit responses mean the handler rejected the attempt.
-        const stillQueued = incrementRetry(action.id);
-        if (!stillQueued) failed++;
-      } else if (res.status >= 500) {
-        if (supportsRetry) {
-          const stillQueued = incrementRetry(action.id);
-          if (!stillQueued) failed++;
-        } else if (markNeedsReconciliation(action.id)) {
-          // A server error may occur after a non-idempotent side effect committed.
-          // Do not blindly replay; keep the action for explicit state reconciliation.
-          reconciliationRequired++;
-        } else {
-          failed++;
-        }
-      } else if (res.status >= 400 && res.status < 500) {
-        // Client error (non-conflict) — don't retry, just remove.
-        dequeueAction(action.id);
-        failed++;
-      } else {
-        // Unexpected response class: avoid replay unless this route is allowlisted.
-        if (supportsRetry) {
-          const stillQueued = incrementRetry(action.id);
-          if (!stillQueued) failed++;
-        } else if (markNeedsReconciliation(action.id)) {
-          reconciliationRequired++;
-        } else {
-          failed++;
-        }
-      }
-    } catch {
-      // A network failure is ambiguous: the server may have committed already.
-      if (supportsRetry) {
-        const stillQueued = incrementRetry(action.id);
-        if (!stillQueued) failed++;
-      } else if (markNeedsReconciliation(action.id)) {
+  try {
+    for (const action of queue) {
+      if (action.needsReconciliation) {
         reconciliationRequired++;
-      } else {
-        failed++;
+        continue;
+      }
+      const supportsRetry = supportsDurableIdempotency(action);
+  
+      try {
+        const res = await fetch(action.url, {
+          method: action.method,
+          headers: {
+            "Content-Type": "application/json",
+            // Forward the key. It is meaningful only to endpoints that implement
+            // their own durable idempotency contract.
+            ...(action.idempotencyKey ? { "Idempotency-Key": action.idempotencyKey } : {}),
+          },
+          credentials: "include",
+          body: action.body ? JSON.stringify(action.body) : undefined,
+        });
+  
+        if (res.ok) {
+          dequeueAction(action.id);
+          synced++;
+        } else if (res.status === 409) {
+          // Conflict — server has a newer version (or the action was already
+          // applied with a different outcome). Server wins: dequeue and
+          // surface as a conflict rather than a hard failure, so the UI can
+          // prompt the user to refresh their local state.
+          dequeueAction(action.id);
+          conflicts++;
+        } else if (res.status === 429) {
+          // Explicit rate-limit responses mean the handler rejected the attempt.
+          const stillQueued = incrementRetry(action.id);
+          if (!stillQueued) failed++;
+        } else if (res.status >= 500) {
+          if (supportsRetry) {
+            const stillQueued = incrementRetry(action.id);
+            if (!stillQueued) failed++;
+          } else if (markNeedsReconciliation(action.id)) {
+            // A server error may occur after a non-idempotent side effect committed.
+            // Do not blindly replay; keep the action for explicit state reconciliation.
+            reconciliationRequired++;
+          } else {
+            failed++;
+          }
+        } else if (res.status >= 400 && res.status < 500) {
+          // Client error (non-conflict) — don't retry, just remove.
+          dequeueAction(action.id);
+          failed++;
+        } else {
+          // Unexpected response class: avoid replay unless this route is allowlisted.
+          if (supportsRetry) {
+            const stillQueued = incrementRetry(action.id);
+            if (!stillQueued) failed++;
+          } else if (markNeedsReconciliation(action.id)) {
+            reconciliationRequired++;
+          } else {
+            failed++;
+          }
+        }
+      } catch {
+        // A network failure is ambiguous: the server may have committed already.
+        if (supportsRetry) {
+          const stillQueued = incrementRetry(action.id);
+          if (!stillQueued) failed++;
+        } else if (markNeedsReconciliation(action.id)) {
+          reconciliationRequired++;
+        } else {
+          failed++;
+        }
       }
     }
+  } finally {
+    syncing = false;
   }
-
-  syncing = false;
   return { synced, failed, conflicts, remaining: getQueueSize(), reconciliationRequired };
 }
 
