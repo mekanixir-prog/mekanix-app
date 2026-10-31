@@ -20,40 +20,36 @@ describe("rateLimitAsync production failure behavior", () => {
     vi.unstubAllEnvs();
   });
 
-  it("allows a request when the shared D1 counter is incremented", async () => {
+  it("allows a request when the atomic shared counter returns a count within the limit", async () => {
     const windowMs = 60_000;
-    mockGetDbForLib.mockResolvedValue({
-      rateLimit: {
-        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-        findUnique: vi.fn().mockResolvedValue({
-          expiresAt: new Date(Date.now() + windowMs),
-        }),
-      },
-    });
+    const queryRaw = vi.fn().mockResolvedValue([{
+      count: 1,
+      expiresAt: new Date(Date.now() + windowMs),
+    }]);
+    mockGetDbForLib.mockResolvedValue({ $queryRaw: queryRaw });
 
     vi.stubEnv("NODE_ENV", "production");
     const result = await rateLimitAsync("test:d1-allow", 5, windowMs);
 
     expect(result.success).toBe(true);
     expect(result.unavailable).toBeUndefined();
+    expect(queryRaw).toHaveBeenCalledTimes(1);
   });
 
-  it("denies a request when the shared D1 counter has reached its limit", async () => {
+  it("denies a request when the atomic shared counter returns max+1", async () => {
     const windowMs = 60_000;
-    mockGetDbForLib.mockResolvedValue({
-      rateLimit: {
-        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
-        findUnique: vi.fn().mockResolvedValue({
-          expiresAt: new Date(Date.now() + windowMs),
-        }),
-      },
-    });
+    const queryRaw = vi.fn().mockResolvedValue([{
+      count: 6,
+      expiresAt: new Date(Date.now() + windowMs),
+    }]);
+    mockGetDbForLib.mockResolvedValue({ $queryRaw: queryRaw });
 
     vi.stubEnv("NODE_ENV", "production");
     const result = await rateLimitAsync("test:d1-deny", 5, windowMs);
 
     expect(result.success).toBe(false);
     expect(result.unavailable).toBeUndefined();
+    expect(queryRaw).toHaveBeenCalledTimes(1);
   });
 
   it("fails closed with an unavailable result when D1 is down in production", async () => {
