@@ -29,6 +29,13 @@ describe("getClientId trusted proxy extraction", () => {
     expect(getClientId(req)).toBe("198.51.100.27");
   });
 
+  it("does not trust x-real-ip when no trusted proxy address is present", () => {
+    const req = new Request("https://mekanix.test", {
+      headers: { "x-real-ip": "203.0.113.99" },
+    });
+    expect(getClientId(req)).toBe("anonymous");
+  });
+
   it("uses an authenticated user id ahead of proxy headers", () => {
     const req = new Request("https://mekanix.test", {
       headers: { "cf-connecting-ip": "198.51.100.27" },
