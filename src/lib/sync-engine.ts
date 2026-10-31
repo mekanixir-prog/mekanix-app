@@ -36,7 +36,7 @@ function supportsDurableIdempotency(action: { method: string }, target: URL): bo
     (action.method === "POST" && target.pathname === "/api/gateway/verify");
 }
 
-export async function syncQueue(): Promise<SyncResult> {
+export async function syncQueue(actionIds?: string[]): Promise<SyncResult> {
   const empty: SyncResult = { synced: 0, failed: 0, conflicts: 0, remaining: 0, reconciliationRequired: 0 };
   if (typeof window === "undefined") return empty;
   if (syncing) return { ...empty, remaining: getQueueSize() };
@@ -51,6 +51,7 @@ export async function syncQueue(): Promise<SyncResult> {
 
   try {
     for (const action of queue) {
+      if (actionIds && !actionIds.includes(action.id)) continue;
       if (action.needsReconciliation) {
         reconciliationRequired++;
         continue;
