@@ -29,16 +29,20 @@ jobs:
             ./ /tmp/mekanix-build/
           
           rm -rf /tmp/mekanix-build/prisma/migrations
-          mkdir -p /tmp/mekanix-build/prisma/migrations/20260925000000_init
-          cp prisma/migrations-postgresql/20260925000000_init/migration.sql \
-             /tmp/mekanix-build/prisma/migrations/20260925000000_init/
-          cp prisma/migrations-postgresql/migration_lock.toml \
-             /tmp/mekanix-build/prisma/migrations/
+          # Use the complete PostgreSQL migration history, not just init.
+          cp -a prisma/migrations-postgresql /tmp/mekanix-build/prisma/migrations
+          
+          # Guard against silently omitting additive migrations from Docker E2E.
+          test -f /tmp/mekanix-build/prisma/migrations/20260925000000_init/migration.sql
+          test -f /tmp/mekanix-build/prisma/migrations/20260926000000_add_rate_limit_idempotency/migration.sql
+          test -f /tmp/mekanix-build/prisma/migrations/20260927000000_vip_paymentid_unique/migration.sql
+          test -f /tmp/mekanix-build/prisma/migrations/migration_lock.toml
           
           sed -i 's/provider = "sqlite"/provider = "postgresql"/' \
             /tmp/mekanix-build/prisma/schema.prisma
           
-          echo "✅ Build context prepared with PostgreSQL config"
+          echo "✅ Build context prepared with all PostgreSQL migrations"
+          find /tmp/mekanix-build/prisma/migrations -maxdepth 2 -type f -print
       
       - name: Build and start Docker Compose stack
         run: |
