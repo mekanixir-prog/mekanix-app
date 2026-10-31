@@ -104,7 +104,7 @@ export async function syncQueue(): Promise<SyncResult> {
       }
     } catch {
       // A network failure is ambiguous: the server may have committed already.
-      if (supportsDurableIdempotency) {
+      if (supportsRetry) {
         const stillQueued = incrementRetry(action.id);
         if (!stillQueued) failed++;
       } else if (markNeedsReconciliation(action.id)) {
