@@ -13,6 +13,7 @@ import {
   clearQueue,
   markNeedsReconciliation,
   retryAfterReconciliation,
+  markAttempt,
   type QueuedAction,
 } from "@/lib/offline-queue";
 
@@ -171,10 +172,10 @@ describe("offline-queue — incrementRetry()", () => {
 
   it("retains the action for reconciliation once retryCount reaches maxRetries (3)", () => {
     const id = enqueueAction({ url: "/api/a", method: "POST", body: {} });
-    // Three increments → 1, 2, 3 — the third crosses the maxRetries threshold
+    // Three increments → 1, 2, 3 — the third gates the action for review
     expect(incrementRetry(id)).toBe(true); // 1
     expect(incrementRetry(id)).toBe(true); // 2
-    expect(incrementRetry(id)).toBe(false); // 3 → removed
+    expect(incrementRetry(id)).toBe(false); // 3 → retained for reconciliation
 
     // The unresolved action remains visible; it is never silently discarded.
     expect(getQueueSize()).toBe(1);
@@ -205,6 +206,17 @@ describe("offline-queue — incrementRetry()", () => {
 
   it("returns false if the action id is not in the queue", () => {
     expect(incrementRetry("qa_does_not_exist")).toBe(false);
+  });
+});
+
+describe("offline-queue — attempt metadata", () => {
+  it("records lastAttemptAt and the latest HTTP status", () => {
+    const id = enqueueAction({ url: "/api/wallets/withdraw", method: "POST", body: {} });
+    const before = Date.now();
+    expect(markAttempt(id, 503)).toBe(true);
+    const action = getQueuedActions()[0];
+    expect(action.lastAttemptAt).toBeGreaterThanOrEqual(before);
+    expect(action.lastStatus).toBe(503);
   });
 });
 
