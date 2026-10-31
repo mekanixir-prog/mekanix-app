@@ -107,7 +107,7 @@ export async function POST(req: Request) {
   let smsResult: Awaited<ReturnType<typeof sendOtp>>;
   try {
     smsResult = await sendOtp(phone, code);
-  } catch (error) {
+  } catch {
     await db.otpCode.updateMany({
       where: { phone, code: codeHash, consumed: false },
       data: { consumed: true },
