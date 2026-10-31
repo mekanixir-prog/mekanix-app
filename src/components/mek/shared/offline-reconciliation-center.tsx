@@ -98,6 +98,9 @@ function reasonLabel(action: QueuedAction, isFa: boolean): string {
     unexpected_response: ["پاسخ غیرمنتظره از سرور دریافت شد", "Unexpected server response"],
     retry_limit: ["حد مجاز تلاش خودکار تمام شده؛ عملیات برای بررسی نگه داشته شد", "Automatic retry limit reached; action retained for review"],
     rate_limited: ["محدودیت تعداد درخواست؛ ارسال بعدی نیازمند بررسی است", "Rate limited; another attempt requires review"],
+    auth_required: ["نشست کاربری منقضی یا نامعتبر است؛ دوباره وارد شوید و سپس وضعیت عملیات را بررسی کنید", "Session expired or invalid; sign in again, then check the operation status"],
+    permission_denied: ["دسترسی این حساب برای عملیات کافی نیست", "This account is not authorized for the operation"],
+    client_rejected: ["سرور درخواست را نپذیرفت؛ جزئیات باید بررسی شود", "The server rejected the request; review is required"],
     legacy_unknown: ["وضعیت عملیات مشخص نیست و باید دستی بررسی شود", "Operation state is unknown and needs review"],
   };
   const pair = labels[action.reconciliationReason ?? "legacy_unknown"] ?? labels.legacy_unknown;
