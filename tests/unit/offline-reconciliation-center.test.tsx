@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { clearQueue, enqueueAction, getQueuedActions, getQueueSize } from "@/lib/offline-queue";
 import { OfflineReconciliationCenter } from "@/components/mek/shared/offline-reconciliation-center";
 
@@ -13,6 +13,11 @@ function response(data: unknown, status = 200) {
     json: async () => data,
   };
 }
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 beforeEach(() => {
   clearQueue();
