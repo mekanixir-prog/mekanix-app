@@ -19,6 +19,7 @@ type ServerCheck = {
   state: "COMMITTED" | "NOT_COMMITTED" | "RECONCILIATION_REQUIRED" | "KEY_CONFLICT" | "UNKNOWN";
   label?: string;
   detail?: string;
+  retryAllowed?: boolean;
   checkedAt: number;
 };
 
@@ -129,6 +130,7 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, onSync 
     keep: "نگه‌داشتن",
     notConfirmed: "مکانیکس هنوز نتیجه ثبت این عملیات را در سرور تأیید نکرده است.",
     retryNote: "ارسال مجدد فقط پس از بررسی قطعی وضعیت سرور و برای مسیرهای دارای قرارداد تکرارپذیری فعال می‌شود.",
+    retryDisabled: "این مسیر هنوز در محیط عملیاتی فعال نیست؛ عملیات را نگه دارید تا اتصال درگاه واقعی تکمیل شود.",
     syncDone: "همگام‌سازی انجام شد",
     syncError: "همگام‌سازی ناموفق بود",
     noStatus: "بررسی وضعیت",
@@ -163,6 +165,7 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, onSync 
     keep: "Keep it",
     notConfirmed: "MEKANIX has not confirmed whether this action committed on the server.",
     retryNote: "Retry is enabled only after an authoritative status check and for routes with durable idempotency.",
+    retryDisabled: "This route is not enabled in production yet. Keep the action until the live payment integration is approved.",
     syncDone: "Sync completed",
     syncError: "Sync failed",
     noStatus: "Status lookup",
@@ -208,7 +211,7 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, onSync 
       const detail = state === "COMMITTED"
         ? (data.withdrawal ? `${data.withdrawal.status} · ${data.withdrawal.amount}` : data.prepay ? data.prepay.jobCode : undefined)
         : undefined;
-      setChecks((current) => ({ ...current, [action.id]: { state, label, detail, checkedAt: Date.now() } }));
+      setChecks((current) => ({ ...current, [action.id]: { state, label, detail, retryAllowed: data.retryAllowed !== false, checkedAt: Date.now() } }));
       if (!response.ok && state === "UNKNOWN") {
         setError(typeof data.error === "string" ? data.error : copy.syncError);
       }
@@ -339,7 +342,7 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, onSync 
             (path === "/api/prepay" && typeof getBody(action).jobId === "string");
           const canRetry = check?.state === "NOT_COMMITTED" &&
             (path === "/api/wallets/withdraw" || path === "/api/prepay") &&
-            !!action.needsReconciliation;
+            !!action.needsReconciliation && check?.retryAllowed !== false;
           return (
             <Card key={action.id} className="gap-0 overflow-hidden">
               <CardHeader className="gap-2 border-b border-border px-4 py-3">
@@ -378,6 +381,7 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, onSync 
                     </p>
                     {check.label && <p className="mt-1 font-medium">{check.label}</p>}
                     {check.detail && <p className="mt-1 text-muted-foreground">{check.detail}</p>}
+                    {check.state === "NOT_COMMITTED" && check.retryAllowed === false && <p className="mt-2 text-amber">{copy.retryDisabled}</p>}
                     <p className="mt-1 text-[10px] text-muted-foreground">{formatDate(check.checkedAt, lang)}</p>
                   </div>
                 )}
