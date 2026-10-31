@@ -73,6 +73,15 @@ describe("offline sync retry safety", () => {
     expect(result.reconciliationRequired).toBe(0);
   });
 
+  it("retries simulator gateway verification because gatewayLogId is database-unique", async () => {
+    mocks.getQueuedActions.mockReturnValue([action({ url: "/api/gateway/verify" })]);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500 }));
+    const result = await syncQueue();
+    expect(mocks.incrementRetry).toHaveBeenCalledWith("qa-1");
+    expect(mocks.markNeedsReconciliation).not.toHaveBeenCalled();
+    expect(result.reconciliationRequired).toBe(0);
+  });
+
   it("retains a previously flagged action without sending it again", async () => {
     mocks.getQueuedActions.mockReturnValue([action({ needsReconciliation: true })]);
     const fetchMock = vi.fn();
