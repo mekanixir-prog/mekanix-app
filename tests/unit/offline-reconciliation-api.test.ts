@@ -88,6 +88,34 @@ describe("read-only offline reconciliation endpoints", () => {
     });
   });
 
+  it("flags an orphan debit ledger row instead of reporting NOT_COMMITTED", async () => {
+    mocks.withdrawal.mockResolvedValue(null);
+    mocks.withdrawalLedger.mockResolvedValue({ id: "ledger-orphan", referenceId: "wd-missing", amount: -500 });
+    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      state: "RECONCILIATION_REQUIRED",
+      ledgerFound: true,
+      requestFound: false,
+    });
+  });
+
+  it("flags existing withdrawal records when the technician wallet is missing", async () => {
+    mocks.wallet.mockResolvedValue(null);
+    mocks.withdrawal.mockResolvedValue({
+      id: "wd-1", walletId: "wallet-1", code: "WD-1001", amount: 500,
+      status: "REQUESTED", requestedAt: new Date(), processedAt: null,
+    });
+    mocks.withdrawalLedger.mockResolvedValue({ id: "ledger-1", referenceId: "wd-1", amount: -500 });
+    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      state: "RECONCILIATION_REQUIRED",
+      requestFound: true,
+      ledgerFound: true,
+    });
+  });
+
   it("reports NOT_COMMITTED when no withdrawal record exists", async () => {
     const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
     expect(response.status).toBe(200);
