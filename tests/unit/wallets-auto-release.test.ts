@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockWalletFindUnique = vi.fn();
 const mockWalletCreate = vi.fn();
@@ -43,6 +43,8 @@ function wallet(transactions: any[] = []) {
   };
 }
 
+afterEach(() => vi.unstubAllEnvs());
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockRequireAuth.mockResolvedValue({
@@ -73,6 +75,22 @@ describe("GET /api/wallets — atomic escrow release orchestration", () => {
     expect(transactionId).toBe("txn-due");
     expect(now).toBeInstanceOf(Date);
     expect(db.wallet.findUnique).toBeTypeOf("function");
+  });
+
+  it("keeps production GET read-only even when escrow holds have matured", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const due = new Date(Date.now() - 60_000);
+    mockWalletFindUnique
+      .mockResolvedValueOnce(wallet([
+        { id: "txn-due", status: "PENDING", netAmount: 1000, holdUntil: due },
+      ]))
+      .mockResolvedValueOnce(wallet([
+        { id: "txn-due", status: "PENDING", netAmount: 1000, holdUntil: due },
+      ]));
+
+    const response = await GET(makeRequest());
+    expect(response.status).toBe(200);
+    expect(mockReleaseWalletTransaction).not.toHaveBeenCalled();
   });
 
   it("does not attempt release for future holds or non-pending transactions", async () => {
