@@ -26,7 +26,7 @@ type Props = {
   open: boolean;
   isOnline: boolean;
   queueSize: number;
-  onSync: () => Promise<SyncResult>;
+  onSync: (actionIds?: string[]) => Promise<SyncResult>;
 };
 
 function getPath(action: QueuedAction): string {
@@ -248,7 +248,7 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, onSync 
         delete next[action.id];
         return next;
       });
-      await onSync();
+      await onSync([action.id]);
     } catch {
       setError(copy.syncError);
     } finally {
