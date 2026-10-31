@@ -139,6 +139,7 @@ export async function recordPrepayWithD1(
   const holdLedgerKey = `prepay:${input.jobId}:LEDGER_HOLD`;
   const commissionLedgerKey = `prepay:${input.jobId}:LEDGER_COMMISSION`;
   const marker = `"id" = ? AND "prepayPaid" = 1 AND "prepayPaidAt" = ?`;
+  const joinedJobMarker = `j."id" = ? AND j."prepayPaid" = 1 AND j."prepayPaidAt" = ?`;
 
   const statements = [
     d1.prepare(`
@@ -163,7 +164,7 @@ export async function recordPrepayWithD1(
          "idempotencyKey", "createdAt")
       SELECT ?, w."id", j."id", 'PREPAY', 'PENDING', ?, ?, ?, NULL, ?, ?, ?
       FROM "Wallet" w JOIN "Job" j ON j."technicianId" = ?
-      WHERE w."technicianId" = ? AND ${marker}
+      WHERE w."technicianId" = ? AND ${joinedJobMarker}
     `).bind(crypto.randomUUID(), input.gross, input.commission, input.net,
       `Pre-service payment — ${input.jobCode} (${input.machineLabel})`,
       prepayKey, at, input.technicianId, input.technicianId, input.jobId, at),
@@ -174,7 +175,7 @@ export async function recordPrepayWithD1(
          "commissionAmount", "netAmount", "description", "idempotencyKey", "createdAt")
       SELECT ?, w."id", j."id", 'COMMISSION', 'COMPLETED', 0, ?, ?, ?, ?, ?
       FROM "Wallet" w JOIN "Job" j ON j."technicianId" = ?
-      WHERE w."technicianId" = ? AND ${marker}
+      WHERE w."technicianId" = ? AND ${joinedJobMarker}
     `).bind(crypto.randomUUID(), input.commission, -input.commission,
       `Platform commission (10%) — ${input.jobCode}`,
       commissionKey, at, input.technicianId, input.technicianId, input.jobId, at),
@@ -186,7 +187,7 @@ export async function recordPrepayWithD1(
       SELECT ?, w."id", 'HOLD', ?, w."pendingBalance", w."pendingBalance" + ?,
              'Job', j."id", ?, ?, ?
       FROM "Wallet" w JOIN "Job" j ON j."technicianId" = ?
-      WHERE w."technicianId" = ? AND ${marker}
+      WHERE w."technicianId" = ? AND ${joinedJobMarker}
     `).bind(crypto.randomUUID(), input.net, input.net,
       `Prepay escrow — ${input.jobCode}`, holdLedgerKey, at,
       input.technicianId, input.technicianId, input.jobId, at),
@@ -207,7 +208,7 @@ export async function recordPrepayWithD1(
       SELECT ?, w."id", 'COMMISSION', ?, w."pendingBalance", w."pendingBalance",
              'Job', j."id", ?, ?, ?
       FROM "Wallet" w JOIN "Job" j ON j."technicianId" = ?
-      WHERE w."technicianId" = ? AND ${marker}
+      WHERE w."technicianId" = ? AND ${joinedJobMarker}
     `).bind(crypto.randomUUID(), -input.commission,
       `Platform commission — ${input.jobCode}`, commissionLedgerKey, at,
       input.technicianId, input.technicianId, input.jobId, at),
