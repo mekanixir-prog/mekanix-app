@@ -138,3 +138,15 @@ This section records work completed after the initial source review; it does not
 - **No live services activated:** no production deployment, remote production migration, real SMS, real payment, or production-data mutation was performed.
 
 The Docker E2E failure is not waived. The next acceptance criterion is a fresh all-green run for PR #27 against the updated main, followed by focused review of every idempotency caller and the wallet release protocol.
+
+
+## 8. Deeper concurrency review
+
+A second adversarial pass identified correctness issues not resolved by the initial PR #27 scope:
+
+- **Idempotency helper:** `withIdempotency()` in `src/lib/auth.ts` uses read → callback → upsert, so concurrent duplicate requests can both execute the side effect. Its broad catch also includes the callback and cache write; after an uncertain/partial side effect or cache-write failure, the fallback can invoke the callback again. The helper must be redesigned around an atomic claim/state machine and request fingerprint, or removed if proven unused. All call sites still need explicit enumeration. Tracked in issue #22.
+- **Rate-limit window race:** the current main implementation conditionally increments an existing live row, then separately reads/upserts missing or expired rows. Concurrent first-hit/expiry requests can reset the counter multiple times. PR #27 only addresses store-outage fallback, not this algorithmic race. Tracked separately in issue #28; a single atomic provider-compatible operation and concurrency tests are required.
+- **Admin secret:** `src/lib/admin-auth.ts` still allows production fallback from `ADMIN_JWT_SECRET` to `JWT_SECRET`; payload validation reduces token-confusion risk but does not provide cryptographic isolation. Production should require a dedicated secret and readiness must fail without it. Tracked in issue #22.
+- **Wallet release:** the PENDING → AVAILABLE transition and wallet balance increment remain separate writes. Exactly-once recovery is still unproven; do not reverse the writes as a shortcut. Tracked in issue #22.
+
+A new commit on PR #27 has triggered fresh CI against the updated base after PR #26 merged. At the time of this audit update, those four workflows are still in progress; no new pass is claimed.
