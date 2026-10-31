@@ -105,6 +105,24 @@ describe("offline sync retry safety", () => {
     expect(result.reconciliationRequired).toBe(1);
   });
 
+  it("retains 401 and 403 responses for user attention instead of dropping the action", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401 }));
+    const unauthorized = await syncQueue();
+    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1", "auth_required", 401);
+    expect(mocks.dequeueAction).not.toHaveBeenCalled();
+    expect(unauthorized.reconciliationRequired).toBe(1);
+
+    vi.clearAllMocks();
+    mocks.getQueuedActions.mockReturnValue([action()]);
+    mocks.getQueueSize.mockReturnValue(1);
+    mocks.markNeedsReconciliation.mockReturnValue(true);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 403 }));
+    const forbidden = await syncQueue();
+    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1", "permission_denied", 403);
+    expect(mocks.dequeueAction).not.toHaveBeenCalled();
+    expect(forbidden.reconciliationRequired).toBe(1);
+  });
+
   it("retains production-disabled simulator 404 responses for manual review", async () => {
     mocks.getQueuedActions.mockReturnValue([action({ url: "/api/prepay" })]);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }));
