@@ -104,6 +104,15 @@ describe("offline sync retry safety", () => {
     expect(result.reconciliationRequired).toBe(1);
   });
 
+  it("retains production-disabled simulator 404 responses for manual review", async () => {
+    mocks.getQueuedActions.mockReturnValue([action({ url: "/api/prepay" })]);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+    const result = await syncQueue();
+    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1", "server_error", 404);
+    expect(mocks.dequeueAction).not.toHaveBeenCalled();
+    expect(result.reconciliationRequired).toBe(1);
+  });
+
   it("retries explicit 429 responses without treating them as ambiguous commits", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 429 }));
     const result = await syncQueue();
