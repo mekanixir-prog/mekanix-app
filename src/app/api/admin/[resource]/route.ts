@@ -52,6 +52,7 @@ const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
         requestedAt: true,
         processedAt: true,
         adminNotes: true,
+        txnId: true,
         wallet: {
           select: {
             technician: {
