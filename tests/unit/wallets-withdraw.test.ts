@@ -1,13 +1,14 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { db, atomic } = vi.hoisted(() => ({
+const { db, atomic, rateLimit } = vi.hoisted(() => ({
   db: {
     wallet: { findUnique: vi.fn() },
     withdrawalRequest: { findUnique: vi.fn() },
     notification: { create: vi.fn() },
   },
   atomic: vi.fn(),
+  rateLimit: vi.fn(),
 }));
 vi.mock("@/lib/db-access", () => ({ getDbForLib: async () => db }));
 vi.mock("@/lib/api-helpers", () => ({
@@ -18,7 +19,7 @@ vi.mock("@/lib/auth", () => ({
 }));
 vi.mock("@/lib/withdrawal-atomic", () => ({ createWithdrawalAtomically: (...args: any[]) => atomic(...args) }));
 vi.mock("@/lib/rate-limit", () => ({
-  rateLimitAsync: async () => ({ success: true, resetMs: 60000 }),
+  rateLimitAsync: (...args: any[]) => rateLimit(...args),
   getClientId: () => "test-client",
   RATE_LIMITS: { WITHDRAW: { max: 3, windowMs: 3600000 } },
 }));
@@ -35,6 +36,7 @@ function request(body: unknown, key = "withdrawal-request-0001") {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  rateLimit.mockResolvedValue({ success: true, resetMs: 60000 });
   db.wallet.findUnique.mockResolvedValue({ id: "wallet-1", balance: 1000 });
   db.withdrawalRequest.findUnique.mockResolvedValue(null);
 });
@@ -67,6 +69,15 @@ describe("atomic withdrawal route", () => {
     expect((await POST(request({ amount: 0 }))).status).toBe(400);
     expect((await POST(request({ amount: 500 }, ""))).status).toBe(400);
     expect(atomic).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 when the shared rate-limit store is unavailable", async () => {
+    rateLimit.mockResolvedValue({ success: false, unavailable: true, resetMs: 60000 });
+    const response = await POST(request({ amount: 500 }));
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Retry-After")).toBe("30");
+    expect(atomic).not.toHaveBeenCalled();
+    expect(db.notification.create).not.toHaveBeenCalled();
   });
 
   it("does not send a notification when the atomic debit fails", async () => {
