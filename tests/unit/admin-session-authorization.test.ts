@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ verifySession: vi.fn(), findUser: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ verifySession: mocks.verifySession }));
