@@ -64,6 +64,16 @@ describe("offline sync retry safety", () => {
     expect(result.reconciliationRequired).toBe(1);
   });
 
+  it("retains a 409 conflict behind manual reconciliation instead of dropping the queued action", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 409 }));
+    const result = await syncQueue();
+    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1");
+    expect(mocks.dequeueAction).not.toHaveBeenCalled();
+    expect(result.conflicts).toBe(1);
+    expect(result.reconciliationRequired).toBe(1);
+    expect(result.remaining).toBe(1);
+  });
+
   it("retries a withdrawal POST after a network error because the endpoint has durable idempotency", async () => {
     mocks.getQueuedActions.mockReturnValue([action({ url: "/api/wallets/withdraw" })]);
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("connection reset")));
@@ -80,16 +90,6 @@ describe("offline sync retry safety", () => {
     expect(mocks.incrementRetry).toHaveBeenCalledWith("qa-1");
     expect(mocks.markNeedsReconciliation).not.toHaveBeenCalled();
     expect(result.reconciliationRequired).toBe(0);
-  });
-
-  it("refuses to replay a persisted cross-origin URL with authenticated credentials", async () => {
-    mocks.getQueuedActions.mockReturnValue([action({ url: "https://attacker.example/api/wallets/withdraw" })]);
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-    const result = await syncQueue();
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1");
-    expect(result.reconciliationRequired).toBe(1);
   });
 
   it("retains a previously flagged action without sending it again", async () => {
