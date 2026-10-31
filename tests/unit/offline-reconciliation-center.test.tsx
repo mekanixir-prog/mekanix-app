@@ -80,6 +80,22 @@ describe("offline reconciliation center", () => {
     expect(getQueuedActions()[0].needsReconciliation).toBe(false);
   });
 
+  it("does not offer a prepay retry when the server disables the simulator in production", async () => {
+    enqueueAction({ url: "/api/prepay", method: "POST", body: { jobId: "job-1" } });
+    const stored = getQueuedActions();
+    stored[0].needsReconciliation = true;
+    localStorage.setItem("mekanix-offline-queue", JSON.stringify(stored));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({
+      state: "NOT_COMMITTED", retryAllowed: false,
+    })));
+
+    renderCenter(1);
+    fireEvent.click(screen.getByRole("button", { name: "بررسی وضعیت سرور" }));
+    await screen.findByText("عملیات در سرور ثبت نشده است");
+    expect(screen.queryByRole("button", { name: "ارسال دوباره امن" })).toBeNull();
+    expect(screen.getByText(/این مسیر هنوز در محیط عملیاتی فعال نیست/)).toBeTruthy();
+  });
+
   it("keeps partial prepay financial state unresolved and does not offer retry", async () => {
     enqueueAction({ url: "/api/prepay", method: "POST", body: { jobId: "job-1" } });
     const stored = getQueuedActions();
