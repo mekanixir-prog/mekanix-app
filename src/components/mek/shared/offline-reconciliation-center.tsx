@@ -100,7 +100,9 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, onSync 
   const isFa = lang !== "en";
 
   const copy = useMemo(() => isFa ? {
-    title: "مرکز بررسی عملیات آفلاین",
+    title: "مرکز همگام‌سازی و بررسی عملیات آفلاین",
+    waitingTitle: "عملیات در انتظار همگام‌سازی",
+    waitingDescription: "این موارد هنوز به‌صورت امن ارسال نشده‌اند. با اتصال اینترنت می‌توانید همگام‌سازی را اجرا کنید.",
     description: "هیچ عملیات مبهمی بدون بررسی وضعیت سرور دوباره ارسال یا حذف نمی‌شود.",
     online: "اتصال برقرار است",
     offline: "بدون اتصال به اینترنت",
@@ -132,7 +134,9 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, onSync 
     noStatus: "بررسی وضعیت",
     http: "کد پاسخ",
   } : {
-    title: "Offline action reconciliation",
+    title: "Offline sync and reconciliation",
+    waitingTitle: "Actions waiting to sync",
+    waitingDescription: "These actions have not been sent yet. Connect to the internet and run safe sync when ready.",
     description: "Ambiguous actions are never silently replayed or discarded.",
     online: "Connected",
     offline: "Offline",
@@ -173,6 +177,8 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, onSync 
   }, [open, queueSize]);
 
   const refresh = () => setActions(getQueuedActions());
+  const reviewActions = actions.filter((action) => action.needsReconciliation);
+  const waitingCount = actions.length - reviewActions.length;
 
   async function checkServer(action: QueuedAction) {
     if (!isOnline) return;
@@ -308,14 +314,25 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, onSync 
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
-        {actions.length === 0 ? (
+        {waitingCount > 0 && (
+          <div className="rounded-xl border border-border bg-muted/30 p-4">
+            <div className="flex items-start gap-2">
+              <Clock3 className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">{copy.waitingTitle} · {waitingCount}</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">{copy.waitingDescription}</p>
+              </div>
+            </div>
+          </div>
+        )}
+        {reviewActions.length === 0 ? (
           <div className="grid min-h-52 place-items-center rounded-xl border border-dashed border-border p-6 text-center">
             <div>
               <CheckCircle2 className="mx-auto size-8 text-emerald-500" />
-              <p className="mt-3 text-sm font-medium">{copy.empty}</p>
+              <p className="mt-3 text-sm font-medium">{waitingCount > 0 ? copy.waitingTitle : copy.empty}</p>
             </div>
           </div>
-        ) : actions.map((action) => {
+        ) : reviewActions.map((action) => {
           const check = checks[action.id];
           const path = getPath(action);
           const canCheck = (path === "/api/wallets/withdraw" && !!action.idempotencyKey) ||
