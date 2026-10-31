@@ -85,7 +85,7 @@ These are not reasons to stop local code development, but they must be completed
 - Production Cloudflare Worker and D1 configuration, separate from preview.
 - Monitoring, alerting, backup/restore and rollback drills.
 
-Important: the presence of `PAYMENT_PROVIDER=simulator` in configuration does not by itself prove the provider abstraction is wired into the payment routes. Do not enable real-money flows by changing an environment variable alone.
+Important: the presence of `PAYMENT_PROVIDER=simulator` in configuration does not by itself prove the provider abstraction is wired into the payment routes. Do not enable real-money flows by changing an environment variable alone. Tracking issue: [#24 — Payment gateway integration](https://github.com/mekanixir-prog/mekanix-app/issues/24).
 
 ## 5. Ordered execution plan
 
