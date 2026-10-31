@@ -234,11 +234,14 @@ describe("SEC-5 — admin login rate limit + audit log", () => {
     await POST(makeLoginRequest("nobody@example.com", "x"));
 
     // rateLimitAsync was called with the IP-scoped key
-    expect(mockRateLimitAsync).toHaveBeenCalledTimes(1);
-    const args = mockRateLimitAsync.mock.calls[0];
-    expect(args[0]).toBe("admin-login:203.0.113.99");
-    expect(args[1]).toBe(5); // max attempts
-    expect(args[2]).toBe(15 * 60_000); // 15 min window
+    expect(mockRateLimitAsync).toHaveBeenCalledTimes(2);
+    const ipArgs = mockRateLimitAsync.mock.calls[0];
+    expect(ipArgs[0]).toBe("admin-login:ip:203.0.113.99");
+    expect(ipArgs[1]).toBe(5); // max attempts
+    expect(ipArgs[2]).toBe(15 * 60_000); // 15 min window
+    const accountKey = mockRateLimitAsync.mock.calls[1][0] as string;
+    expect(accountKey).toMatch(/^admin-login:account:[a-f0-9]{64}$/);
+    expect(accountKey).not.toContain("nobody@example.com");
   });
 
   it("failed login (wrong password) creates audit log entry with action FAILED_ADMIN_LOGIN", async () => {
@@ -326,26 +329,19 @@ describe("SEC-5 — admin login rate limit + audit log", () => {
     expect(mockWriteAuditLog).toHaveBeenCalledTimes(1);
   });
 
-  it("rate limit fail-open: if rateLimitAsync throws, login proceeds (no DoS on admin)", async () => {
-    // Simulate rateLimitAsync throwing (DB unavailable AND in-memory also fails)
-    mockRateLimitAsync.mockRejectedValueOnce(new Error("rate limit store unavailable"));
-    mockAdminUserFindFirst.mockResolvedValue({
-      id: "admin-1",
-      username: "admin",
-      email: "admin@mekanix.ir",
-      passwordHash: "$2b$12$realhash",
-      name: "Admin User",
-      role: "SUPER_ADMIN",
+  it("fails closed with 503 when the shared rate-limit store is unavailable", async () => {
+    mockRateLimitAsync.mockResolvedValueOnce({
+      success: false,
+      resetMs: 15 * 60_000,
+      unavailable: true,
     });
-    mockVerifyPassword.mockResolvedValue(true);
-    mockCreateAdminToken.mockResolvedValue("jwt-123");
 
     const req = makeLoginRequest("admin", "admin12345");
     const res = await POST(req);
 
-    // CRITICAL: fail-open — login succeeds even though rateLimitAsync threw.
-    // Better to risk a brute-force than to lock the admin out of the panel.
-    expect(res.status).toBe(200);
-    expect(mockVerifyPassword).toHaveBeenCalled();
+    expect(res.status).toBe(503);
+    expect(res.headers.get("Retry-After")).toBe("900");
+    expect(mockVerifyPassword).not.toHaveBeenCalled();
+    expect(mockAdminUserFindFirst).not.toHaveBeenCalled();
   });
 });
