@@ -19,18 +19,23 @@ export interface SyncResult {
 
 let syncing = false;
 
-function supportsDurableIdempotency(action: { url: string; method: string }): boolean {
+function getSameOriginUrl(action: { url: string }): URL | null {
   try {
     const target = new URL(action.url, window.location.origin);
-    // Never treat a matching path on another origin as a trusted API route.
-    // This also prevents forwarding authenticated credentials to a queued URL
-    // controlled by an untrusted source.
-    if (target.origin !== window.location.origin) return false;
-    return (action.method === "POST" && target.pathname === "/api/wallets/withdraw") ||
-      (action.method === "POST" && target.pathname === "/api/prepay");
+    // The offline queue is only allowed to replay requests to this application.
+    // Never forward credentials to a cross-origin URL from persisted client data.
+    return target.origin === window.location.origin ? target : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+function supportsDurableIdempotency(
+  action: { method: string },
+  target: URL
+): boolean {
+  return (action.method === "POST" && target.pathname === "/api/wallets/withdraw") ||
+    (action.method === "POST" && target.pathname === "/api/prepay");
 }
 
 export async function syncQueue(): Promise<SyncResult> {
@@ -51,10 +56,17 @@ export async function syncQueue(): Promise<SyncResult> {
       reconciliationRequired++;
       continue;
     }
-    const supportsRetry = supportsDurableIdempotency(action);
+    const target = getSameOriginUrl(action);
+    if (!target) {
+      // Persist for explicit review; do not send credentials to an unknown origin.
+      if (markNeedsReconciliation(action.id)) reconciliationRequired++;
+      else failed++;
+      continue;
+    }
+    const supportsRetry = supportsDurableIdempotency(action, target);
 
     try {
-      const res = await fetch(action.url, {
+      const res = await fetch(target.href, {
         method: action.method,
         headers: {
           "Content-Type": "application/json",
