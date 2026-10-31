@@ -10,7 +10,7 @@
 4. [Architecture Blueprint](ARCHITECTURE.md) — product and system architecture.
 5. [Cloudflare Build Audit](AUDIT_CLOUDFLARE_BUILD.md) — Workers build path and constraints.
 6. [D1 / Prisma Audit](AUDIT_D1_PRISMA.md) — database adapter, migrations, and transaction/concurrency limitations.
-7. [Payment & Wallet Audit](AUDIT_PAYMENT_WALLET.md) — payment, wallet, VIP, and idempotency findings.
+7. [Payment & Wallet Audit](AUDIT_PAYMENT_WALLET.md) — payment, wallet, VIP, and idempotency findings.\n8. [Idempotency Call-Site Inventory](IDEMPOTENCY_CALLSITE_INVENTORY.md) — endpoint-level deduplication contracts and safe offline retry boundaries.
 8. [Security Audit](AUDIT_SECURITY.md) and [Phase 3 Security Audit v2](PHASE3_SECURITY_AUDIT_V2.md) — security review history.
 9. [CI/CD Audit](AUDIT_CICD.md) — workflow and deployment automation review.
 10. [Release Checklist](RELEASE_CHECKLIST.md) and [Rollback Runbook](ROLLBACK.md) — operational checklists.
