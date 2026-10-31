@@ -26,36 +26,46 @@ export async function GET(req: Request) {
   });
   if (!wallet) return NextResponse.json({ state: "NOT_COMMITTED" });
 
-  const request = await db.withdrawalRequest.findUnique({
-    where: { idempotencyKey: key },
-    select: {
-      id: true,
-      walletId: true,
-      code: true,
-      amount: true,
-      status: true,
-      requestedAt: true,
-      processedAt: true,
-    },
-  });
+  const [request, ledger] = await Promise.all([
+    db.withdrawalRequest.findUnique({
+      where: { idempotencyKey: key },
+      select: {
+        id: true,
+        walletId: true,
+        code: true,
+        amount: true,
+        status: true,
+        requestedAt: true,
+        processedAt: true,
+      },
+    }),
+    db.walletLedger.findUnique({
+      where: { idempotencyKey: `withdrawal:${key}:LEDGER` },
+      select: { id: true, referenceId: true, amount: true },
+    }),
+  ]);
 
-  if (!request) return NextResponse.json({ state: "NOT_COMMITTED" });
-  if (request.walletId !== wallet.id) {
+  if (!request && !ledger) return NextResponse.json({ state: "NOT_COMMITTED" });
+  if (!request && ledger) {
+    return NextResponse.json({
+      state: "RECONCILIATION_REQUIRED",
+      ledgerFound: true,
+      requestFound: false,
+    }, { status: 409 });
+  }
+  if (request!.walletId !== wallet.id) {
     return NextResponse.json({ state: "KEY_CONFLICT" }, { status: 409 });
   }
 
-  // A WithdrawalRequest row alone is not proof of a committed debit. Verify
-  // the matching immutable ledger row before telling the client it succeeded.
-  const ledger = await db.walletLedger.findUnique({
-    where: { idempotencyKey: `withdrawal:${key}:LEDGER` },
-    select: { id: true, referenceId: true, amount: true },
-  });
-  const expectedDebit = new Prisma.Decimal(request.amount).negated();
-  if (!ledger || ledger.referenceId !== request.id || !expectedDebit.equals(ledger.amount)) {
+  // A WithdrawalRequest row alone is not proof that the wallet debit committed.
+  // Verify the matching immutable ledger row before telling the client it succeeded.
+  const expectedDebit = new Prisma.Decimal(request!.amount).negated();
+  if (!ledger || ledger.referenceId !== request!.id || !expectedDebit.equals(ledger.amount)) {
     return NextResponse.json({
       state: "RECONCILIATION_REQUIRED",
-      withdrawalCode: request.code,
+      withdrawalCode: request!.code,
       ledgerFound: Boolean(ledger),
+      requestFound: true,
     }, { status: 409 });
   }
 
