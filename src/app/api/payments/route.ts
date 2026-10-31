@@ -39,6 +39,12 @@ export async function POST(req: Request) {
     RATE_LIMITS.PAYMENT.max,
     RATE_LIMITS.PAYMENT.windowMs
   );
+  if (rl.unavailable) {
+    return NextResponse.json(
+      { error: "سرویس محدودسازی درخواست موقتاً در دسترس نیست" },
+      { status: 503, headers: { "Retry-After": "30" } }
+    );
+  }
   if (!rl.success) {
     return NextResponse.json(
       { error: "درخواست‌های پرداخت بیش از حد، بعداً دوباره تلاش کنید" },
