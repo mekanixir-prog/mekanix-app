@@ -26,6 +26,13 @@ describe("admin session authorization", () => {
     await expect(verifyAdminToken("not-a-token")).resolves.toBeNull();
   });
 
+  it("rejects a weak dedicated admin secret in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ADMIN_JWT_SECRET", "short-secret");
+    await expect(createAdminToken({ adminId: "a1", username: "operator", role: "ADMIN" }))
+      .rejects.toThrow("at least 32 bytes");
+  });
+
   it("signs and verifies dedicated admin tokens with the isolated production secret", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("ADMIN_JWT_SECRET", "dedicated-admin-secret-with-sufficient-entropy");
