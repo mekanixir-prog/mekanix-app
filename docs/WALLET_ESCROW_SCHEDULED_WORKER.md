@@ -7,14 +7,17 @@ Wallet escrow is currently released when the technician wallet is read. That mak
 ## Deployment order
 
 1. Merge the atomic escrow-release implementation (PR #12) first.
-2. Deploy the dedicated worker from the repository root:
+2. Create a **separate isolated staging D1 database**. Do not reuse the application production D1 database for the first deployment or validation.
+3. Replace the all-zero `database_id` placeholder in `wrangler.wallet-release.toml` with the staging database ID, and set `database_name` to the exact staging database name. The committed config intentionally cannot deploy until this staging-only step is completed.
+4. Apply the reviewed SQLite/D1 migration history to that staging database and verify the new hold-scan index before deploying the Worker.
+5. Deploy the staging Worker from the repository root:
 
-   `bun run deploy:wallet-release`
+   `bun run deploy:wallet-release:staging`
 
-3. In Cloudflare, verify that the Worker `mekanix-wallet-escrow-release` has the Cron Trigger `*/15 * * * *` and is bound to the existing `mekanix` D1 database.
-4. Inspect Worker logs for `[wallet-escrow-release] run complete`. Confirm that scanned/released/failed counts are plausible.
-5. Only after at least one successful scheduled run, set `WALLET_RELEASE_SCHEDULED=true` on the main `mekanix` application Worker and deploy that configuration. This disables the transitional GET fallback.
-6. Keep the GET fallback enabled until the scheduled Worker has been deployed and observed successfully. Do not set the variable early.
+6. In Cloudflare, verify that the staging Worker `mekanix-wallet-escrow-release` has the Cron Trigger `*/15 * * * *` and is bound only to the isolated staging D1 database.
+7. Inspect Worker logs for `[wallet-escrow-release] run complete`. Confirm that scanned/released/failed counts are plausible and compare wallet balances against the ledger.
+8. Keep `WALLET_RELEASE_SCHEDULED` unset in production. Production Worker configuration and rollout require a separate launch change, explicit target-account verification, backup, and approval; do not copy a staging ID into production or reuse the committed staging config.
+9. Keep the GET fallback enabled until a separately approved production scheduled Worker has been deployed and observed successfully. Do not set the variable early.
 
 ## Processing behavior
 
