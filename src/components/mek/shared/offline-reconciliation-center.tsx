@@ -419,10 +419,12 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, isFa, l
                   </div>
                 )}
                 <div className="flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline" onClick={() => checkServer(action)} disabled={!isOnline || busyId !== null || !canCheck}>
-                    {busyId === action.id ? <Loader2 className="size-3.5 animate-spin" /> : <SearchCheck className="size-3.5" />}
-                    {busyId === action.id ? copy.checking : copy.check}
-                  </Button>
+                  {canCheck && (
+                    <Button size="sm" variant="outline" onClick={() => checkServer(action)} disabled={!isOnline || busyId !== null}>
+                      {busyId === action.id ? <Loader2 className="size-3.5 animate-spin" /> : <SearchCheck className="size-3.5" />}
+                      {busyId === action.id ? copy.checking : copy.check}
+                    </Button>
+                  )}
                   {check?.state === "COMMITTED" && (
                     <Button size="sm" onClick={() => confirmCompleted(action)} disabled={busyId !== null}>
                       <CheckCircle2 className="size-3.5" />{copy.markDone}
