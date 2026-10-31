@@ -36,8 +36,8 @@ export async function POST(req: Request) {
   }
 
   // Rate limit by phone (5 per 10 min) — protects a single user from OTP spam.
-  // Uses Redis-backed rateLimitAsync when REDIS_URL is set (distributed across
-  // instances); falls back to in-memory in dev mode. See `src/lib/rate-limit.ts`.
+  // Uses the shared D1-backed rateLimitAsync in Workers; falls back to in-memory
+  // only in non-production development. See `src/lib/rate-limit.ts`.
   const phoneLimited = await rateLimitAsync(`otp-send:phone:${phone}`, 5, 10 * 60 * 1000);
   if (phoneLimited.unavailable) {
     return NextResponse.json(
