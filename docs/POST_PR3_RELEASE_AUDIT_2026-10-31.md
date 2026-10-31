@@ -150,3 +150,15 @@ A second adversarial pass identified correctness issues not resolved by the init
 - **Wallet release:** the PENDING → AVAILABLE transition and wallet balance increment remain separate writes. Exactly-once recovery is still unproven; do not reverse the writes as a shortcut. Tracked in issue #22.
 
 A new commit on PR #27 has triggered fresh CI against the updated base after PR #26 merged. At the time of this audit update, those four workflows are still in progress; no new pass is claimed.
+
+
+## 9. Status update after security PR merge
+
+- **PR #27 merged:** commit `f40fb789f5a0c3ac30352dbbedd7ed1e5e64c188`. All four workflows on the final PR head passed before merge: CI, PostgreSQL CI, Production readiness, and Docker E2E. Production rate-limit storage outages now return an explicit unavailable result; the four updated route handlers map that condition to HTTP 503. This closes only the outage fail-open finding, not the separate atomic window-initialization race in issue #28.
+- **Issue #25 closed:** PR #26's complete PostgreSQL migration history fix is merged.
+- **PR #12 ready for review:** the atomic escrow release helper now has an added SQLite integration test that executes the D1 SQL and checks exactly-once credit, insufficient pending balance, and rollback on a transaction-status write failure. Five workflows have been triggered on the updated PR head and were still running at this update. Do not merge until all five pass and the D1 runtime limitation is explicitly accepted or separately validated.
+- **PR #16:** the dedicated Cloudflare Cron Worker remains stacked on PR #12. The D1 bind-order issue found during review was corrected on its branch and the SQLite integration test was added there too. It still needs a full CI run after PR #12 merges and it is retargeted to main. Its Wrangler config references the same D1 ID as the main app; verify the target environment and staging isolation before any deployment.
+- **PR #19:** do not merge in parallel with PR #16. PR #16 is the preferred scheduled-worker direction because it uses direct D1 Cron execution, keyset pagination, and per-transaction failure isolation. PR #19 should be closed as superseded only after PR #16 passes review.
+- **Open blockers:** issues #22 (wallet exactly-once recovery and dedicated admin secret), #28 (atomic rate-limit initialization and synchronous rateLimit call-site audit), and #29 (idempotency state machine, callback retry bug, and call-site inventory) remain open. Issue #24 (real payment provider integration) remains open.
+
+**Release decision remains NOT READY.** No production deploy, production D1 migration, real SMS, live payment, or production-data mutation has been performed.
