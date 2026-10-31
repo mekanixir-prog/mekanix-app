@@ -19,14 +19,20 @@ export interface SyncResult {
 
 let syncing = false;
 
-function supportsDurableIdempotency(action: { url: string; method: string }): boolean {
+function getSameOriginUrl(action: { url: string }): URL | null {
   try {
-    const pathname = new URL(action.url, window.location.origin).pathname;
-    return (action.method === "POST" && pathname === "/api/wallets/withdraw") ||
-      (action.method === "POST" && pathname === "/api/prepay");
+    const target = new URL(action.url, window.location.origin);
+    // The offline queue may replay only requests to this application.
+    // Never forward authenticated credentials to a cross-origin URL persisted in local storage.
+    return target.origin === window.location.origin ? target : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+function supportsDurableIdempotency(action: { method: string }, target: URL): boolean {
+  return (action.method === "POST" && target.pathname === "/api/wallets/withdraw") ||
+    (action.method === "POST" && target.pathname === "/api/prepay");
 }
 
 export async function syncQueue(): Promise<SyncResult> {
@@ -48,10 +54,17 @@ export async function syncQueue(): Promise<SyncResult> {
         reconciliationRequired++;
         continue;
       }
-      const supportsRetry = supportsDurableIdempotency(action);
-  
+      const target = getSameOriginUrl(action);
+      if (!target) {
+        // Do not send credentials to an unknown origin; keep the action for review.
+        if (markNeedsReconciliation(action.id)) reconciliationRequired++;
+        else failed++;
+        continue;
+      }
+      const supportsRetry = supportsDurableIdempotency(action, target);
+
       try {
-        const res = await fetch(action.url, {
+        const res = await fetch(target.href, {
           method: action.method,
           headers: {
             "Content-Type": "application/json",
