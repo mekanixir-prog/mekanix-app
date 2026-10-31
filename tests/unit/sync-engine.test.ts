@@ -121,6 +121,19 @@ describe("offline sync retry safety", () => {
     expect(result.reconciliationRequired).toBe(0);
   });
 
+  it("forwards the authenticated session token when syncing queued actions", async () => {
+    localStorage.setItem("mekanix-token", "session-token-123");
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+    await syncQueue();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer session-token-123" }),
+      })
+    );
+  });
+
   it("supports a targeted retry without sending unrelated queued actions", async () => {
     mocks.getQueuedActions.mockReturnValue([
       action({ id: "qa-target", url: "/api/wallets/withdraw" }),
