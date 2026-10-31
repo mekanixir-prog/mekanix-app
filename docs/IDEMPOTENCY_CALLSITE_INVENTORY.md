@@ -2,7 +2,7 @@
 
 **Audit date:** 2026-10-31  
 **Repository:** `mekanixir-prog/mekanix-app`  
-**Audited main commit:** `a641cddb880df262980f2d7cff4ce77fb6903c05`  
+**Initial audit main commit:** `a641cddb880df262980f2d7cff4ce77fb6903c05`\n**Follow-up mainline updates:** PR #36, #35, #33 and #38 have since merged.  
 **Scope:** all 69 files under `src/app/api/`, all 50 modules under `src/lib/`, the auth barrel under `src/modules/`, and offline queue/sync code plus the E2E tests that previously exercised the generic helper.  
 **Decision:** the generic `withIdempotency()` helper had no production call sites and was removed. Issue #29 remains open until a reviewed durable state machine is required by a real caller and passes crash/concurrency tests.
 
@@ -28,7 +28,7 @@ The offline sync client did send an `Idempotency-Key` header for every queued ac
 | `POST /api/wallets/withdraw` | Unique `WithdrawalRequest.idempotencyKey`; payload comparison on replay; D1/Prisma atomic debit and ledger write; concurrent unique-key race recovery | Live money movement still requires provider/operational controls before production use |
 | `POST /api/prepay` | Per-job `prepayPaid` transition plus unique WalletTransaction/WalletLedger keys; retry verifies all required financial rows before returning already-paid | Simulator-only; production endpoint returns 404; this is not a real gateway |
 | `PATCH /api/admin/withdrawals/:id` | Merged in PR #36; conditional state transitions; atomic wallet/ledger or payout transaction writes; deterministic payout idempotency key; real external bank transfer reference required | Records proof of a manually executed bank transfer; does not initiate the transfer |
-| `POST /api/gateway/verify` | PR #33 adds a unique Payment.gatewayLogId and replay/crash-recovery behavior | PR #33 is still a separate review item in this audit snapshot; simulator-only and production returns 404; not a real provider callback |
+| `POST /api/gateway/verify` | Merged PR #33 adds unique Payment.gatewayLogId, duplicate callback convergence, and recovery if the Payment exists but the GatewayLog link failed | Simulator-only and production returns 404; not a real provider callback or live settlement |
 | `POST /api/payments` | Invoice PAID checks and optimistic state updates | Simulator-only; no general idempotency-key contract; production returns 404; never treat as real payment settlement |
 | Escrow release | Existing ledger idempotency keys and atomic release work; dedicated Cron Worker tracked separately | PR #30 still requires isolated Cloudflare D1/Cron staging validation before deployment |
 
