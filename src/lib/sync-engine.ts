@@ -8,6 +8,7 @@
 // 409 responses remain visible as conflicts for the caller to surface.
 
 import { getQueuedActions, dequeueAction, incrementRetry, getQueueSize, markNeedsReconciliation, markAttempt } from "./offline-queue";
+import { authFetch } from "@/lib/fetch-with-auth";
 
 export interface SyncResult {
   synced: number;
@@ -67,7 +68,7 @@ export async function syncQueue(actionIds?: string[]): Promise<SyncResult> {
 
       try {
         markAttempt(action.id);
-        const res = await fetch(target.href, {
+        const res = await authFetch(target.href, {
           method: action.method,
           headers: {
             "Content-Type": "application/json",
