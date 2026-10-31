@@ -178,7 +178,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
       payoutReference = typeof requestedWithdrawalReference === "string"
         ? requestedWithdrawalReference.trim()
         : null;
-      if (!payoutReference || payoutReference.length < 3 || payoutReference.length > 128 || /[\\u0000-\\u001F\\u007F]/.test(payoutReference)) {
+      if (!payoutReference || payoutReference.length < 3 || payoutReference.length > 128 || /[\u0000-\u001F\u007F]/.test(payoutReference)) {
         return NextResponse.json({ error: "شناسه پیگیری واقعی انتقال بانکی الزامی و نامعتبر است" }, { status: 400 });
       }
       if (before.status === "PAID") {
