@@ -67,6 +67,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
   const requestedUserStatus = body.status;
   const requestedWithdrawalStatus = body.status;
   const requestedWithdrawalAdminNotes = body.adminNotes;
+  const requestedWithdrawalReference = body.transactionReference;
   if (resource === "customers" && requestedUserStatus !== undefined) {
     if (
       typeof requestedUserStatus !== "string" ||
@@ -162,18 +163,28 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
       select: {
         id: true, code: true, walletId: true, amount: true, method: true,
         status: true, requestedAt: true, processedAt: true, reviewerId: true,
-        adminNotes: true,
+        adminNotes: true, txnId: true, shebaNumber: true,
         wallet: { select: { technician: { select: { userId: true } } } },
       },
     });
     if (!before) return NextResponse.json({ error: "درخواست برداشت پیدا نشد" }, { status: 404 });
 
+    let payoutReference: string | null = null;
     if (action === "PAID") {
-      const destination = await db.withdrawalRequest.findUnique({
-        where: { id },
-        select: { method: true, shebaNumber: true },
-      });
-      if (destination?.method !== "bank" || !isValidIranianSheba(destination.shebaNumber)) {
+      payoutReference = typeof requestedWithdrawalReference === "string"
+        ? requestedWithdrawalReference.trim()
+        : null;
+      if (!payoutReference || payoutReference.length < 3 || payoutReference.length > 128 || /[\\u0000-\\u001F\\u007F]/.test(payoutReference)) {
+        return NextResponse.json({ error: "شناسه پیگیری واقعی انتقال بانکی الزامی و نامعتبر است" }, { status: 400 });
+      }
+      if (before.status === "PAID") {
+        if (before.txnId === payoutReference) return NextResponse.json({ ...before, idempotent: true });
+        return NextResponse.json({ error: "این برداشت قبلاً با شناسه پیگیری دیگری پرداخت شده است" }, { status: 409 });
+      }
+      if (before.status !== "APPROVED") {
+        return NextResponse.json({ error: "ابتدا باید درخواست برداشت تأیید شود" }, { status: 409 });
+      }
+      if (before.method !== "bank" || !isValidIranianSheba(before.shebaNumber)) {
         return NextResponse.json(
           { error: "برای ثبت پرداخت، درخواست باید دارای شبای معتبر باشد؛ شماره کارت به‌صورت امن ماسک شده است" },
           { status: 409 }
@@ -186,6 +197,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
       action,
       adminId: adminSession.adminId,
       adminNotes,
+      payoutReference,
       at: new Date(),
     });
     if (!changed) {
@@ -197,7 +209,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
       select: {
         id: true, code: true, walletId: true, amount: true, method: true,
         status: true, requestedAt: true, processedAt: true, reviewerId: true,
-        adminNotes: true,
+        adminNotes: true, txnId: true,
         wallet: { select: { technician: { select: { userId: true } } } },
       },
     });
