@@ -105,6 +105,11 @@ export async function syncQueue(actionIds?: string[]): Promise<SyncResult> {
           } else {
             failed++;
           }
+        } else if (res.status === 404 && (target.pathname === "/api/prepay" || target.pathname === "/api/gateway/verify")) {
+          // These simulator-only routes intentionally return 404 in production.
+          // Preserve the queued action for status review instead of discarding it.
+          if (markNeedsReconciliation(action.id, "server_error", 404)) reconciliationRequired++;
+          else failed++;
         } else if (res.status >= 400 && res.status < 500) {
           // Client error (non-conflict) — don't retry, just remove.
           dequeueAction(action.id);
