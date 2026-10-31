@@ -32,7 +32,8 @@ function getSameOriginUrl(action: { url: string }): URL | null {
 
 function supportsDurableIdempotency(action: { method: string }, target: URL): boolean {
   return (action.method === "POST" && target.pathname === "/api/wallets/withdraw") ||
-    (action.method === "POST" && target.pathname === "/api/prepay");
+    (action.method === "POST" && target.pathname === "/api/prepay") ||
+    (action.method === "POST" && target.pathname === "/api/gateway/verify");
 }
 
 export async function syncQueue(): Promise<SyncResult> {
