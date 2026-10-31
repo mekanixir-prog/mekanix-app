@@ -2,8 +2,9 @@
 
 **Audit date:** 2026-10-31  
 **Repository:** `mekanixir-prog/mekanix-app`  
-**Initial audit main commit:** `a641cddb880df262980f2d7cff4ce77fb6903c05`\n**Follow-up mainline updates:** PR #36, #35, #33 and #38 have since merged.  
-**Scope:** all 69 files under `src/app/api/`, all 50 modules under `src/lib/`, the auth barrel under `src/modules/`, and offline queue/sync code plus the E2E tests that previously exercised the generic helper.  
+**Initial audit main commit:** `a641cddb880df262980f2d7cff4ce77fb6903c05`  
+**Follow-up mainline updates:** PR #36, #35, #33 and #38 have since merged.  
+**Scope:** all 69 files under `src/app/api/`, all 52 TypeScript files under `src/lib/`, the auth barrel under `src/modules/`, and offline queue/sync code plus the E2E tests that previously exercised the generic helper.  
 **Decision:** the generic `withIdempotency()` helper had no production call sites and was removed. Issue #29 remains open until a reviewed durable state machine is required by a real caller and passes crash/concurrency tests.
 
 ## 1. Generic helper inventory
@@ -40,8 +41,8 @@ The updated client now:
 
 1. Automatically retries only the verified route-specific contracts:
    - `POST /api/wallets/withdraw`
-   - `POST /api/prepay`
-2. Treats an explicit 429 as a rejected attempt and applies the bounded retry counter.
+   - `POST /api/prepay`\n   - `POST /api/gateway/verify` (simulator-only; production returns 404)
+2. Treats an explicit 429 as a rejected attempt and applies the bounded retry counter.\n3. Refuses to send persisted queue entries to a cross-origin URL; it never forwards authenticated credentials to an unknown origin.\n4. Retains 409 conflicts behind the manual-reconciliation gate instead of deleting the queued action.
 3. For other endpoints, retains an action after an ambiguous network/5xx outcome and marks it `needsReconciliation`; it is not silently replayed.
 4. Exposes `reconciliationRequired` in the sync result.
 5. Provides `retryAfterReconciliation(id)`, which only clears the gate after a caller/operator has checked the server-side state.
