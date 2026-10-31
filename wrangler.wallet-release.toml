@@ -1,0 +1,14 @@
+name = "mekanix-wallet-escrow-release"
+main = "workers/wallet-release/index.ts"
+compatibility_date = "2026-10-30"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mekanix"
+database_id = "f8dbaaf3-4c6b-40d5-9dce-ecaa839780e2"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[observability]
+enabled = true
