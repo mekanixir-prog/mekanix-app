@@ -114,8 +114,9 @@ export function initSmsProvider(): void {
   if (initialized) return;
 
   const provider = process.env.SMS_PROVIDER?.toLowerCase().trim();
+  const isProduction = process.env.NODE_ENV !== "development" && process.env.NODE_ENV !== "test";
   if (!provider || provider === "console") {
-    if (process.env.NODE_ENV === "production") {
+    if (isProduction) {
       throw new Error("A real SMS_PROVIDER must be configured in production; console OTP delivery is disabled");
     }
     currentProvider = consoleProvider;
