@@ -125,3 +125,16 @@ Important: the presence of `PAYMENT_PROVIDER=simulator` in configuration does no
 ## 6. Safety boundary
 
 No production deployment, remote production D1 migration, real SMS activation, real payment activation, or production-data mutation was performed for this audit. Do not run `prisma db push --accept-data-loss`, `prisma migrate reset`, or any unreviewed production migration.
+
+
+## 7. Follow-up after the initial audit snapshot
+
+This section records work completed after the initial source review; it does not upgrade the release decision.
+
+- **PR #26 merged:** Docker E2E now copies the complete PostgreSQL migration history into its build context and asserts the RateLimit/IdempotencyKey tables and VIP uniqueness indexes exist. The four workflows on the PR head completed successfully before merge.
+- **PR #27 remains open:** production rate limiting now fails closed with HTTP 503 when the shared D1 store is unavailable, while non-production retains its development fallback. Unit tests cover allow, deny, production outage, and development fallback. CI, PostgreSQL CI, and Production readiness passed on the recorded head; Docker E2E failed on an OTP test because that run used the pre-PR-#26 workflow/migration context. Re-run Docker E2E against the updated main base before considering PR #27 mergeable.
+- **Issue #22 remains open:** production idempotency fallback, wallet release exactly-once/recovery, and dedicated admin signing-secret enforcement remain unresolved.
+- **Issue #24 remains open:** payment provider wiring, callback authenticity, financial validation, replay protection, reconciliation, and sandbox certification remain unresolved.
+- **No live services activated:** no production deployment, remote production migration, real SMS, real payment, or production-data mutation was performed.
+
+The Docker E2E failure is not waived. The next acceptance criterion is a fresh all-green run for PR #27 against the updated main, followed by focused review of every idempotency caller and the wallet release protocol.
