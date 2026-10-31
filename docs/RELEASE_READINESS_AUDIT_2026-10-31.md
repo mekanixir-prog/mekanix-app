@@ -72,6 +72,13 @@ SQLite integration tests cover the same rate-limit concurrency cases and the D1 
 - PR #35 and #38 make the shared rate limiter atomic and fail closed; PR #40 adds real PostgreSQL concurrency evidence.
 - Issue #28 remains open until isolated Cloudflare D1 staging verifies the same upsert behavior, production bindings, and outage handling under the actual Worker runtime.
 
+### 3.8 Production SMS delivery safety
+
+- Issue #53 records that the old SMS abstraction could fall back to console logging in production when SMS_PROVIDER was missing/invalid, and the OTP endpoint could return success even when provider delivery failed.
+- PR #54 makes missing/console/unsupported/incomplete SMS configuration fail closed before OTP persistence; delivery failures consume the newly stored OTP hash and return 502/503; recipient, OTP, and provider error payloads are withheld from logs.
+- PR #54 is open on head `e8344e6342f19abfd13bcc219dc7e7a572c4f04d`; all five workflows are pending/in progress at this audit snapshot. No result is claimed until they complete.
+- This does not activate a provider. Select the SMS vendor and set credentials, sender/template, delivery monitoring, and alerting only at the planned pre-release activation gate.
+
 ### 3.7 Booking, service-request, and claim recovery
 
 - Issue #52 records three additional multi-write create flows that lack a complete route-specific recovery contract: CARE booking creation, service-request creation (including ad-hoc vehicle creation), and insurance claim creation.
@@ -94,6 +101,7 @@ SQLite integration tests cover the same rate-limit concurrency cases and the D1 
 5. Configure and verify `ADMIN_JWT_SECRET` and all production secrets without exposing them in Git or logs.
 6. Complete manual payout reconciliation; review and merge PR #50 only after all five workflows pass and its route-level authorization/UI behavior is reviewed.
 7. Resolve issue #52's multi-write booking/request/claim recovery risks before enabling broad offline mutation sync or production-scale create flows.
+8. Merge PR #54 only after all five workflows pass; keep real SMS provider activation separate and owner-controlled until pre-release.
 7. Obtain explicit approval for the currency contract and historical-value handling.
 8. Apply production migrations only after backup, restore rehearsal, reviewed rollout plan, and explicit release approval.
 9. Deploy in a controlled window, run smoke tests for OTP, roles, vehicle registration, service request, technician assignment, wallet, withdrawal, admin operations, and provider callbacks; retain a tested rollback path.
