@@ -18,7 +18,7 @@ export interface QueuedAction {
   needsReconciliation?: boolean;
   lastAttemptAt?: number;
   lastStatus?: number;
-  reconciliationReason?: "network_error" | "server_error" | "conflict" | "cross_origin" | "unexpected_response" | "legacy_unknown" | "retry_limit" | "rate_limited";
+  reconciliationReason?: "network_error" | "server_error" | "conflict" | "cross_origin" | "unexpected_response" | "legacy_unknown" | "retry_limit" | "rate_limited" | "auth_required" | "permission_denied" | "client_rejected";
 }
 
 const STORAGE_KEY = "mekanix-offline-queue";
