@@ -31,7 +31,7 @@ The offline sync client did send an `Idempotency-Key` header for every queued ac
 | `PATCH /api/admin/withdrawals/:id` | Merged in PR #36; conditional state transitions; atomic wallet/ledger or payout transaction writes; deterministic payout idempotency key; real external bank transfer reference required | Records proof of a manually executed bank transfer; does not initiate the transfer |
 | `POST /api/gateway/verify` | Merged PR #33 adds unique Payment.gatewayLogId, duplicate callback convergence, and recovery if the Payment exists but the GatewayLog link failed | Simulator-only and production returns 404; not a real provider callback or live settlement |
 | `POST /api/payments` | Invoice PAID checks and optimistic state updates | Simulator-only; no general idempotency-key contract; production returns 404; never treat as real payment settlement |
-| Escrow release | Existing ledger idempotency keys and atomic release work; dedicated Cron Worker tracked separately | PR #30 still requires isolated Cloudflare D1/Cron staging validation before deployment |
+| Escrow release | Existing ledger idempotency keys and atomic release work; dedicated Cron Worker tracked separately | PR #43 is the clean mainline scheduled Worker draft and still requires isolated Cloudflare D1/Cron staging validation before deployment |
 
 ## 3. Offline queue retry policy
 
@@ -41,11 +41,14 @@ The updated client now:
 
 1. Automatically retries only the verified route-specific contracts:
    - `POST /api/wallets/withdraw`
-   - `POST /api/prepay`\n   - `POST /api/gateway/verify` (simulator-only; production returns 404)
-2. Treats an explicit 429 as a rejected attempt and applies the bounded retry counter.\n3. Refuses to send persisted queue entries to a cross-origin URL; it never forwards authenticated credentials to an unknown origin.\n4. Retains 409 conflicts behind the manual-reconciliation gate instead of deleting the queued action.
-3. For other endpoints, retains an action after an ambiguous network/5xx outcome and marks it `needsReconciliation`; it is not silently replayed.
-4. Exposes `reconciliationRequired` in the sync result.
-5. Provides `retryAfterReconciliation(id)`, which only clears the gate after a caller/operator has checked the server-side state.
+   - `POST /api/prepay`
+   - `POST /api/gateway/verify` (simulator-only; production returns 404)
+2. Treats an explicit 429 as a rejected attempt and applies the bounded retry counter.
+3. Refuses to send persisted queue entries to a cross-origin URL; it never forwards authenticated credentials to an unknown origin.
+4. Retains 409 conflicts behind the manual-reconciliation gate instead of deleting the queued action.
+5. For other endpoints, retains an action after an ambiguous network/5xx outcome and marks it `needsReconciliation`; it is not silently replayed.
+6. Exposes `reconciliationRequired` in the sync result.
+7. Provides `retryAfterReconciliation(id)`, which only clears the gate after a caller/operator has checked the server-side state.
 
 This avoids claiming exactly-once behavior where the endpoint does not provide it. A dedicated user-facing reconciliation screen is still needed before offline mutation sync is considered fully production-ready.
 
