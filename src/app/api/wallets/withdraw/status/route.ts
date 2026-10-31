@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
@@ -41,6 +42,21 @@ export async function GET(req: Request) {
   if (!request) return NextResponse.json({ state: "NOT_COMMITTED" });
   if (request.walletId !== wallet.id) {
     return NextResponse.json({ state: "KEY_CONFLICT" }, { status: 409 });
+  }
+
+  // A WithdrawalRequest row alone is not proof of a committed debit. Verify
+  // the matching immutable ledger row before telling the client it succeeded.
+  const ledger = await db.walletLedger.findUnique({
+    where: { idempotencyKey: `withdrawal:${key}:LEDGER` },
+    select: { id: true, referenceId: true, amount: true },
+  });
+  const expectedDebit = new Prisma.Decimal(request.amount).negated();
+  if (!ledger || ledger.referenceId !== request.id || !expectedDebit.equals(ledger.amount)) {
+    return NextResponse.json({
+      state: "RECONCILIATION_REQUIRED",
+      withdrawalCode: request.code,
+      ledgerFound: Boolean(ledger),
+    }, { status: 409 });
   }
 
   return NextResponse.json({
