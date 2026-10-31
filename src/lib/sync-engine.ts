@@ -97,7 +97,7 @@ export async function syncQueue(): Promise<SyncResult> {
           if (supportsRetry) {
             const stillQueued = incrementRetry(action.id);
             if (!stillQueued) failed++;
-          } else if (markNeedsReconciliation(action.id)) {
+          } else if (markNeedsReconciliation(action.id, "server_error", res.status)) {
             // A server error may occur after a non-idempotent side effect committed.
             // Do not blindly replay; keep the action for explicit state reconciliation.
             reconciliationRequired++;
@@ -113,7 +113,7 @@ export async function syncQueue(): Promise<SyncResult> {
           if (supportsRetry) {
             const stillQueued = incrementRetry(action.id);
             if (!stillQueued) failed++;
-          } else if (markNeedsReconciliation(action.id)) {
+          } else if (markNeedsReconciliation(action.id, "unexpected_response", res.status)) {
             reconciliationRequired++;
           } else {
             failed++;
@@ -124,8 +124,8 @@ export async function syncQueue(): Promise<SyncResult> {
         if (supportsRetry) {
           const stillQueued = incrementRetry(action.id);
           if (!stillQueued) failed++;
-        } else if (markNeedsReconciliation(action.id)) {
-          reconciliationRequired++;
+        } else if (markNeedsReconciliation(action.id, "unexpected_response", res.status)) {
+            reconciliationRequired++;
         } else {
           failed++;
         }
