@@ -72,6 +72,15 @@ SQLite integration tests cover the same rate-limit concurrency cases and the D1 
 - PR #35 and #38 make the shared rate limiter atomic and fail closed; PR #40 adds real PostgreSQL concurrency evidence.
 - Issue #28 remains open until isolated Cloudflare D1 staging verifies the same upsert behavior, production bindings, and outage handling under the actual Worker runtime.
 
+### 3.7 Booking, service-request, and claim recovery
+
+- Issue #52 records three additional multi-write create flows that lack a complete route-specific recovery contract: CARE booking creation, service-request creation (including ad-hoc vehicle creation), and insurance claim creation.
+- CARE booking creation writes the booking, pricing snapshot, booking link, and timeline event sequentially; a mid-flow failure can leave partial state and an ambiguous retry can create a duplicate.
+- Service-request creation can create an ad-hoc vehicle before the request, then sends notifications sequentially; ambiguous retries can create duplicate vehicles/requests.
+- Insurance claim creation can commit the claim while the policy status update fails; it has no claim idempotency/status lookup contract.
+- PR #50's reconciliation center deliberately keeps unsupported operations behind manual review. It does not invent server status or enable automatic retry for these endpoints.
+- Treat issue #52 as a release blocker for broad offline mutation sync and for enabling these flows at production scale until route-specific idempotency, atomicity/recovery, read-only status endpoints, and failure-injection tests are complete.
+
 ### 3.7 Currency contract
 
 - Any USD canonicalization or historical-value conversion remains owner-gated. Do not merge or backfill currency changes until the canonical unit, display policy, and historical reconciliation are explicitly approved.
@@ -84,6 +93,7 @@ SQLite integration tests cover the same rate-limit concurrency cases and the D1 
 4. Complete provider-specific SMS and payment integrations in sandbox; validate signed callbacks, ownership, amount, currency, replay, refunds, and reconciliation.
 5. Configure and verify `ADMIN_JWT_SECRET` and all production secrets without exposing them in Git or logs.
 6. Complete manual payout reconciliation; review and merge PR #50 only after all five workflows pass and its route-level authorization/UI behavior is reviewed.
+7. Resolve issue #52's multi-write booking/request/claim recovery risks before enabling broad offline mutation sync or production-scale create flows.
 7. Obtain explicit approval for the currency contract and historical-value handling.
 8. Apply production migrations only after backup, restore rehearsal, reviewed rollout plan, and explicit release approval.
 9. Deploy in a controlled window, run smoke tests for OTP, roles, vehicle registration, service request, technician assignment, wallet, withdrawal, admin operations, and provider callbacks; retain a tested rollback path.
