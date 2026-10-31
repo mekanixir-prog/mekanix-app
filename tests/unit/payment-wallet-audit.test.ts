@@ -457,6 +457,57 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
     expect(mockPaymentGatewayLogUpdate).toHaveBeenCalledTimes(2);
   });
 
+  it("recovers a legacy VERIFIED log only when its paymentId identifies the existing successful payment", async () => {
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "log-1",
+      code: "PG-7001",
+      userId: "user-1",
+      amount: 100_000,
+      currency: "IRR",
+      status: "VERIFIED",
+      purpose: "vip",
+      paymentId: "pay-1",
+      verifiedAt: new Date("2026-10-30T10:00:00.000Z"),
+    });
+    mockPaymentFindUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(existingPayment);
+
+    const res = await verifyPOST(makePostRequest("http://localhost/api/gateway/verify", {
+      code: "PG-7001",
+      otp: "1234",
+    }));
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).paymentId).toBe("pay-1");
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
+    expect(mockPaymentGatewayLogUpdate).not.toHaveBeenCalled();
+  });
+
+  it("blocks legacy VERIFIED logs without a linked payment instead of risking a duplicate credit", async () => {
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "log-1",
+      code: "PG-7001",
+      userId: "user-1",
+      amount: 100_000,
+      currency: "IRR",
+      status: "VERIFIED",
+      purpose: "vip",
+      paymentId: null,
+      verifiedAt: new Date("2026-10-30T10:00:00.000Z"),
+    });
+    mockPaymentFindUnique.mockResolvedValueOnce(null);
+
+    const res = await verifyPOST(makePostRequest("http://localhost/api/gateway/verify", {
+      code: "PG-7001",
+      otp: "1234",
+    }));
+
+    expect(res.status).toBe(409);
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
+    expect(mockPaymentGatewayLogUpdate).not.toHaveBeenCalled();
+  });
+
   it("returns 403 when the gateway log belongs to another user", async () => {
     mockPaymentGatewayLogFindUnique.mockResolvedValue({
       id: "log-1",
@@ -487,9 +538,11 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
       code: "PG-7001",
       otp: 1234,
     });
+    const nullBody = makePostRequest("http://localhost/api/gateway/verify", null);
 
     expect((await verifyPOST(malformed)).status).toBe(400);
     expect((await verifyPOST(invalidOtp)).status).toBe(400);
+    expect((await verifyPOST(nullBody)).status).toBe(400);
     expect(mockPaymentCreate).not.toHaveBeenCalled();
     expect(mockPaymentFindUnique).not.toHaveBeenCalled();
   });
