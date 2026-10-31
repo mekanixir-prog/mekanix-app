@@ -22,6 +22,12 @@ export async function POST(req: Request) {
     RATE_LIMITS.OTP_VERIFY.max,
     RATE_LIMITS.OTP_VERIFY.windowMs
   );
+  if (limited.unavailable) {
+    return NextResponse.json(
+      { error: "سرویس محدودسازی درخواست موقتاً در دسترس نیست" },
+      { status: 503, headers: { "Retry-After": "30" } }
+    );
+  }
   if (!limited.success) {
     return NextResponse.json(
       { error: "تعداد تلاش‌ها بیش از حد است، بعداً تلاش کنید" },
