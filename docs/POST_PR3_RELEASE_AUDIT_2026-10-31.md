@@ -175,3 +175,19 @@ A new commit on PR #27 has triggered fresh CI against the updated base after PR 
 - **PR #13 prepay atomicity:** added D1 SQLite integration tests. The first run found an ambiguous unqualified `id` in joined Job/Wallet SQL; the marker was qualified and a fresh five-workflow run is in progress. Do not merge until all five pass.
 
 The mainline is materially safer, but release remains blocked by open issues #22, #24, #28, #29 and by the remaining financial-flow PR reviews and real isolated D1 validation. No production deployment or service activation has occurred.
+
+
+## 11. Latest mainline snapshot (2026-10-31)
+
+Current main commit reviewed: `769b6499cccd15c13f1420eb7e425aa3652b09a1`.
+
+- **PR #13 merged:** atomic pre-service payment/commission settlement is now on main. The D1 implementation was hardened to abort on unexpected idempotency-key collisions, and the SQLite integration tests caught and drove correction of an ambiguous joined `id` column before merge. All five workflows passed on the final PR head.
+- **PR #30:** all five workflows passed. It remains intentionally open because the target Cloudflare account's isolated D1/Cron staging run has not been performed. The worker is not deployed; GET-triggered release remains enabled.
+- **PR #32:** clean main-based atomic withdrawal request implementation. The first run exposed stale legacy route tests; the test suite has been updated to the idempotent request contract and the fail-closed 503 case. A fresh five-workflow run is in progress on head `43fa1d5d97f8c5c29c408de9a46547e1887c1b6c`.
+- **PR #33:** clean main-based simulator gateway idempotency. CI, PostgreSQL CI, Cloudflare Build, and Production readiness passed; Docker E2E is still running. This does not implement a real payment provider.
+- **PR #31 closed as superseded** by PR #33 after PR #13 changed the shared Prisma schema.
+- **PR #14 remains an old stacked withdrawal branch**; PR #32 is its clean main-based replacement. Close PR #14 after PR #32 passes and is accepted.
+- **Admin payout flow is not ready:** the admin implementation must capture a real external bank/provider trace reference before marking PAID. A generated UUID is not proof of payout. Dedicated admin signing-secret enforcement also remains open.
+- **Currency decision remains owner-gated:** PR #17's USD canonicalization must not merge until the owner approves the currency contract and historical-value reconciliation.
+
+Release remains **NOT READY**. Open release blockers include issues #22, #24, #28, and #29; isolated D1/Cron validation; admin payout reference and secret isolation; and the owner-approved currency contract. No production deploy, remote D1 migration, real SMS, or live payment has been performed.
