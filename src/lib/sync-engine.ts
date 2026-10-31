@@ -81,12 +81,12 @@ export async function syncQueue(): Promise<SyncResult> {
           dequeueAction(action.id);
           synced++;
         } else if (res.status === 409) {
-          // Conflict — server has a newer version (or the action was already
-          // applied with a different outcome). Server wins: dequeue and
-          // surface as a conflict rather than a hard failure, so the UI can
-          // prompt the user to refresh their local state.
-          dequeueAction(action.id);
+          // A conflict may mean an idempotency key was reused with a different
+          // payload or the server has an ambiguous legacy state. Preserve the
+          // action behind the manual-review gate; never discard it silently.
           conflicts++;
+          if (markNeedsReconciliation(action.id)) reconciliationRequired++;
+          else failed++;
         } else if (res.status === 429) {
           // Explicit rate-limit responses mean the handler rejected the attempt.
           const stillQueued = incrementRetry(action.id);
