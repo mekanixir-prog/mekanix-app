@@ -9,6 +9,10 @@ export async function GET(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
+  if (!["CUSTOMER", "TECHNICIAN", "ADMIN"].includes(session.role)) {
+    return NextResponse.json({ error: "دسترسی به وضعیت پرداخت مجاز نیست" }, { status: 403 });
+  }
+
   const jobId = new URL(req.url).searchParams.get("jobId")?.trim() ?? "";
   if (!jobId || jobId.length > 128) {
     return NextResponse.json({ error: "شناسه کار نامعتبر است" }, { status: 400 });
