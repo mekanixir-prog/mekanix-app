@@ -46,7 +46,8 @@ function quarantineAction(raw: string, index = 0, original?: unknown): QueuedAct
 
 export function getQueuedActions(): QueuedAction[] {
   if (typeof window === "undefined") return [];
-  const raw = localStorage.getItem(STORAGE_KEY);
+  let raw: string | null;
+  try { raw = localStorage.getItem(STORAGE_KEY); } catch { return []; }
   if (!raw) return [];
   try {
     const parsed: unknown = JSON.parse(raw);
