@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   incrementRetry: vi.fn(),
   getQueueSize: vi.fn(),
   markNeedsReconciliation: vi.fn(),
+  markAttempt: vi.fn(),
 }));
 
 vi.mock("@/lib/offline-queue", () => ({
@@ -15,6 +16,7 @@ vi.mock("@/lib/offline-queue", () => ({
   incrementRetry: mocks.incrementRetry,
   getQueueSize: mocks.getQueueSize,
   markNeedsReconciliation: mocks.markNeedsReconciliation,
+  markAttempt: mocks.markAttempt,
 }));
 
 import { syncQueue } from "@/lib/sync-engine";
@@ -46,7 +48,7 @@ describe("offline sync retry safety", () => {
   it("does not replay a non-idempotent POST after an ambiguous 500", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500 }));
     const result = await syncQueue();
-    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1");
+    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1", "server_error", 500);
     expect(mocks.incrementRetry).not.toHaveBeenCalled();
     expect(result.reconciliationRequired).toBe(1);
     expect(result.remaining).toBe(1);
@@ -60,14 +62,14 @@ describe("offline sync retry safety", () => {
     vi.stubGlobal("fetch", fetchMock);
     const result = await syncQueue();
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1");
+    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1", "cross_origin");
     expect(result.reconciliationRequired).toBe(1);
   });
 
   it("retains a 409 conflict behind manual reconciliation instead of dropping the queued action", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 409 }));
     const result = await syncQueue();
-    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1");
+    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1", "conflict", 409);
     expect(mocks.dequeueAction).not.toHaveBeenCalled();
     expect(result.conflicts).toBe(1);
     expect(result.reconciliationRequired).toBe(1);
