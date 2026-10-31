@@ -22,8 +22,9 @@ type D1Database = {
 
 /**
  * Records the prepay, commission, wallet hold and ledger entries as one unit.
- * Deterministic idempotency keys make retries safe. Notifications deliberately
- * remain outside this financial transaction and must be treated as best effort.
+ * Deterministic idempotency keys make retries safe. Unexpected key collisions
+ * abort the whole batch/transaction; they are never silently ignored. Notifications
+ * deliberately remain outside this financial transaction and are best effort.
  */
 export async function recordPrepayWithPrisma(
   db: PrismaClient,
@@ -123,7 +124,9 @@ export async function recordPrepayWithPrisma(
 /**
  * D1 implementation. D1 batch is transactional; each dependent write is
  * guarded by the Job's exact paidAt marker. The wallet aggregate update is
- * guarded by changes() from insertion of the unique HOLD ledger row.
+ * guarded by changes() from insertion of the unique HOLD ledger row. Unique-key
+ * conflicts on any financial row are allowed to abort the batch so no partial
+ * settlement can commit; post-batch result checks are assertions, not rollback.
  */
 export async function recordPrepayWithD1(
   d1: D1Database,
@@ -161,7 +164,6 @@ export async function recordPrepayWithD1(
       SELECT ?, w."id", j."id", 'PREPAY', 'PENDING', ?, ?, ?, NULL, ?, ?, ?
       FROM "Wallet" w JOIN "Job" j ON j."technicianId" = ?
       WHERE w."technicianId" = ? AND ${marker}
-      ON CONFLICT("idempotencyKey") DO NOTHING
     `).bind(crypto.randomUUID(), input.gross, input.commission, input.net,
       `Pre-service payment — ${input.jobCode} (${input.machineLabel})`,
       prepayKey, at, input.technicianId, input.technicianId, input.jobId, at),
@@ -173,7 +175,6 @@ export async function recordPrepayWithD1(
       SELECT ?, w."id", j."id", 'COMMISSION', 'COMPLETED', 0, ?, ?, ?, ?, ?
       FROM "Wallet" w JOIN "Job" j ON j."technicianId" = ?
       WHERE w."technicianId" = ? AND ${marker}
-      ON CONFLICT("idempotencyKey") DO NOTHING
     `).bind(crypto.randomUUID(), input.commission, -input.commission,
       `Platform commission (10%) — ${input.jobCode}`,
       commissionKey, at, input.technicianId, input.technicianId, input.jobId, at),
@@ -186,7 +187,6 @@ export async function recordPrepayWithD1(
              'Job', j."id", ?, ?, ?
       FROM "Wallet" w JOIN "Job" j ON j."technicianId" = ?
       WHERE w."technicianId" = ? AND ${marker}
-      ON CONFLICT("idempotencyKey") DO NOTHING
     `).bind(crypto.randomUUID(), input.net, input.net,
       `Prepay escrow — ${input.jobCode}`, holdLedgerKey, at,
       input.technicianId, input.technicianId, input.jobId, at),
@@ -208,7 +208,6 @@ export async function recordPrepayWithD1(
              'Job', j."id", ?, ?, ?
       FROM "Wallet" w JOIN "Job" j ON j."technicianId" = ?
       WHERE w."technicianId" = ? AND ${marker}
-      ON CONFLICT("idempotencyKey") DO NOTHING
     `).bind(crypto.randomUUID(), -input.commission,
       `Platform commission — ${input.jobCode}`, commissionLedgerKey, at,
       input.technicianId, input.technicianId, input.jobId, at),
