@@ -74,6 +74,37 @@ describe("offline-queue — enqueueAction()", () => {
   });
 });
 
+describe("offline-queue — legacy and corrupted storage", () => {
+  it("quarantines malformed JSON instead of silently returning an empty queue", () => {
+    localStorage.setItem("mekanix-offline-queue", "{broken-json");
+    const queue = getQueuedActions();
+    expect(queue).toHaveLength(1);
+    expect(queue[0]).toMatchObject({
+      url: "",
+      needsReconciliation: true,
+      reconciliationReason: "legacy_unknown",
+    });
+    expect(getQueuedActions()[0].id).toBe(queue[0].id);
+  });
+
+  it("quarantines legacy actions that have no reconciliation safety flag", () => {
+    localStorage.setItem("mekanix-offline-queue", JSON.stringify([{
+      id: "old-action-1",
+      url: "/api/service-requests",
+      method: "POST",
+      body: { title: "old queued request" },
+      timestamp: 1_700_000_000_000,
+      retryCount: 0,
+      maxRetries: 3,
+    }]));
+    expect(getQueuedActions()[0]).toMatchObject({
+      id: "old-action-1",
+      needsReconciliation: true,
+      reconciliationReason: "legacy_unknown",
+    });
+  });
+});
+
 describe("offline-queue — dequeueAction()", () => {
   it("removes the action with the given id from the queue", () => {
     const id1 = enqueueAction({ url: "/api/a", method: "POST", body: {} });
