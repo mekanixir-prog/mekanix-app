@@ -1,7 +1,7 @@
 # MEKANIX — Release Readiness Audit
 
 **Audit date:** 2026-10-31  
-**Audited main commit:** `901d1f889703cce0c9acd8a189841b49b30e8847`  
+**Audited main commit:** `839e470344b6955b87e775e7c6d158fbd1246ad4`  
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Decision:** **NOT READY FOR PRODUCTION**
 
@@ -31,7 +31,7 @@ The following five-workflow PR heads passed before merge: PR #33, #35, #36, #38,
 
 SQLite integration tests cover the same rate-limit concurrency cases and the D1 escrow/withdrawal SQL paths. These are provider-parity tests; they do not replace a real Cloudflare D1 staging run.
 
-**PR #43 — scheduled escrow Worker:** draft. At this audit snapshot, CI and Cloudflare Build are green; Docker E2E, PostgreSQL CI, and Production readiness are still running. No final PR result is claimed yet.
+**PR #43 — scheduled escrow Worker:** draft, exact head `5e2b16de5f0f2c8f8931d884b83e943b3d0e09d9`. All five workflows (CI, Cloudflare Build, Production readiness, PostgreSQL CI, Docker E2E) have completed successfully on that head. The PR remains a draft because CI does not validate the target Cloudflare account, actual D1 binding, Cron Trigger deployment, or financial reconciliation. No staging deployment has been performed.
 
 ## 3. Production blockers
 
@@ -78,12 +78,12 @@ SQLite integration tests cover the same rate-limit concurrency cases and the D1 
 
 ## 4. Required release sequence
 
-1. Finish PR #43's five CI workflows; review the exact final head and migration diff.
+1. Keep PR #43 in draft until its isolated D1/Cron staging gate is completed; all five workflows are green on the recorded head, but the target Cloudflare account has not been exercised.
 2. Deploy the escrow Worker only to isolated Cloudflare staging; verify D1 binding, Cron Trigger, logs, pagination, failure isolation, and no double credits.
 3. Only after successful staging and at least one observed scheduled run, set `WALLET_RELEASE_SCHEDULED=true` on the main application Worker.
 4. Complete provider-specific SMS and payment integrations in sandbox; validate signed callbacks, ownership, amount, currency, replay, refunds, and reconciliation.
 5. Configure and verify `ADMIN_JWT_SECRET` and all production secrets without exposing them in Git or logs.
-6. Complete manual payout reconciliation and the offline action reconciliation UI.
+6. Complete manual payout reconciliation; review and merge PR #50 only after all five workflows pass and its route-level authorization/UI behavior is reviewed.
 7. Obtain explicit approval for the currency contract and historical-value handling.
 8. Apply production migrations only after backup, restore rehearsal, reviewed rollout plan, and explicit release approval.
 9. Deploy in a controlled window, run smoke tests for OTP, roles, vehicle registration, service request, technician assignment, wallet, withdrawal, admin operations, and provider callbacks; retain a tested rollback path.
