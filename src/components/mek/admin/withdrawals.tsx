@@ -14,7 +14,7 @@ type Row = {
   id: string; code: string; amount: number | string; method: string;
   cardNumber: string | null; bankName: string | null; shebaNumber: string | null;
   status: "REQUESTED" | "APPROVED" | "PAID" | "REJECTED"; requestedAt: string;
-  adminNotes: string | null;
+  adminNotes: string | null; txnId: string | null;
   wallet: { technician: { user: { name: string } } };
 };
 
@@ -40,9 +40,20 @@ export function AdminWithdrawals() {
       : status === "REJECTED" ? t("admin.withdrawals.confirmReject")
       : t("admin.withdrawals.confirmApprove");
     if (!window.confirm(message)) return;
+    const transactionReference = status === "PAID"
+      ? window.prompt(t("admin.withdrawals.bankReferencePrompt"))?.trim()
+      : undefined;
+    if (status === "PAID" && !transactionReference) return;
+    if (status === "PAID" && (transactionReference!.length < 3 || transactionReference!.length > 128)) {
+      toast.error(t("admin.withdrawals.bankReferenceInvalid"));
+      return;
+    }
     setBusy(row.id);
     try {
-      await api.adminUpdate("withdrawals", row.id, { status });
+      await api.adminUpdate("withdrawals", row.id, {
+        status,
+        ...(status === "PAID" ? { transactionReference } : {}),
+      });
       toast.success(t(`admin.withdrawals.toast.${status}`));
       await load();
     } catch (error) {
@@ -69,6 +80,7 @@ export function AdminWithdrawals() {
               <p>{t("admin.withdrawals.destination")}: {row.method === "bank" ? row.shebaNumber || "—" : row.cardNumber || "—"}</p>
               <p>{t("admin.withdrawals.bank")}: {row.bankName || "—"}</p>
               {row.adminNotes && <p>{t("admin.withdrawals.adminNote")}: {row.adminNotes}</p>}
+              {row.txnId && <p>{t("admin.withdrawals.bankReference")}: <span dir="ltr" className="font-mono">{row.txnId}</span></p>}
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {row.status === "REQUESTED" && <>
