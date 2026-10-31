@@ -40,8 +40,8 @@ export async function releaseWalletTransactionWithD1(
   `).bind(
     transactionId, walletId, timestamp,
     transactionId, walletId, timestamp,
-    transactionId, walletId, timestamp,
     timestamp, walletId,
+    transactionId, walletId, timestamp,
     transactionId, walletId, timestamp
   );
 
