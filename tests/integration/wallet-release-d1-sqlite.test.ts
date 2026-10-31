@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
-import { releaseWalletTransactionWithD1 } from "@/lib/wallet-release";
+import { releaseWalletTransactionWithD1 } from "@/lib/wallet-release-d1";
 
 function makeD1() {
   const sqlite = new DatabaseSync(":memory:");
