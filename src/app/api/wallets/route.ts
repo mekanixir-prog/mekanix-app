@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
+import { releaseWalletTransaction } from "@/lib/wallet-release";
 
 // GET /api/wallets
 // Returns the wallet + recent transactions for the authenticated technician.
@@ -47,34 +48,16 @@ export async function GET(req: Request) {
     });
   }
 
-  // Auto-release: any PENDING txns with holdUntil < now → AVAILABLE
+  // Auto-release matured escrow entries. The helper commits the transaction
+  // state transition and both wallet balance changes atomically for D1 and
+  // transactional Node databases. A failed balance update cannot strand an
+  // AVAILABLE transaction without its matching wallet credit.
   const now = new Date();
   const releasable = wallet.transactions.filter(
-    (t) => t.status === "PENDING" && t.holdUntil && t.holdUntil.getTime() < now.getTime()
+    (t) => t.status === "PENDING" && t.holdUntil && t.holdUntil.getTime() <= now.getTime()
   );
-  for (const t of releasable) {
-    // SEC-8 fix: conditional updateMany with count check.
-    // Previously: unconditional walletTransaction.update + wallet.update was
-    // non-atomic. Two concurrent GET /api/wallets requests could both see the
-    // same PENDING transaction, both call update (idempotent set to AVAILABLE),
-    // and both increment wallet.balance — doubling the credit.
-    //
-    // Now: conditional updateMany with WHERE on status=PENDING ensures only
-    // the first request that wins the race transitions the row. If count === 1,
-    // apply the wallet delta; if count === 0, skip it to avoid double-crediting.
-    const releaseResult = await db.walletTransaction.updateMany({
-      where: { id: t.id, status: "PENDING" },
-      data: { status: "AVAILABLE", releasedAt: now },
-    });
-    if (releaseResult.count === 1) {
-      await db.wallet.update({
-        where: { id: wallet.id },
-        data: {
-          pendingBalance: { decrement: t.netAmount },
-          balance: { increment: t.netAmount },
-        },
-      });
-    }
+  for (const transaction of releasable) {
+    await releaseWalletTransaction(db, wallet.id, transaction.id, now);
   }
 
   const fresh = await db.wallet.findUnique({
