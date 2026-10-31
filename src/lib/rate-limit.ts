@@ -11,6 +11,7 @@
 // This works in both dev (Node.js + SQLite) and Workers (D1 via PrismaD1).
 
 import { getDbForLib } from "./db-access";
+import { Prisma } from "@prisma/client";
 
 // ──────────── Rate limit configuration ────────────
 
@@ -75,44 +76,56 @@ export type RateLimitResult = { success: boolean; resetMs: number; unavailable?:
 export async function rateLimitAsync(key: string, max: number, windowMs: number): Promise<RateLimitResult> {
   const d1Key = `rl:${key}`;
   const now = Date.now();
+  const limit = Math.max(1, Math.trunc(max));
+  const safeWindowMs = Math.max(1, Math.trunc(windowMs));
+  const nowDate = new Date(now);
+  const expiresAt = new Date(now + safeWindowMs);
 
-  // Try D1 RateLimit table (works on Cloudflare + local SQLite via Prisma)
   try {
     const db = await getDbForLib();
-    // Atomic conditional increment: only increment if count < max and not expired
-    const result = await db.rateLimit.updateMany({
-      where: { key: d1Key, count: { lt: max }, expiresAt: { gt: new Date(now) } },
-      data: { count: { increment: 1 } },
-    });
 
-    if (result.count === 1) {
-      // Successfully incremented — request allowed
-      const entry = await db.rateLimit.findUnique({ where: { key: d1Key } });
-      return { success: true, resetMs: entry ? entry.expiresAt.getTime() - now : windowMs };
+    // One database statement owns initialization, expiry reset, increment and
+    // deny-state saturation. Concurrent first hits/expiry-boundary requests
+    // cannot reset the counter independently.
+    const rows = await db.$queryRaw<Array<{ count: number; expiresAt: Date | string }>>(Prisma.sql`
+      INSERT INTO "RateLimit" ("id", "key", "count", "expiresAt")
+      VALUES (${crypto.randomUUID()}, ${d1Key}, 1, ${expiresAt})
+      ON CONFLICT ("key") DO UPDATE SET
+        "count" = CASE
+          WHEN "RateLimit"."expiresAt" <= ${nowDate} THEN 1
+          WHEN "RateLimit"."count" < ${limit + 1} THEN "RateLimit"."count" + 1
+          ELSE "RateLimit"."count"
+        END,
+        "expiresAt" = CASE
+          WHEN "RateLimit"."expiresAt" <= ${nowDate} THEN excluded."expiresAt"
+          ELSE "RateLimit"."expiresAt"
+        END
+      RETURNING "count", "expiresAt"
+    `);
+
+    if (rows.length !== 1) throw new Error("Rate-limit upsert did not return exactly one row");
+    const entry = rows[0];
+    const count = Number(entry.count);
+    const resetAt = entry.expiresAt instanceof Date
+      ? entry.expiresAt.getTime()
+      : new Date(entry.expiresAt).getTime();
+
+    if (!Number.isFinite(count) || !Number.isFinite(resetAt)) {
+      throw new Error("Rate-limit store returned an invalid row");
     }
 
-    // Either: row doesn't exist, expired, or at max — check which
-    const existing = await db.rateLimit.findUnique({ where: { key: d1Key } });
-    if (!existing || existing.expiresAt.getTime() < now) {
-      // Window expired or first-ever — start fresh window atomically
-      await db.rateLimit.upsert({
-        where: { key: d1Key },
-        create: { key: d1Key, count: 1, expiresAt: new Date(now + windowMs) },
-        update: { count: 1, expiresAt: new Date(now + windowMs) },
-      });
-      return { success: true, resetMs: windowMs };
-    }
-
-    // At max — denied
-    return { success: false, resetMs: existing.expiresAt.getTime() - now };
+    return {
+      success: count <= limit,
+      resetMs: Math.max(0, resetAt - now),
+    };
   } catch {
     // A per-isolate Map is not a security control in multi-isolate production.
     // Deny the request instead of silently weakening OTP/payment/withdraw limits.
     if (process.env.NODE_ENV === "production") {
-      return { success: false, resetMs: windowMs, unavailable: true };
+      return { success: false, resetMs: safeWindowMs, unavailable: true };
     }
     // Local development only: keep the single-process fallback.
-    return memRateLimit(key, max, windowMs);
+    return memRateLimit(key, limit, safeWindowMs);
   }
 }
 

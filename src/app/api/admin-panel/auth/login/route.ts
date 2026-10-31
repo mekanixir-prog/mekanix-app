@@ -3,6 +3,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { verifyPassword, createAdminToken, ensureDefaultAdmin } from "@/lib/admin-auth";
 import { rateLimitAsync, getClientId } from "@/lib/rate-limit";
 import { writeAuditLog } from "@/lib/admin-api";
+import { createHash } from "node:crypto";
 
 // SEC-13: Mitigate user enumeration on admin login.
 //   - Unified error message + status for "user not found" and "wrong password"
@@ -25,39 +26,64 @@ const UNAUTH_MSG = "ایمیل/یوزرنیم یا پسورد اشتباه اس�
 //     redacted to a hash) so an operator can investigate attack patterns.
 //   - Successful attempts are audit-logged for compliance / forensics.
 //
-// Fail-open policy: if the rate-limit infrastructure is unavailable (DB
-// error AND in-memory fallback also fails), allow the attempt — better to
-// risk a brute-force than to lock the admin out of the panel entirely
-// (DoS on admin = no way to manage the platform).
+// Fail-closed policy: shared-store outage returns 503. Admin credentials
+// are too sensitive to bypass a missing distributed rate-limit counter.
 const LOGIN_RATE_LIMIT = { max: 5, windowMs: 15 * 60_000 };
 
 export async function POST(req: Request) {
-  await ensureDefaultAdmin();
-  const { emailOrUsername, password } = await req.json();
-  const db = await getDbForLib();
-  if (!emailOrUsername || !password) return NextResponse.json({ error: "ایمیل/یوزرنیم و پسورد الزامی است" }, { status: 400 });
-
-  // SEC-5: rate limit per IP — 5 attempts per 15 min.
-  // Fail-open: if rateLimitAsync throws (DB error AND in-memory fallback also
-  // fails), allow the attempt. The rateLimitAsync function already falls back
-  // to in-memory on DB error (see src/lib/rate-limit.ts), so this outer
-  // try/catch is belt-and-suspenders for any unexpected throw.
+  // Rate-limit before any DB-backed bootstrap or credential lookup.
   const clientId = getClientId(req);
-  let rl;
-  try {
-    rl = await rateLimitAsync(`admin-login:${clientId}`, LOGIN_RATE_LIMIT.max, LOGIN_RATE_LIMIT.windowMs);
-  } catch {
-    rl = { success: true, resetMs: LOGIN_RATE_LIMIT.windowMs };
+  const ipLimit = await rateLimitAsync(`admin-login:ip:${clientId}`, LOGIN_RATE_LIMIT.max, LOGIN_RATE_LIMIT.windowMs);
+  if (ipLimit.unavailable) {
+    return NextResponse.json(
+      { error: "سرویس احراز هویت موقتاً در دسترس نیست؛ لطفاً بعداً تلاش کنید" },
+      { status: 503, headers: { "Retry-After": String(Math.max(1, Math.ceil(ipLimit.resetMs / 1000))) } }
+    );
   }
-  if (!rl.success) {
+  if (!ipLimit.success) {
     return NextResponse.json(
       { error: "درخواست‌های بیش از حد — لطفاً ۱۵ دقیقه دیگر تلاش کنید" },
-      { status: 429, headers: { "Retry-After": String(Math.ceil(rl.resetMs / 1000)) } }
+      { status: 429, headers: { "Retry-After": String(Math.max(1, Math.ceil(ipLimit.resetMs / 1000))) } }
     );
   }
 
+  let parsed: unknown;
+  try {
+    parsed = await req.json();
+  } catch {
+    return NextResponse.json({ error: "درخواست نامعتبر است" }, { status: 400 });
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return NextResponse.json({ error: "درخواست نامعتبر است" }, { status: 400 });
+  }
+  const { emailOrUsername, password } = parsed as Record<string, unknown>;
+  if (
+    typeof emailOrUsername !== "string" || !emailOrUsername.trim() ||
+    emailOrUsername.length > 254 ||
+    typeof password !== "string" || !password || password.length > 128
+  ) {
+    return NextResponse.json({ error: "ایمیل/یوزرنیم و پسورد الزامی است" }, { status: 400 });
+  }
+  const identifier = emailOrUsername.trim();
+  const accountKey = createHash("sha256").update(identifier.toLowerCase()).digest("hex");
+  const accountLimit = await rateLimitAsync(`admin-login:account:${accountKey}`, LOGIN_RATE_LIMIT.max, LOGIN_RATE_LIMIT.windowMs);
+  if (accountLimit.unavailable) {
+    return NextResponse.json(
+      { error: "سرویس احراز هویت موقتاً در دسترس نیست؛ لطفاً بعداً تلاش کنید" },
+      { status: 503, headers: { "Retry-After": String(Math.max(1, Math.ceil(accountLimit.resetMs / 1000))) } }
+    );
+  }
+  if (!accountLimit.success) {
+    return NextResponse.json(
+      { error: "درخواست‌های بیش از حد — لطفاً ۱۵ دقیقه دیگر تلاش کنید" },
+      { status: 429, headers: { "Retry-After": String(Math.max(1, Math.ceil(accountLimit.resetMs / 1000))) } }
+    );
+  }
+
+  await ensureDefaultAdmin();
+  const db = await getDbForLib();
   const admin = await db.adminUser.findFirst({
-    where: { OR: [{ email: emailOrUsername.toLowerCase() }, { username: emailOrUsername }] },
+    where: { OR: [{ email: identifier.toLowerCase() }, { username: identifier }] },
   });
 
   // SEC-13: Always call verifyPassword — when admin is not found, compare
@@ -76,11 +102,11 @@ export async function POST(req: Request) {
       await writeAuditLog({
         session: admin
           ? { adminId: admin.id, username: admin.username, role: admin.role }
-          : { adminId: "unknown", username: emailOrUsername, role: "unknown" },
+          : { adminId: "unknown", username: identifier, role: "unknown" },
         action: "FAILED_ADMIN_LOGIN",
         entity: "AdminUser",
         entityId: admin?.id,
-        after: { emailOrUsername, reason: admin ? "wrong_password" : "user_not_found" },
+        after: { accountHash: accountKey, reason: admin ? "wrong_password" : "user_not_found" },
         req,
       });
     } catch (e) {
