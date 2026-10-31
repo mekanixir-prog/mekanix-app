@@ -1,0 +1,16 @@
+name = "mekanix-wallet-escrow-release"
+main = "workers/wallet-release/index.ts"
+compatibility_date = "2026-10-30"
+
+[[d1_databases]]
+binding = "DB"
+# STAGING ONLY: create an isolated D1 database and replace this placeholder before deployment.
+# Deliberately not the production app database ID; deploy must fail until staging is configured.
+database_name = "mekanix-wallet-escrow-staging"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[observability]
+enabled = true
