@@ -325,11 +325,11 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, onSync 
             </div>
           </div>
         )}
-        {reviewActions.length === 0 ? (
+        {reviewActions.length === 0 && waitingCount === 0 ? (
           <div className="grid min-h-52 place-items-center rounded-xl border border-dashed border-border p-6 text-center">
             <div>
               <CheckCircle2 className="mx-auto size-8 text-emerald-500" />
-              <p className="mt-3 text-sm font-medium">{waitingCount > 0 ? copy.waitingTitle : copy.empty}</p>
+              <p className="mt-3 text-sm font-medium">{copy.empty}</p>
             </div>
           </div>
         ) : reviewActions.map((action) => {
