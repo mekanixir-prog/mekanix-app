@@ -199,6 +199,8 @@ export function AppShell({
                   open={offlineOpen}
                   isOnline={isOnline}
                   queueSize={queueSize}
+                  isFa={isFa}
+                  lang={lang}
                   onSync={syncQueue}
                 />
               </SheetContent>
