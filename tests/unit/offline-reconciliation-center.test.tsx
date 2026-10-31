@@ -127,6 +127,9 @@ describe("offline reconciliation center", () => {
 
   it("requires explicit confirmation before local cancellation", async () => {
     enqueueAction({ url: "/api/service-requests", method: "POST", body: { title: "Repair" } });
+    const queued = getQueuedActions();
+    queued[0].needsReconciliation = true;
+    localStorage.setItem("mekanix-offline-queue", JSON.stringify(queued));
     renderCenter(1);
     fireEvent.click(screen.getByRole("button", { name: "لغو و حذف از دستگاه" }));
     expect(screen.getByText(/از حذف این عملیات معوق مطمئن هستید/)).toBeTruthy();
@@ -137,18 +140,24 @@ describe("offline reconciliation center", () => {
 
   it("disables other actions while a server check is in flight", async () => {
     enqueueAction({ url: "/api/wallets/withdraw", method: "POST", body: { amount: 500 } });
+    const queued = getQueuedActions();
+    queued[0].needsReconciliation = true;
+    localStorage.setItem("mekanix-offline-queue", JSON.stringify(queued));
     let finish!: (value: any) => void;
     vi.stubGlobal("fetch", vi.fn(() => new Promise((resolve) => { finish = resolve; })));
     renderCenter(1);
     const check = screen.getByRole("button", { name: "بررسی وضعیت سرور" });
     fireEvent.click(check);
-    await waitFor(() => expect(check).toBeDisabled());
+    await waitFor(() => expect(check.hasAttribute("disabled")).toBe(true));
     finish(response({ state: "NOT_COMMITTED" }));
     await screen.findByText("عملیات در سرور ثبت نشده است");
   });
 
   it("does not offer a status check or retry for an endpoint without a read-only contract", () => {
     enqueueAction({ url: "/api/service-requests", method: "POST", body: { title: "Repair" } });
+    const queued = getQueuedActions();
+    queued[0].needsReconciliation = true;
+    localStorage.setItem("mekanix-offline-queue", JSON.stringify(queued));
     renderCenter(1);
     expect(screen.queryByRole("button", { name: "بررسی وضعیت سرور" })).toBeNull();
     expect(screen.queryByRole("button", { name: "ارسال دوباره امن" })).toBeNull();
