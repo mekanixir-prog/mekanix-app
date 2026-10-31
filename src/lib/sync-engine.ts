@@ -21,9 +21,13 @@ let syncing = false;
 
 function supportsDurableIdempotency(action: { url: string; method: string }): boolean {
   try {
-    const pathname = new URL(action.url, window.location.origin).pathname;
-    return (action.method === "POST" && pathname === "/api/wallets/withdraw") ||
-      (action.method === "POST" && pathname === "/api/prepay");
+    const target = new URL(action.url, window.location.origin);
+    // Never treat a matching path on another origin as a trusted API route.
+    // This also prevents forwarding authenticated credentials to a queued URL
+    // controlled by an untrusted source.
+    if (target.origin !== window.location.origin) return false;
+    return (action.method === "POST" && target.pathname === "/api/wallets/withdraw") ||
+      (action.method === "POST" && target.pathname === "/api/prepay");
   } catch {
     return false;
   }
