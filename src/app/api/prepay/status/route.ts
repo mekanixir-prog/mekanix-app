@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
-import { requireAuth, requireJobParticipant } from "@/lib/api-helpers";
+import { requireAuth } from "@/lib/api-helpers";
+import { requireJobParticipant } from "@/lib/auth";
 
 // Read-only reconciliation lookup. It verifies the job marker and all
 // four financial records written by recordPrepayAtomically().
