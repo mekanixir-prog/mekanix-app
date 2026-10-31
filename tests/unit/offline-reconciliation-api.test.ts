@@ -62,7 +62,7 @@ describe("read-only offline reconciliation endpoints", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       state: "COMMITTED",
-      withdrawal: { id: "wd-1", code: "WD-1001", amount: 500, status: "REQUESTED" },
+      withdrawal: { id: "wd-1", code: "WD-1001", amount: "500", status: "REQUESTED" },
     });
     expect(mocks.withdrawal).toHaveBeenCalledWith(expect.objectContaining({
       where: { idempotencyKey: "idem_12345678" },
@@ -103,7 +103,7 @@ describe("read-only offline reconciliation endpoints", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       state: "COMMITTED",
-      prepay: { jobId: "job-1", jobCode: "JOB-1001", gross: 120, commission: 12, net: 108 },
+      prepay: { jobId: "job-1", jobCode: "JOB-1001", inspectionFee: "100", travelFee: "20", commission: "12", net: "108" },
     });
     expect(mocks.walletTxn).toHaveBeenCalledTimes(2);
     expect(mocks.ledger).toHaveBeenCalledTimes(2);
