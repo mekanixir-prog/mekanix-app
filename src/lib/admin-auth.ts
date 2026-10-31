@@ -30,30 +30,19 @@ const encoder = new TextEncoder();
 const ADMIN_ROLES = new Set(["ADMIN", "SUPER_ADMIN"]);
 
 function getAdminSecret(): Uint8Array {
-  // Prefer a dedicated admin secret to guarantee cryptographic isolation
-  // from user-session JWTs.
+  // Dedicated admin JWTs must never fall back to the general user-session secret
+  // in production. The regular OTP-session path is separately authorized below
+  // against the persisted database role and ACTIVE status.
   const adminSecret = process.env.ADMIN_JWT_SECRET;
   if (adminSecret) return encoder.encode(adminSecret);
 
-  // Backward-compat fallback: reuse JWT_SECRET. This keeps existing admin
-  // tokens working, but relies on payload-shape validation below for safety.
-  const sharedSecret = process.env.JWT_SECRET;
-  if (sharedSecret) {
-    if (process.env.NODE_ENV === "production") {
-      console.warn(
-        "⚠ SECURITY: ADMIN_JWT_SECRET is not set — admin tokens fall back to JWT_SECRET. " +
-          "Set ADMIN_JWT_SECRET to fully isolate admin sessions from user sessions."
-      );
-    }
-    return encoder.encode(sharedSecret);
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("ADMIN_JWT_SECRET environment variable is required for dedicated admin tokens in production");
   }
 
-  // No secret configured at all.
-  if (process.env.NODE_ENV === "production") {
-    throw new Error(
-      "JWT_SECRET (or ADMIN_JWT_SECRET) environment variable is required in production"
-    );
-  }
+  // Development-only compatibility for local admin tooling.
+  const sharedSecret = process.env.JWT_SECRET;
+  if (sharedSecret) return encoder.encode(sharedSecret);
   // Dev-only fallback — NEVER in production
   return encoder.encode("mekanix-admin-dev-secret-change-me");
 }
