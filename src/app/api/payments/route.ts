@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
-  // Rate limit on payments
+  // Rate limit on payments using the shared D1 counter in Workers.
   const clientId = getClientId(req);
   const rl = await rateLimitAsync(
     `payment:${clientId}`,
