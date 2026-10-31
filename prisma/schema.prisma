@@ -749,9 +749,10 @@ model WithdrawalRequest {
   status      WithdrawalStatus @default(REQUESTED)
   requestedAt DateTime         @default(now())
   processedAt DateTime?
-  adminNotes  String?
-  reviewerId  String?
-  txnId       String? // linked WalletTransaction (PAYOUT) once paid
+  adminNotes     String?
+  reviewerId     String?
+  txnId          String? // linked WalletTransaction (PAYOUT) once paid
+  idempotencyKey String? @unique
 
   @@index([walletId, status])
   @@index([status])
