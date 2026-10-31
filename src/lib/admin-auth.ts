@@ -1,6 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { getDbForLib } from "./db-access";
+import { verifySession } from "./auth";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SEC-21 fix: Admin JWT isolation + payload-shape validation.
@@ -105,7 +106,28 @@ export async function verifyAdminToken(token: string): Promise<AdminSession | nu
 export async function getAdminFromRequest(req: Request): Promise<AdminSession | null> {
   const auth = req.headers.get("authorization");
   if (!auth?.startsWith("Bearer ")) return null;
-  return verifyAdminToken(auth.slice(7));
+  const token = auth.slice(7);
+
+  // Dedicated AdminUser tokens remain the preferred admin-panel credential.
+  const adminToken = await verifyAdminToken(token);
+  if (adminToken) return adminToken;
+
+  // The in-app AdminApp authenticates through the regular OTP session flow.
+  // Permit only a persisted, non-revoked session whose server-side role is ADMIN.
+  const userSession = await verifySession(token);
+  if (!userSession || userSession.role !== "ADMIN") return null;
+
+  const db = await getDbForLib();
+  const user = await db.user.findUnique({
+    where: { id: userSession.userId },
+    select: { name: true, role: true, status: true },
+  });
+  if (!user || user.role !== "ADMIN" || user.status !== "ACTIVE") return null;
+  return {
+    adminId: userSession.userId,
+    username: user?.name ?? "",
+    role: "ADMIN",
+  };
 }
 
 /**
