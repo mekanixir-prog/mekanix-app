@@ -112,7 +112,7 @@ export async function POST(req: Request) {
       where: { phone, code: codeHash, consumed: false },
       data: { consumed: true },
     }).catch(() => undefined);
-    console.error("[otp/send] SMS delivery threw:", error instanceof Error ? error.message : "provider error");
+    console.error("[otp/send] SMS delivery threw; plaintext OTP and recipient were not logged");
     return NextResponse.json(
       { error: "ارسال پیامک ناموفق بود؛ کمی بعد دوباره تلاش کنید" },
       { status: 503, headers: { "Retry-After": "30" } }
@@ -124,7 +124,7 @@ export async function POST(req: Request) {
       where: { phone, code: codeHash, consumed: false },
       data: { consumed: true },
     }).catch(() => undefined);
-    console.error("[otp/send] SMS delivery failed:", smsResult.error || "provider rejected request");
+    console.error("[otp/send] SMS delivery failed; provider details were withheld from logs");
     return NextResponse.json(
       { error: "ارسال پیامک ناموفق بود؛ کمی بعد دوباره تلاش کنید" },
       { status: 502, headers: { "Retry-After": "30" } }
