@@ -19,6 +19,13 @@ describe("SMS provider production fail-closed behavior", () => {
     expect(log).not.toHaveBeenCalled();
   });
 
+  it("treats an unspecified runtime mode as production and rejects console fallback", async () => {
+    vi.stubEnv("NODE_ENV", "");
+    vi.stubEnv("SMS_PROVIDER", "");
+    const { sendOtp } = await import("@/lib/sms-provider");
+    await expect(sendOtp("+989121234567", "123456")).rejects.toThrow(/real SMS_PROVIDER/);
+  });
+
   it("rejects the console provider explicitly in production", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("SMS_PROVIDER", "console");
