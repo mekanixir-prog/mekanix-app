@@ -112,39 +112,49 @@ let initialized = false;
 
 export function initSmsProvider(): void {
   if (initialized) return;
-  initialized = true;
 
   const provider = process.env.SMS_PROVIDER?.toLowerCase().trim();
-
-  if (provider === "kavenegar" && process.env.KAVENEGAR_API_KEY) {
-    console.log("📱 SMS provider: Kavenegar");
-    currentProvider = createKavenegarProvider(
-      process.env.KAVENEGAR_API_KEY,
-      process.env.KAVENEGAR_TEMPLATE
-    );
-  } else if (provider === "melipayamak" && process.env.MELIPAYAMAK_USERNAME) {
-    if (!process.env.MELIPAYAMAK_SENDER) {
-      console.warn("⚠️  MELIPAYAMAK_SENDER not set — MeliPayamak will fail to send");
+  if (!provider || provider === "console") {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("A real SMS_PROVIDER must be configured in production; console OTP delivery is disabled");
     }
-    console.log("📱 SMS provider: MeliPayamak");
-    currentProvider = createMeliPayamakProvider(
-      process.env.MELIPAYAMAK_USERNAME!,
-      process.env.MELIPAYAMAK_PASSWORD!,
-      process.env.MELIPAYAMAK_SENDER || ""
-    );
-  } else if (provider === "farapayamak" && process.env.FARAPAYAMAK_USERNAME) {
-    if (!process.env.FARAPAYAMAK_SENDER) {
-      console.warn("⚠️  FARAPAYAMAK_SENDER not set — Farapayamak will fail to send");
-    }
-    console.log("📱 SMS provider: Farapayamak");
-    currentProvider = createFarapayamakProvider(
-      process.env.FARAPAYAMAK_USERNAME!,
-      process.env.FARAPAYAMAK_PASSWORD!,
-      process.env.FARAPAYAMAK_SENDER || ""
-    );
-  } else {
-    console.log("📱 SMS provider: console (dev mode)");
+    currentProvider = consoleProvider;
+    initialized = true;
+    console.log("📱 SMS provider: console (development only)");
+    return;
   }
+
+  if (provider === "kavenegar") {
+    const apiKey = process.env.KAVENEGAR_API_KEY?.trim();
+    if (!apiKey) throw new Error("KAVENEGAR_API_KEY is required when SMS_PROVIDER=kavenegar");
+    currentProvider = createKavenegarProvider(apiKey, process.env.KAVENEGAR_TEMPLATE);
+  } else if (provider === "melipayamak") {
+    const username = process.env.MELIPAYAMAK_USERNAME?.trim();
+    const password = process.env.MELIPAYAMAK_PASSWORD?.trim();
+    const sender = process.env.MELIPAYAMAK_SENDER?.trim();
+    if (!username || !password || !sender) {
+      throw new Error("MELIPAYAMAK_USERNAME, MELIPAYAMAK_PASSWORD, and MELIPAYAMAK_SENDER are required");
+    }
+    currentProvider = createMeliPayamakProvider(username, password, sender);
+  } else if (provider === "farapayamak") {
+    const username = process.env.FARAPAYAMAK_USERNAME?.trim();
+    const password = process.env.FARAPAYAMAK_PASSWORD?.trim();
+    const sender = process.env.FARAPAYAMAK_SENDER?.trim();
+    if (!username || !password || !sender) {
+      throw new Error("FARAPAYAMAK_USERNAME, FARAPAYAMAK_PASSWORD, and FARAPAYAMAK_SENDER are required");
+    }
+    currentProvider = createFarapayamakProvider(username, password, sender);
+  } else {
+    throw new Error(`Unsupported SMS_PROVIDER: ${provider}`);
+  }
+
+  initialized = true;
+  console.log(`📱 SMS provider: ${provider}`);
+}
+
+/** Validate provider configuration before creating or persisting an OTP. */
+export function assertSmsProviderReady(): void {
+  initSmsProvider();
 }
 
 export async function sendOtp(phone: string, code: string): Promise<SmsResult> {
