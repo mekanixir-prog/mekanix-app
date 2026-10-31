@@ -5,13 +5,18 @@ import { rateLimit, rateLimitAsync, getClientId } from "./rate-limit";
 
 // Helper: extract + verify session from request. Returns 401 if not authenticated.
 //
-// Applies the default API rate limit (60 req/min per client) via the Redis-backed
-// `rateLimitAsync()` — this is distributed across instances when REDIS_URL is set,
-// so a deployed fleet enforces the same per-client budget as a single instance.
-// Falls back to in-memory in dev (no REDIS_URL).
+// Applies the default API rate limit (60 req/min per client) via the shared
+// D1/SQLite/PostgreSQL-backed atomic counter. A production store outage must
+// return 503 before session lookup; it must never fall back to isolate memory.
 export async function requireAuth(req: Request): Promise<Session | NextResponse> {
   const clientId = getClientId(req);
   const rl = await rateLimitAsync(`api:${clientId}`, 60, 60_000); // 60 req/min
+  if (rl.unavailable) {
+    return NextResponse.json(
+      { error: "سرویس محدودسازی درخواست موقتاً در دسترس نیست" },
+      { status: 503, headers: { "Retry-After": String(Math.max(1, Math.ceil(rl.resetMs / 1000))) } }
+    );
+  }
   if (!rl.success) {
     return NextResponse.json(
       { error: "درخواست‌های بیش از حد — لطفاً کمی صبر کنید" },
@@ -28,11 +33,9 @@ export async function requireAuth(req: Request): Promise<Session | NextResponse>
 
 // Helper: rate limit by phone (for OTP endpoints). Returns 429 if exceeded.
 //
-// DEPRECATED: This synchronous helper wraps the in-memory `rateLimit()` and
-// does NOT use Redis. New endpoints (OTP send/verify, payments, withdraw) now
-// call `rateLimitAsync()` directly so the rate-limit budget is shared across
-// instances in production. This is kept for backward compatibility with any
-// external callers, but no internal route uses it anymore.
+// DEPRECATED: This synchronous helper wraps the process-local in-memory
+// `rateLimit()` and is not a production security boundary. No internal API
+// route calls it; new code must use `rateLimitAsync()` and handle unavailable.
 export function checkRateLimit(req: Request, key: string, max: number, windowMs: number): NextResponse | null {
   const clientId = getClientId(req);
   const rl = rateLimit(`${key}:${clientId}`, max, windowMs);
