@@ -61,7 +61,12 @@ export async function GET(req: Request) {
   }
 
   if (!job.prepayPaid && recordCount === 0) {
-    return NextResponse.json({ state: "NOT_COMMITTED", jobId: job.id });
+    return NextResponse.json({
+      state: "NOT_COMMITTED",
+      jobId: job.id,
+      // Prepay remains a simulator-only route until issue #24 is completed.
+      retryAllowed: process.env.NODE_ENV !== "production",
+    });
   }
 
   return NextResponse.json({
