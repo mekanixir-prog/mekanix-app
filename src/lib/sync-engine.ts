@@ -112,9 +112,12 @@ export async function syncQueue(actionIds?: string[]): Promise<SyncResult> {
           if (markNeedsReconciliation(action.id, "server_error", 404)) reconciliationRequired++;
           else failed++;
         } else if (res.status >= 400 && res.status < 500) {
-          // Client error (non-conflict) — don't retry, just remove.
-          dequeueAction(action.id);
-          failed++;
+          // Keep rejected actions visible. Auth, permission, validation, and
+          // missing-resource errors must not silently erase user intent.
+          const reason = res.status === 401 ? "auth_required"
+            : res.status === 403 ? "permission_denied" : "client_rejected";
+          if (markNeedsReconciliation(action.id, reason, res.status)) reconciliationRequired++;
+          else failed++;
         } else {
           // Unexpected response class: avoid replay unless this route is allowlisted.
           if (supportsRetry) {
