@@ -34,7 +34,12 @@ function getAdminSecret(): Uint8Array {
   // in production. The regular OTP-session path is separately authorized below
   // against the persisted database role and ACTIVE status.
   const adminSecret = process.env.ADMIN_JWT_SECRET;
-  if (adminSecret) return encoder.encode(adminSecret);
+  if (adminSecret) {
+    if (process.env.NODE_ENV === "production" && new TextEncoder().encode(adminSecret).length < 32) {
+      throw new Error("ADMIN_JWT_SECRET must contain at least 32 bytes in production");
+    }
+    return encoder.encode(adminSecret);
+  }
 
   if (process.env.NODE_ENV === "production") {
     throw new Error("ADMIN_JWT_SECRET environment variable is required for dedicated admin tokens in production");
