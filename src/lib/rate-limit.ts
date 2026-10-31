@@ -27,10 +27,22 @@ export const RATE_LIMITS = {
 
 export function getClientId(req: Request, userId?: string): string {
   if (userId) return userId;
+
+  // Cloudflare overwrites CF-Connecting-IP with the actual visitor address.
+  // Never prefer the first X-Forwarded-For entry: clients can supply a forged
+  // prefix and proxies append their observed address later in the chain.
+  const cloudflareIp = req.headers.get("cf-connecting-ip")?.trim();
+  if (cloudflareIp) return cloudflareIp;
+
+  // For non-Cloudflare reverse proxies, the right-most entry is the closest
+  // trusted hop (and is the value appended by the proxy).
   const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  const realIp = req.headers.get("x-real-ip");
-  if (realIp) return realIp;
+  if (forwarded) {
+    const entries = forwarded.split(",").map((value) => value.trim()).filter(Boolean);
+    const rightMost = entries[entries.length - 1];
+    if (rightMost) return rightMost;
+  }
+
   return "anonymous";
 }
 

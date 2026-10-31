@@ -9,7 +9,40 @@ vi.mock("@/lib/db-access", () => ({
   getDbForLib: mockGetDbForLib,
 }));
 
-import { rateLimitAsync } from "@/lib/rate-limit";
+import { getClientId, rateLimitAsync } from "@/lib/rate-limit";
+
+describe("getClientId trusted proxy extraction", () => {
+  it("prefers Cloudflare's visitor IP over a spoofed X-Forwarded-For prefix", () => {
+    const req = new Request("https://mekanix.test", {
+      headers: {
+        "cf-connecting-ip": "198.51.100.27",
+        "x-forwarded-for": "203.0.113.99, 198.51.100.27",
+      },
+    });
+    expect(getClientId(req)).toBe("198.51.100.27");
+  });
+
+  it("uses the right-most X-Forwarded-For entry when Cloudflare's header is absent", () => {
+    const req = new Request("https://mekanix.test", {
+      headers: { "x-forwarded-for": "203.0.113.99, 198.51.100.27" },
+    });
+    expect(getClientId(req)).toBe("198.51.100.27");
+  });
+
+  it("does not trust x-real-ip when no trusted proxy address is present", () => {
+    const req = new Request("https://mekanix.test", {
+      headers: { "x-real-ip": "203.0.113.99" },
+    });
+    expect(getClientId(req)).toBe("anonymous");
+  });
+
+  it("uses an authenticated user id ahead of proxy headers", () => {
+    const req = new Request("https://mekanix.test", {
+      headers: { "cf-connecting-ip": "198.51.100.27" },
+    });
+    expect(getClientId(req, "user-123")).toBe("user-123");
+  });
+});
 
 describe("rateLimitAsync production failure behavior", () => {
   beforeEach(() => {
