@@ -204,7 +204,7 @@ export async function updateWithdrawalWithD1(d1: D1Database, input: Input): Prom
         SELECT "walletId" FROM "WithdrawalRequest"
         WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?
       ) AND changes() = 1
-    `).bind(input.withdrawalId, payoutId, at, input.withdrawalId, payoutId),
+    `).bind(input.withdrawalId, payoutReference, at, input.withdrawalId, payoutReference),
   ]);
   return results[0]?.meta?.changes === 1 &&
     results[1]?.meta?.changes === 1 &&
