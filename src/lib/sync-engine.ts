@@ -7,7 +7,7 @@
 // explicit reconciliation instead of being replayed blindly.
 // 409 responses remain visible as conflicts for the caller to surface.
 
-import { getQueuedActions, dequeueAction, incrementRetry, getQueueSize, markNeedsReconciliation } from "./offline-queue";
+import { getQueuedActions, dequeueAction, incrementRetry, getQueueSize, markNeedsReconciliation, markAttempt } from "./offline-queue";
 
 export interface SyncResult {
   synced: number;
@@ -58,13 +58,14 @@ export async function syncQueue(): Promise<SyncResult> {
       const target = getSameOriginUrl(action);
       if (!target) {
         // Do not send credentials to an unknown origin; keep the action for review.
-        if (markNeedsReconciliation(action.id)) reconciliationRequired++;
+        if (markNeedsReconciliation(action.id, "cross_origin")) reconciliationRequired++;
         else failed++;
         continue;
       }
       const supportsRetry = supportsDurableIdempotency(action, target);
 
       try {
+        markAttempt(action.id);
         const res = await fetch(target.href, {
           method: action.method,
           headers: {
@@ -77,6 +78,7 @@ export async function syncQueue(): Promise<SyncResult> {
           body: action.body ? JSON.stringify(action.body) : undefined,
         });
   
+        markAttempt(action.id, res.status);
         if (res.ok) {
           dequeueAction(action.id);
           synced++;
@@ -85,7 +87,7 @@ export async function syncQueue(): Promise<SyncResult> {
           // payload or the server has an ambiguous legacy state. Preserve the
           // action behind the manual-review gate; never discard it silently.
           conflicts++;
-          if (markNeedsReconciliation(action.id)) reconciliationRequired++;
+          if (markNeedsReconciliation(action.id, "conflict", 409)) reconciliationRequired++;
           else failed++;
         } else if (res.status === 429) {
           // Explicit rate-limit responses mean the handler rejected the attempt.
