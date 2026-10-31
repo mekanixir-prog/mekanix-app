@@ -48,7 +48,7 @@ export async function GET(req: Request) {
     withdrawal: {
       id: request.id,
       code: request.code,
-      amount: Number(request.amount),
+      amount: String(request.amount),
       status: request.status,
       requestedAt: request.requestedAt,
       processedAt: request.processedAt,
