@@ -39,6 +39,12 @@ export async function POST(req: Request) {
   // Uses Redis-backed rateLimitAsync when REDIS_URL is set (distributed across
   // instances); falls back to in-memory in dev mode. See `src/lib/rate-limit.ts`.
   const phoneLimited = await rateLimitAsync(`otp-send:phone:${phone}`, 5, 10 * 60 * 1000);
+  if (phoneLimited.unavailable) {
+    return NextResponse.json(
+      { error: "سرویس محدودسازی درخواست موقتاً در دسترس نیست" },
+      { status: 503, headers: { "Retry-After": "30" } }
+    );
+  }
   if (!phoneLimited.success) {
     return NextResponse.json(
       { error: "تعداد درخواست‌های کد تأیید برای این شماره بیش از حد است" },
@@ -50,6 +56,12 @@ export async function POST(req: Request) {
   // across many phone numbers from a single attacker.
   const clientId = getClientId(req);
   const ipLimited = await rateLimitAsync(`otp-send:ip:${clientId}`, 20, 60 * 60 * 1000);
+  if (ipLimited.unavailable) {
+    return NextResponse.json(
+      { error: "سرویس محدودسازی درخواست موقتاً در دسترس نیست" },
+      { status: 503, headers: { "Retry-After": "30" } }
+    );
+  }
   if (!ipLimited.success) {
     return NextResponse.json(
       { error: "تعداد درخواست‌ها از این آدرس بیش از حد است" },
