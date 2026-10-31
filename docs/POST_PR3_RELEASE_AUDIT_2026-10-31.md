@@ -162,3 +162,16 @@ A new commit on PR #27 has triggered fresh CI against the updated base after PR 
 - **Open blockers:** issues #22 (wallet exactly-once recovery and dedicated admin secret), #28 (atomic rate-limit initialization and synchronous rateLimit call-site audit), and #29 (idempotency state machine, callback retry bug, and call-site inventory) remain open. Issue #24 (real payment provider integration) remains open.
 
 **Release decision remains NOT READY.** No production deploy, production D1 migration, real SMS, live payment, or production-data mutation has been performed.
+
+
+## 10. Mainline and follow-up PR consolidation
+
+- **PR #12 merged:** commit `eba9451550743d93517712e594dadd8570977a5b`. All five workflows passed on its final head, including the SQLite integration test of the D1 escrow-release SQL.
+- **PR #5 merged:** commit `4bd7a4cea29d7b80b9856524fb7e6b22d8332737`. Adds the admin secret local example and Cloudflare Worker rollback runbook. Its overlapping readiness-route change was removed so it could not overwrite the provider-aware gate.
+- **PR #18 merged:** commit `ac8adb2062385c3e3a5d35f0020493b2038831ad`. Production readiness now requires provider-specific SMS credentials and a genuinely wired live payment integration; the production response sanitizes database errors. All four workflows passed on its final head.
+- **PR #9 closed as superseded:** PR #18 owns the provider-readiness contract and deliberately distinguishes configured development providers from live-ready providers.
+- **PR #27 merged:** commit `f40fb789f5a0c3ac30352dbbedd7ed1e5e64c188`; production rate-limit storage outages now fail closed with HTTP 503. Issue #28 still tracks atomic window initialization and sync-helper call-site audit.
+- **Scheduled escrow worker consolidated into PR #30:** clean main-based branch, no divergence from main, includes keyset pagination, per-row failure isolation, both provider migrations, and the corrected D1 bind order plus SQLite integration test. CI has started; several workflows are still running. Old stacked PRs #16 and #19 were closed as superseded to prevent duplicate schedulers.
+- **PR #13 prepay atomicity:** added D1 SQLite integration tests. The first run found an ambiguous unqualified `id` in joined Job/Wallet SQL; the marker was qualified and a fresh five-workflow run is in progress. Do not merge until all five pass.
+
+The mainline is materially safer, but release remains blocked by open issues #22, #24, #28, #29 and by the remaining financial-flow PR reviews and real isolated D1 validation. No production deployment or service activation has occurred.
