@@ -96,19 +96,27 @@ jobs:
           fi
           echo "✅ RateLimit, IdempotencyKey, and VIP uniqueness indexes exist"
       
-      - name: Test OTP flow
+      - name: Verify production OTP fails closed without a real SMS provider
         run: |
-          SEND_RESP=$(curl -s -X POST http://localhost:3000/api/auth/otp/send \
+          HTTP_STATUS=$(curl -s -o /tmp/otp-response.json -w "%{http_code}" \
+            -X POST http://localhost:3000/api/auth/otp/send \
             -H "Content-Type: application/json" \
             -d '{"phone":"+989121234567"}')
-          echo "OTP send response: $SEND_RESP"
-          echo "$SEND_RESP" | python3 -c "
-          import json, sys
-          d = json.load(sys.stdin)
-          assert d.get('ok') == True, f'OTP send failed: {d}'
-          print('✅ OTP send works')
+          echo "OTP send HTTP status: $HTTP_STATUS"
+          cat /tmp/otp-response.json
+          test "$HTTP_STATUS" = "503"
+          python3 -c "
+          import json
+          with open('/tmp/otp-response.json') as f:
+              d = json.load(f)
+          assert d.get('ok') is not True, f'Unexpected OTP success: {d}'
+          assert 'code' not in d, 'Plaintext OTP must never be returned in production'
           "
-      
+          OTP_ROWS=$(docker compose -f /tmp/mekanix-build/docker-compose.yml exec -T db \
+            psql -U mekanix -d mekanix -Atc 'SELECT COUNT(*) FROM "OtpCode";')
+          test "$OTP_ROWS" = "0"
+          echo "✅ Production rejects console SMS and persists no OTP when no live provider is configured"
+
       - name: Container logs (on failure)
         if: always()
         run: |
