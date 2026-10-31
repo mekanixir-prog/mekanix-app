@@ -35,7 +35,7 @@ export function getQueuedActions(): QueuedAction[] {
 // Add an action to the queue
 export function enqueueAction(action: Omit<QueuedAction, "id" | "timestamp" | "retryCount" | "maxRetries" | "idempotencyKey">): string {
   if (typeof window === "undefined") return "";
-  const id = `qa_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const id = `qa_${crypto.randomUUID()}`;
   const queued: QueuedAction = {
     ...action,
     id,
