@@ -60,7 +60,13 @@ export async function GET() {
     checks.database = true;
   } catch (error: unknown) {
     checks.database = false;
-    errors.push(error instanceof Error ? error.message : "DB check failed");
+    const detail = error instanceof Error ? error.message : "DB check failed";
+    console.error("[ready] Database readiness check failed", { detail });
+    errors.push(
+      process.env.NODE_ENV === "production"
+        ? "Database is unavailable"
+        : detail
+    );
   }
 
   const ok = Object.values(checks).every(Boolean);
