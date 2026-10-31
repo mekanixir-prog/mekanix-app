@@ -154,11 +154,12 @@ export async function updateWithdrawalWithD1(d1: D1Database, input: Input): Prom
         INSERT INTO "WalletLedger"
           ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
            "referenceType", "referenceId", "description", "idempotencyKey", "createdBy", "createdAt")
-        SELECT ?, w."id", 'REFUND', CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END, w."balance" - wr."amount", w."balance",
+        SELECT ?, wr."walletId", 'REFUND', CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END,
+               (SELECT "balance" FROM "Wallet" WHERE "id" = wr."walletId") - wr."amount",
+               (SELECT "balance" FROM "Wallet" WHERE "id" = wr."walletId"),
                'Withdrawal', wr."id", ?, ?, ?, ?
-        FROM "Wallet" w JOIN "WithdrawalRequest" wr ON wr."walletId" = w."id"
-        WHERE wr."id" = ? AND wr."status" = 'REJECTED'
-          AND wr."processedAt" = ? AND changes() = 1
+        FROM "WithdrawalRequest" wr
+        WHERE wr."id" = ? AND wr."status" = 'REJECTED' AND wr."processedAt" = ?
       `).bind(
         crypto.randomUUID(), `Refund for rejected withdrawal ${input.withdrawalId}`,
         `withdrawal:${input.withdrawalId}:REJECT_REFUND`, input.adminId, at,
@@ -189,7 +190,7 @@ export async function updateWithdrawalWithD1(d1: D1Database, input: Input): Prom
       SELECT ?, wr."walletId", 'PAYOUT', 'COMPLETED', CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END, 0,
              -wr."amount", ?, ?, ?
       FROM "WithdrawalRequest" wr
-      WHERE wr."id" = ? AND wr."status" = 'PAID' AND wr."txnId" = ? AND changes() = 1
+      WHERE wr."id" = ? AND wr."status" = 'PAID' AND wr."txnId" = ?
     `).bind(
       payoutId, `Payout for withdrawal ${input.withdrawalId}; bank reference ${payoutReference}`,
       `withdrawal:${input.withdrawalId}:PAYOUT`, at, input.withdrawalId, payoutReference
