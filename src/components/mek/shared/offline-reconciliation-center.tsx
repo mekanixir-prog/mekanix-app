@@ -101,6 +101,7 @@ function reasonLabel(action: QueuedAction, isFa: boolean): string {
     auth_required: ["نشست کاربری منقضی یا نامعتبر است؛ دوباره وارد شوید و سپس وضعیت عملیات را بررسی کنید", "Session expired or invalid; sign in again, then check the operation status"],
     permission_denied: ["دسترسی این حساب برای عملیات کافی نیست", "This account is not authorized for the operation"],
     client_rejected: ["سرور درخواست را نپذیرفت؛ جزئیات باید بررسی شود", "The server rejected the request; review is required"],
+    simulator_disabled: ["این مسیر آزمایشی در محیط عملیاتی غیرفعال است؛ تا تکمیل اتصال واقعی نگه داشته شود", "This simulator route is disabled in production; keep the action until the live integration is ready"],
     legacy_unknown: ["وضعیت عملیات مشخص نیست و باید دستی بررسی شود", "Operation state is unknown and needs review"],
   };
   const pair = labels[action.reconciliationReason ?? "legacy_unknown"] ?? labels.legacy_unknown;
