@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Bell, Sun, Moon, Menu, X, RefreshCw, ShieldCheck, User as UserIcon, Wrench, LogOut, ArrowLeftRight, Car, Truck, Languages,
+  Bell, Sun, Moon, Menu, X, RefreshCw, ShieldCheck, User as UserIcon, Wrench, LogOut, ArrowLeftRight, Car, Truck, Languages, Cloud, CloudOff,
 } from "lucide-react";
 import { useTheme } from "@/components/mek/theme-provider";
 import { Logo } from "./brand/logo";
@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { NotificationCenter } from "./shared/notification-center";
 import { useActiveUser } from "@/lib/use-active-user";
+import { useOffline } from "@/hooks/use-offline";
+import { OfflineReconciliationCenter } from "./shared/offline-reconciliation-center";
 import { useApp } from "@/lib/store";
 import { useT, LANGS, type Lang } from "@/lib/use-t";
 import type { Role } from "@/lib/api";
@@ -50,9 +52,11 @@ export function AppShell({
   const { view, go, reset, portal, auth, machineMode, setMachineMode, exitToSplash, bootStage, lang, setLang } = useApp();
   const { t, isFa } = useT();
   const { user } = useActiveUser();
+  const { isOnline, queueSize, syncQueue } = useOffline();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [offlineOpen, setOfflineOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [unread, setUnread] = useState(0);
 
@@ -172,6 +176,35 @@ export function AppShell({
                 </Tooltip>
               </TooltipProvider>
             )}
+
+            <Sheet open={offlineOpen} onOpenChange={setOfflineOpen}>
+              <SheetTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="relative size-9"
+                  aria-label={isOnline ? "وضعیت همگام‌سازی و عملیات معوق" : "بدون اتصال؛ بررسی عملیات معوق"}
+                >
+                  {isOnline ? <Cloud className="size-4" /> : <CloudOff className="size-4 text-amber" />}
+                  {queueSize > 0 && (
+                    <span className="absolute -right-0.5 -top-0.5 grid min-w-4 place-items-center rounded-full bg-amber px-1 text-[9px] font-bold text-black">
+                      {queueSize > 9 ? "9+" : queueSize}
+                    </span>
+                  )}
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-full p-0 sm:max-w-xl">
+                <SheetTitle className="sr-only">مرکز بررسی عملیات آفلاین</SheetTitle>
+                <OfflineReconciliationCenter
+                  open={offlineOpen}
+                  isOnline={isOnline}
+                  queueSize={queueSize}
+                  isFa={isFa}
+                  lang={lang}
+                  onSync={syncQueue}
+                />
+              </SheetContent>
+            </Sheet>
 
             <TooltipProvider delayDuration={300}>
               <Tooltip>

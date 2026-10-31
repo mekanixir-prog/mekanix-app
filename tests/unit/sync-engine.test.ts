@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   incrementRetry: vi.fn(),
   getQueueSize: vi.fn(),
   markNeedsReconciliation: vi.fn(),
+  markAttempt: vi.fn(),
 }));
 
 vi.mock("@/lib/offline-queue", () => ({
@@ -15,6 +16,7 @@ vi.mock("@/lib/offline-queue", () => ({
   incrementRetry: mocks.incrementRetry,
   getQueueSize: mocks.getQueueSize,
   markNeedsReconciliation: mocks.markNeedsReconciliation,
+  markAttempt: mocks.markAttempt,
 }));
 
 import { syncQueue } from "@/lib/sync-engine";
@@ -33,6 +35,7 @@ const action = (overrides: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
   mocks.getQueuedActions.mockReturnValue([action()]);
   mocks.getQueueSize.mockReturnValue(1);
@@ -46,7 +49,7 @@ describe("offline sync retry safety", () => {
   it("does not replay a non-idempotent POST after an ambiguous 500", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500 }));
     const result = await syncQueue();
-    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1");
+    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1", "server_error", 500);
     expect(mocks.incrementRetry).not.toHaveBeenCalled();
     expect(result.reconciliationRequired).toBe(1);
     expect(result.remaining).toBe(1);
@@ -60,14 +63,14 @@ describe("offline sync retry safety", () => {
     vi.stubGlobal("fetch", fetchMock);
     const result = await syncQueue();
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1");
+    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1", "cross_origin");
     expect(result.reconciliationRequired).toBe(1);
   });
 
   it("retains a 409 conflict behind manual reconciliation instead of dropping the queued action", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 409 }));
     const result = await syncQueue();
-    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1");
+    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1", "conflict", 409);
     expect(mocks.dequeueAction).not.toHaveBeenCalled();
     expect(result.conflicts).toBe(1);
     expect(result.reconciliationRequired).toBe(1);
@@ -102,12 +105,68 @@ describe("offline sync retry safety", () => {
     expect(result.reconciliationRequired).toBe(1);
   });
 
+  it("retains 401 and 403 responses for user attention instead of dropping the action", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401 }));
+    const unauthorized = await syncQueue();
+    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1", "auth_required", 401);
+    expect(mocks.dequeueAction).not.toHaveBeenCalled();
+    expect(unauthorized.reconciliationRequired).toBe(1);
+
+    vi.clearAllMocks();
+    mocks.getQueuedActions.mockReturnValue([action()]);
+    mocks.getQueueSize.mockReturnValue(1);
+    mocks.markNeedsReconciliation.mockReturnValue(true);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 403 }));
+    const forbidden = await syncQueue();
+    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1", "permission_denied", 403);
+    expect(mocks.dequeueAction).not.toHaveBeenCalled();
+    expect(forbidden.reconciliationRequired).toBe(1);
+  });
+
+  it("retains production-disabled simulator 404 responses for manual review", async () => {
+    mocks.getQueuedActions.mockReturnValue([action({ url: "/api/prepay" })]);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+    const result = await syncQueue();
+    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1", "simulator_disabled", 404);
+    expect(mocks.dequeueAction).not.toHaveBeenCalled();
+    expect(result.reconciliationRequired).toBe(1);
+  });
+
   it("retries explicit 429 responses without treating them as ambiguous commits", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 429 }));
     const result = await syncQueue();
     expect(mocks.incrementRetry).toHaveBeenCalledWith("qa-1");
     expect(mocks.markNeedsReconciliation).not.toHaveBeenCalled();
     expect(result.reconciliationRequired).toBe(0);
+  });
+
+  it("forwards the authenticated session token when syncing queued actions", async () => {
+    localStorage.setItem("mekanix-token", "session-token-123");
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+    await syncQueue();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer session-token-123" }),
+      })
+    );
+  });
+
+  it("supports a targeted retry without sending unrelated queued actions", async () => {
+    mocks.getQueuedActions.mockReturnValue([
+      action({ id: "qa-target", url: "/api/wallets/withdraw" }),
+      action({ id: "qa-other", url: "/api/service-requests" }),
+    ]);
+    mocks.getQueueSize.mockReturnValue(2);
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+    await syncQueue(["qa-target"]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/wallets/withdraw"),
+      expect.anything()
+    );
   });
 
   it("dequeues a successfully synchronized action", async () => {

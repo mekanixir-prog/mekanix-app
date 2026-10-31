@@ -7,7 +7,8 @@
 // explicit reconciliation instead of being replayed blindly.
 // 409 responses remain visible as conflicts for the caller to surface.
 
-import { getQueuedActions, dequeueAction, incrementRetry, getQueueSize, markNeedsReconciliation } from "./offline-queue";
+import { getQueuedActions, dequeueAction, incrementRetry, getQueueSize, markNeedsReconciliation, markAttempt } from "./offline-queue";
+import { authFetch } from "@/lib/fetch-with-auth";
 
 export interface SyncResult {
   synced: number;
@@ -36,7 +37,7 @@ function supportsDurableIdempotency(action: { method: string }, target: URL): bo
     (action.method === "POST" && target.pathname === "/api/gateway/verify");
 }
 
-export async function syncQueue(): Promise<SyncResult> {
+export async function syncQueue(actionIds?: string[]): Promise<SyncResult> {
   const empty: SyncResult = { synced: 0, failed: 0, conflicts: 0, remaining: 0, reconciliationRequired: 0 };
   if (typeof window === "undefined") return empty;
   if (syncing) return { ...empty, remaining: getQueueSize() };
@@ -51,6 +52,7 @@ export async function syncQueue(): Promise<SyncResult> {
 
   try {
     for (const action of queue) {
+      if (actionIds && !actionIds.includes(action.id)) continue;
       if (action.needsReconciliation) {
         reconciliationRequired++;
         continue;
@@ -58,14 +60,15 @@ export async function syncQueue(): Promise<SyncResult> {
       const target = getSameOriginUrl(action);
       if (!target) {
         // Do not send credentials to an unknown origin; keep the action for review.
-        if (markNeedsReconciliation(action.id)) reconciliationRequired++;
+        if (markNeedsReconciliation(action.id, "cross_origin")) reconciliationRequired++;
         else failed++;
         continue;
       }
       const supportsRetry = supportsDurableIdempotency(action, target);
 
       try {
-        const res = await fetch(target.href, {
+        markAttempt(action.id);
+        const res = await authFetch(target.href, {
           method: action.method,
           headers: {
             "Content-Type": "application/json",
@@ -77,6 +80,7 @@ export async function syncQueue(): Promise<SyncResult> {
           body: action.body ? JSON.stringify(action.body) : undefined,
         });
   
+        markAttempt(action.id, res.status);
         if (res.ok) {
           dequeueAction(action.id);
           synced++;
@@ -85,33 +89,41 @@ export async function syncQueue(): Promise<SyncResult> {
           // payload or the server has an ambiguous legacy state. Preserve the
           // action behind the manual-review gate; never discard it silently.
           conflicts++;
-          if (markNeedsReconciliation(action.id)) reconciliationRequired++;
+          if (markNeedsReconciliation(action.id, "conflict", 409)) reconciliationRequired++;
           else failed++;
         } else if (res.status === 429) {
           // Explicit rate-limit responses mean the handler rejected the attempt.
           const stillQueued = incrementRetry(action.id);
-          if (!stillQueued) failed++;
+          if (!stillQueued) { failed++; reconciliationRequired++; }
         } else if (res.status >= 500) {
           if (supportsRetry) {
             const stillQueued = incrementRetry(action.id);
-            if (!stillQueued) failed++;
-          } else if (markNeedsReconciliation(action.id)) {
+            if (!stillQueued) { failed++; reconciliationRequired++; }
+          } else if (markNeedsReconciliation(action.id, "server_error", res.status)) {
             // A server error may occur after a non-idempotent side effect committed.
             // Do not blindly replay; keep the action for explicit state reconciliation.
             reconciliationRequired++;
           } else {
             failed++;
           }
+        } else if (res.status === 404 && (target.pathname === "/api/prepay" || target.pathname === "/api/gateway/verify")) {
+          // These simulator-only routes intentionally return 404 in production.
+          // Preserve the queued action for status review instead of discarding it.
+          if (markNeedsReconciliation(action.id, "simulator_disabled", 404)) reconciliationRequired++;
+          else failed++;
         } else if (res.status >= 400 && res.status < 500) {
-          // Client error (non-conflict) — don't retry, just remove.
-          dequeueAction(action.id);
-          failed++;
+          // Keep rejected actions visible. Auth, permission, validation, and
+          // missing-resource errors must not silently erase user intent.
+          const reason = res.status === 401 ? "auth_required"
+            : res.status === 403 ? "permission_denied" : "client_rejected";
+          if (markNeedsReconciliation(action.id, reason, res.status)) reconciliationRequired++;
+          else failed++;
         } else {
           // Unexpected response class: avoid replay unless this route is allowlisted.
           if (supportsRetry) {
             const stillQueued = incrementRetry(action.id);
-            if (!stillQueued) failed++;
-          } else if (markNeedsReconciliation(action.id)) {
+            if (!stillQueued) { failed++; reconciliationRequired++; }
+          } else if (markNeedsReconciliation(action.id, "unexpected_response", res.status)) {
             reconciliationRequired++;
           } else {
             failed++;
@@ -121,8 +133,8 @@ export async function syncQueue(): Promise<SyncResult> {
         // A network failure is ambiguous: the server may have committed already.
         if (supportsRetry) {
           const stillQueued = incrementRetry(action.id);
-          if (!stillQueued) failed++;
-        } else if (markNeedsReconciliation(action.id)) {
+          if (!stillQueued) { failed++; reconciliationRequired++; }
+        } else if (markNeedsReconciliation(action.id, "network_error")) {
           reconciliationRequired++;
         } else {
           failed++;

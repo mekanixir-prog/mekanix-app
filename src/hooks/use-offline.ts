@@ -85,8 +85,8 @@ export function useOffline() {
     isOnline,
     queueSize,
     enqueueAction,
-    syncQueue: async () => {
-      const result = await syncQueue();
+    syncQueue: async (actionIds?: string[]) => {
+      const result = await syncQueue(actionIds);
       window.dispatchEvent(new Event("storage"));
       setSyncTick((t) => t + 1);
       return result;

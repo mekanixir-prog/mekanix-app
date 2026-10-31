@@ -13,6 +13,7 @@ import {
   clearQueue,
   markNeedsReconciliation,
   retryAfterReconciliation,
+  markAttempt,
   type QueuedAction,
 } from "@/lib/offline-queue";
 
@@ -71,6 +72,37 @@ describe("offline-queue — enqueueAction()", () => {
       ids.add(enqueueAction({ url: `/api/${i}`, method: "POST", body: i }));
     }
     expect(ids.size).toBe(50);
+  });
+});
+
+describe("offline-queue — legacy and corrupted storage", () => {
+  it("quarantines malformed JSON instead of silently returning an empty queue", () => {
+    localStorage.setItem("mekanix-offline-queue", "{broken-json");
+    const queue = getQueuedActions();
+    expect(queue).toHaveLength(1);
+    expect(queue[0]).toMatchObject({
+      url: "",
+      needsReconciliation: true,
+      reconciliationReason: "legacy_unknown",
+    });
+    expect(getQueuedActions()[0].id).toBe(queue[0].id);
+  });
+
+  it("quarantines legacy actions that have no reconciliation safety flag", () => {
+    localStorage.setItem("mekanix-offline-queue", JSON.stringify([{
+      id: "old-action-1",
+      url: "/api/service-requests",
+      method: "POST",
+      body: { title: "old queued request" },
+      timestamp: 1_700_000_000_000,
+      retryCount: 0,
+      maxRetries: 3,
+    }]));
+    expect(getQueuedActions()[0]).toMatchObject({
+      id: "old-action-1",
+      needsReconciliation: true,
+      reconciliationReason: "legacy_unknown",
+    });
   });
 });
 
@@ -138,16 +170,20 @@ describe("offline-queue — incrementRetry()", () => {
     expect(getQueuedActions()[0].retryCount).toBe(2);
   });
 
-  it("removes the action and returns false once retryCount >= maxRetries (3)", () => {
+  it("retains the action for reconciliation once retryCount reaches maxRetries (3)", () => {
     const id = enqueueAction({ url: "/api/a", method: "POST", body: {} });
-    // Three increments → 1, 2, 3 — the third crosses the maxRetries threshold
+    // Three increments → 1, 2, 3 — the third gates the action for review
     expect(incrementRetry(id)).toBe(true); // 1
     expect(incrementRetry(id)).toBe(true); // 2
-    expect(incrementRetry(id)).toBe(false); // 3 → removed
+    expect(incrementRetry(id)).toBe(false); // 3 → retained for reconciliation
 
-    // The action is no longer in the queue
-    expect(getQueueSize()).toBe(0);
-    expect(getQueuedActions().find((a) => a.id === id)).toBeUndefined();
+    // The unresolved action remains visible; it is never silently discarded.
+    expect(getQueueSize()).toBe(1);
+    expect(getQueuedActions().find((a) => a.id === id)).toMatchObject({
+      needsReconciliation: true,
+      reconciliationReason: "retry_limit",
+      retryCount: 3,
+    });
   });
 
   it("does NOT affect other actions in the queue", () => {
@@ -158,19 +194,29 @@ describe("offline-queue — incrementRetry()", () => {
     // Burn through retries on id1 only
     incrementRetry(id1);
     incrementRetry(id1);
-    incrementRetry(id1); // removed
+    incrementRetry(id1); // retained for reconciliation
 
-    // id2 + id3 untouched
-    expect(getQueueSize()).toBe(2);
+    // All three remain; only id1 is gated for review.
+    expect(getQueueSize()).toBe(3);
     const queue = getQueuedActions();
-    expect(queue[0].id).toBe(id2);
-    expect(queue[0].retryCount).toBe(0);
-    expect(queue[1].id).toBe(id3);
-    expect(queue[1].retryCount).toBe(0);
+    expect(queue[0]).toMatchObject({ id: id1, needsReconciliation: true });
+    expect(queue[1]).toMatchObject({ id: id2, retryCount: 0 });
+    expect(queue[2]).toMatchObject({ id: id3, retryCount: 0 });
   });
 
   it("returns false if the action id is not in the queue", () => {
     expect(incrementRetry("qa_does_not_exist")).toBe(false);
+  });
+});
+
+describe("offline-queue — attempt metadata", () => {
+  it("records lastAttemptAt and the latest HTTP status", () => {
+    const id = enqueueAction({ url: "/api/wallets/withdraw", method: "POST", body: {} });
+    const before = Date.now();
+    expect(markAttempt(id, 503)).toBe(true);
+    const action = getQueuedActions()[0];
+    expect(action.lastAttemptAt).toBeGreaterThanOrEqual(before);
+    expect(action.lastStatus).toBe(503);
   });
 });
 
@@ -205,9 +251,13 @@ describe("offline-queue — getQueuedActions()", () => {
     expect(queue[0].body).toEqual({ foo: 1 });
   });
 
-  it("returns [] when localStorage holds invalid JSON (safe parse)", () => {
+  it("quarantines invalid JSON instead of silently dropping the queued data", () => {
     localStorage.setItem("mekanix-offline-queue", "not-json{");
-    expect(getQueuedActions()).toEqual([]);
+    expect(getQueuedActions()).toMatchObject([{
+      url: "",
+      needsReconciliation: true,
+      reconciliationReason: "legacy_unknown",
+    }]);
   });
 });
 
@@ -231,6 +281,6 @@ describe("offline-queue — reconciliation gate", () => {
   it("refuses to retry an action that has not been flagged for reconciliation", () => {
     const id = enqueueAction({ url: "/api/service-requests", method: "POST", body: {} });
     expect(retryAfterReconciliation(id)).toBe(false);
-    expect(getQueuedActions()[0].needsReconciliation).toBeUndefined();
+    expect(getQueuedActions()[0].needsReconciliation).toBe(false);
   });
 });
