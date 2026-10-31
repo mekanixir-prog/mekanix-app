@@ -127,7 +127,7 @@ describe("offline sync retry safety", () => {
     mocks.getQueuedActions.mockReturnValue([action({ url: "/api/prepay" })]);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }));
     const result = await syncQueue();
-    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1", "server_error", 404);
+    expect(mocks.markNeedsReconciliation).toHaveBeenCalledWith("qa-1", "simulator_disabled", 404);
     expect(mocks.dequeueAction).not.toHaveBeenCalled();
     expect(result.reconciliationRequired).toBe(1);
   });
