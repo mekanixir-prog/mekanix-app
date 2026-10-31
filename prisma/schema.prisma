@@ -416,8 +416,10 @@ model Payment {
   amount    Decimal
   currency  String        @default("IRR")
   method    String        @default("card")
-  status    PaymentStatus @default(PENDING)
-  createdAt DateTime      @default(now())
+  status       PaymentStatus @default(PENDING)
+  // Unique idempotency key for gateway-originated payments.
+  gatewayLogId String?       @unique
+  createdAt    DateTime      @default(now())
 }
 
 enum PaymentStatus {

@@ -2,76 +2,111 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 
-// Verify a payment (simulate Shaparak OTP verify).
-//
-// ⚠️ SIMULATOR ONLY — this endpoint is for development/testing.
-// In production, this returns 404 (same pattern as /api/auth/demo).
-// Real payment verification should call Zarinpal/IDPay verify API.
-//
-// SECURITY FIXES (from D1 migration review):
-//   1. Production guard: returns 404 in production
-//   2. Auth required: caller must be authenticated
-//   3. userId server-authoritative: comes from session, NOT client body
-//   4. Double-verification protection: optimistic check on log status
-//   5. Amount server-authoritative: comes from the gateway log, NOT client
-//
-// MIGRATION: Uses getDbForLib() instead of direct db import.
-
+// Verify a payment (simulated Shaparak OTP flow).
+// Simulator-only: real provider callbacks must use provider signature verification.
 export async function POST(req: Request) {
-  // Hard block in production — simulator must not be reachable
   if (process.env.NODE_ENV === "production") {
     return new NextResponse(null, { status: 404 });
   }
 
-  // Require authentication
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
-  const body = await req.json();
-  const { code, otp } = body;
-  if (!code) return NextResponse.json({ error: "code is required" }, { status: 400 });
-  if (!otp || otp.length < 4) {
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { code, otp } = body as Record<string, unknown>;
+  if (typeof code !== "string" || !code.trim()) {
+    return NextResponse.json({ error: "code is required" }, { status: 400 });
+  }
+  if (typeof otp !== "string" || otp.length < 4) {
     return NextResponse.json({ error: "Invalid OTP" }, { status: 400 });
   }
 
   const db = await getDbForLib();
-  const log = await db.paymentGatewayLog.findUnique({ where: { code } });
+  const normalizedCode = code.trim();
+  const log = await db.paymentGatewayLog.findUnique({ where: { code: normalizedCode } });
   if (!log) return NextResponse.json({ error: "Payment log not found" }, { status: 404 });
-
-  // SECURITY: userId comes from session, NOT from client body.
-  // The payment is attributed to the authenticated user, not whoever
-  // the client claims to be.
   if (log.userId !== session.userId) {
     return NextResponse.json({ error: "این درخواست متعلق به شما نیست" }, { status: 403 });
   }
-
-  // Atomic double-verify prevention: only transition to VERIFIED if not already verified
-  const verifyResult = await db.paymentGatewayLog.updateMany({
-    where: { id: log.id, status: { not: "VERIFIED" } },
-    data: { status: "VERIFIED", verifiedAt: new Date() },
-  });
-  if (verifyResult.count === 0) {
-    return NextResponse.json({ error: "Already verified" }, { status: 400 });
+  if (log.status === "FAILED" || log.status === "CANCELLED") {
+    return NextResponse.json({ error: "این پرداخت ناموفق یا لغو شده است" }, { status: 409 });
   }
 
-  // Create a Payment record — amount from server log, NOT from client
-  const payment = await db.payment.create({
-    data: {
-      code: `PAY-${Math.floor(8000 + Math.random() * 1000)}`,
-      invoiceId: null, // gateway payments are standalone (not tied to invoice)
-      userId: session.userId, // server-authoritative
-      amount: log.amount, // from server log, NOT client
-      currency: "IRR",
-      method: "card",
-      status: "SUCCEEDED",
-    },
-  });
+  // Recover safely if a previous request created the Payment but failed before
+  // linking it to the gateway log. gatewayLogId is a database-enforced unique key.
+  let payment = await db.payment.findUnique({ where: { gatewayLogId: log.id } });
+  if (payment) {
+    if (payment.userId !== session.userId || payment.status !== "SUCCEEDED") {
+      return NextResponse.json({ error: "وضعیت پرداخت قابل تأیید نیست" }, { status: 409 });
+    }
+    await db.paymentGatewayLog.update({
+      where: { id: log.id },
+      data: { status: "VERIFIED", verifiedAt: log.verifiedAt ?? new Date(), paymentId: payment.id },
+    });
+    return NextResponse.json({ ok: true, paymentId: payment.id, amount: payment.amount, purpose: log.purpose, alreadyVerified: true });
+  }
 
-  // Link the gateway log to the payment
+  // Legacy simulator callbacks marked the log VERIFIED before creating and
+  // linking the Payment. A VERIFIED row without the new gatewayLogId key may
+  // therefore represent an ambiguous partial write. Recover only when the
+  // legacy paymentId proves which Payment belongs to this attempt.
+  if (log.status === "VERIFIED") {
+    if (!log.paymentId) {
+      return NextResponse.json(
+        { error: "وضعیت پرداخت قدیمی مبهم است و نیاز به بررسی دستی دارد" },
+        { status: 409 }
+      );
+    }
+    const legacyPayment = await db.payment.findUnique({ where: { id: log.paymentId } });
+    if (!legacyPayment || legacyPayment.userId !== session.userId || legacyPayment.status !== "SUCCEEDED") {
+      return NextResponse.json({ error: "رکورد پرداخت قبلی قابل تطبیق نیست؛ بررسی دستی لازم است" }, { status: 409 });
+    }
+    return NextResponse.json({
+      ok: true, paymentId: legacyPayment.id, amount: legacyPayment.amount,
+      purpose: log.purpose, alreadyVerified: true,
+    });
+  }
+
+  // Create first with a unique idempotency key. If two callbacks race, the
+  // database permits exactly one Payment row. The losing request reloads it.
+  try {
+    payment = await db.payment.create({
+      data: {
+        code: `PAY-${log.code}`,
+        invoiceId: null,
+        userId: session.userId,
+        amount: log.amount,
+        currency: log.currency || "IRR",
+        method: "card",
+        status: "SUCCEEDED",
+        gatewayLogId: log.id,
+      },
+    });
+  } catch (error: any) {
+    if (error?.code !== "P2002" && !error?.message?.includes("Unique constraint")) {
+      throw error;
+    }
+    payment = await db.payment.findUnique({ where: { gatewayLogId: log.id } });
+    if (!payment || payment.userId !== session.userId || payment.status !== "SUCCEEDED") {
+      throw error;
+    }
+  }
+
+  // If this write fails, the payment remains discoverable by gatewayLogId;
+  // retrying this endpoint repairs the log instead of losing the payment.
   await db.paymentGatewayLog.update({
     where: { id: log.id },
-    data: { paymentId: payment.id },
+    data: { status: "VERIFIED", verifiedAt: log.verifiedAt ?? new Date(), paymentId: payment.id },
   });
 
-  return NextResponse.json({ ok: true, paymentId: payment.id, amount: log.amount, purpose: log.purpose });
+  return NextResponse.json({ ok: true, paymentId: payment.id, amount: payment.amount, purpose: log.purpose });
 }

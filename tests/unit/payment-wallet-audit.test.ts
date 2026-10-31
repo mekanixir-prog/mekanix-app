@@ -356,168 +356,210 @@ describe("/api/payments — duplicate POST idempotency (sequential)", () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────
-// 4. /api/gateway/verify — duplicate verify (sequential) → 2nd is 400 + no extra Payment
+// 4–5. /api/gateway/verify — unique payment idempotency + crash recovery
 // ──────────────────────────────────────────────────────────────────────────
-describe("GW-02 — /api/gateway/verify duplicate verify idempotency", () => {
+describe("GW-03 — /api/gateway/verify durable idempotency", () => {
+  const existingPayment = {
+    id: "pay-1",
+    code: "PAY-PG-7001",
+    userId: "user-1",
+    amount: 100_000,
+    currency: "IRR",
+    status: "SUCCEEDED",
+  };
+
   beforeEach(() => {
-    // Authenticated CUSTOMER for verify
     mockRequireAuth.mockResolvedValue({
       userId: "user-1",
       role: "CUSTOMER",
       phone: "+989120000000",
       isGuest: false,
     });
-    // Gateway log lookup returns a REDIRECTED log owned by user-1
     mockPaymentGatewayLogFindUnique.mockResolvedValue({
       id: "log-1",
       code: "PG-7001",
       userId: "user-1",
       amount: 100_000,
+      currency: "IRR",
       status: "REDIRECTED",
       purpose: "vip",
+      verifiedAt: null,
     });
-    // Payment.create returns a single Payment row
-    mockPaymentCreate.mockResolvedValue({
-      id: "pay-1",
-      code: "PAY-8001",
-      amount: 100_000,
-      status: "SUCCEEDED",
-    });
-    // PaymentGatewayLog.update (linking paymentId) — best-effort
+    mockPaymentFindUnique.mockResolvedValue(null);
+    mockPaymentCreate.mockResolvedValue(existingPayment);
     mockPaymentGatewayLogUpdate.mockResolvedValue({});
   });
 
-  it("first verify succeeds (200) and creates exactly one Payment", async () => {
-    // updateMany on the gateway log returns count=1 → first transition to VERIFIED wins
-    mockPaymentGatewayLogUpdateMany.mockResolvedValueOnce({ count: 1 });
-
-    const req = makePostRequest("http://localhost/api/gateway/verify", {
+  it("creates one payment keyed by gatewayLogId and then marks the log verified", async () => {
+    const res = await verifyPOST(makePostRequest("http://localhost/api/gateway/verify", {
       code: "PG-7001",
       otp: "1234",
-    });
-    const res = await verifyPOST(req);
+    }));
 
     expect(res.status).toBe(200);
     expect(mockPaymentCreate).toHaveBeenCalledTimes(1);
-    expect(mockPaymentGatewayLogUpdate).toHaveBeenCalledTimes(1);
-    // Verify the WHERE clause uses the atomic status precondition (GW-02 invariant)
-    const updateArgs = mockPaymentGatewayLogUpdateMany.mock.calls[0][0];
-    expect(updateArgs.where).toEqual({
-      id: "log-1",
-      status: { not: "VERIFIED" },
+    expect(mockPaymentCreate.mock.calls[0][0].data).toMatchObject({
+      userId: "user-1",
+      amount: 100_000,
+      status: "SUCCEEDED",
+      gatewayLogId: "log-1",
     });
+    expect(mockPaymentGatewayLogUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "log-1" },
+      data: expect.objectContaining({ status: "VERIFIED", paymentId: "pay-1" }),
+    }));
   });
 
-  it("second verify (duplicate) returns 400 'Already verified' and does NOT create another Payment", async () => {
-    // First call wins the transition
-    mockPaymentGatewayLogUpdateMany.mockResolvedValueOnce({ count: 1 });
-    // Second call: log is now VERIFIED → updateMany matches 0 rows
-    mockPaymentGatewayLogUpdateMany.mockResolvedValueOnce({ count: 0 });
+  it("replays the same successful payment instead of rejecting or creating a duplicate", async () => {
+    mockPaymentFindUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(existingPayment);
 
-    const req1 = makePostRequest("http://localhost/api/gateway/verify", {
+    const req = () => makePostRequest("http://localhost/api/gateway/verify", {
       code: "PG-7001",
       otp: "1234",
     });
-    const req2 = makePostRequest("http://localhost/api/gateway/verify", {
-      code: "PG-7001",
-      otp: "1234",
-    });
+    const first = await verifyPOST(req());
+    const second = await verifyPOST(req());
 
-    const res1 = await verifyPOST(req1);
-    const res2 = await verifyPOST(req2);
-
-    expect(res1.status).toBe(200);
-    expect(res2.status).toBe(400);
-
-    // CRITICAL: Payment.create was called EXACTLY ONCE across both requests —
-    // no double-credit from a replayed verify callback.
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect((await second.json()).alreadyVerified).toBe(true);
     expect(mockPaymentCreate).toHaveBeenCalledTimes(1);
-    // Gateway-log update (linking paymentId) also only happened for the winner.
-    expect(mockPaymentGatewayLogUpdate).toHaveBeenCalledTimes(1);
   });
 
-  it("returns 403 when verify is attempted for a gateway log owned by another user", async () => {
+  it("recovers when Payment creation succeeded but gateway-log linking failed", async () => {
+    mockPaymentFindUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(existingPayment);
+    mockPaymentGatewayLogUpdate
+      .mockRejectedValueOnce(new Error("temporary database failure"))
+      .mockResolvedValueOnce({});
+
+    const req = () => makePostRequest("http://localhost/api/gateway/verify", {
+      code: "PG-7001",
+      otp: "1234",
+    });
+
+    await expect(verifyPOST(req())).rejects.toThrow("temporary database failure");
+    const retry = await verifyPOST(req());
+
+    expect(retry.status).toBe(200);
+    expect(mockPaymentCreate).toHaveBeenCalledTimes(1);
+    expect(mockPaymentGatewayLogUpdate).toHaveBeenCalledTimes(2);
+  });
+
+  it("handles concurrent callbacks through the database unique constraint", async () => {
+    mockPaymentFindUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(existingPayment);
+    mockPaymentCreate
+      .mockResolvedValueOnce(existingPayment)
+      .mockRejectedValueOnce({
+        code: "P2002",
+        message: "Unique constraint failed on gatewayLogId",
+      });
+
+    const req = () => makePostRequest("http://localhost/api/gateway/verify", {
+      code: "PG-7001",
+      otp: "1234",
+    });
+    const results = await Promise.all([verifyPOST(req()), verifyPOST(req())]);
+
+    expect(results.map((r) => r.status)).toEqual([200, 200]);
+    expect(mockPaymentCreate).toHaveBeenCalledTimes(2);
+    expect(mockPaymentGatewayLogUpdate).toHaveBeenCalledTimes(2);
+  });
+
+  it("recovers a legacy VERIFIED log only when its paymentId identifies the existing successful payment", async () => {
     mockPaymentGatewayLogFindUnique.mockResolvedValue({
       id: "log-1",
       code: "PG-7001",
-      userId: "user-2", // different from session.userId
+      userId: "user-1",
+      amount: 100_000,
+      currency: "IRR",
+      status: "VERIFIED",
+      purpose: "vip",
+      paymentId: "pay-1",
+      verifiedAt: new Date("2026-10-30T10:00:00.000Z"),
+    });
+    mockPaymentFindUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(existingPayment);
+
+    const res = await verifyPOST(makePostRequest("http://localhost/api/gateway/verify", {
+      code: "PG-7001",
+      otp: "1234",
+    }));
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).paymentId).toBe("pay-1");
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
+    expect(mockPaymentGatewayLogUpdate).not.toHaveBeenCalled();
+  });
+
+  it("blocks legacy VERIFIED logs without a linked payment instead of risking a duplicate credit", async () => {
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "log-1",
+      code: "PG-7001",
+      userId: "user-1",
+      amount: 100_000,
+      currency: "IRR",
+      status: "VERIFIED",
+      purpose: "vip",
+      paymentId: null,
+      verifiedAt: new Date("2026-10-30T10:00:00.000Z"),
+    });
+    mockPaymentFindUnique.mockResolvedValueOnce(null);
+
+    const res = await verifyPOST(makePostRequest("http://localhost/api/gateway/verify", {
+      code: "PG-7001",
+      otp: "1234",
+    }));
+
+    expect(res.status).toBe(409);
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
+    expect(mockPaymentGatewayLogUpdate).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 when the gateway log belongs to another user", async () => {
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "log-1",
+      code: "PG-7001",
+      userId: "user-2",
       amount: 100_000,
       status: "REDIRECTED",
       purpose: "vip",
     });
 
-    const req = makePostRequest("http://localhost/api/gateway/verify", {
+    const res = await verifyPOST(makePostRequest("http://localhost/api/gateway/verify", {
       code: "PG-7001",
       otp: "1234",
-    });
-    const res = await verifyPOST(req);
+    }));
 
     expect(res.status).toBe(403);
     expect(mockPaymentCreate).not.toHaveBeenCalled();
-    expect(mockPaymentGatewayLogUpdateMany).not.toHaveBeenCalled();
-  });
-});
-
-// ──────────────────────────────────────────────────────────────────────────
-// 5. /api/gateway/verify — concurrent verify (Promise.all of 2) → exactly one credit
-// ──────────────────────────────────────────────────────────────────────────
-describe("GW-02 — /api/gateway/verify concurrent verify (race)", () => {
-  beforeEach(() => {
-    mockRequireAuth.mockResolvedValue({
-      userId: "user-1",
-      role: "CUSTOMER",
-      phone: "+989120000000",
-      isGuest: false,
-    });
-    mockPaymentGatewayLogFindUnique.mockResolvedValue({
-      id: "log-1",
-      code: "PG-7001",
-      userId: "user-1",
-      amount: 100_000,
-      status: "REDIRECTED",
-      purpose: "vip",
-    });
-    mockPaymentCreate.mockResolvedValue({
-      id: "pay-1",
-      code: "PAY-8001",
-      amount: 100_000,
-      status: "SUCCEEDED",
-    });
-    mockPaymentGatewayLogUpdate.mockResolvedValue({});
+    expect(mockPaymentFindUnique).not.toHaveBeenCalled();
   });
 
-  it("Promise.all([verify, verify]) → exactly ONE Payment.create (atomic updateMany wins)", async () => {
-    // Race simulation: the first updateMany to hit the DB wins (count=1);
-    // the second sees the row already VERIFIED (count=0).
-    // Because Promise.all runs the handlers concurrently in the same event
-    // loop tick, both reach the updateMany call before either completes —
-    // but our mock serializes them and resolves the first with count=1,
-    // the second with count=0.
-    mockPaymentGatewayLogUpdateMany
-      .mockResolvedValueOnce({ count: 1 }) // winner
-      .mockResolvedValueOnce({ count: 0 }); // loser
-
-    const req1 = makePostRequest("http://localhost/api/gateway/verify", {
-      code: "PG-7001",
-      otp: "1234",
+  it("rejects malformed JSON and invalid OTP without touching payment records", async () => {
+    const malformed = new Request("http://localhost/api/gateway/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{",
     });
-    const req2 = makePostRequest("http://localhost/api/gateway/verify", {
+    const invalidOtp = makePostRequest("http://localhost/api/gateway/verify", {
       code: "PG-7001",
-      otp: "1234",
+      otp: 1234,
     });
+    const nullBody = makePostRequest("http://localhost/api/gateway/verify", null);
 
-    const [res1, res2] = await Promise.all([verifyPOST(req1), verifyPOST(req2)]);
-
-    // One of the two must be 200, the other 400 (no double-credit).
-    const statuses = [res1.status, res2.status].sort();
-    expect(statuses).toEqual([200, 400]);
-
-    // CRITICAL invariant: Payment.create was called EXACTLY ONCE across both
-    // concurrent verify requests — the atomic `updateMany WHERE status != VERIFIED`
-    // closes the TOCTOU window that a non-atomic findUnique+check+update would open.
-    expect(mockPaymentCreate).toHaveBeenCalledTimes(1);
-    // The gateway-log paymentId link also happens exactly once.
-    expect(mockPaymentGatewayLogUpdate).toHaveBeenCalledTimes(1);
+    expect((await verifyPOST(malformed)).status).toBe(400);
+    expect((await verifyPOST(invalidOtp)).status).toBe(400);
+    expect((await verifyPOST(nullBody)).status).toBe(400);
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
+    expect(mockPaymentFindUnique).not.toHaveBeenCalled();
   });
 });
 
