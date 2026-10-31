@@ -48,9 +48,10 @@ export async function GET(req: Request) {
         jobId: job.id,
         jobCode: job.code,
         paidAt: job.prepayPaidAt,
-        gross: Number(job.inspectionFee ?? 0) + Number(job.travelFee ?? 0),
-        commission: Number(job.platformCommission ?? 0),
-        net: Number(job.netEarnings ?? 0),
+        inspectionFee: String(job.inspectionFee ?? 0),
+        travelFee: String(job.travelFee ?? 0),
+        commission: String(job.platformCommission ?? 0),
+        net: String(job.netEarnings ?? 0),
       },
     });
   }
