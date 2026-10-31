@@ -12,14 +12,17 @@ export async function POST(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
-  let body: any;
+  let body: unknown;
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { code, otp } = body;
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { code, otp } = body as Record<string, unknown>;
   if (typeof code !== "string" || !code.trim()) {
     return NextResponse.json({ error: "code is required" }, { status: 400 });
   }
@@ -28,7 +31,8 @@ export async function POST(req: Request) {
   }
 
   const db = await getDbForLib();
-  const log = await db.paymentGatewayLog.findUnique({ where: { code } });
+  const normalizedCode = code.trim();
+  const log = await db.paymentGatewayLog.findUnique({ where: { code: normalizedCode } });
   if (!log) return NextResponse.json({ error: "Payment log not found" }, { status: 404 });
   if (log.userId !== session.userId) {
     return NextResponse.json({ error: "این درخواست متعلق به شما نیست" }, { status: 403 });
@@ -49,6 +53,27 @@ export async function POST(req: Request) {
       data: { status: "VERIFIED", verifiedAt: log.verifiedAt ?? new Date(), paymentId: payment.id },
     });
     return NextResponse.json({ ok: true, paymentId: payment.id, amount: payment.amount, purpose: log.purpose, alreadyVerified: true });
+  }
+
+  // Legacy simulator callbacks marked the log VERIFIED before creating and
+  // linking the Payment. A VERIFIED row without the new gatewayLogId key may
+  // therefore represent an ambiguous partial write. Recover only when the
+  // legacy paymentId proves which Payment belongs to this attempt.
+  if (log.status === "VERIFIED") {
+    if (!log.paymentId) {
+      return NextResponse.json(
+        { error: "وضعیت پرداخت قدیمی مبهم است و نیاز به بررسی دستی دارد" },
+        { status: 409 }
+      );
+    }
+    const legacyPayment = await db.payment.findUnique({ where: { id: log.paymentId } });
+    if (!legacyPayment || legacyPayment.userId !== session.userId || legacyPayment.status !== "SUCCEEDED") {
+      return NextResponse.json({ error: "رکورد پرداخت قبلی قابل تطبیق نیست؛ بررسی دستی لازم است" }, { status: 409 });
+    }
+    return NextResponse.json({
+      ok: true, paymentId: legacyPayment.id, amount: legacyPayment.amount,
+      purpose: log.purpose, alreadyVerified: true,
+    });
   }
 
   // Create first with a unique idempotency key. If two callbacks race, the
