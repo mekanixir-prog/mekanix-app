@@ -93,22 +93,32 @@ describe("admin withdrawal API", () => {
 
   it("records PAID only when the bank destination has a valid Sheba checksum", async () => {
     const validSheba = "IR062960000000100324200001";
-    const validBefore = { ...before, shebaNumber: validSheba };
+    const validBefore = { ...before, status: "APPROVED", shebaNumber: validSheba };
     mocks.find.mockReset();
     mocks.find
       .mockResolvedValueOnce(validBefore)
-      .mockResolvedValueOnce({ method: "bank", shebaNumber: validSheba })
-      .mockResolvedValueOnce({ ...validBefore, status: "PAID" });
+      .mockResolvedValueOnce({ ...validBefore, status: "PAID", txnId: "BANK-TRX-2026-0001" });
 
-    const response = await PATCH(request({ status: "PAID" }), {
+    const response = await PATCH(request({ status: "PAID", transactionReference: "BANK-TRX-2026-0001" }), {
       params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
     });
     expect(response.status).toBe(200);
     expect(mocks.update).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      withdrawalId: "wd-1", action: "PAID", adminId: "admin-1",
+      withdrawalId: "wd-1", action: "PAID", adminId: "admin-1", payoutReference: "BANK-TRX-2026-0001",
     }));
     expect(mocks.audit).toHaveBeenCalledTimes(1);
     expect(mocks.notify).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires a real external bank reference before marking an approved withdrawal paid", async () => {
+    const approved = { ...before, status: "APPROVED", shebaNumber: "IR062960000000100324200001" };
+    mocks.find.mockReset().mockResolvedValueOnce(approved);
+    const response = await PATCH(request({ status: "PAID" }), {
+      params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
+    });
+    expect(response.status).toBe(400);
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.notify).not.toHaveBeenCalled();
   });
 
   it("does not mark a masked card destination as paid", async () => {
