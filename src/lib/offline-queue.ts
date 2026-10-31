@@ -53,7 +53,7 @@ export function getQueuedActions(): QueuedAction[] {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) {
       const quarantined = [quarantineAction(raw, 0, parsed)];
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(quarantined));
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(quarantined)); } catch { /* keep the in-memory quarantine */ }
       return quarantined;
     }
 
