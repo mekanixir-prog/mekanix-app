@@ -177,30 +177,28 @@ let initialized = false;
 
 export function initPaymentProvider(): void {
   if (initialized) return;
-  initialized = true;
+
+  // The adapter scaffolding is not yet wired into the authoritative payment
+  // lifecycle (initiate -> persisted attempt -> provider verify -> ledger).
+  // Fail closed even if someone sets PAYMENT_PROVIDER and credentials early.
+  // Production must never silently fall back to a successful simulator.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "Live payments are disabled: the provider adapter is not wired into the authoritative payment lifecycle (issue #24)"
+    );
+  }
 
   const provider = process.env.PAYMENT_PROVIDER?.toLowerCase().trim();
-
-  if (provider === "zarinpal" && process.env.ZARINPAL_MERCHANT_ID) {
-    console.log("💳 Payment provider: Zarinpal");
-    const z = createZarinpalProvider(process.env.ZARINPAL_MERCHANT_ID);
-    currentCreate = z.create;
-    currentVerify = z.verify;
-  } else if (provider === "idpay" && process.env.IDPAY_API_KEY) {
-    console.log("💳 Payment provider: IDPay");
-    const i = createIdpayProvider(process.env.IDPAY_API_KEY);
-    currentCreate = i.create;
-    currentVerify = i.verify;
-  } else if (provider === "nextpay" && process.env.NEXTPAY_API_KEY) {
-    // NextPay provider — stub for now (implementation follows same pattern)
-    // Real wiring requires NEXTPAY_API_KEY + verifying their API contract
-    console.log("💳 Payment provider: NextPay (stub — not yet implemented, falling back to simulator)");
-  } else {
-    if (provider && provider !== "simulator") {
-      console.warn(`⚠️  PAYMENT_PROVIDER=${provider || "unset"} but required credentials missing — using simulator`);
-    }
-    console.log("💳 Payment provider: simulator (dev mode)");
+  if (provider && provider !== "simulator") {
+    throw new Error(
+      `Payment provider "${provider}" is not enabled yet. Complete sandbox certification and route integration before selecting a real provider.`
+    );
   }
+
+  currentCreate = simulatorCreate;
+  currentVerify = simulatorVerify;
+  initialized = true;
+  console.log("💳 Payment provider: simulator (non-production only)");
 }
 
 export async function createPayment(req: PaymentRequest): Promise<PaymentResult> {
