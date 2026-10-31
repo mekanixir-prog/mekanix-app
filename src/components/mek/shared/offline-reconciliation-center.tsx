@@ -254,6 +254,7 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, onSync 
   function confirmCompleted(action: QueuedAction) {
     if (checks[action.id]?.state !== "COMMITTED") return;
     dequeueAction(action.id);
+    window.dispatchEvent(new Event("storage"));
     setConfirmDeleteId(null);
     setChecks((current) => {
       const next = { ...current };
@@ -266,6 +267,7 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, onSync 
   function confirmCancel(action: QueuedAction) {
     if (confirmDeleteId !== action.id) return;
     dequeueAction(action.id);
+    window.dispatchEvent(new Event("storage"));
     setConfirmDeleteId(null);
     setChecks((current) => {
       const next = { ...current };
