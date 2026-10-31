@@ -728,6 +728,7 @@ model WalletTransaction {
   createdAt        DateTime  @default(now())
 
   @@index([walletId, status])
+  @@index([status, holdUntil, id])
   @@index([jobId])
 }
 
