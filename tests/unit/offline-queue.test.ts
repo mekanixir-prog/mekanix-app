@@ -11,6 +11,8 @@ import {
   incrementRetry,
   getQueueSize,
   clearQueue,
+  markNeedsReconciliation,
+  retryAfterReconciliation,
   type QueuedAction,
 } from "@/lib/offline-queue";
 
@@ -206,5 +208,29 @@ describe("offline-queue — getQueuedActions()", () => {
   it("returns [] when localStorage holds invalid JSON (safe parse)", () => {
     localStorage.setItem("mekanix-offline-queue", "not-json{");
     expect(getQueuedActions()).toEqual([]);
+  });
+});
+
+
+describe("offline-queue — reconciliation gate", () => {
+  it("marks an ambiguous action and keeps it queued", () => {
+    const id = enqueueAction({ url: "/api/service-requests", method: "POST", body: { issue: "engine" } });
+    expect(markNeedsReconciliation(id)).toBe(true);
+    expect(getQueuedActions()).toHaveLength(1);
+    expect(getQueuedActions()[0].needsReconciliation).toBe(true);
+  });
+
+  it("does not clear a reconciliation gate until explicitly acknowledged", () => {
+    const id = enqueueAction({ url: "/api/service-requests", method: "POST", body: { issue: "engine" } });
+    markNeedsReconciliation(id);
+    expect(retryAfterReconciliation(id)).toBe(true);
+    expect(getQueuedActions()[0].needsReconciliation).toBe(false);
+    expect(getQueuedActions()[0].retryCount).toBe(0);
+  });
+
+  it("refuses to retry an action that has not been flagged for reconciliation", () => {
+    const id = enqueueAction({ url: "/api/service-requests", method: "POST", body: {} });
+    expect(retryAfterReconciliation(id)).toBe(false);
+    expect(getQueuedActions()[0].needsReconciliation).toBeUndefined();
   });
 });
