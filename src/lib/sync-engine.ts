@@ -109,7 +109,7 @@ export async function syncQueue(actionIds?: string[]): Promise<SyncResult> {
         } else if (res.status === 404 && (target.pathname === "/api/prepay" || target.pathname === "/api/gateway/verify")) {
           // These simulator-only routes intentionally return 404 in production.
           // Preserve the queued action for status review instead of discarding it.
-          if (markNeedsReconciliation(action.id, "server_error", 404)) reconciliationRequired++;
+          if (markNeedsReconciliation(action.id, "simulator_disabled", 404)) reconciliationRequired++;
           else failed++;
         } else if (res.status >= 400 && res.status < 500) {
           // Keep rejected actions visible. Auth, permission, validation, and
