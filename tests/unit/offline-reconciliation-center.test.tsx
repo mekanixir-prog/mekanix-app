@@ -34,6 +34,8 @@ function renderCenter(queueSize = getQueueSize()) {
       open
       isOnline
       queueSize={queueSize}
+      isFa
+      lang="fa"
       onSync={sync}
     />
   );
