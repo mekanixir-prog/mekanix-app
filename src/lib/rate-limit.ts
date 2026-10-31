@@ -38,7 +38,8 @@ export function getClientId(req: Request, userId?: string): string {
   // trusted hop (and is the value appended by the proxy).
   const forwarded = req.headers.get("x-forwarded-for");
   if (forwarded) {
-    const rightMost = forwarded.split(",").map((value) => value.trim()).filter(Boolean).at(-1);
+    const entries = forwarded.split(",").map((value) => value.trim()).filter(Boolean);
+    const rightMost = entries[entries.length - 1];
     if (rightMost) return rightMost;
   }
 
