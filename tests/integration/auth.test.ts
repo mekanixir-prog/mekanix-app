@@ -42,6 +42,8 @@ const mockCustomerCreate = vi.fn().mockResolvedValue({});
 const mockSessionCreate = vi.fn().mockResolvedValue({});
 const mockSessionFindUnique = vi.fn().mockResolvedValue(null);
 const mockSessionUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
+const mockRateLimitAsync = vi.fn();
+const mockGetClientId = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -74,9 +76,9 @@ vi.mock("@/lib/db", () => ({
 // don't trip across tests.
 vi.mock("@/lib/rate-limit", () => ({
   rateLimit: vi.fn(() => ({ success: true, resetMs: 60_000 })),
-  rateLimitAsync: vi.fn().mockResolvedValue({ success: true, resetMs: 60_000 }),
+  rateLimitAsync: (...args: any[]) => mockRateLimitAsync(...args),
   checkRateLimit: vi.fn(() => null),
-  getClientId: vi.fn(() => "127.0.0.1"),
+  getClientId: (...args: any[]) => mockGetClientId(...args),
   RATE_LIMITS: {
     OTP_SEND: { max: 5, windowMs: 60_000 },
     OTP_VERIFY: { max: 5, windowMs: 60_000 },
@@ -103,6 +105,8 @@ function jsonReq(url: string, body: unknown): Request {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockRateLimitAsync.mockResolvedValue({ success: true, resetMs: 60_000 });
+  mockGetClientId.mockReturnValue("127.0.0.1");
   // Restore default mock implementations after each test
   mockOtpUpdateMany.mockResolvedValue({ count: 0 });
   mockOtpCreate.mockResolvedValue({});
@@ -152,6 +156,67 @@ describe("integration — POST /api/auth/otp/send", () => {
     );
     // And it must NOT be the plaintext code itself.
     expect(createCall.data.code).not.toBe(body.code);
+  });
+
+  it("applies the normalized phone budget before the client-IP budget", async () => {
+    const req = jsonReq("https://mekanix.test/api/auth/otp/send", {
+      phone: "+98 912-123-4567",
+    });
+    const res = await otpSendPOST(req);
+    expect(res.status).toBe(200);
+    expect(mockRateLimitAsync).toHaveBeenNthCalledWith(1, "otp-send:phone:+989121234567", 5, 10 * 60 * 1000);
+    expect(mockRateLimitAsync).toHaveBeenNthCalledWith(2, "otp-send:ip:127.0.0.1", 20, 60 * 60 * 1000);
+  });
+
+  it("returns 429 and stops before the IP bucket when the phone budget is exhausted", async () => {
+    mockRateLimitAsync.mockResolvedValueOnce({ success: false, resetMs: 90_000 });
+    const res = await otpSendPOST(jsonReq("https://mekanix.test/api/auth/otp/send", {
+      phone: "+989121234567",
+    }));
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("90");
+    expect(mockRateLimitAsync).toHaveBeenCalledTimes(1);
+    expect(mockOtpUpdateMany).not.toHaveBeenCalled();
+    expect(mockOtpCreate).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 and stops before the IP bucket when the phone store is unavailable", async () => {
+    mockRateLimitAsync.mockResolvedValueOnce({ success: false, resetMs: 30_000, unavailable: true });
+    const res = await otpSendPOST(jsonReq("https://mekanix.test/api/auth/otp/send", {
+      phone: "+989121234567",
+    }));
+    expect(res.status).toBe(503);
+    expect(res.headers.get("Retry-After")).toBe("30");
+    expect(mockRateLimitAsync).toHaveBeenCalledTimes(1);
+    expect(mockOtpCreate).not.toHaveBeenCalled();
+  });
+
+  it("returns 429 when the IP budget is exhausted after the phone budget allows", async () => {
+    mockRateLimitAsync
+      .mockResolvedValueOnce({ success: true, resetMs: 600_000 })
+      .mockResolvedValueOnce({ success: false, resetMs: 120_000 });
+    const res = await otpSendPOST(jsonReq("https://mekanix.test/api/auth/otp/send", {
+      phone: "+989121234567",
+    }));
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("120");
+    expect(mockRateLimitAsync).toHaveBeenCalledTimes(2);
+    expect(mockOtpUpdateMany).not.toHaveBeenCalled();
+    expect(mockOtpCreate).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 when the IP store is unavailable after the phone budget allows", async () => {
+    mockRateLimitAsync
+      .mockResolvedValueOnce({ success: true, resetMs: 600_000 })
+      .mockResolvedValueOnce({ success: false, resetMs: 30_000, unavailable: true });
+    const res = await otpSendPOST(jsonReq("https://mekanix.test/api/auth/otp/send", {
+      phone: "+989121234567",
+    }));
+    expect(res.status).toBe(503);
+    expect(res.headers.get("Retry-After")).toBe("30");
+    expect(mockRateLimitAsync).toHaveBeenCalledTimes(2);
+    expect(mockOtpUpdateMany).not.toHaveBeenCalled();
+    expect(mockOtpCreate).not.toHaveBeenCalled();
   });
 
   it("accepts a phone with spaces / dashes (schema allows those, route strips them)", async () => {
