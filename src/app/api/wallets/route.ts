@@ -48,16 +48,18 @@ export async function GET(req: Request) {
     });
   }
 
-  // Auto-release matured escrow entries. The helper commits the transaction
-  // state transition and both wallet balance changes atomically for D1 and
-  // transactional Node databases. A failed balance update cannot strand an
-  // AVAILABLE transaction without its matching wallet credit.
-  const now = new Date();
-  const releasable = wallet.transactions.filter(
-    (t) => t.status === "PENDING" && t.holdUntil && t.holdUntil.getTime() <= now.getTime()
-  );
-  for (const transaction of releasable) {
-    await releaseWalletTransaction(db, wallet.id, transaction.id, now);
+  // Transitional fallback: keep the legacy GET-triggered release until the
+  // dedicated scheduled Worker has been deployed and verified. Once
+  // WALLET_RELEASE_SCHEDULED=true is set on this app Worker, escrow releases
+  // are performed only by the scheduled Worker, not by a read request.
+  if (process.env.WALLET_RELEASE_SCHEDULED !== "true") {
+    const now = new Date();
+    const releasable = wallet.transactions.filter(
+      (t) => t.status === "PENDING" && t.holdUntil && t.holdUntil.getTime() <= now.getTime()
+    );
+    for (const transaction of releasable) {
+      await releaseWalletTransaction(db, wallet.id, transaction.id, now);
+    }
   }
 
   const fresh = await db.wallet.findUnique({
