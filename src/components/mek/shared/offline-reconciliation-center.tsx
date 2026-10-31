@@ -63,6 +63,32 @@ function operationLabel(action: QueuedAction, isFa: boolean): string {
   return isFa ? "عملیات ثبت‌نشده در صف" : "Queued operation";
 }
 
+function affectedResource(action: QueuedAction, isFa: boolean): string {
+  const path = getPath(action);
+  const body = getBody(action);
+  const short = (value: unknown) => typeof value === "string" && value.trim()
+    ? value.trim().slice(0, 48)
+    : null;
+  if (path === "/api/prepay") {
+    const jobId = short(body.jobId);
+    return jobId ? `${isFa ? "کار" : "Job"} · ${jobId}` : (isFa ? "کار مرتبط با پرداخت" : "Related job");
+  }
+  if (path.startsWith("/api/care/bookings")) {
+    const vehicleId = short(body.vehicleId);
+    return vehicleId ? `${isFa ? "وسیله" : "Vehicle"} · ${vehicleId}` : (isFa ? "رزرو سرویس" : "Service booking");
+  }
+  if (path.startsWith("/api/service-requests")) {
+    const vehicleId = short(body.vehicleId);
+    return vehicleId ? `${isFa ? "وسیله" : "Vehicle"} · ${vehicleId}` : (isFa ? "درخواست تعمیر جدید" : "New repair request");
+  }
+  if (path.startsWith("/api/insurance/claim")) {
+    const policyId = short(body.policyId);
+    return policyId ? `${isFa ? "بیمه‌نامه" : "Policy"} · ${policyId}` : (isFa ? "پرونده خسارت" : "Insurance claim");
+  }
+  if (path === "/api/wallets/withdraw") return isFa ? "درخواست برداشت وجه" : "Withdrawal request";
+  return isFa ? "منبع درخواستی مشخص نشده" : "Resource not specified";
+}
+
 function reasonLabel(action: QueuedAction, isFa: boolean): string {
   const labels: Record<string, [string, string]> = {
     network_error: ["قطع ارتباط هنگام ارسال؛ ممکن است سرور عملیات را ثبت کرده باشد", "Network failure; the server may have committed the action"],
@@ -112,6 +138,7 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, onSync 
     created: "زمان ایجاد",
     attempted: "آخرین تلاش",
     retries: "تعداد تلاش",
+    resource: "منبع مرتبط",
     reference: "شناسه محلی",
     reason: "علت بررسی",
     status: "وضعیت سرور",
@@ -147,6 +174,7 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, onSync 
     created: "Created",
     attempted: "Last attempt",
     retries: "Attempts",
+    resource: "Affected resource",
     reference: "Local reference",
     reason: "Review reason",
     status: "Server state",
@@ -359,6 +387,7 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, onSync 
               </CardHeader>
               <CardContent className="space-y-3 px-4 py-3">
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-3">
+                  <div className="col-span-2 sm:col-span-3"><p className="text-muted-foreground">{copy.resource}</p><p className="mt-1 break-all font-medium">{affectedResource(action, isFa)}</p></div>
                   <div><p className="text-muted-foreground">{copy.created}</p><p className="mt-1 font-medium">{formatDate(action.timestamp, lang)}</p></div>
                   <div><p className="text-muted-foreground">{copy.attempted}</p><p className="mt-1 font-medium">{formatDate(action.lastAttemptAt, lang)}</p></div>
                   <div><p className="text-muted-foreground">{copy.retries}</p><p className="mt-1 font-medium tabular-nums">{action.retryCount}/{action.maxRetries}</p></div>
