@@ -35,6 +35,7 @@ const action = (overrides: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
   mocks.getQueuedActions.mockReturnValue([action()]);
   mocks.getQueueSize.mockReturnValue(1);
