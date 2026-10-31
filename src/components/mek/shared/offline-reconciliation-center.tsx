@@ -27,6 +27,8 @@ type Props = {
   open: boolean;
   isOnline: boolean;
   queueSize: number;
+  isFa: boolean;
+  lang: string;
   onSync: (actionIds?: string[]) => Promise<SyncResult>;
 };
 
@@ -119,7 +121,7 @@ function formatDate(value: number | undefined, lang: string): string {
   }
 }
 
-export function OfflineReconciliationCenter({ open, isOnline, queueSize, onSync }: Props) {
+export function OfflineReconciliationCenter({ open, isOnline, queueSize, isFa, lang, onSync }: Props) {
   const [actions, setActions] = useState<QueuedAction[]>([]);
   const [checks, setChecks] = useState<Record<string, ServerCheck>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -127,8 +129,6 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, onSync 
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const lang = typeof document !== "undefined" ? document.documentElement.lang : "fa";
-  const isFa = lang !== "en";
 
   const copy = useMemo(() => isFa ? {
     title: "مرکز همگام‌سازی و بررسی عملیات آفلاین",
