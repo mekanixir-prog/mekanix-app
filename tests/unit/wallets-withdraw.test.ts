@@ -65,6 +65,15 @@ describe("atomic withdrawal route", () => {
     expect(atomic).not.toHaveBeenCalled();
   });
 
+  it("rejects reuse of an idempotency key with a different request payload", async () => {
+    db.withdrawalRequest.findUnique.mockResolvedValue({
+      id: "wd-existing", walletId: "wallet-1", amount: 400, method: "card", cardNumber: null, bankName: null, shebaNumber: null, status: "REQUESTED",
+    });
+    const response = await POST(request({ amount: 500 }));
+    expect(response.status).toBe(409);
+    expect(atomic).not.toHaveBeenCalled();
+  });
+
   it("rejects invalid amounts and missing idempotency keys", async () => {
     expect((await POST(request({ amount: 0 }))).status).toBe(400);
     expect((await POST(request({ amount: 500 }, ""))).status).toBe(400);
