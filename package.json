@@ -20,7 +20,7 @@
     "check:hygiene": "bash scripts/check-hygiene.sh",
     "check:repo": "bun run lint && bunx tsc --noEmit && bun run check:hygiene",
     "setup": "bun install --frozen-lockfile && bunx prisma db push && bunx tsx prisma/seed.ts",
-    "deploy:wallet-release": "bunx wrangler deploy --config wrangler.wallet-release.toml"
+    "deploy:wallet-release:staging": "bunx wrangler deploy --config wrangler.wallet-release.toml"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
