@@ -58,7 +58,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
 
   let body: Record<string, any>;
   try {
-    body = await req.json();
+    const parsed: unknown = await req.json();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return NextResponse.json({ error: "JSON body must be an object" }, { status: 400 });
+    }
+    body = parsed as Record<string, any>;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
