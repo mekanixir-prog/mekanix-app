@@ -3,6 +3,8 @@ import { getDbForLib } from "@/lib/db-access";
 import { getAdminFromRequest } from "@/lib/admin-auth";
 import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/admin-api";
+import { updateWithdrawalAtomically } from "@/lib/withdrawal-admin-atomic";
+import { isValidIranianSheba } from "@/lib/iranian-iban";
 
 // Mass-assignment protection: define per-resource whitelists.
 const RESOURCE_ALLOWED_FIELDS: Record<string, readonly string[]> = {
@@ -63,6 +65,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
 
   // S3 FIX: validate user.status BEFORE stripping FORBIDDEN_FIELDS.
   const requestedUserStatus = body.status;
+  const requestedWithdrawalStatus = body.status;
+  const requestedWithdrawalAdminNotes = body.adminNotes;
   if (resource === "customers" && requestedUserStatus !== undefined) {
     if (
       typeof requestedUserStatus !== "string" ||
@@ -143,6 +147,91 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     const before = await db.review.findUnique({ where: { id } });
     result = await db.review.update({ where: { id }, data: safe as any });
     await safeAudit({ session: adminSession, action: "UPDATE_REVIEW", entity: "review", entityId: id, before, after: result, req });
+  } else if (resource === "withdrawals") {
+    const action = requestedWithdrawalStatus;
+    if (!["APPROVED", "REJECTED", "PAID"].includes(action)) {
+      return NextResponse.json({ error: "وضعیت عملیات برداشت نامعتبر است" }, { status: 400 });
+    }
+    const adminNotes = requestedWithdrawalAdminNotes === undefined ? null : requestedWithdrawalAdminNotes;
+    if (adminNotes !== null && (typeof adminNotes !== "string" || adminNotes.length > 500)) {
+      return NextResponse.json({ error: "یادداشت مدیر نامعتبر است" }, { status: 400 });
+    }
+
+    const before = await db.withdrawalRequest.findUnique({
+      where: { id },
+      select: {
+        id: true, code: true, walletId: true, amount: true, method: true,
+        status: true, requestedAt: true, processedAt: true, reviewerId: true,
+        adminNotes: true,
+        wallet: { select: { technician: { select: { userId: true } } } },
+      },
+    });
+    if (!before) return NextResponse.json({ error: "درخواست برداشت پیدا نشد" }, { status: 404 });
+
+    if (action === "PAID") {
+      const destination = await db.withdrawalRequest.findUnique({
+        where: { id },
+        select: { method: true, shebaNumber: true },
+      });
+      if (destination?.method !== "bank" || !isValidIranianSheba(destination.shebaNumber)) {
+        return NextResponse.json(
+          { error: "برای ثبت پرداخت، درخواست باید دارای شبای معتبر باشد؛ شماره کارت به‌صورت امن ماسک شده است" },
+          { status: 409 }
+        );
+      }
+    }
+
+    const changed = await updateWithdrawalAtomically(db, {
+      withdrawalId: id,
+      action,
+      adminId: adminSession.adminId,
+      adminNotes,
+      at: new Date(),
+    });
+    if (!changed) {
+      return NextResponse.json({ error: "وضعیت درخواست تغییر کرده یا عملیات قبلاً انجام شده است" }, { status: 409 });
+    }
+
+    result = await db.withdrawalRequest.findUnique({
+      where: { id },
+      select: {
+        id: true, code: true, walletId: true, amount: true, method: true,
+        status: true, requestedAt: true, processedAt: true, reviewerId: true,
+        adminNotes: true,
+        wallet: { select: { technician: { select: { userId: true } } } },
+      },
+    });
+    await safeAudit({
+      session: adminSession,
+      action: `WITHDRAWAL_${action}`,
+      entity: "withdrawalRequest",
+      entityId: id,
+      before,
+      after: result,
+      req,
+    });
+
+    // Notify the technician after the financial state has committed.
+    try {
+      const userId = before.wallet.technician.userId;
+      const message = action === "APPROVED"
+        ? "درخواست برداشت شما تأیید شد و در صف پرداخت قرار گرفت."
+        : action === "REJECTED"
+          ? "درخواست برداشت رد شد و مبلغ به کیف پول شما بازگشت."
+          : "پرداخت درخواست برداشت شما ثبت شد.";
+      await db.notification.create({
+        data: {
+          userId,
+          type: action === "PAID" ? "payout_processed" : "withdrawal_updated",
+          title: action === "APPROVED" ? "درخواست برداشت تأیید شد" : action === "REJECTED" ? "مبلغ برداشت بازگشت داده شد" : "پرداخت برداشت انجام شد",
+          body: message,
+          category: "payment",
+          link: "technician/earnings",
+        },
+      });
+    } catch {
+      // Notifications are best-effort and cannot undo a committed financial action.
+    }
   } else if (resource === "payments") {
     const allowed = RESOURCE_ALLOWED_FIELDS.payments ?? ALLOWED_FIELDS.review;
     const safe = sanitizeInput(body, allowed);
