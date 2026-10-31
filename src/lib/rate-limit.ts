@@ -1,8 +1,8 @@
-// MEKANIX — Rate Limiting (D1-backed with in-memory fallback)
+// MEKANIX — Rate Limiting (shared D1 store; dev-only in-memory fallback)
 //
 // On Cloudflare Workers: uses the D1 `RateLimit` table (distributed across all
 // isolates that share the D1 database).
-// In local development without D1: falls back to in-memory (single-instance).
+// Outside production without D1: falls back to in-memory (single-instance). Production fails closed.
 //
 // The synchronous `rateLimit()` function is kept for backward compat with
 // callers that don't want to await — it uses the in-memory store only.
@@ -63,14 +63,16 @@ export function rateLimit(key: string, max: number, windowMs: number): { success
   return memRateLimit(key, max, windowMs);
 }
 
-// Async version that uses D1 `RateLimit` table when available.
-// Falls back to in-memory on any error (dev mode without DB).
+// Async version that uses D1 `RateLimit` table.
+// In-memory fallback is development-only. Production fails closed if the shared store is unavailable.
 //
 // The D1 table stores: { key, count, expiresAt }.
 // Each request increments count; if count > max → deny.
 // On window expiry, the row is reset (upsert with count=1).
 
-export async function rateLimitAsync(key: string, max: number, windowMs: number): Promise<{ success: boolean; resetMs: number }> {
+export type RateLimitResult = { success: boolean; resetMs: number; unavailable?: boolean };
+
+export async function rateLimitAsync(key: string, max: number, windowMs: number): Promise<RateLimitResult> {
   const d1Key = `rl:${key}`;
   const now = Date.now();
 
@@ -104,7 +106,12 @@ export async function rateLimitAsync(key: string, max: number, windowMs: number)
     // At max — denied
     return { success: false, resetMs: existing.expiresAt.getTime() - now };
   } catch {
-    // Fall back to in-memory (dev mode without DB)
+    // A per-isolate Map is not a security control in multi-isolate production.
+    // Deny the request instead of silently weakening OTP/payment/withdraw limits.
+    if (process.env.NODE_ENV === "production") {
+      return { success: false, resetMs: windowMs, unavailable: true };
+    }
+    // Local development only: keep the single-process fallback.
     return memRateLimit(key, max, windowMs);
   }
 }
