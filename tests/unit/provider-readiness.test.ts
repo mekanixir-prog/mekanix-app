@@ -145,4 +145,19 @@ describe("production readiness gates", () => {
     vi.stubEnv("PAYMENT_PROVIDER", "simulator");
     expect(checkProductionGates()).toEqual([]);
   });
+
+  it("does not expose database connection details in production readiness responses", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SMS_PROVIDER", "kavenegar");
+    vi.stubEnv("KAVENEGAR_API_KEY", "test-key");
+    vi.stubEnv("PAYMENT_PROVIDER", "simulator");
+    dbMocks.queryRaw.mockRejectedValue(new Error("connection failed: postgres://secret-host.internal:5432/private-db"));
+
+    const response = await readyGET();
+    const body = await response.json();
+    expect(response.status).toBe(503);
+    expect(body.errors).toContain("Database is unavailable");
+    expect(JSON.stringify(body)).not.toContain("secret-host.internal");
+    expect(JSON.stringify(body)).not.toContain("private-db");
+  });
 });
