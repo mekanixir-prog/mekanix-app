@@ -24,8 +24,6 @@ export async function GET(req: Request) {
     where: { technicianId: technician.id },
     select: { id: true },
   });
-  if (!wallet) return NextResponse.json({ state: "NOT_COMMITTED" });
-
   const [request, ledger] = await Promise.all([
     db.withdrawalRequest.findUnique({
       where: { idempotencyKey: key },
@@ -46,6 +44,13 @@ export async function GET(req: Request) {
   ]);
 
   if (!request && !ledger) return NextResponse.json({ state: "NOT_COMMITTED" });
+  if (!wallet) {
+    return NextResponse.json({
+      state: "RECONCILIATION_REQUIRED",
+      requestFound: Boolean(request),
+      ledgerFound: Boolean(ledger),
+    }, { status: 409 });
+  }
   if (!request && ledger) {
     return NextResponse.json({
       state: "RECONCILIATION_REQUIRED",
@@ -72,12 +77,12 @@ export async function GET(req: Request) {
   return NextResponse.json({
     state: "COMMITTED",
     withdrawal: {
-      id: request.id,
-      code: request.code,
-      amount: String(request.amount),
-      status: request.status,
-      requestedAt: request.requestedAt,
-      processedAt: request.processedAt,
+      id: request!.id,
+      code: request!.code,
+      amount: String(request!.amount),
+      status: request!.status,
+      requestedAt: request!.requestedAt,
+      processedAt: request!.processedAt,
     },
   });
 }
