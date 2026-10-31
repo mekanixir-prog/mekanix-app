@@ -86,6 +86,15 @@ jobs:
           assert db_status == 'healthy', f'Database not healthy: {db_status}'
           print(f'✅ Database: {db_status}')
           "
+          
+          # Verify additive migration objects exist; health alone cannot prove schema parity.
+          REQUIRED_OBJECTS=$(docker compose -f /tmp/mekanix-build/docker-compose.yml exec -T db \
+            psql -U mekanix -d mekanix -Atc "SELECT COUNT(*) FROM pg_class WHERE relname IN ('RateLimit','IdempotencyKey','UserVipSubscription_paymentId_key','UserVipSubscription_one_active_per_user_key');")
+          if [ "$REQUIRED_OBJECTS" != "4" ]; then
+            echo "❌ Expected all additive migration tables/indexes; found $REQUIRED_OBJECTS of 4"
+            exit 1
+          fi
+          echo "✅ RateLimit, IdempotencyKey, and VIP uniqueness indexes exist"
       
       - name: Test OTP flow
         run: |
