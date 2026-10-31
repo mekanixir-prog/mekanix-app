@@ -154,7 +154,7 @@ export async function updateWithdrawalWithD1(d1: D1Database, input: Input): Prom
         INSERT INTO "WalletLedger"
           ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
            "referenceType", "referenceId", "description", "idempotencyKey", "createdBy", "createdAt")
-        SELECT ?, w."id", 'REFUND', wr."amount", w."balance" - wr."amount", w."balance",
+        SELECT ?, w."id", 'REFUND', CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END, w."balance" - wr."amount", w."balance",
                'Withdrawal', wr."id", ?, ?, ?, ?
         FROM "Wallet" w JOIN "WithdrawalRequest" wr ON wr."walletId" = w."id"
         WHERE wr."id" = ? AND wr."status" = 'REJECTED'
@@ -186,7 +186,7 @@ export async function updateWithdrawalWithD1(d1: D1Database, input: Input): Prom
       INSERT INTO "WalletTransaction"
         ("id", "walletId", "kind", "status", "grossAmount", "commissionAmount",
          "netAmount", "description", "idempotencyKey", "createdAt")
-      SELECT ?, wr."walletId", 'PAYOUT', 'COMPLETED', wr."amount", 0,
+      SELECT ?, wr."walletId", 'PAYOUT', 'COMPLETED', CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END, 0,
              -wr."amount", ?, ?, ?
       FROM "WithdrawalRequest" wr
       WHERE wr."id" = ? AND wr."status" = 'PAID' AND wr."txnId" = ? AND changes() = 1
@@ -196,10 +196,10 @@ export async function updateWithdrawalWithD1(d1: D1Database, input: Input): Prom
     ),
     d1.prepare(`
       UPDATE "Wallet"
-      SET "totalWithdrawn" = "totalWithdrawn" + (
+      SET "totalWithdrawn" = "totalWithdrawn" + CASE WHEN changes() = 1 THEN (
         SELECT "amount" FROM "WithdrawalRequest"
         WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?
-      ), "updatedAt" = ?
+      ) ELSE NULL END, "updatedAt" = ?
       WHERE "id" = (
         SELECT "walletId" FROM "WithdrawalRequest"
         WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?
