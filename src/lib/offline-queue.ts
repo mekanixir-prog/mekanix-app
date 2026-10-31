@@ -16,6 +16,9 @@ export interface QueuedAction {
   // after an ambiguous network/server failure.
   idempotencyKey?: string;
   needsReconciliation?: boolean;
+  lastAttemptAt?: number;
+  lastStatus?: number;
+  reconciliationReason?: "network_error" | "server_error" | "conflict" | "cross_origin" | "unexpected_response" | "legacy_unknown";
 }
 
 const STORAGE_KEY = "mekanix-offline-queue";
@@ -85,11 +88,13 @@ export function clearQueue(): void {
 
 
 /** Mark an ambiguous non-idempotent action for operator/user reconciliation. */
-export function markNeedsReconciliation(id: string): boolean {
+export function markNeedsReconciliation(\n  id: string,\n  reason: QueuedAction["reconciliationReason"] = "legacy_unknown",\n  lastStatus?: number\n): boolean {
   const queue = getQueuedActions();
   const action = queue.find((item) => item.id === id);
   if (!action) return false;
   action.needsReconciliation = true;
+  action.reconciliationReason = reason;
+  if (lastStatus !== undefined) action.lastStatus = lastStatus;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
   return true;
 }
@@ -100,7 +105,22 @@ export function retryAfterReconciliation(id: string): boolean {
   const action = queue.find((item) => item.id === id);
   if (!action || !action.needsReconciliation) return false;
   action.needsReconciliation = false;
+  action.reconciliationReason = undefined;
+  action.lastStatus = undefined;
   action.retryCount = 0;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
+  return true;
+}
+
+
+/** Record the most recent sync attempt without changing the action's payload or key. */
+export function markAttempt(id: string, status?: number): boolean {
+  if (typeof window === "undefined") return false;
+  const queue = getQueuedActions();
+  const action = queue.find((item) => item.id === id);
+  if (!action) return false;
+  action.lastAttemptAt = Date.now();
+  if (status !== undefined) action.lastStatus = status;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
   return true;
 }
