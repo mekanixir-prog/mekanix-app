@@ -30,8 +30,6 @@ export {
   sanitizeInput,
   generateRequestId,
   apiError,
-  getIdempotencyKey,
-  withIdempotency,
   type Session,
 } from "@/lib/auth";
 
