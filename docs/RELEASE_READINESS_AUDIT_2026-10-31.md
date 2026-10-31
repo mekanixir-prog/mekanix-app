@@ -79,6 +79,8 @@ SQLite integration tests cover the same rate-limit concurrency cases and the D1 
 - Service-request creation can create an ad-hoc vehicle before the request, then sends notifications sequentially; ambiguous retries can create duplicate vehicles/requests.
 - Insurance claim creation can commit the claim while the policy status update fails; it has no claim idempotency/status lookup contract.
 - PR #50's merged reconciliation center deliberately keeps unsupported operations behind manual review. It does not invent server status or enable automatic retry for these endpoints.
+- PR #57 adds a final financial proof to withdrawal status reconciliation: a matching WalletLedger idempotency row, matching WithdrawalRequest reference, and exact negative debit amount must all be present before COMMITTED is returned. Missing/mismatched ledger data returns RECONCILIATION_REQUIRED and keeps the local action gated.
+- PR #57 is open on head `90cc6df4095e53f9d702f1d37e71225c302ac132`; all five workflows are pending/in progress. Issue #49 remains open until this ledger-proof follow-up passes and merges.
 - Treat issue #52 as a release blocker for broad offline mutation sync and for enabling these flows at production scale until route-specific idempotency, atomicity/recovery, read-only status endpoints, and failure-injection tests are complete.
 
 ### 3.8 Production SMS delivery safety
