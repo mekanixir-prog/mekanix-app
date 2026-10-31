@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   participant: vi.fn(),
   wallet: vi.fn(),
   withdrawal: vi.fn(),
+  withdrawalLedger: vi.fn(),
   job: vi.fn(),
   walletTxn: vi.fn(),
   ledger: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock("@/lib/db-access", () => ({
   getDbForLib: async () => ({
     wallet: { findUnique: mocks.wallet },
     withdrawalRequest: { findUnique: mocks.withdrawal },
+    walletLedger: { findUnique: mocks.withdrawalLedger },
     job: { findUnique: mocks.job },
     walletTransaction: { findUnique: mocks.walletTxn },
     walletLedger: { findUnique: mocks.ledger },
@@ -44,6 +46,7 @@ beforeEach(() => {
   mocks.participant.mockResolvedValue(null);
   mocks.wallet.mockResolvedValue({ id: "wallet-1" });
   mocks.withdrawal.mockResolvedValue(null);
+  mocks.withdrawalLedger.mockResolvedValue(null);
   mocks.job.mockResolvedValue({
     id: "job-1", code: "JOB-1001", prepayPaid: false, prepayPaidAt: null,
     inspectionFee: 100, travelFee: 20, platformCommission: 12, netEarnings: 108,
@@ -58,6 +61,7 @@ describe("read-only offline reconciliation endpoints", () => {
       id: "wd-1", walletId: "wallet-1", code: "WD-1001", amount: 500,
       status: "REQUESTED", requestedAt: new Date("2026-10-31T10:00:00Z"), processedAt: null,
     });
+    mocks.withdrawalLedger.mockResolvedValue({ id: "ledger-1", referenceId: "wd-1", amount: -500 });
     const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
@@ -67,6 +71,21 @@ describe("read-only offline reconciliation endpoints", () => {
     expect(mocks.withdrawal).toHaveBeenCalledWith(expect.objectContaining({
       where: { idempotencyKey: "idem_12345678" },
     }));
+  });
+
+  it("does not report a withdrawal committed when its debit ledger row is missing", async () => {
+    mocks.withdrawal.mockResolvedValue({
+      id: "wd-1", walletId: "wallet-1", code: "WD-1001", amount: 500,
+      status: "REQUESTED", requestedAt: new Date("2026-10-31T10:00:00Z"), processedAt: null,
+    });
+    mocks.withdrawalLedger.mockResolvedValue(null);
+    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      state: "RECONCILIATION_REQUIRED",
+      withdrawalCode: "WD-1001",
+      ledgerFound: false,
+    });
   });
 
   it("reports NOT_COMMITTED when no withdrawal record exists", async () => {
