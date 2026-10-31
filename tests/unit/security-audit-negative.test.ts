@@ -478,7 +478,7 @@ describe("SEC-21: admin auth rejects user-shaped JWTs", () => {
 
   it("rejects a user JWT when ADMIN_JWT_SECRET is set (full secret isolation)", async () => {
     vi.stubEnv("JWT_SECRET", "user-secret");
-    vi.stubEnv("ADMIN_JWT_SECRET", "admin-secret-different");
+    vi.stubEnv("ADMIN_JWT_SECRET", "admin-secret-different-with-at-least-32-bytes");
     vi.stubEnv("NODE_ENV", "production");
 
     const { createSession } = await import("@/lib/auth");
@@ -509,7 +509,7 @@ describe("SEC-21: admin auth rejects user-shaped JWTs", () => {
   it("rejects a forged admin token with a valid-but-non-admin role", async () => {
     // Even if an attacker signs a token with the admin secret but sets
     // role to CUSTOMER (or omits adminId), it must be rejected.
-    vi.stubEnv("ADMIN_JWT_SECRET", "admin-secret");
+    vi.stubEnv("ADMIN_JWT_SECRET", "admin-secret-different-with-at-least-32-bytes");
     vi.stubEnv("JWT_SECRET", "");
     vi.stubEnv("NODE_ENV", "production");
 
@@ -520,7 +520,7 @@ describe("SEC-21: admin auth rejects user-shaped JWTs", () => {
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
       .setExpirationTime("7d")
-      .sign(new TextEncoder().encode("admin-secret"));
+      .sign(new TextEncoder().encode("admin-secret-different-with-at-least-32-bytes"));
 
     expect(await verifyAdminToken(forged)).toBeNull();
   });
