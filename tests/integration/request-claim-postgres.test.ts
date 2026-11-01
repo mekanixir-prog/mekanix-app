@@ -78,7 +78,9 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
     };
 
     const results = await Promise.all(
-      Array.from({ length: 80 }, () => createServiceRequestAtomically(db, input))
+      Array.from({ length: 80 }, (_, index) =>
+        createServiceRequestAtomically(db, { ...input, code: `SR-PG-${runId}-${index}` })
+      )
     );
 
     expect(new Set(results.map((result) => result.id)).size).toBe(1);
@@ -99,7 +101,9 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
     };
 
     const results = await Promise.all(
-      Array.from({ length: 80 }, () => createInsuranceClaimAtomically(db, input))
+      Array.from({ length: 80 }, (_, index) =>
+        createInsuranceClaimAtomically(db, { ...input, code: `CLM-PG-${runId}-${index}` })
+      )
     );
 
     expect(new Set(results.map((result) => result.id)).size).toBe(1);
