@@ -117,6 +117,9 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
 
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
+  // Deterministic default coordinates keep an identical form fingerprint stable across reloads.
+  const requestCoordinatesRef = useRef({ lat: 35.6892, lng: 51.3890 });
+  const requestIdempotencyRef = useRef<{ signature: string; key: string } | null>(null);
 
   const allowedTypes = typesForMode(machineMode);
 
@@ -157,22 +160,44 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
     }
     setSubmitting(true);
     try {
-      // Default to Tehran (Iranian market) — slightly randomized for realism
-      const lat = 35.6892 + (Math.random() - 0.5) * 0.03;
-      const lng = 51.3890 + (Math.random() - 0.5) * 0.03;
-      const sr = await api.createRequest({
+      // Keep coordinates and Idempotency-Key stable across retries of the same payload.
+      const payload = {
         customerId: customer.customer.id,
         vehicleId: vehicleId ?? vehicles[0]?.id,
-        machineType: type, // helps API create an ad-hoc vehicle if needed
+        machineType: type,
         category,
         urgency,
         title: title.trim(),
         description: description.trim(),
         mediaUrls: media,
         address,
-        lat,
-        lng,
-      });
+        lat: requestCoordinatesRef.current.lat,
+        lng: requestCoordinatesRef.current.lng,
+      };
+      const signature = JSON.stringify(payload);
+      const storageKey = `mekanix-service-request:${customer.customer.id}`;
+      let activeKey = requestIdempotencyRef.current?.signature === signature
+        ? requestIdempotencyRef.current.key
+        : "";
+      if (!activeKey) {
+        try {
+          const saved = sessionStorage.getItem(storageKey);
+          const parsed = saved ? JSON.parse(saved) : null;
+          activeKey = parsed?.signature === signature && typeof parsed?.key === "string"
+            ? parsed.key
+            : globalThis.crypto.randomUUID();
+          sessionStorage.setItem(storageKey, JSON.stringify({ signature, key: activeKey }));
+        } catch {
+          activeKey = globalThis.crypto.randomUUID();
+        }
+        requestIdempotencyRef.current = { signature, key: activeKey };
+      }
+      const sr = await api.createRequest(payload, activeKey);
+      try {
+        const saved = sessionStorage.getItem(storageKey);
+        if (saved && JSON.parse(saved)?.key === activeKey) sessionStorage.removeItem(storageKey);
+      } catch {}
+      requestIdempotencyRef.current = null;
       toast.success(t("req.created").replace("{code}", sr.code));
       go("matching", { requestId: sr.id });
     } catch (e: any) {

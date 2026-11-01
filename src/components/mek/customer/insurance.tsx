@@ -1,6 +1,6 @@
 "use client";
 import { authFetch } from "@/lib/fetch-with-auth";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Shield, Plus, Loader2, Save, FileText, ChevronRight, ShieldCheck,
@@ -570,11 +570,13 @@ function FileClaimDialog({
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [saving, setSaving] = useState(false);
+  const claimIdempotencyRef = useRef<{ signature: string; key: string } | null>(null);
 
   useEffect(() => {
     if (policy) {
       setDescription("");
       setAmount("");
+      claimIdempotencyRef.current = null;
     }
   }, [policy]);
 
@@ -586,17 +588,44 @@ function FileClaimDialog({
     }
     setSaving(true);
     try {
+      const payload = {
+        policyId: policy.id,
+        description: description.trim(),
+        amount: parseFloat(amount) || 0,
+      };
+      const signature = JSON.stringify(payload);
+      const storageKey = `mekanix-insurance-claim:${policy.id}`;
+      let activeKey = claimIdempotencyRef.current?.signature === signature
+        ? claimIdempotencyRef.current.key
+        : "";
+      if (!activeKey) {
+        try {
+          const saved = sessionStorage.getItem(storageKey);
+          const parsed = saved ? JSON.parse(saved) : null;
+          activeKey = parsed?.signature === signature && typeof parsed?.key === "string"
+            ? parsed.key
+            : globalThis.crypto.randomUUID();
+          sessionStorage.setItem(storageKey, JSON.stringify({ signature, key: activeKey }));
+        } catch {
+          activeKey = globalThis.crypto.randomUUID();
+        }
+        claimIdempotencyRef.current = { signature, key: activeKey };
+      }
       const res = await authFetch("/api/insurance/claim", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          policyId: policy.id,
-          description: description.trim(),
-          amount: parseFloat(amount) || 0,
-        }),
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": activeKey,
+        },
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      try {
+        const saved = sessionStorage.getItem(storageKey);
+        if (saved && JSON.parse(saved)?.key === activeKey) sessionStorage.removeItem(storageKey);
+      } catch {}
+      claimIdempotencyRef.current = null;
       toast.success(t("ins.claimSubmitted"));
       onSubmitted();
       onOpenChange(false);
