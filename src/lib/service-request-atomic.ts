@@ -91,7 +91,7 @@ async function createWithD1(
   const now = new Date().toISOString();
   const requestId = crypto.randomUUID();
   const vehicleId = input.vehicleId ?? crypto.randomUUID();
-  const statements = [];
+  const statements: Parameters<NonNullable<Awaited<ReturnType<typeof getD1Binding>>>["batch"]>[0] = [];
 
   if (!input.vehicleId) {
     statements.push(d1.prepare(`
