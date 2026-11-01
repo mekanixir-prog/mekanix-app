@@ -1,16 +1,6 @@
 import type { JobStatus, PrismaClient } from "@prisma/client";
 import { getD1Binding } from "@/lib/idempotency";
 
-const ACTIVE_JOB_STATUSES: JobStatus[] = [
-  "REQUESTED",
-  "ACCEPTED",
-  "EN_ROUTE",
-  "ARRIVED",
-  "DIAGNOSING",
-  "REPAIRING",
-  "WAITING_APPROVAL",
-];
-
 export class JobStatusConflictError extends Error {
   constructor() {
     super("The job or linked service request changed before this transition could commit");
@@ -30,8 +20,8 @@ export type AtomicJobStatusInput = {
   jobId: string;
   requestId: string;
   technicianId: string;
-  currentStatus: string;
-  nextStatus: string;
+  currentStatus: JobStatus;
+  nextStatus: JobStatus;
   updates: JobStatusScalarUpdates;
 };
 
@@ -77,7 +67,16 @@ async function transitionWithPrisma(db: PrismaClient, input: AtomicJobStatusInpu
         where: {
           id: input.technicianId,
           status: "ON_JOB",
-          jobsAssigned: { none: { status: { in: ACTIVE_JOB_STATUSES } } },
+          jobsAssigned: {
+            none: {
+              status: {
+                in: [
+                  "REQUESTED", "ACCEPTED", "EN_ROUTE", "ARRIVED",
+                  "DIAGNOSING", "REPAIRING", "WAITING_APPROVAL",
+                ],
+              },
+            },
+          },
         },
         data: { status: "ONLINE" },
       });
