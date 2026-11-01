@@ -29,8 +29,16 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
   const [timeWindow, setTimeWindow] = useState("");
   const [currentMileage, setCurrentMileage] = useState("");
   const [booking, setBooking] = useState(false);
-  // Reuse this key for retries while this booking form remains mounted.
-  const [idempotencyKey] = useState(() => globalThis.crypto.randomUUID());
+  // Persist the pending key for this vehicle across remounts in the same tab.
+  // Keep it until a successful response so an ambiguous network retry reuses it.
+  const [idempotencyKey, setIdempotencyKey] = useState("");
+  useEffect(() => {
+    const storageKey = `mekanix-care-booking:${vehicleId ?? "new"}`;
+    const existing = sessionStorage.getItem(storageKey);
+    const key = existing || globalThis.crypto.randomUUID();
+    if (!existing) sessionStorage.setItem(storageKey, key);
+    setIdempotencyKey(key);
+  }, [vehicleId]);
 
   const vehicleId = params.vehicleId;
 
@@ -65,6 +73,7 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      sessionStorage.removeItem(`mekanix-care-booking:${vehicleId ?? "new"}`);
       toast.success(isFa ? "سفارش ثبت شد!" : "Booking created!");
       go("care-detail", { bookingId: data.id });
     } catch (e: any) {
@@ -265,7 +274,7 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
             </div>
           </div>
 
-          <Button onClick={handleBooking} disabled={booking} className="w-full bg-amber text-black hover:bg-amber/90">
+          <Button onClick={handleBooking} disabled={booking || !idempotencyKey} className="w-full bg-amber text-black hover:bg-amber/90">
             {booking ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Check className="mr-2 size-4" />}
             {isFa ? "تأیید و رزرو" : "Confirm & Book"}
           </Button>
