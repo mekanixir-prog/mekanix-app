@@ -156,7 +156,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       title: "پیشنهاد هزینه اضافه",
       body: `${proposal.proposedItem} — ${
         proposal.partPrice * proposal.quantity + proposal.laborPrice
-      } ریال`,
+      } تومان`,
       category: "job",
       link: "care-detail",
     },
