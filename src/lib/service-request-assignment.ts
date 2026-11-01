@@ -108,7 +108,7 @@ async function assignWithD1(
   // every compare-and-set unless exactly one row changed, so D1 rolls back
   // the entire batch instead of committing a partial assignment.
   const assertOneChange = () =>
-    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '
+    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '$') END").bind();
   const statements = [
     d1.prepare(`
       UPDATE "ServiceRequest"
@@ -997,7 +997,7 @@ export async function assignServiceRequestAtomically(
   return assignWithPrisma(db, input);
 }
 ) END`),
-    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '          UPDATE "Job"
+    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '$') END").bind();
           SET "technicianId" = ?, "status" = 'REQUESTED', "etaMins" = ?,
               "customerApproved" = 0, "startedAt" = NULL, "arrivedAt" = NULL,
               "completedAt" = NULL, "diagnosis" = NULL, "technicianNotes" = NULL,
@@ -1800,7 +1800,7 @@ export async function assignServiceRequestAtomically(
   return assignWithPrisma(db, input);
 }
 ) END`),
-    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '          UPDATE "Job"
+    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '$') END").bind();
           SET "technicianId" = ?, "status" = 'REQUESTED', "etaMins" = ?,
               "customerApproved" = 0, "startedAt" = NULL, "arrivedAt" = NULL,
               "completedAt" = NULL, "diagnosis" = NULL, "technicianNotes" = NULL,
@@ -2546,7 +2546,7 @@ export async function assignServiceRequestAtomically(
   return assignWithPrisma(db, input);
 }
 ) END`),
-    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '          UPDATE "Job"
+    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '$') END").bind();
           SET "technicianId" = ?, "status" = 'REQUESTED', "etaMins" = ?,
               "customerApproved" = 0, "startedAt" = NULL, "arrivedAt" = NULL,
               "completedAt" = NULL, "diagnosis" = NULL, "technicianNotes" = NULL,
@@ -2962,7 +2962,7 @@ export async function assignServiceRequestAtomically(
   return assignWithPrisma(db, input);
 }
 ) END`),
-    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '          UPDATE "Job"
+    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '$') END").bind();
           SET "technicianId" = ?, "status" = 'REQUESTED', "etaMins" = ?,
               "customerApproved" = 0, "startedAt" = NULL, "arrivedAt" = NULL,
               "completedAt" = NULL, "diagnosis" = NULL, "technicianNotes" = NULL,
