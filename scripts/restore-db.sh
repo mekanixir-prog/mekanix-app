@@ -73,9 +73,9 @@ case "$DB_URL" in
       echo "❌ psql not installed — install postgresql-client"
       exit 1
     fi
-    TABLE_COUNT="$(pg_exec "$DB_URL" psql -v ON_ERROR_STOP=1 -Atqc \
-      "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND c.relkind IN ('r','p','v','m','S','i','I')")"
-    if [ "$TABLE_COUNT" != "0" ]; then
+    TARGET_OBJECT_COUNT="$(pg_exec "$DB_URL" psql -v ON_ERROR_STOP=1 -Atqc \
+      "SELECT (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r','p','v','m','S','i','I')) + (SELECT count(*) FROM pg_namespace WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'public') AND nspname !~ '^pg_')")"
+    if [ "$TARGET_OBJECT_COUNT" != "0" ]; then
       echo "❌ PostgreSQL target is not empty; refusing to overwrite existing tables"
       exit 1
     fi
