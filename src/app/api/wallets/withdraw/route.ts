@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { createWithdrawalAtomically } from "@/lib/withdrawal-atomic";
+import { isValidIranianSheba } from "@/lib/iranian-iban";
 
 export async function POST(req: Request) {
   const session = await requireAuth(req);
@@ -25,18 +26,27 @@ export async function POST(req: Request) {
   }
 
   const amount = typeof body.amount === "number" ? body.amount : Number.NaN;
-  const method = typeof body.method === "string" && body.method.trim()
-    ? body.method.trim()
-    : "card";
-  const cardNumber = typeof body.cardNumber === "string" ? body.cardNumber : null;
-  const bankName = typeof body.bankName === "string" ? body.bankName : null;
-  const shebaNumber = typeof body.shebaNumber === "string" ? body.shebaNumber : null;
-  const maskedCardNumber = cardNumber?.replace(/.(?=.{4})/g, "*") ?? null;
+  const method = body.method === undefined
+    ? "bank"
+    : typeof body.method === "string" ? body.method.trim() : "";
+  const bankName = typeof body.bankName === "string" ? body.bankName.trim() : "";
+  const rawSheba = typeof body.shebaNumber === "string" ? body.shebaNumber : "";
+  const shebaNumber = rawSheba.replace(/\\s+/g, "").toUpperCase();
+  const maskedCardNumber = null;
   const idempotencyKey = (req.headers.get("idempotency-key") ||
     (typeof body.idempotencyKey === "string" ? body.idempotencyKey : "")).trim();
 
-  if (!Number.isFinite(amount) || amount <= 0 || amount > 10_000) {
-    return NextResponse.json({ error: "مبلغ نامعتبر است" }, { status: 400 });
+  // Amounts use the same base unit as the earnings UI (USD base units).
+  // Enforce the UI's $5 minimum server-side and cap precision to cents.
+  const amountInCents = Math.round(amount * 100);
+  if (
+    !Number.isFinite(amount) ||
+    amount < 5 ||
+    amount > 10_000 ||
+    !Number.isSafeInteger(amountInCents) ||
+    Math.abs(amount * 100 - amountInCents) > 1e-7
+  ) {
+    return NextResponse.json({ error: "مبلغ نامعتبر است؛ حداقل برداشت ۵ دلار و دقت حداکثر دو رقم اعشار است" }, { status: 400 });
   }
   if (!idempotencyKey || idempotencyKey.length < 8 || idempotencyKey.length > 128) {
     return NextResponse.json(
@@ -44,10 +54,15 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-  if (!["card", "wallet", "bank", "cash"].includes(method) ||
-      (cardNumber && cardNumber.length > 30) ||
-      (bankName && bankName.length > 100) || (shebaNumber && shebaNumber.length > 30)) {
-    return NextResponse.json({ error: "اطلاعات حساب بانکی نامعتبر است" }, { status: 400 });
+  // Until automated card payouts exist, bank/Sheba is the only supported payout rail.
+  // The admin workflow can mark a withdrawal PAID only after a valid Sheba transfer.
+  if (
+    method !== "bank" ||
+    !bankName ||
+    bankName.length > 100 ||
+    !isValidIranianSheba(shebaNumber)
+  ) {
+    return NextResponse.json({ error: "فقط برداشت بانکی با شبای معتبر و نام بانک قابل ثبت است" }, { status: 400 });
   }
 
   const technician = await getTechnicianFromSession(session);
