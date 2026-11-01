@@ -172,7 +172,11 @@ describe("admin withdrawal transitions", () => {
         statements.push({ sql, values });
         return { sql, values };
       } }),
-      batch: vi.fn().mockResolvedValue([{ meta: { changes: 1 } }, { meta: { changes: 1 } }, { meta: { changes: 1 } }]),
+      batch: vi.fn().mockResolvedValue([
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+      ]),
     };
     await updateWithdrawalWithD1(d1 as any, input);
     expect(statements[4].sql).toContain("ELSE NULL END");
