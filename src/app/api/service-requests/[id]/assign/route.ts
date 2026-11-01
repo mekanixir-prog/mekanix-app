@@ -138,8 +138,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         link: "technician/requests",
       },
     });
-  } catch {
-    // Assignment and Job are already committed; notification delivery can retry separately.
+  } catch (error) {
+    // Assignment and Job are already committed; do not report a false assignment failure.
+    console.error(
+      "[service-request-assign] technician notification failed",
+      error instanceof Error ? error.message : "unknown error",
+    );
   }
 
   return NextResponse.json(job);
