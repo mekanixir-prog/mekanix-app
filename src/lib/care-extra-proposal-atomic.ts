@@ -89,6 +89,7 @@ async function createWithPrisma(db: PrismaClient, input: CreateCareExtraProposal
         eventType: "extra_proposal",
         actor: input.actorUserId,
         metadata: JSON.stringify({ approvalId: approval.id }),
+        idempotencyKey: `extra-proposal:${approval.id}`,
       },
     });
     return approval;
