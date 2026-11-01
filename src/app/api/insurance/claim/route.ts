@@ -3,7 +3,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requirePolicyOwner } from "@/lib/auth";
 import { IdempotencyConflictError, readIdempotencyKey, requestFingerprint } from "@/lib/idempotency";
-import { createInsuranceClaimAtomically } from "@/lib/insurance-claim-atomic";
+import { createInsuranceClaimAtomically, InsurancePolicyInactiveError } from "@/lib/insurance-claim-atomic";
 
 // Claim + policy status are one atomic business operation. Notifications are
 // post-commit best-effort side effects and cannot change the claim result.
@@ -109,6 +109,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, claim }, { status: result.created ? 201 : 200 });
   } catch (error) {
+    if (error instanceof InsurancePolicyInactiveError) {
+      return NextResponse.json({ error: "این بیمه‌نامه دیگر فعال نیست" }, { status: 409 });
+    }
     if (error instanceof IdempotencyConflictError) {
       return NextResponse.json(
         { error: "این کلید قبلاً برای اطلاعات متفاوتی استفاده شده است" },
