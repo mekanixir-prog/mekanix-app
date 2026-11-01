@@ -167,9 +167,9 @@ describe("service request assignment atomic writer", () => {
         },
       }),
       batch: vi.fn(async (_statements: unknown[]) => [
-        { meta: { changes: 1 } },
-        { meta: { changes: 1 } },
-        { meta: { changes: 1 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
       ]),
     };
     mocks.getD1Binding.mockResolvedValue(d1);
