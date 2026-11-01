@@ -31,7 +31,7 @@ export async function POST(req: Request) {
     : typeof body.method === "string" ? body.method.trim() : "";
   const bankName = typeof body.bankName === "string" ? body.bankName.trim() : "";
   const rawSheba = typeof body.shebaNumber === "string" ? body.shebaNumber : "";
-  const shebaNumber = rawSheba.replace(/\\s+/g, "").toUpperCase();
+  const shebaNumber = rawSheba.replace(/\s+/g, "").toUpperCase();
   const maskedCardNumber = null;
   const idempotencyKey = (req.headers.get("idempotency-key") ||
     (typeof body.idempotencyKey === "string" ? body.idempotencyKey : "")).trim();
