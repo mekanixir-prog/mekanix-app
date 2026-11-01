@@ -73,7 +73,7 @@ SOURCE_COUNTS="$(table_counts "$SOURCE_URL")"
 
 echo "3. Resetting only the explicitly approved restore-test database..."
 PGDATABASE="$TEST_URL" psql -v ON_ERROR_STOP=1 -c \
-  "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+  "DROP SCHEMA public CASCADE"
 
 echo "4. Restoring backup into the isolated test database..."
 gzip -dc "$BACKUP_FILE" | PGDATABASE="$TEST_URL" psql -v ON_ERROR_STOP=1
