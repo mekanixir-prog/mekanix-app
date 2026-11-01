@@ -1,124 +1,94 @@
 # MEKANIX — Release Readiness Audit
 
 **Audit date:** 2026-11-01  
-**Audited main commit:** `700eda53c99285404641cb9c59f1637d59138f5b`  
+**Audited mainline baseline:** `5ca2651923af888547946ad5308e507dd4519266`  
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Decision:** **NOT READY FOR PRODUCTION**
 
-This report supersedes older point-in-time release and post-PR3 audit documents. It records only verified merge/CI evidence and explicitly separates automated tests from real Cloudflare, provider, and production operations.
+This audit separates verified code/CI evidence from staging and provider operations. A green workflow proves only the tested commit and environment; it does not prove that a live Cloudflare account, payment provider, or SMS vendor is configured correctly.
 
 ## 1. Verified mainline changes
 
 | Area | Merged change | Current boundary |
 |---|---|---|
-| Atomic escrow release | PR #12 | D1 SQL and Prisma transaction implementations are on main; scheduled Worker rollout remains gated by PR #43 and isolated D1 staging |
-| Prepay / commission settlement | PR #13 | Atomic D1/Prisma path and unique ledger keys are merged; simulator-only, not a live payment gateway |
-| Withdrawal request | PR #32 | Durable request idempotency and atomic wallet debit are merged |
-| Admin withdrawal operations | PR #36 | Conditional state transitions, atomic refund/payout records, mandatory external bank trace reference, and production admin-secret isolation are merged |
-| Shared rate limiting | PR #35 | Atomic database upsert, bounded counter, and production fail-closed behavior are merged |
-| Global auth rate-limit mapping | PR #38 | `requireAuth()` maps shared-store outage to 503 before session lookup |
-| PostgreSQL rate-limit parity | PR #40 | Real PostgreSQL concurrency tests are merged |
-| Gateway simulator verification | PR #33 | Unique gateway payment reference and replay/recovery handling are merged; production still returns 404 |
-| Generic idempotency / offline retries | PR #39, #50 | Unsafe unused generic helper removed; Persian reconciliation center is merged; ambiguous failures remain gated by route-specific proof |
-| Production SMS safety | PR #55 | Console fallback and false OTP success are blocked in production; real provider activation remains a pre-release task |
+| Production SMS fail-closed | PR #55 | Console/missing/unsupported provider config cannot issue a successful production OTP; real vendor activation and delivery smoke test remain separate |
+| Withdrawal reconciliation | PR #57 | COMMITTED requires matching immutable ledger proof, reference, and exact debit amount; issue #49 closed |
+| CARE booking recovery | PR #59 | Booking, pricing snapshot/link, and initial timeline event are atomic on Prisma or D1; status lookup and retry-key support added |
+| Service request recovery | PR #63 | Optional ad-hoc vehicle + request are atomic; notifications are post-commit; status lookup and durable retry key added |
+| Insurance claim recovery | PR #63 | Claim + policy transition are atomic; eligibility guard and status lookup added |
+| Offline reconciliation | PR #50, extended by PR #63 | Persian reconciliation center checks route-specific server status; unsupported/ambiguous actions remain behind manual review |
+| Rate-limit atomicity | PR #35, #38, #40 | Atomic initialization and fail-closed outage handling; PostgreSQL concurrency tests merged |
+| Wallet escrow release | PR #12, #13 | Atomic D1/Prisma release logic exists; dedicated scheduled Worker is still PR #43 and requires Cloudflare staging |
 
-## 2. CI evidence
+## 2. Verified CI evidence
 
-The following five-workflow PR heads passed before merge: PR #33, #35, #36, #38, and #39. PR #40 passed its four applicable workflows (CI, Production readiness, PostgreSQL CI, Docker E2E).
+- PR #55 merged after all five applicable workflows passed on its exact head.
+- PR #57 merged after all five applicable workflows passed on its exact head.
+- PR #59 merged with route-specific CARE idempotency, atomic writes, and reconciliation tests.
+- PR #63 merged as `5ca2651923af888547946ad5308e507dd4519266` after all five applicable workflows passed on its exact head: CI, Cloudflare Build, Production readiness, PostgreSQL CI, and Docker E2E.
+- PR #63 includes 100-concurrent-same-key D1/SQLite integration simulations and 80-concurrent PostgreSQL integration tests for service requests and claims, payload mismatch/replay behavior, and injected rollback failures.
+- Issue #52 is closed as completed for code-level remediation. Issue #29 is closed as not planned for a generic callback helper because the repository audit found no production call sites; route-specific contracts are used instead.
+- Issue #28 is closed as completed for code-level rate-limit atomicity; real Cloudflare D1 runtime validation remains a separate operational gate.
 
-**PostgreSQL evidence from PR #40:** 41 test files and 529 tests passed. The new real-PostgreSQL concurrency suite passed both tests:
-- 80 concurrent first-hit requests: exactly the configured seven allowed, with the counter saturated at eight.
-- 80 concurrent expiry-boundary requests: one new window, exactly seven allowed, counter saturated at eight.
+## 3. Open code and operations work
 
-SQLite integration tests cover the same rate-limit concurrency cases and the D1 escrow/withdrawal SQL paths. These are provider-parity tests; they do not replace a real Cloudflare D1 staging run.
+### 3.1 Scheduled wallet escrow Worker — PR #43
 
-**PR #55 — production SMS fail-closed:** merged as `399e8c09dab4c1a8e376467ca940dab81f5bc3eb` after all five workflows passed on its exact head. This proves the production safety boundary in CI; it does not prove delivery through a selected live SMS vendor.
+- PR #43 remains a draft.
+- Its exact head `ddb81b030fdc07328daf300b8f103489aac7554a` passed all five applicable workflows.
+- The branch has diverged from current mainline: 29 commits ahead and 13 commits behind the audited mainline baseline. It must be refreshed/rebased and revalidated before merge.
+- The worker has a 15-minute Cron Trigger, keyset pagination, durable cross-run cursor, per-row failure isolation, and shared atomic D1 release helper.
+- The committed Wrangler config contains an all-zero staging D1 placeholder. No Cloudflare Worker was deployed and no real D1 binding/Cron Trigger has been verified.
+- Do not set `WALLET_RELEASE_SCHEDULED=true` until an isolated D1 staging database has been migrated, the Worker deployed, at least one scheduled run observed, and matured PENDING rows reconciled against AVAILABLE releases.
 
-**PR #57 — withdrawal reconciliation ledger proof:** merged as `700eda53c99285404641cb9c59f1637d59138f5b` after all five workflows passed on its exact head. The endpoint now requires a matching immutable wallet-ledger row, matching withdrawal reference, and exact negative debit amount before returning `COMMITTED`. Missing or inconsistent evidence returns `RECONCILIATION_REQUIRED` (409). Issue #49 is closed as completed.
+### 3.2 Real payment provider — issue #24
 
-**PR #43 — scheduled escrow Worker:** draft, exact head `5e2b16de5f0f2c8f8931d884b83e943b3d0e09d9`. All five workflows (CI, Cloudflare Build, Production readiness, PostgreSQL CI, Docker E2E) have completed successfully on that head. The PR remains a draft because CI does not validate the target Cloudflare account, actual D1 binding, Cron Trigger deployment, or financial reconciliation. No staging deployment has been performed.
-
-## 3. Production blockers
-
-### 3.1 Cloudflare D1 and scheduled escrow
-
-- PR #43 adds the 15-minute Cron Worker, keyset pagination, per-row failure isolation, the shared atomic D1 helper, and the `(status, holdUntil, id)` index.
-- The main app retains the transitional GET-triggered release until `WALLET_RELEASE_SCHEDULED=true`.
-- **Do not set this flag early.** First deploy the Worker to an isolated staging environment, apply the index migration there, observe at least one successful Cron Trigger run, and reconcile matured PENDING rows against AVAILABLE releases.
-- No Worker has been deployed and no production D1 migration has been executed.
-
-### 3.2 Real payments and settlement
-
-- PR #33 hardens only the development simulator. `/api/gateway/verify` remains unavailable in production.
-- The generic `/api/payments` and prepay flows are not a live bank/payment provider integration.
-- Issue #24 remains open for provider wiring, signed callback verification, amount/currency/order ownership checks, replay protection, settlement reconciliation, and sandbox evidence.
-- No live payment, gateway credential, or bank transfer was activated.
+- Zarinpal/IDPay adapter scaffolding exists, but the authoritative initiation → persisted attempt → provider verification → business settlement lifecycle is not wired.
+- `/api/payments`, `/api/gateway/initiate`, `/api/gateway/verify`, and VIP/prepay simulator paths remain unavailable in production.
+- Provider selection, server-side callback verification, amount/currency/order ownership checks, duplicate/replay handling, refund behavior, and sandbox evidence remain open.
+- No live payment, refund, bank transfer, or provider credential activation has occurred.
 
 ### 3.3 SMS / OTP
 
-- Production readiness still requires a real provider-specific SMS integration and credentials.
-- No real SMS provider was activated and no production OTP delivery test was performed.
+- Production OTP now fails closed without a configured real provider.
+- Vendor selection, credentials, sender/template, delivery monitoring, alerting, and a real phone smoke test remain pre-release tasks.
+- Staging intentionally uses the console provider and must return a fail-closed result; it is not evidence of production SMS readiness.
 
-### 3.4 Admin security and payout operations
+### 3.4 Staging, backup/restore, performance, and security scans
 
-- Production dedicated admin JWTs require `ADMIN_JWT_SECRET` of at least 32 bytes. It must be configured securely before deployment; no production secret was set during this work.
-- Admin payout records require the real external bank transfer tracking reference. The application records evidence of a manually executed transfer; it does not initiate a bank transfer.
-- Reconcile every PAID withdrawal against the bank statement/provider record before release.
+- Docker/PostgreSQL staging configuration exists, but no actual VPS staging deployment or Release Candidate smoke test has been performed in this session.
+- The backup/restore scripts and staging runbook are being hardened in the current PR branch: encrypted GPG backup support, no connection-string logging, fail-safe empty-target restore, disposable restore-test database guard, and a PostgreSQL CI restore rehearsal.
+- The current PR branch also adds Docker E2E migration assertions for CARE/service-request/claim idempotency indexes and shell/Compose syntax validation. These changes are pending CI and merge; they are not yet mainline evidence.
+- k6 load test and OWASP ZAP baseline scripts are prepared, but no staging measurements or scan report exist. p95/p99, failure rate, resource use, and ZAP findings therefore remain unverified.
+- A production restore rehearsal must use a protected backup, a separate disposable target, and explicit approval. The automated test script refuses production as a source.
 
-### 3.5 Offline reconciliation and idempotency
+### 3.5 Production secrets and rollout controls
 
-- PR #39 removed the unsafe generic helper because no production endpoint used it.
-- Automatic offline retries are limited to wallet withdrawal, prepay, and simulator gateway verification, each with route-specific durable idempotency.
-- PR #50's user-facing Persian reconciliation center is merged. Ambiguous network/5xx outcomes for unsupported operations remain retained for manual review; broader route-specific contracts remain outstanding.
-- Issue #29 remains open; do not describe the platform as globally exactly-once.
+- No production `ADMIN_JWT_SECRET`, SMS secret, payment secret, or other production secret was configured by this work.
+- No production migration, D1 mutation, Worker deployment, domain/hosting activation, or production environment change was performed.
+- Currency contract and historical-value reconciliation remain owner-gated; no backfill should run without explicit approval.
+- Production migrations require backup, successful restore rehearsal, reviewed rollout plan, maintenance window, and explicit release approval.
 
-### 3.6 Rate-limit runtime validation
+## 4. Release sequence
 
-- PR #35 and #38 make the shared rate limiter atomic and fail closed; PR #40 adds real PostgreSQL concurrency evidence.
-- Issue #28 remains open until isolated Cloudflare D1 staging verifies the same upsert behavior, production bindings, and outage handling under the actual Worker runtime.
-
-### 3.7 Booking, service-request, and claim recovery
-
-- Issue #52 records three additional multi-write create flows that lack a complete route-specific recovery contract: CARE booking creation, service-request creation (including ad-hoc vehicle creation), and insurance claim creation.
-- CARE booking creation writes the booking, pricing snapshot, booking link, and timeline event sequentially; a mid-flow failure can leave partial state and an ambiguous retry can create a duplicate.
-- Service-request creation can create an ad-hoc vehicle before the request, then sends notifications sequentially; ambiguous retries can create duplicate vehicles/requests.
-- Insurance claim creation can commit the claim while the policy status update fails; it has no claim idempotency/status lookup contract.
-- PR #50's merged reconciliation center deliberately keeps unsupported operations behind manual review. It does not invent server status or enable automatic retry for these endpoints.
-- PR #57 is merged. Its five exact-head workflows passed after fixing a duplicate test-mock property. Withdrawal status requires a matching WalletLedger idempotency row, matching WithdrawalRequest reference, and exact negative debit amount before returning COMMITTED. Missing/mismatched evidence returns RECONCILIATION_REQUIRED (409) and keeps the local action gated.
-- Issue #49 is closed as completed after PR #50 and PR #57 merged. This does not close issue #52 or enable automatic retries for unsupported operations.
-- Treat issue #52 as a release blocker for broad offline mutation sync and for enabling these flows at production scale until route-specific idempotency, atomicity/recovery, read-only status endpoints, and failure-injection tests are complete.
-
-### 3.8 Production SMS delivery safety
-
-- Issue #53 records that the old SMS abstraction could fall back to console logging in production when SMS_PROVIDER was missing/invalid, and the OTP endpoint could return success even when provider delivery failed.
-- PR #55 is merged. Missing/console/unsupported/incomplete SMS configuration now fails closed before OTP persistence; delivery failures consume the newly stored OTP hash and return 502/503; recipient, OTP, and provider error payloads are withheld from logs. Its Docker E2E gate verifies production returns 503 and persists zero OTP rows when no real provider is configured.
-- No real SMS provider was selected or activated. Vendor selection, credentials, sender/template, delivery monitoring, and alerting remain pre-release tasks.
-
-### 3.9 Currency contract
-
-- Any USD canonicalization or historical-value conversion remains owner-gated. Do not merge or backfill currency changes until the canonical unit, display policy, and historical reconciliation are explicitly approved.
-
-## 4. Required release sequence
-
-1. Keep PR #43 in draft until its isolated D1/Cron staging gate is completed; all five workflows are green on the recorded head, but the target Cloudflare account has not been exercised.
-2. Deploy the escrow Worker only to isolated Cloudflare staging; verify D1 binding, Cron Trigger, logs, pagination, failure isolation, and no double credits.
-3. Only after successful staging and at least one observed scheduled run, set `WALLET_RELEASE_SCHEDULED=true` on the main application Worker.
-4. Complete provider-specific SMS and payment integrations in sandbox; validate signed callbacks, ownership, amount, currency, replay, refunds, and reconciliation.
-5. Configure and verify `ADMIN_JWT_SECRET` and all production secrets without exposing them in Git or logs.
-6. Complete manual payout reconciliation; verify PR #50 and PR #57's merged reconciliation center and ledger-proof behavior in isolated staging, and keep unsupported operations behind manual review.
-7. Resolve issue #52's multi-write booking/request/claim recovery risks before enabling broad offline mutation sync or production-scale create flows.
-8. PR #55 is merged; keep real SMS provider activation separate and owner-controlled until pre-release.
-9. Obtain explicit approval for the currency contract and historical-value handling.
-10. Apply production migrations only after backup, restore rehearsal, reviewed rollout plan, and explicit release approval.
-11. Deploy in a controlled window, run smoke tests for OTP, roles, vehicle registration, service request, technician assignment, wallet, withdrawal, admin operations, and provider callbacks; retain a tested rollback path.
+1. Complete CI for the current operational-hardening PR and merge only if all five required workflows pass on the exact head.
+2. Refresh PR #43 on current mainline, rerun its complete CI, then deploy only to isolated Cloudflare D1 staging.
+3. Observe scheduled escrow runs and reconcile ledger/balance effects; keep the production schedule flag disabled until separately approved.
+4. Select the payment provider and complete sandbox initiation, signed/server-side verification, replay, wrong-amount/currency, timeout, duplicate callback, and refund tests.
+5. Select and configure the SMS provider in staging; test delivery, rate limits, provider outage, monitoring, and alerting.
+6. Deploy the exact Release Candidate to isolated VPS staging; run k6, ZAP, backup/restore, health/readiness, and rollback rehearsals; attach evidence.
+7. Review production secrets, admin access, payout reconciliation, currency contract, migration plan, backup retention/encryption, and incident rollback plan.
+8. Obtain explicit owner approval before any production secret activation, migration, domain/hosting switch, SMS/payment activation, or deployment.
 
 ## 5. Explicitly not performed
 
 - No production deployment.
-- No production D1 migration or production-data mutation.
-- No Cron Worker deployment or production `WALLET_RELEASE_SCHEDULED` change.
-- No real SMS delivery or provider credential activation.
+- No production database migration or data mutation.
+- No Cloudflare D1 staging database or Cron Worker deployment.
+- No real SMS delivery or provider activation.
 - No live payment, refund, or bank transfer.
-- No production admin secret configuration.
+- No production secret configuration.
+- No measured k6 load test, ZAP report, or production restore rehearsal.
+- No Release Candidate tag or public release.
 
-**Final decision: NOT READY.** Automated checks demonstrate code/build/test properties for their exact commits and test environments only. Production readiness still depends on external D1 staging, provider integration, secrets, operational reconciliation, and owner approvals.
+**Final decision: NOT READY.** Code-level reliability work is materially advanced, but actual Cloudflare staging, payment/SMS provider validation, operational performance/security evidence, and explicit release approval remain mandatory.
