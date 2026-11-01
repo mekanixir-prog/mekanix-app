@@ -179,7 +179,7 @@ describe("insurance claim atomic writer", () => {
         findUnique: vi.fn().mockResolvedValue(null),
         create: vi.fn().mockResolvedValue({ id: "claim-1", code: claimInput.code }),
       },
-      insurancePolicy: { update: vi.fn().mockResolvedValue({ id: "policy-1", status: "claimed" }) },
+      insurancePolicy: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     };
     const db = {
       insuranceClaim: { findUnique: vi.fn().mockResolvedValue(null) },
@@ -189,8 +189,8 @@ describe("insurance claim atomic writer", () => {
     await expect(createInsuranceClaimAtomically(db, claimInput))
       .resolves.toEqual({ id: "claim-1", code: claimInput.code, created: true });
     expect(tx.insuranceClaim.create).toHaveBeenCalledTimes(1);
-    expect(tx.insurancePolicy.update).toHaveBeenCalledWith({
-      where: { id: claimInput.policyId },
+    expect(tx.insurancePolicy.updateMany).toHaveBeenCalledWith({
+      where: { id: claimInput.policyId, status: { notIn: ["expired", "cancelled"] } },
       data: { status: "claimed" },
     });
   });
@@ -227,9 +227,9 @@ describe("insurance claim atomic writer", () => {
         }),
       },
       insurancePolicy: {
-        update: vi.fn(async () => {
+        updateMany: vi.fn(async () => {
           policyUpdates++;
-          return { id: claimInput.policyId, status: "claimed" };
+          return { count: 1 };
         }),
       },
     };
