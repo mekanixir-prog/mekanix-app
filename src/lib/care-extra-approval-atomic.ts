@@ -122,7 +122,7 @@ async function decideWithD1(
   // does not abort the batch by itself, so assert each write immediately.
   // SELECT does not change SQLite's changes() counter.
   const assertOneChange = () =>
-    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '
+    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '$') END").bind();
   const statements = [
     d1.prepare(`
       UPDATE "CustomerApproval"
