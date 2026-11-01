@@ -120,6 +120,11 @@ export async function updateWithdrawalWithPrisma(db: PrismaClient, input: Input)
 /** Cloudflare D1: conditional transitions and dependent writes share one transactional batch. */
 export async function updateWithdrawalWithD1(d1: D1Database, input: Input): Promise<boolean> {
   const at = input.at.toISOString();
+  // A zero-row D1 statement is not an SQL error. These guards deliberately
+  // raise one when a required CAS write did not affect exactly one row, which
+  // makes D1.batch roll back the complete financial transition.
+  const assertOneChange = () =>
+    d1.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '$') END`);
 
   if (input.action === "APPROVED") {
     const result = await d1.batch([
@@ -133,12 +138,13 @@ export async function updateWithdrawalWithD1(d1: D1Database, input: Input): Prom
   }
 
   if (input.action === "REJECTED") {
-    const results = await d1.batch([
+    const statements = [
       d1.prepare(`
         UPDATE "WithdrawalRequest"
         SET "status" = 'REJECTED', "reviewerId" = ?, "adminNotes" = ?, "processedAt" = ?
         WHERE "id" = ? AND "status" IN ('REQUESTED', 'APPROVED')
       `).bind(input.adminId, input.adminNotes, at, input.withdrawalId),
+      assertOneChange(),
       d1.prepare(`
         UPDATE "Wallet"
         SET "balance" = "balance" + (
@@ -150,6 +156,7 @@ export async function updateWithdrawalWithD1(d1: D1Database, input: Input): Prom
           WHERE "id" = ? AND "status" = 'REJECTED' AND "processedAt" = ?
         ) AND changes() = 1
       `).bind(input.withdrawalId, at, at, input.withdrawalId, at),
+      assertOneChange(),
       d1.prepare(`
         INSERT INTO "WalletLedger"
           ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
@@ -165,10 +172,15 @@ export async function updateWithdrawalWithD1(d1: D1Database, input: Input): Prom
         `withdrawal:${input.withdrawalId}:REJECT_REFUND`, input.adminId, at,
         input.withdrawalId, at
       ),
-    ]);
-    return results[0]?.meta?.changes === 1 &&
-      results[1]?.meta?.changes === 1 &&
-      results[2]?.meta?.changes === 1;
+      assertOneChange(),
+    ];
+    try {
+      const results = await d1.batch(statements);
+      return [0, 2, 4].every((index) => results[index]?.meta?.changes === 1);
+    } catch (error) {
+      if (error instanceof Error && /malformed JSON/i.test(error.message)) return false;
+      throw error;
+    }
   }
 
   const payoutReference = input.payoutReference?.trim();
@@ -176,13 +188,14 @@ export async function updateWithdrawalWithD1(d1: D1Database, input: Input): Prom
     throw new Error("شناسه پیگیری واقعی انتقال بانکی الزامی است");
   }
   const payoutId = crypto.randomUUID();
-  const results = await d1.batch([
+  const statements = [
     d1.prepare(`
       UPDATE "WithdrawalRequest"
       SET "status" = 'PAID', "reviewerId" = ?, "adminNotes" = ?,
           "processedAt" = ?, "txnId" = ?
       WHERE "id" = ? AND "status" = 'APPROVED'
     `).bind(input.adminId, input.adminNotes, at, payoutReference, input.withdrawalId),
+    assertOneChange(),
     d1.prepare(`
       INSERT INTO "WalletTransaction"
         ("id", "walletId", "kind", "status", "grossAmount", "commissionAmount",
@@ -195,6 +208,7 @@ export async function updateWithdrawalWithD1(d1: D1Database, input: Input): Prom
       payoutId, `Payout for withdrawal ${input.withdrawalId}; bank reference ${payoutReference}`,
       `withdrawal:${input.withdrawalId}:PAYOUT`, at, input.withdrawalId, payoutReference
     ),
+    assertOneChange(),
     d1.prepare(`
       UPDATE "Wallet"
       SET "totalWithdrawn" = "totalWithdrawn" + CASE WHEN changes() = 1 THEN (
@@ -206,12 +220,16 @@ export async function updateWithdrawalWithD1(d1: D1Database, input: Input): Prom
         WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?
       ) AND changes() = 1
     `).bind(input.withdrawalId, payoutReference, at, input.withdrawalId, payoutReference),
-  ]);
-  return results[0]?.meta?.changes === 1 &&
-    results[1]?.meta?.changes === 1 &&
-    results[2]?.meta?.changes === 1;
+    assertOneChange(),
+  ];
+  try {
+    const results = await d1.batch(statements);
+    return [0, 2, 4].every((index) => results[index]?.meta?.changes === 1);
+  } catch (error) {
+    if (error instanceof Error && /malformed JSON/i.test(error.message)) return false;
+    throw error;
+  }
 }
-
 export async function updateWithdrawalAtomically(
   db: PrismaClient,
   input: Input
