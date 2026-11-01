@@ -84,17 +84,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   // Compute ETA from distance. Null coordinates use a conservative fallback;
   // zero is a valid latitude/longitude and must not be treated as missing.
+  const techLat = tech.lat;
+  const techLng = tech.lng;
+  const requestLat = sr.lat;
+  const requestLng = sr.lng;
   const hasCoordinates =
-    tech.lat !== null && tech.lng !== null && sr.lat !== null && sr.lng !== null;
+    techLat !== null && techLng !== null && requestLat !== null && requestLng !== null;
   const km = hasCoordinates
     ? (() => {
         const R = 6371;
-        const dLat = ((sr.lat - tech.lat) * Math.PI) / 180;
-        const dLng = ((sr.lng - tech.lng) * Math.PI) / 180;
+        const dLat = ((requestLat - techLat) * Math.PI) / 180;
+        const dLng = ((requestLng - techLng) * Math.PI) / 180;
         const a =
           Math.sin(dLat / 2) ** 2 +
-          Math.cos((tech.lat * Math.PI) / 180) *
-            Math.cos((sr.lat * Math.PI) / 180) *
+          Math.cos((techLat * Math.PI) / 180) *
+            Math.cos((requestLat * Math.PI) / 180) *
             Math.sin(dLng / 2) ** 2;
         return 2 * R * Math.asin(Math.sqrt(a));
       })()
