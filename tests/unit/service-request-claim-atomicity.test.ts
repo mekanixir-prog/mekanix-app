@@ -151,7 +151,7 @@ describe("service request atomic writer", () => {
           return { sql, values };
         },
       }),
-      batch: vi.fn(async () => [{ meta: { changes: 1 } }, { meta: { changes: 1 } }]),
+      batch: vi.fn(async (_statements: unknown[]) => [{ meta: { changes: 1 } }, { meta: { changes: 1 } }]),
     };
     mocks.getD1Binding.mockResolvedValue(d1);
     vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValueOnce("request-d1").mockReturnValueOnce("vehicle-d1") });
