@@ -1,10 +1,10 @@
 # MEKANIX Engineering Documentation
 
-> **Documentation status:** current audit based on main commit `901d1f889703cce0c9acd8a189841b49b30e8847`. Read the dated release audit before treating historical status documents as current.
+> **Documentation status:** current audit based on main commit `399e8c09dab4c1a8e376467ca940dab81f5bc3eb`. Read the dated release audit before treating historical status documents as current.
 
 ## Start here
 
-1. [Release Readiness Audit — 2026-10-31](RELEASE_READINESS_AUDIT_2026-10-31.md) — current mainline status, blockers, and evidence required before release.
+1. [Release Readiness Audit — 2026-11-01](RELEASE_READINESS_AUDIT_2026-11-01.md) — current mainline status, blockers, and evidence required before release.
 2. [Historical Release Readiness Audit](RELEASE_READINESS_AUDIT.md) — prior snapshot; not authoritative for current status.
 3. [Production Deployment Runbook](PRODUCTION_DEPLOYMENT_RUNBOOK.md) — safe sequence for configuration, database checks, staging, deployment, smoke tests, and rollback.
 4. [SEO Implementation Notes](SEO_IMPLEMENTATION.md) — Persian public pages, metadata, sitemap/robots behavior, and SEO launch checks.
