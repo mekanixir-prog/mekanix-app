@@ -1358,3 +1358,12 @@ model IdempotencyKey {
 
   @@index([key, expiresAt])
 }
+
+
+// Durable pagination cursor for the scheduled wallet escrow worker.
+model WalletReleaseWorkerState {
+  id              String   @id
+  cursorHoldUntil DateTime?
+  cursorId        String?
+  updatedAt       DateTime @updatedAt
+}
