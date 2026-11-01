@@ -20,6 +20,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ──────────── Module-level mocks (hoisted by vitest) ────────────
 const mockVipPlanFindUnique = vi.fn();
 const mockPaymentFindUnique = vi.fn();
+const mockPaymentGatewayLogFindUnique = vi.fn();
 const mockUserVipSubscriptionUpdateMany = vi.fn();
 const mockUserVipSubscriptionCreate = vi.fn();
 const mockUserVipSubscriptionFindFirst = vi.fn();
@@ -29,6 +30,7 @@ vi.mock("@/lib/db-access", () => ({
   getDbForLib: vi.fn(async () => ({
     vipPlan: { findUnique: (...args: any[]) => mockVipPlanFindUnique(...args) },
     payment: { findUnique: (...args: any[]) => mockPaymentFindUnique(...args) },
+    paymentGatewayLog: { findUnique: (...args: any[]) => mockPaymentGatewayLogFindUnique(...args) },
     userVipSubscription: {
       findFirst: (...args: any[]) => mockUserVipSubscriptionFindFirst(...args),
       updateMany: (...args: any[]) => mockUserVipSubscriptionUpdateMany(...args),
@@ -81,6 +83,17 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       userId: "user-1",
       status: "SUCCEEDED",
       amount: 100_000, // exactly covers plan price
+      currency: "IRR",
+      gatewayLogId: "gateway-1",
+    });
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "gateway-1",
+      userId: "user-1",
+      status: "VERIFIED",
+      purpose: "vip",
+      paymentId: "pay-1",
+      amount: 100_000,
+      currency: "IRR",
     });
     mockUserVipSubscriptionUpdateMany.mockResolvedValue({ count: 0 });
     mockUserVipSubscriptionFindFirst.mockResolvedValue(null); // no existing sub using this payment
@@ -208,6 +221,51 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     const body = await res.json();
     expect(body.ok).toBe(true);
     expect(body.subscription.id).toBe("sub-1");
+  });
+
+  it("rejects a successful payment without a gateway attempt", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockPaymentFindUnique.mockResolvedValue({
+      id: "pay-1", userId: "user-1", status: "SUCCEEDED",
+      amount: 100_000, currency: "IRR", gatewayLogId: null,
+    });
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(400);
+    expect(mockPaymentGatewayLogFindUnique).not.toHaveBeenCalled();
+    expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a verified payment whose purpose is not VIP", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "gateway-1", userId: "user-1", status: "VERIFIED",
+      purpose: "invoice", paymentId: "pay-1", amount: 100_000, currency: "IRR",
+    });
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(400);
+    expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a gateway attempt not linked back to the selected payment", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "gateway-1", userId: "user-1", status: "VERIFIED",
+      purpose: "vip", paymentId: "different-payment", amount: 100_000, currency: "IRR",
+    });
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(400);
+    expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a gateway amount or currency that differs from the payment row", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "gateway-1", userId: "user-1", status: "VERIFIED",
+      purpose: "vip", paymentId: "pay-1", amount: 120_000, currency: "USD",
+    });
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(400);
+    expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
   });
 
   // ──────────── Extra: planId required ────────────
