@@ -119,7 +119,9 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
   it("creates one booking, pricing snapshot, link and timeline event for 80 concurrent identical retries", async () => {
     const input = makeInput("concurrent");
     const results = await Promise.all(
-      Array.from({ length: 80 }, () => createCareBookingAtomically(db, input))
+      Array.from({ length: 80 }, (_, index) =>
+        createCareBookingAtomically(db, { ...input, code: `CARE-PG-${runId}-concurrent-${index}` })
+      )
     );
 
     expect(new Set(results.map((booking) => booking.id)).size).toBe(1);
