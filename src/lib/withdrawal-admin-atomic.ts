@@ -16,8 +16,11 @@ type D1Database = {
   batch: (statements: D1Statement[]) => Promise<D1Result[]>;
 };
 
-/** All admin financial transitions run with the related wallet/ledger writes in one transaction. */
-export async function updateWithdrawalWithPrisma(db: PrismaClient, input: Input): Promise<boolean> {
+/** All Node financial transitions commit the request, wallet and ledger together. */
+export async function updateWithdrawalWithPrisma(
+  db: PrismaClient,
+  input: Input,
+): Promise<boolean> {
   return db.$transaction(async (tx) => {
     const withdrawal = await tx.withdrawalRequest.findUnique({
       where: { id: input.withdrawalId },
@@ -112,138 +115,25 @@ export async function updateWithdrawalWithPrisma(db: PrismaClient, input: Input)
       where: { id: withdrawal.walletId },
       data: { totalWithdrawn: { increment: withdrawal.amount } },
     });
-    if (walletUpdate.count !== 1) throw new Error("کیف پول برای ثبت پرداخت پیدا نشد؛ عملیات لغو شد");
+    if (walletUpdate.count !== 1) {
+      throw new Error("کیف پول برای ثبت پرداخت پیدا نشد؛ عملیات لغو شد");
+    }
     return true;
   });
 }
 
-/** Cloudflare D1: conditional transitions and dependent writes share one transactional batch. */
-export async function updateWithdrawalWithD1(d1: D1Database, input: Input): Promise<boolean> {
+/**
+ * Cloudflare D1: each required compare-and-set is followed by a guard that
+ * deliberately raises a SQL error on a zero-row result. D1.batch then rolls
+ * back the complete request + wallet + ledger transaction.
+ */
+export async function updateWithdrawalWithD1(
+  d1: D1Database,
+  input: Input,
+): Promise<boolean> {
   const at = input.at.toISOString();
-  // A zero-row D1 statement is not an SQL error. These guards deliberately
-  // raise one when a required CAS write did not affect exactly one row, which
-  // makes D1.batch roll back the complete financial transition.
   const assertOneChange = () =>
     d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '$') END").bind();
-  if (input.action === "APPROVED") {
-    const result = await d1.batch([
-      d1.prepare(`
-        UPDATE "WithdrawalRequest"
-        SET "status" = 'APPROVED', "reviewerId" = ?, "adminNotes" = ?
-        WHERE "id" = ? AND "status" = 'REQUESTED'
-      `).bind(input.adminId, input.adminNotes, input.withdrawalId),
-    ]);
-    return result[0]?.meta?.changes === 1;
-  }
-
-  if (input.action === "REJECTED") {
-    const statements = [
-      d1.prepare(`
-        UPDATE "WithdrawalRequest"
-        SET "status" = 'REJECTED', "reviewerId" = ?, "adminNotes" = ?, "processedAt" = ?
-        WHERE "id" = ? AND "status" IN ('REQUESTED', 'APPROVED')
-      `).bind(input.adminId, input.adminNotes, at, input.withdrawalId),
-      assertOneChange(),
-      d1.prepare(`
-        UPDATE "Wallet"
-        SET "balance" = "balance" + (
-          SELECT "amount" FROM "WithdrawalRequest"
-          WHERE "id" = ? AND "status" = 'REJECTED' AND "processedAt" = ?
-        ), "updatedAt" = ?
-        WHERE "id" = (
-          SELECT "walletId" FROM "WithdrawalRequest"
-          WHERE "id" = ? AND "status" = 'REJECTED' AND "processedAt" = ?
-        ) AND changes() = 1
-      `).bind(input.withdrawalId, at, at, input.withdrawalId, at),
-      assertOneChange(),
-      d1.prepare(`
-        INSERT INTO "WalletLedger"
-          ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
-           "referenceType", "referenceId", "description", "idempotencyKey", "createdBy", "createdAt")
-        SELECT ?, wr."walletId", 'REFUND', CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END,
-               (SELECT "balance" FROM "Wallet" WHERE "id" = wr."walletId") - wr."amount",
-               (SELECT "balance" FROM "Wallet" WHERE "id" = wr."walletId"),
-               'Withdrawal', wr."id", ?, ?, ?, ?
-        FROM "WithdrawalRequest" wr
-        WHERE wr."id" = ? AND wr."status" = 'REJECTED' AND wr."processedAt" = ?
-      `).bind(
-        crypto.randomUUID(), `Refund for rejected withdrawal ${input.withdrawalId}`,
-        `withdrawal:${input.withdrawalId}:REJECT_REFUND`, input.adminId, at,
-        input.withdrawalId, at
-      ),
-      assertOneChange(),
-    ];
-    try {
-      const results = await d1.batch(statements);
-      return [0, 2, 4].every((index) => results[index]?.meta?.changes === 1);
-    } catch (error) {
-      if (error instanceof Error && /malformed JSON/i.test(error.message)) return false;
-      throw error;
-    }
-  }
-
-  const payoutReference = input.payoutReference?.trim();
-  if (!payoutReference || payoutReference.length < 3 || payoutReference.length > 128) {
-    throw new Error("شناسه پیگیری واقعی انتقال بانکی الزامی است");
-  }
-  const payoutId = crypto.randomUUID();
-  const statements = [
-    d1.prepare(`
-      UPDATE "WithdrawalRequest"
-      SET "status" = 'PAID', "reviewerId" = ?, "adminNotes" = ?,
-          "processedAt" = ?, "txnId" = ?
-      WHERE "id" = ? AND "status" = 'APPROVED'
-    `).bind(input.adminId, input.adminNotes, at, payoutReference, input.withdrawalId),
-    assertOneChange(),
-    d1.prepare(`
-      INSERT INTO "WalletTransaction"
-        ("id", "walletId", "kind", "status", "grossAmount", "commissionAmount",
-         "netAmount", "description", "idempotencyKey", "createdAt")
-      SELECT ?, wr."walletId", 'PAYOUT', 'COMPLETED', CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END, 0,
-             -wr."amount", ?, ?, ?
-      FROM "WithdrawalRequest" wr
-      WHERE wr."id" = ? AND wr."status" = 'PAID' AND wr."txnId" = ?
-    `).bind(
-      payoutId, `Payout for withdrawal ${input.withdrawalId}; bank reference ${payoutReference}`,
-      `withdrawal:${input.withdrawalId}:PAYOUT`, at, input.withdrawalId, payoutReference
-    ),
-    assertOneChange(),
-    d1.prepare(`
-      UPDATE "Wallet"
-      SET "totalWithdrawn" = "totalWithdrawn" + CASE WHEN changes() = 1 THEN (
-        SELECT "amount" FROM "WithdrawalRequest"
-        WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?
-      ) ELSE NULL END, "updatedAt" = ?
-      WHERE "id" = (
-        SELECT "walletId" FROM "WithdrawalRequest"
-        WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?
-      ) AND changes() = 1
-    `).bind(input.withdrawalId, payoutReference, at, input.withdrawalId, payoutReference),
-    assertOneChange(),
-  ];
-  try {
-    const results = await d1.batch(statements);
-    return [0, 2, 4].every((index) => results[index]?.meta?.changes === 1);
-  } catch (error) {
-    if (error instanceof Error && /malformed JSON/i.test(error.message)) return false;
-    throw error;
-  }
-}
-export async function updateWithdrawalAtomically(
-  db: PrismaClient,
-  input: Input
-): Promise<boolean> {
-  const isWorker = typeof navigator !== "undefined" &&
-    navigator.userAgent === "Cloudflare-Workers";
-  if (!isWorker) return updateWithdrawalWithPrisma(db, input);
-
-  const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-  const context = await getCloudflareContext({ async: true });
-  const d1 = (context.env as unknown as { DB?: D1Database }).DB;
-  if (!d1) throw new Error("D1 binding 'DB' is unavailable for admin withdrawal action");
-  return updateWithdrawalWithD1(d1, input);
-}
-) END`).bind();
 
   if (input.action === "APPROVED") {
     const result = await d1.batch([
@@ -280,16 +170,21 @@ export async function updateWithdrawalAtomically(
         INSERT INTO "WalletLedger"
           ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
            "referenceType", "referenceId", "description", "idempotencyKey", "createdBy", "createdAt")
-        SELECT ?, wr."walletId", 'REFUND', CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END,
+        SELECT ?, wr."walletId", 'REFUND',
+               CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END,
                (SELECT "balance" FROM "Wallet" WHERE "id" = wr."walletId") - wr."amount",
                (SELECT "balance" FROM "Wallet" WHERE "id" = wr."walletId"),
                'Withdrawal', wr."id", ?, ?, ?, ?
         FROM "WithdrawalRequest" wr
         WHERE wr."id" = ? AND wr."status" = 'REJECTED' AND wr."processedAt" = ?
       `).bind(
-        crypto.randomUUID(), `Refund for rejected withdrawal ${input.withdrawalId}`,
-        `withdrawal:${input.withdrawalId}:REJECT_REFUND`, input.adminId, at,
-        input.withdrawalId, at
+        crypto.randomUUID(),
+        `Refund for rejected withdrawal ${input.withdrawalId}`,
+        `withdrawal:${input.withdrawalId}:REJECT_REFUND`,
+        input.adminId,
+        at,
+        input.withdrawalId,
+        at,
       ),
       assertOneChange(),
     ];
@@ -319,13 +214,18 @@ export async function updateWithdrawalAtomically(
       INSERT INTO "WalletTransaction"
         ("id", "walletId", "kind", "status", "grossAmount", "commissionAmount",
          "netAmount", "description", "idempotencyKey", "createdAt")
-      SELECT ?, wr."walletId", 'PAYOUT', 'COMPLETED', CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END, 0,
-             -wr."amount", ?, ?, ?
+      SELECT ?, wr."walletId", 'PAYOUT', 'COMPLETED',
+             CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END, 0,
+             -wr."amount', ?, ?, ?
       FROM "WithdrawalRequest" wr
       WHERE wr."id" = ? AND wr."status" = 'PAID' AND wr."txnId" = ?
     `).bind(
-      payoutId, `Payout for withdrawal ${input.withdrawalId}; bank reference ${payoutReference}`,
-      `withdrawal:${input.withdrawalId}:PAYOUT`, at, input.withdrawalId, payoutReference
+      payoutId,
+      `Payout for withdrawal ${input.withdrawalId}; bank reference ${payoutReference}`,
+      `withdrawal:${input.withdrawalId}:PAYOUT`,
+      at,
+      input.withdrawalId,
+      payoutReference,
     ),
     assertOneChange(),
     d1.prepare(`
@@ -349,248 +249,10 @@ export async function updateWithdrawalAtomically(
     throw error;
   }
 }
+
 export async function updateWithdrawalAtomically(
   db: PrismaClient,
-  input: Input
-): Promise<boolean> {
-  const isWorker = typeof navigator !== "undefined" &&
-    navigator.userAgent === "Cloudflare-Workers";
-  if (!isWorker) return updateWithdrawalWithPrisma(db, input);
-
-  const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-  const context = await getCloudflareContext({ async: true });
-  const d1 = (context.env as unknown as { DB?: D1Database }).DB;
-  if (!d1) throw new Error("D1 binding 'DB' is unavailable for admin withdrawal action");
-  return updateWithdrawalWithD1(d1, input);
-}
-) END").bind();
-  if (input.action === "APPROVED") {
-    const result = await d1.batch([
-      d1.prepare(`
-        UPDATE "WithdrawalRequest"
-        SET "status" = 'APPROVED', "reviewerId" = ?, "adminNotes" = ?
-        WHERE "id" = ? AND "status" = 'REQUESTED'
-      `).bind(input.adminId, input.adminNotes, input.withdrawalId),
-    ]);
-    return result[0]?.meta?.changes === 1;
-  }
-
-  if (input.action === "REJECTED") {
-    const statements = [
-      d1.prepare(`
-        UPDATE "WithdrawalRequest"
-        SET "status" = 'REJECTED', "reviewerId" = ?, "adminNotes" = ?, "processedAt" = ?
-        WHERE "id" = ? AND "status" IN ('REQUESTED', 'APPROVED')
-      `).bind(input.adminId, input.adminNotes, at, input.withdrawalId),
-      assertOneChange(),
-      d1.prepare(`
-        UPDATE "Wallet"
-        SET "balance" = "balance" + (
-          SELECT "amount" FROM "WithdrawalRequest"
-          WHERE "id" = ? AND "status" = 'REJECTED' AND "processedAt" = ?
-        ), "updatedAt" = ?
-        WHERE "id" = (
-          SELECT "walletId" FROM "WithdrawalRequest"
-          WHERE "id" = ? AND "status" = 'REJECTED' AND "processedAt" = ?
-        ) AND changes() = 1
-      `).bind(input.withdrawalId, at, at, input.withdrawalId, at),
-      assertOneChange(),
-      d1.prepare(`
-        INSERT INTO "WalletLedger"
-          ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
-           "referenceType", "referenceId", "description", "idempotencyKey", "createdBy", "createdAt")
-        SELECT ?, wr."walletId", 'REFUND', CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END,
-               (SELECT "balance" FROM "Wallet" WHERE "id" = wr."walletId") - wr."amount",
-               (SELECT "balance" FROM "Wallet" WHERE "id" = wr."walletId"),
-               'Withdrawal', wr."id", ?, ?, ?, ?
-        FROM "WithdrawalRequest" wr
-        WHERE wr."id" = ? AND wr."status" = 'REJECTED' AND wr."processedAt" = ?
-      `).bind(
-        crypto.randomUUID(), `Refund for rejected withdrawal ${input.withdrawalId}`,
-        `withdrawal:${input.withdrawalId}:REJECT_REFUND`, input.adminId, at,
-        input.withdrawalId, at
-      ),
-      assertOneChange(),
-    ];
-    try {
-      const results = await d1.batch(statements);
-      return [0, 2, 4].every((index) => results[index]?.meta?.changes === 1);
-    } catch (error) {
-      if (error instanceof Error && /malformed JSON/i.test(error.message)) return false;
-      throw error;
-    }
-  }
-
-  const payoutReference = input.payoutReference?.trim();
-  if (!payoutReference || payoutReference.length < 3 || payoutReference.length > 128) {
-    throw new Error("شناسه پیگیری واقعی انتقال بانکی الزامی است");
-  }
-  const payoutId = crypto.randomUUID();
-  const statements = [
-    d1.prepare(`
-      UPDATE "WithdrawalRequest"
-      SET "status" = 'PAID', "reviewerId" = ?, "adminNotes" = ?,
-          "processedAt" = ?, "txnId" = ?
-      WHERE "id" = ? AND "status" = 'APPROVED'
-    `).bind(input.adminId, input.adminNotes, at, payoutReference, input.withdrawalId),
-    assertOneChange(),
-    d1.prepare(`
-      INSERT INTO "WalletTransaction"
-        ("id", "walletId", "kind", "status", "grossAmount", "commissionAmount",
-         "netAmount", "description", "idempotencyKey", "createdAt")
-      SELECT ?, wr."walletId", 'PAYOUT', 'COMPLETED', CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END, 0,
-             -wr."amount", ?, ?, ?
-      FROM "WithdrawalRequest" wr
-      WHERE wr."id" = ? AND wr."status" = 'PAID' AND wr."txnId" = ?
-    `).bind(
-      payoutId, `Payout for withdrawal ${input.withdrawalId}; bank reference ${payoutReference}`,
-      `withdrawal:${input.withdrawalId}:PAYOUT`, at, input.withdrawalId, payoutReference
-    ),
-    assertOneChange(),
-    d1.prepare(`
-      UPDATE "Wallet"
-      SET "totalWithdrawn" = "totalWithdrawn" + CASE WHEN changes() = 1 THEN (
-        SELECT "amount" FROM "WithdrawalRequest"
-        WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?
-      ) ELSE NULL END, "updatedAt" = ?
-      WHERE "id" = (
-        SELECT "walletId" FROM "WithdrawalRequest"
-        WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?
-      ) AND changes() = 1
-    `).bind(input.withdrawalId, payoutReference, at, input.withdrawalId, payoutReference),
-    assertOneChange(),
-  ];
-  try {
-    const results = await d1.batch(statements);
-    return [0, 2, 4].every((index) => results[index]?.meta?.changes === 1);
-  } catch (error) {
-    if (error instanceof Error && /malformed JSON/i.test(error.message)) return false;
-    throw error;
-  }
-}
-export async function updateWithdrawalAtomically(
-  db: PrismaClient,
-  input: Input
-): Promise<boolean> {
-  const isWorker = typeof navigator !== "undefined" &&
-    navigator.userAgent === "Cloudflare-Workers";
-  if (!isWorker) return updateWithdrawalWithPrisma(db, input);
-
-  const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-  const context = await getCloudflareContext({ async: true });
-  const d1 = (context.env as unknown as { DB?: D1Database }).DB;
-  if (!d1) throw new Error("D1 binding 'DB' is unavailable for admin withdrawal action");
-  return updateWithdrawalWithD1(d1, input);
-}
-) END`).bind();
-
-  if (input.action === "APPROVED") {
-    const result = await d1.batch([
-      d1.prepare(`
-        UPDATE "WithdrawalRequest"
-        SET "status" = 'APPROVED', "reviewerId" = ?, "adminNotes" = ?
-        WHERE "id" = ? AND "status" = 'REQUESTED'
-      `).bind(input.adminId, input.adminNotes, input.withdrawalId),
-    ]);
-    return result[0]?.meta?.changes === 1;
-  }
-
-  if (input.action === "REJECTED") {
-    const statements = [
-      d1.prepare(`
-        UPDATE "WithdrawalRequest"
-        SET "status" = 'REJECTED', "reviewerId" = ?, "adminNotes" = ?, "processedAt" = ?
-        WHERE "id" = ? AND "status" IN ('REQUESTED', 'APPROVED')
-      `).bind(input.adminId, input.adminNotes, at, input.withdrawalId),
-      assertOneChange(),
-      d1.prepare(`
-        UPDATE "Wallet"
-        SET "balance" = "balance" + (
-          SELECT "amount" FROM "WithdrawalRequest"
-          WHERE "id" = ? AND "status" = 'REJECTED' AND "processedAt" = ?
-        ), "updatedAt" = ?
-        WHERE "id" = (
-          SELECT "walletId" FROM "WithdrawalRequest"
-          WHERE "id" = ? AND "status" = 'REJECTED' AND "processedAt" = ?
-        ) AND changes() = 1
-      `).bind(input.withdrawalId, at, at, input.withdrawalId, at),
-      assertOneChange(),
-      d1.prepare(`
-        INSERT INTO "WalletLedger"
-          ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
-           "referenceType", "referenceId", "description", "idempotencyKey", "createdBy", "createdAt")
-        SELECT ?, wr."walletId", 'REFUND', CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END,
-               (SELECT "balance" FROM "Wallet" WHERE "id" = wr."walletId") - wr."amount",
-               (SELECT "balance" FROM "Wallet" WHERE "id" = wr."walletId"),
-               'Withdrawal', wr."id", ?, ?, ?, ?
-        FROM "WithdrawalRequest" wr
-        WHERE wr."id" = ? AND wr."status" = 'REJECTED' AND wr."processedAt" = ?
-      `).bind(
-        crypto.randomUUID(), `Refund for rejected withdrawal ${input.withdrawalId}`,
-        `withdrawal:${input.withdrawalId}:REJECT_REFUND`, input.adminId, at,
-        input.withdrawalId, at
-      ),
-      assertOneChange(),
-    ];
-    try {
-      const results = await d1.batch(statements);
-      return [0, 2, 4].every((index) => results[index]?.meta?.changes === 1);
-    } catch (error) {
-      if (error instanceof Error && /malformed JSON/i.test(error.message)) return false;
-      throw error;
-    }
-  }
-
-  const payoutReference = input.payoutReference?.trim();
-  if (!payoutReference || payoutReference.length < 3 || payoutReference.length > 128) {
-    throw new Error("شناسه پیگیری واقعی انتقال بانکی الزامی است");
-  }
-  const payoutId = crypto.randomUUID();
-  const statements = [
-    d1.prepare(`
-      UPDATE "WithdrawalRequest"
-      SET "status" = 'PAID', "reviewerId" = ?, "adminNotes" = ?,
-          "processedAt" = ?, "txnId" = ?
-      WHERE "id" = ? AND "status" = 'APPROVED'
-    `).bind(input.adminId, input.adminNotes, at, payoutReference, input.withdrawalId),
-    assertOneChange(),
-    d1.prepare(`
-      INSERT INTO "WalletTransaction"
-        ("id", "walletId", "kind", "status", "grossAmount", "commissionAmount",
-         "netAmount", "description", "idempotencyKey", "createdAt")
-      SELECT ?, wr."walletId", 'PAYOUT', 'COMPLETED', CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END, 0,
-             -wr."amount", ?, ?, ?
-      FROM "WithdrawalRequest" wr
-      WHERE wr."id" = ? AND wr."status" = 'PAID' AND wr."txnId" = ?
-    `).bind(
-      payoutId, `Payout for withdrawal ${input.withdrawalId}; bank reference ${payoutReference}`,
-      `withdrawal:${input.withdrawalId}:PAYOUT`, at, input.withdrawalId, payoutReference
-    ),
-    assertOneChange(),
-    d1.prepare(`
-      UPDATE "Wallet"
-      SET "totalWithdrawn" = "totalWithdrawn" + CASE WHEN changes() = 1 THEN (
-        SELECT "amount" FROM "WithdrawalRequest"
-        WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?
-      ) ELSE NULL END, "updatedAt" = ?
-      WHERE "id" = (
-        SELECT "walletId" FROM "WithdrawalRequest"
-        WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?
-      ) AND changes() = 1
-    `).bind(input.withdrawalId, payoutReference, at, input.withdrawalId, payoutReference),
-    assertOneChange(),
-  ];
-  try {
-    const results = await d1.batch(statements);
-    return [0, 2, 4].every((index) => results[index]?.meta?.changes === 1);
-  } catch (error) {
-    if (error instanceof Error && /malformed JSON/i.test(error.message)) return false;
-    throw error;
-  }
-}
-export async function updateWithdrawalAtomically(
-  db: PrismaClient,
-  input: Input
+  input: Input,
 ): Promise<boolean> {
   const isWorker = typeof navigator !== "undefined" &&
     navigator.userAgent === "Cloudflare-Workers";
