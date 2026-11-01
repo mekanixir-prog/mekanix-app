@@ -72,8 +72,8 @@ jobs:
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo "$VERSION_CODENAME")-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update -qq
           sudo apt-get install -y postgresql-client-16
-          pg_dump --version | grep -E ' 16\\.'
-          psql --version | grep -E ' 16\\.'
+          pg_dump --version | grep -E ' 16\.'
+          psql --version | grep -E ' 16\.'
           PGPASSWORD=mekanix_test createdb -h 127.0.0.1 -p 5432 -U mekanix mekanix_restore_test
           DATABASE_URL=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_test \
           TEST_DB_URL=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_restore_test \
