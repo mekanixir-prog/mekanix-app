@@ -161,6 +161,28 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     );
   }
 
+  // Assignment marks the technician ON_JOB. Release that capacity when the
+  // job reaches a terminal state, but only if no other active job remains.
+  if (status === "COMPLETED" || status === "CANCELLED" || status === "REJECTED") {
+    await db.technician.updateMany({
+      where: {
+        id: existing.technicianId,
+        status: "ON_JOB",
+        jobsAssigned: {
+          none: {
+            status: {
+              in: [
+                "REQUESTED", "ACCEPTED", "EN_ROUTE", "ARRIVED",
+                "DIAGNOSING", "REPAIRING", "WAITING_APPROVAL",
+              ],
+            },
+          },
+        },
+      },
+      data: { status: "ONLINE" },
+    });
+  }
+
   // Fetch updated job with relations
   const job = await db.job.findUnique({ where: { id }, include });
   if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
