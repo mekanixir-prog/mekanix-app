@@ -26,11 +26,18 @@ vi.mock("@/lib/rate-limit", () => ({
 
 import { POST } from "@/app/api/wallets/withdraw/route";
 
+const validSheba = "IR062960000000100324200001";
+
 function request(body: unknown, key = "withdrawal-request-0001") {
   return new Request("https://mekanix.test/api/wallets/withdraw", {
     method: "POST",
     headers: { "content-type": "application/json", "idempotency-key": key },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      method: "bank",
+      bankName: "Bank Mellat",
+      shebaNumber: validSheba,
+      ...(body as Record<string, unknown>),
+    }),
   });
 }
 
@@ -43,7 +50,7 @@ beforeEach(() => {
 
 describe("atomic withdrawal route", () => {
   it("commits a withdrawal and returns the updated balance", async () => {
-    const withdrawal = { id: "wd-1", walletId: "wallet-1", amount: 500, method: "card", cardNumber: null, bankName: null, shebaNumber: null, status: "REQUESTED" };
+    const withdrawal = { id: "wd-1", walletId: "wallet-1", amount: 500, method: "bank", cardNumber: null, bankName: "Bank Mellat", shebaNumber: validSheba, status: "REQUESTED" };
     atomic.mockResolvedValue(true);
     db.withdrawalRequest.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(withdrawal);
     db.wallet.findUnique.mockResolvedValueOnce({ id: "wallet-1", balance: 1000 })
@@ -57,7 +64,7 @@ describe("atomic withdrawal route", () => {
 
   it("returns the existing request on retry without debiting again", async () => {
     db.withdrawalRequest.findUnique.mockResolvedValue({
-      id: "wd-existing", walletId: "wallet-1", amount: 500, method: "card", cardNumber: null, bankName: null, shebaNumber: null, status: "REQUESTED",
+      id: "wd-existing", walletId: "wallet-1", amount: 500, method: "bank", cardNumber: null, bankName: "Bank Mellat", shebaNumber: validSheba, status: "REQUESTED",
     });
     const response = await POST(request({ amount: 500 }));
     expect(response.status).toBe(200);
@@ -67,7 +74,7 @@ describe("atomic withdrawal route", () => {
 
   it("rejects reuse of an idempotency key with a different request payload", async () => {
     db.withdrawalRequest.findUnique.mockResolvedValue({
-      id: "wd-existing", walletId: "wallet-1", amount: 400, method: "card", cardNumber: null, bankName: null, shebaNumber: null, status: "REQUESTED",
+      id: "wd-existing", walletId: "wallet-1", amount: 400, method: "bank", cardNumber: null, bankName: "Bank Mellat", shebaNumber: validSheba, status: "REQUESTED",
     });
     const response = await POST(request({ amount: 500 }));
     expect(response.status).toBe(409);
@@ -76,7 +83,16 @@ describe("atomic withdrawal route", () => {
 
   it("rejects invalid amounts and missing idempotency keys", async () => {
     expect((await POST(request({ amount: 0 }))).status).toBe(400);
+    expect((await POST(request({ amount: 4.99 }))).status).toBe(400);
+    expect((await POST(request({ amount: 5.001 }))).status).toBe(400);
     expect((await POST(request({ amount: 500 }, ""))).status).toBe(400);
+    expect(atomic).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsupported card payout and invalid Sheba details", async () => {
+    expect((await POST(request({ amount: 500, method: "card" }))).status).toBe(400);
+    expect((await POST(request({ amount: 500, shebaNumber: "IR000000000000000000000000" }))).status).toBe(400);
+    expect((await POST(request({ amount: 500, bankName: " " }))).status).toBe(400);
     expect(atomic).not.toHaveBeenCalled();
   });
 
