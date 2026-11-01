@@ -7,122 +7,104 @@ import { requestFingerprint } from "@/lib/idempotency";
 import { calculatePrice } from "@/lib/pricing";
 import { checkVipStatus } from "@/lib/vip";
 import { wantsLite, liteResponse } from "@/lib/lite-response";
+import {
+  CareBookingIdempotencyConflict,
+  createCareBookingAtomically,
+} from "@/lib/care-booking-atomic";
 
 // POST /api/care/bookings — create a service booking.
-//
-// Pricing flow (per ARCHITECTURE.md §12):
-//   1. Compute VIP discount percent (0 if no active VIP).
-//   2. Compute the price via the pricing engine (`calculatePrice`):
-//        FinalPrice = Labor + Parts + Travel + Emergency - Discount
-//      At booking time, parts are unknown (0), and travel distance is
-//      unknown (no technician dispatched yet → 0). The travel fee then
-//      collapses to the base visit fee. After dispatch + inspection, the
-//      snapshot can be refreshed with real parts + travel distance.
-//   3. Persist the price as a frozen `PricingSnapshot` linked to the
-//      booking — historical prices are immutable.
+// Idempotency-Key is mandatory. The booking, frozen pricing snapshot, link,
+// and creation timeline event are committed as one unit on PostgreSQL/SQLite
+// and one D1 batch on Cloudflare Workers.
 export async function POST(req: Request) {
   const db = await getDbForLib();
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
-  // Validate request body with Zod. vehicleId + location are required;
-  // the rest (packageId, lat/lng, date, timeWindow, currentMileage) are
-  // optional but type-checked if present. The schema also rejects negative
-  // mileage and out-of-range lat/lng before we touch the DB.
+  const idempotencyKey = req.headers.get("Idempotency-Key")?.trim() ?? "";
+  if (!/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
+    return NextResponse.json(
+      { error: "هدر Idempotency-Key معتبر و الزامی است" },
+      { status: 400 }
+    );
+  }
+
   const body = await validateBody(req, careBookingSchema);
   if (!body.ok) return body.response;
 
-  const { vehicleId, packageId, serviceType, location, lat, lng, date, timeWindow, currentMileage } = body.data;
+  const {
+    vehicleId, packageId, serviceType, location, lat, lng,
+    date, timeWindow, currentMileage,
+  } = body.data;
 
   const customer = await getCustomerFromSession(session);
-  if (!customer) return NextResponse.json({ error: "پروفایل مشتری یافت نشد" }, { status: 403 });
+  if (!customer) {
+    return NextResponse.json({ error: "پروفایل مشتری یافت نشد" }, { status: 403 });
+  }
 
-  // Verify vehicle ownership
   const vehicle = await db.vehicle.findUnique({ where: { id: vehicleId } });
   if (!vehicle || vehicle.customerId !== customer.id) {
     return NextResponse.json({ error: "خودرو متعلق به شما نیست" }, { status: 403 });
   }
 
-  // ── Pricing ─────────────────────────────────────────────────────────
-  // Use the new pricing engine (ARCHITECTURE.md §12). The booking-time
-  // snapshot uses:
-  //   - vehicle.type → drives the vehicle-type labor multiplier
-  //   - laborHours = 1 (default estimate; re-priced after inspection)
-  //   - partsCost = 0 (unknown at booking time)
-  //   - travelDistanceKm = 0 (no technician dispatched yet)
-  //   - isEmergency = serviceType === "emergency"
-  //   - vipDiscountPercent = active VIP discount (0 if none)
-  const vipStatus = await checkVipStatus(session.userId);
+  const normalized = {
+    userId: session.userId,
+    vehicleId,
+    packageId: packageId || null,
+    serviceType: serviceType || "periodic",
+    location,
+    lat: lat ?? null,
+    lng: lng ?? null,
+    date: date ? new Date(date).toISOString() : null,
+    timeWindow: timeWindow || null,
+    currentMileage: currentMileage ?? null,
+  };
+  const fingerprint = await requestFingerprint(normalized);
 
+  // Fast replay path avoids recalculating a frozen historical price.
+  const existing = await db.serviceBooking.findUnique({
+    where: { idempotencyKey },
+  });
+  if (existing) {
+    if (existing.requestFingerprint !== fingerprint) {
+      return NextResponse.json(
+        { error: "این کلید قبلاً برای اطلاعات متفاوتی استفاده شده است" },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json(existing);
+  }
+
+  const vipStatus = await checkVipStatus(session.userId);
   const pricing = await calculatePrice({
     packageId: packageId || undefined,
     vehicleType: vehicle.type,
-    laborHours: 1, // conservative booking-time estimate
-    partsCost: 0, // unknown at booking time
-    travelDistanceKm: 0, // no technician dispatched yet
+    laborHours: 1,
+    partsCost: 0,
+    travelDistanceKm: 0,
     isEmergency: serviceType === "emergency",
     vipDiscountPercent: vipStatus.active ? vipStatus.discountPercent : 0,
   });
 
-  // Create booking + pricing snapshot + timeline event as sequential writes
-  // (D1 has no $transaction; earlier writes stay if a later one throws).
-  //
-  // The snapshot write is inlined here (rather than delegated to
-  // `createPricingSnapshot()`) so it commits with the booking creation in
-  // sequence. `createPricingSnapshot()` uses its own db handle which would
-  // not be orderable relative to the booking insert.
-  const code = `CARE-${Math.floor(100000 + Math.random() * 900000)}`;
-
-  const booking = await db.serviceBooking.create({
-    data: {
-      code,
-      userId: session.userId,
-      vehicleId,
-      packageId: packageId || null,
-      serviceType: serviceType || "periodic",
-      location,
-      lat: lat || null,
-      lng: lng || null,
+  try {
+    const booking = await createCareBookingAtomically(db, {
+      idempotencyKey,
+      requestFingerprint: fingerprint,
+      code: `CARE-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`,
+      ...normalized,
       date: date ? new Date(date) : null,
-      timeWindow: timeWindow || null,
-      currentMileage: currentMileage || null,
-      status: "REQUESTED",
-    },
-  });
-
-  // Persist the frozen pricing snapshot (immutable, linked 1:1 to booking).
-  const snapshot = await db.pricingSnapshot.create({
-    data: {
-      bookingId: booking.id,
-      servicePrice: pricing.labor, // labor as service price
-      visitPrice: pricing.travel,
-      laborPrice: pricing.labor,
-      partsPrice: pricing.parts,
-      discount: pricing.discount,
-      taxRate: pricing.taxRate,
-      taxTotal: pricing.taxTotal,
-      total: pricing.total,
-      currency: pricing.currency,
-      pricingVersion: pricing.pricingVersion,
-    },
-  });
-
-  // Link snapshot to booking
-  await db.serviceBooking.update({
-    where: { id: booking.id },
-    data: { pricingSnapshotId: snapshot.id },
-  });
-
-  // Create timeline event
-  await db.serviceTimelineEvent.create({
-    data: {
-      bookingId: booking.id,
-      eventType: "booking_created",
-      actor: session.userId,
-    },
-  });
-
-  return NextResponse.json(booking);
+      pricing,
+    });
+    return NextResponse.json(booking);
+  } catch (error) {
+    if (error instanceof CareBookingIdempotencyConflict) {
+      return NextResponse.json(
+        { error: "این کلید قبلاً برای اطلاعات متفاوتی استفاده شده است" },
+        { status: 409 }
+      );
+    }
+    throw error;
+  }
 }
 
 // GET /api/care/bookings — list user's bookings
