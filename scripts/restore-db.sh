@@ -1,94 +1,121 @@
 #!/bin/bash
-# MEKANIX — Database Restore Script (SQLite dev + PostgreSQL prod)
+# MEKANIX — Safe Database Restore
 #
-# Restores a database from a backup file created by scripts/backup-db.sh.
+# Restores only into an EMPTY PostgreSQL database or atomically replaces a
+# SQLite file. For PostgreSQL production recovery, use a separately reviewed
+# break-glass runbook; this script deliberately refuses to overwrite tables.
 #
 # Usage:
-#   bash scripts/restore-db.sh <backup-file>
-#   bash scripts/restore-db.sh /backups/mekanix_20260925_120000.sql.gz
-#
-# Environment:
-#   DATABASE_URL — connection string (sqlite or postgresql)
+#   RESTORE_CONFIRM=RESTORE DATABASE_URL=... bash scripts/restore-db.sh backup.sql.gz[.gpg]
+#   Encrypted backups require BACKUP_PASSPHRASE_FILE.
 
 set -euo pipefail
+umask 077
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKUP_FILE="${1:?Usage: bash scripts/restore-db.sh <backup-file>}"
 DB_URL="${DATABASE_URL:-file:$REPO_DIR/db/custom.db}"
+PASSPHRASE_FILE="${BACKUP_PASSPHRASE_FILE:-}"
+DECRYPTED_TMP=""
+RAW_TMP=""
+SQLITE_TMP=""
 
-if [ ! -f "$BACKUP_FILE" ]; then
-  echo "❌ Backup file not found: $BACKUP_FILE"
+cleanup() {
+  [ -z "$DECRYPTED_TMP" ] || rm -f "$DECRYPTED_TMP"
+  [ -z "$RAW_TMP" ] || rm -f "$RAW_TMP"
+  [ -z "$SQLITE_TMP" ] || rm -f "$SQLITE_TMP"
+}
+trap cleanup EXIT
+
+if [ ! -f "$BACKUP_FILE" ] || [ ! -s "$BACKUP_FILE" ]; then
+  echo "❌ Backup file not found or empty"
   exit 1
 fi
 
-echo "⚠️  WARNING: This will DROP and RESTORE the database!"
-echo "   Backup: $BACKUP_FILE"
-echo "   Target: $DB_URL"
-echo ""
-read -p "Are you sure? (type RESTORE to continue): " CONFIRM
-if [ "$CONFIRM" != "RESTORE" ]; then
-  echo "Aborted."
-  exit 0
+if [ "${RESTORE_CONFIRM:-}" != "RESTORE" ]; then
+  echo "⚠️  Restore target type: ${DB_URL%%:*} (connection details hidden)"
+  echo "This operation changes the target database. Type RESTORE to continue:"
+  read -r CONFIRM
+  if [ "$CONFIRM" != "RESTORE" ]; then
+    echo "Aborted."
+    exit 0
+  fi
 fi
 
-echo ""
-echo "📦 Restoring database..."
+ARCHIVE="$BACKUP_FILE"
+if [[ "$BACKUP_FILE" == *.gpg ]]; then
+  if [ -z "$PASSPHRASE_FILE" ] || [ ! -f "$PASSPHRASE_FILE" ] || [ ! -s "$PASSPHRASE_FILE" ]; then
+    echo "❌ Encrypted backup requires BACKUP_PASSPHRASE_FILE"
+    exit 1
+  fi
+  if ! command -v gpg >/dev/null 2>&1; then
+    echo "❌ gpg is required to decrypt this backup"
+    exit 1
+  fi
+  DECRYPTED_TMP="$(mktemp)"
+  gpg --batch --yes --pinentry-mode loopback --passphrase-file "$PASSPHRASE_FILE" \
+    --decrypt --output "$DECRYPTED_TMP" "$BACKUP_FILE"
+  ARCHIVE="$DECRYPTED_TMP"
+fi
 
-# ─── Detect database type ───
+if ! gzip -t "$ARCHIVE"; then
+  echo "❌ Backup archive failed gzip integrity validation"
+  exit 1
+fi
+RAW_TMP="$(mktemp)"
+gzip -dc "$ARCHIVE" > "$RAW_TMP"
+
 case "$DB_URL" in
   postgresql://*|postgres://*)
-    echo "   Type: PostgreSQL"
-    if ! command -v psql &> /dev/null; then
+    echo "📦 Restoring PostgreSQL backup into an empty database..."
+    if ! command -v psql >/dev/null 2>&1; then
       echo "❌ psql not installed — install postgresql-client"
       exit 1
     fi
-    # Drop existing connections, then restore
-    # NOTE: For production, consider using pg_restore with --clean --if-exists
-    gunzip -c "$BACKUP_FILE" | psql "$DB_URL"
-    ;;
-  file:*)
-    echo "   Type: SQLite"
-    SQLITE_PATH="${DB_URL#file:}"
-    # For SQLite, decompress then overwrite the DB file
-    # If the backup is a SQL dump (.sql.gz), use sqlite3 .read
-    # If the backup is a binary .db.gz, just decompress and copy
-    if command -v sqlite3 &> /dev/null; then
-      # Try as SQL dump first
-      if gunzip -c "$BACKUP_FILE" | head -1 | grep -qi "PRAGMA\|BEGIN TRANSACTION\|CREATE TABLE"; then
-        echo "   Restoring from SQL dump..."
-        rm -f "$SQLITE_PATH"
-        sqlite3 "$SQLITE_PATH" < <(gunzip -c "$BACKUP_FILE")
-      else
-        echo "   Restoring from binary copy..."
-        gunzip -c "$BACKUP_FILE" > "$SQLITE_PATH"
-      fi
-    else
-      # No sqlite3 available — assume binary copy
-      echo "   Restoring from binary copy (sqlite3 not available)..."
-      gunzip -c "$BACKUP_FILE" > "$SQLITE_PATH"
+    TABLE_COUNT="$(PGDATABASE="$DB_URL" psql -v ON_ERROR_STOP=1 -Atqc \
+      "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")"
+    if [ "$TABLE_COUNT" != "0" ]; then
+      echo "❌ PostgreSQL target is not empty; refusing to overwrite existing tables"
+      exit 1
+    fi
+    PGDATABASE="$DB_URL" psql -v ON_ERROR_STOP=1 < "$RAW_TMP"
+    USER_TABLE="$(PGDATABASE="$DB_URL" psql -v ON_ERROR_STOP=1 -Atqc \
+      "SELECT CASE WHEN to_regclass('public.\\"User\\"') IS NULL THEN 0 ELSE 1 END")"
+    if [ "$USER_TABLE" != "1" ]; then
+      echo "❌ Restore completed but the expected User table is missing"
+      exit 1
     fi
     ;;
+  file:*)
+    echo "📦 Restoring SQLite backup..."
+    SQLITE_PATH="${DB_URL#file:}"
+    mkdir -p "$(dirname "$SQLITE_PATH")"
+    SQLITE_TMP="$(mktemp "${SQLITE_PATH}.restore.XXXXXX")"
+    if head -c 128 "$RAW_TMP" | grep -aqE '^(PRAGMA|BEGIN TRANSACTION|CREATE TABLE|-- SQLite)' ; then
+      if ! command -v sqlite3 >/dev/null 2>&1; then
+        echo "❌ sqlite3 is required to restore a SQL dump"
+        exit 1
+      fi
+      sqlite3 "$SQLITE_TMP" < "$RAW_TMP"
+    else
+      cp "$RAW_TMP" "$SQLITE_TMP"
+    fi
+    if ! command -v sqlite3 >/dev/null 2>&1; then
+      echo "❌ sqlite3 is required to validate a SQLite restore"
+      exit 1
+    fi
+    INTEGRITY="$(sqlite3 "$SQLITE_TMP" 'PRAGMA integrity_check;')"
+    if [ "$INTEGRITY" != "ok" ]; then
+      echo "❌ SQLite integrity check failed"
+      exit 1
+    fi
+    mv -f "$SQLITE_TMP" "$SQLITE_PATH"
+    SQLITE_TMP=""
+    ;;
   *)
-    echo "❌ Unsupported DATABASE_URL scheme: $DB_URL"
+    echo "❌ Unsupported DATABASE_URL scheme; expected PostgreSQL or file: SQLite"
     exit 1
     ;;
 esac
 
-echo "✅ Restore complete!"
-echo ""
-echo "Verifying..."
-
-# ─── Verify restore ───
-case "$DB_URL" in
-  postgresql://*|postgres://*)
-    psql "$DB_URL" -c "SELECT count(*) FROM \"_prisma_migrations\";" 2>/dev/null || true
-    psql "$DB_URL" -c "SELECT count(*) FROM \"User\";" 2>/dev/null || true
-    ;;
-  file:*)
-    if command -v sqlite3 &> /dev/null; then
-      SQLITE_PATH="${DB_URL#file:}"
-      sqlite3 "$SQLITE_PATH" "SELECT count(*) FROM _prisma_migrations;" 2>/dev/null || true
-      sqlite3 "$SQLITE_PATH" "SELECT count(*) FROM User;" 2>/dev/null || true
-    fi
-    ;;
-esac
+echo "✅ Restore completed and target validation passed"
