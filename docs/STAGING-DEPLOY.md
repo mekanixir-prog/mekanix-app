@@ -43,9 +43,18 @@ mkdir -p "$HOME/.config/mekanix"
 openssl rand -hex 48 > "$HOME/.config/mekanix/backup-passphrase"
 chmod 600 "$HOME/.config/mekanix/backup-passphrase"
 export BACKUP_PASSPHRASE_FILE="$HOME/.config/mekanix/backup-passphrase"
+
+cat > "$HOME/.config/mekanix/staging.env" <<EOF
+DB_PASSWORD=$DB_PASSWORD
+JWT_SECRET=$JWT_SECRET
+REDIS_PASSWORD=$REDIS_PASSWORD
+BACKUP_PASSPHRASE_FILE=$BACKUP_PASSPHRASE_FILE
+EOF
+chmod 600 "$HOME/.config/mekanix/staging.env"
+export STAGING_ENV_FILE="$HOME/.config/mekanix/staging.env"
 ```
 
-For a persistent deployment, store the staging environment variables in a protected secret manager or a root-owned environment file with mode 600. Do not rely on a temporary shell session after a reboot.
+The deploy script loads `STAGING_ENV_FILE` only when it is a file with mode 600 (or stricter). After a reboot, set `STAGING_ENV_FILE` to this protected path before deploying. Do not copy the file into the repository or paste its values into logs/chat.
 
 ## 4. Deploy the isolated staging stack
 
