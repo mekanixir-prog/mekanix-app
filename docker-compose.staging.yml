@@ -57,7 +57,7 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
-    # No ports — internal only
+    # Published only on loopback; never bind to a public interface
 
   redis:
     image: redis:7-alpine
