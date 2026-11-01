@@ -648,6 +648,17 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
       userId: "user-1",
       status: "SUCCEEDED",
       amount: 100_000,
+      currency: "IRR",
+      gatewayLogId: "gateway-pay-1",
+    });
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "gateway-pay-1",
+      userId: "user-1",
+      status: "VERIFIED",
+      purpose: "vip",
+      paymentId: "pay-1",
+      amount: 100_000,
+      currency: "IRR",
     });
     mockUserVipSubscriptionUpdateMany.mockResolvedValue({ count: 0 });
     mockUserVipSubscriptionCreate.mockResolvedValue({
@@ -739,6 +750,17 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
         userId: "user-1",
         status: "SUCCEEDED",
         amount: 100_000,
+        currency: "IRR",
+        gatewayLogId: `gateway-${where.id}`,
+      }));
+      mockPaymentGatewayLogFindUnique.mockImplementation(async ({ where }: any) => ({
+        id: where.id,
+        userId: "user-1",
+        status: "VERIFIED",
+        purpose: "vip",
+        paymentId: where.id.replace("gateway-", ""),
+        amount: 100_000,
+        currency: "IRR",
       }));
       mockUserVipSubscriptionFindFirst.mockResolvedValue(null);
       mockUserVipSubscriptionCreate
