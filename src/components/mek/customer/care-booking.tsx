@@ -29,6 +29,8 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
   const [timeWindow, setTimeWindow] = useState("");
   const [currentMileage, setCurrentMileage] = useState("");
   const [booking, setBooking] = useState(false);
+  // Reuse this key for retries while this booking form remains mounted.
+  const [idempotencyKey] = useState(() => globalThis.crypto.randomUUID());
 
   const vehicleId = params.vehicleId;
 
@@ -53,7 +55,7 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
       const token = localStorage.getItem("mekanix-token");
       const res = await fetch("/api/care/bookings", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "Idempotency-Key": idempotencyKey },
         body: JSON.stringify({
           vehicleId, packageId: selectedPkg?.id,
           serviceType: "periodic", location,
