@@ -1,10 +1,10 @@
 # MEKANIX Engineering Documentation
 
-> **Documentation status:** current audit based on main commit `901d1f889703cce0c9acd8a189841b49b30e8847`. Read the dated release audit before treating historical status documents as current.
+> **Documentation status:** current audit based on main commit `700eda53c99285404641cb9c59f1637d59138f5b`. Read the dated release audit before treating historical status documents as current.
 
 ## Start here
 
-1. [Release Readiness Audit — 2026-10-31](RELEASE_READINESS_AUDIT_2026-10-31.md) — current mainline status, blockers, and evidence required before release.
+1. [Release Readiness Audit — 2026-11-01](RELEASE_READINESS_AUDIT_2026-11-01.md) — current mainline status, blockers, and evidence required before release.
 2. [Historical Release Readiness Audit](RELEASE_READINESS_AUDIT.md) — prior snapshot; not authoritative for current status.
 3. [Production Deployment Runbook](PRODUCTION_DEPLOYMENT_RUNBOOK.md) — safe sequence for configuration, database checks, staging, deployment, smoke tests, and rollback.
 4. [SEO Implementation Notes](SEO_IMPLEMENTATION.md) — Persian public pages, metadata, sitemap/robots behavior, and SEO launch checks.
@@ -22,7 +22,7 @@
 
 - Audits are point-in-time reports. Their stated branch, commit, test counts, and conclusions may refer to an earlier revision.
 - A green GitHub Actions run proves only that the named workflow passed for its tested commit and environment. It does not prove production secrets, external providers, remote D1 data, DNS/TLS, or live payment/SMS behavior.
-- The current release decision must follow `RELEASE_READINESS_AUDIT_2026-10-31.md`, not a historical statement such as “ready to ship” in an older report.
+- The current release decision must follow `RELEASE_READINESS_AUDIT_2026-11-01.md`, not a historical statement such as “ready to ship” in an older report.
 - Never run `prisma db push --accept-data-loss`, `prisma migrate reset`, or a remote D1 migration against production without a reviewed plan, backup/recovery strategy, and explicit release approval.
 - No deployment or remote database mutation is authorized by these documents. The runbook describes gates; it does not claim they have been executed.
 
