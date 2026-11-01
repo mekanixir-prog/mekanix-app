@@ -25,6 +25,7 @@ on:
       - 'src/lib/db-worker.ts'
       - 'src/lib/db-access.ts'
       - 'src/**'
+      - 'tests/integration/care-booking-d1-sqlite.test.ts'
       - 'prisma/**'
       - 'package.json'
       - 'bun.lock'
