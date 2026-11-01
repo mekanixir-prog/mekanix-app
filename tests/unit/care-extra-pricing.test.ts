@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { validateExtraProposalInput } from "@/lib/care-extra-pricing";
 
 describe("validateExtraProposalInput", () => {
-  it("normalizes valid integer IRR inputs and computes a safe total", () => {
+  it("normalizes valid integer toman inputs and computes a safe total", () => {
     expect(validateExtraProposalInput({
       proposedItem: " تعویض فیلتر ",
       partPrice: 125000,
