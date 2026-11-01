@@ -74,7 +74,7 @@ curl -i http://127.0.0.1:3001/api/ready
 Install k6 from its official package repository, then run:
 
 ```bash
-k6 run scripts/load-test.js --vus 50 --duration 3m --env BASE_URL=http://127.0.0.1:3001
+k6 run scripts/load-test.js --env BASE_URL=http://127.0.0.1:3001
 ```
 
 The script exercises the public home, health, readiness, and OTP fail-closed paths. It treats the expected staging OTP HTTP 503 as a valid safety outcome while still requiring health to be 200. It does not generate real SMS or payments.
