@@ -3,6 +3,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth, validateBody } from "@/lib/api-helpers";
 import { getCustomerFromSession } from "@/lib/auth";
 import { careBookingSchema } from "@/lib/schemas";
+import { requestFingerprint } from "@/lib/idempotency";
 import { calculatePrice } from "@/lib/pricing";
 import { checkVipStatus } from "@/lib/vip";
 import { wantsLite, liteResponse } from "@/lib/lite-response";
@@ -58,14 +59,14 @@ export async function POST(req: Request) {
     timeWindow: timeWindow || null,
     currentMileage: currentMileage ?? null,
   };
-  const requestFingerprint = JSON.stringify(normalized);
+  const fingerprint = await requestFingerprint(normalized);
 
   // Fast replay path avoids recalculating a frozen historical price.
   const existing = await db.serviceBooking.findUnique({
     where: { idempotencyKey },
   });
   if (existing) {
-    if (existing.requestFingerprint !== requestFingerprint) {
+    if (existing.requestFingerprint !== fingerprint) {
       return NextResponse.json(
         { error: "این کلید قبلاً برای اطلاعات متفاوتی استفاده شده است" },
         { status: 409 }
@@ -88,7 +89,7 @@ export async function POST(req: Request) {
   try {
     const booking = await createCareBookingAtomically(db, {
       idempotencyKey,
-      requestFingerprint,
+      requestFingerprint: fingerprint,
       code: `CARE-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`,
       ...normalized,
       date: date ? new Date(date) : null,

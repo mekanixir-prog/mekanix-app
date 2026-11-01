@@ -246,6 +246,8 @@ enum MachineType {
 model ServiceRequest {
   id            String        @id @default(cuid())
   code          String        @unique // human friendly e.g. SR-2041
+  idempotencyKey String?      @unique
+  requestFingerprint String?
   customerId    String
   customer      Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
   vehicleId     String
@@ -635,6 +637,8 @@ model InsurancePolicy {
 model InsuranceClaim {
   id            String          @id @default(cuid())
   code          String          @unique // CLM-...
+  idempotencyKey String?        @unique
+  requestFingerprint String?
   policyId      String
   policy        InsurancePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
   jobId         String?
