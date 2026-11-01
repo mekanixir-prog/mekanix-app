@@ -79,8 +79,8 @@ case "$DB_URL" in
       echo "❌ PostgreSQL target is not empty; refusing to overwrite existing tables"
       exit 1
     fi
-    # pg_dump includes the public schema for this application; remove only
-    # the empty schema so the archive can recreate it without collisions.
+    # pg_dump qualifies application objects with public but does not recreate
+    # PostgreSQL's default schema. Recreate it after the empty-target guard.
     pg_exec "$DB_URL" psql -v ON_ERROR_STOP=1 -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public"
     pg_exec "$DB_URL" psql -v ON_ERROR_STOP=1 < "$RAW_TMP"
     USER_TABLE="$(pg_exec "$DB_URL" psql -v ON_ERROR_STOP=1 -Atqc \
