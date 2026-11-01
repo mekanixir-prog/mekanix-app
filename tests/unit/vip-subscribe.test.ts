@@ -235,6 +235,18 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
   });
 
+  it("rejects a payment not denominated in IRR", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockPaymentFindUnique.mockResolvedValue({
+      id: "pay-1", userId: "user-1", status: "SUCCEEDED",
+      amount: 100_000, currency: "USD", gatewayLogId: "gateway-1",
+    });
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(400);
+    expect(mockPaymentGatewayLogFindUnique).not.toHaveBeenCalled();
+    expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
+  });
+
   it("rejects a verified payment whose purpose is not VIP", async () => {
     vi.stubEnv("NODE_ENV", "test");
     mockPaymentGatewayLogFindUnique.mockResolvedValue({
