@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
+import {
+  JobStatusConflictError,
+  transitionJobStatusAtomically,
+} from "@/lib/job-status-atomic";
 
 const include = {
   request: { include: { customer: { include: { user: true } }, vehicle: true } },
@@ -95,7 +99,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   // Load the current job so we can validate the transition
   const db = await getDbForLib();
-  const existing = await db.job.findUnique({ where: { id }, select: { status: true, technicianId: true } });
+  const existing = await db.job.findUnique({
+    where: { id },
+    select: { status: true, technicianId: true, requestId: true },
+  });
   if (!existing) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
 
   // For technicians, ensure they are the ASSIGNED technician (requireJobParticipant already checked)
@@ -126,61 +133,36 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
   }
 
-  const data: any = {};
-  if (status) data.status = status;
-  if (status === "ACCEPTED") {
-    data.startedAt = new Date();
-    data.request = { update: { status: "ASSIGNED" } };
-  }
-  if (status === "ARRIVED") data.arrivedAt = new Date();
-  if (status === "COMPLETED") data.completedAt = new Date();
-  if (status === "CANCELLED") data.request = { update: { status: "CANCELLED" } };
-  if (status === "REJECTED") {
-    data.request = { update: { status: "OPEN", matchedTechId: null } };
-  }
+  const updates: {
+    startedAt?: Date;
+    arrivedAt?: Date;
+    completedAt?: Date;
+    technicianNotes?: string;
+    customerApproved?: boolean;
+  } = {};
+  if (status === "ACCEPTED") updates.startedAt = new Date();
+  if (status === "ARRIVED") updates.arrivedAt = new Date();
+  if (status === "COMPLETED") updates.completedAt = new Date();
+  if (extra.technicianNotes != null) updates.technicianNotes = extra.technicianNotes;
+  if (customerApproved !== undefined) updates.customerApproved = customerApproved;
 
-  if (extra.technicianNotes != null) data.technicianNotes = extra.technicianNotes;
-  if (customerApproved !== undefined) data.customerApproved = customerApproved;
-
-  // Use optimistic concurrency — updateMany with status check prevents race conditions
-  // Two concurrent requests can't both change status from the same starting point
-  const updateData: any = { ...data };
-  if (status === "COMPLETED") {
-    updateData.completedAt = new Date();
-  }
-
-  const result = await db.job.updateMany({
-    where: { id, status: existing.status }, // Only update if status hasn't changed
-    data: updateData,
-  });
-
-  if (result.count === 0) {
-    return NextResponse.json(
-      { error: "وضعیت کار تغییر کرده — لطفاً دوباره تلاش کنید" },
-      { status: 409 }
-    );
-  }
-
-  // Assignment marks the technician ON_JOB. Release that capacity when the
-  // job reaches a terminal state, but only if no other active job remains.
-  if (status === "COMPLETED" || status === "CANCELLED" || status === "REJECTED") {
-    await db.technician.updateMany({
-      where: {
-        id: existing.technicianId,
-        status: "ON_JOB",
-        jobsAssigned: {
-          none: {
-            status: {
-              in: [
-                "REQUESTED", "ACCEPTED", "EN_ROUTE", "ARRIVED",
-                "DIAGNOSING", "REPAIRING", "WAITING_APPROVAL",
-              ],
-            },
-          },
-        },
-      },
-      data: { status: "ONLINE" },
+  try {
+    await transitionJobStatusAtomically(db, {
+      jobId: id,
+      requestId: existing.requestId,
+      technicianId: existing.technicianId,
+      currentStatus: existing.status,
+      nextStatus: status ?? existing.status,
+      updates,
     });
+  } catch (error) {
+    if (error instanceof JobStatusConflictError) {
+      return NextResponse.json(
+        { error: "وضعیت کار یا درخواست هم‌زمان تغییر کرده است — لطفاً دوباره تلاش کنید" },
+        { status: 409 },
+      );
+    }
+    throw error;
   }
 
   // Fetch updated job with relations
