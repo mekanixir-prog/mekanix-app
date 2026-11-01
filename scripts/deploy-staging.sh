@@ -14,6 +14,23 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Load an optional protected staging-only environment file.
+if [ -n "${STAGING_ENV_FILE:-}" ]; then
+  if [ ! -f "$STAGING_ENV_FILE" ]; then
+    echo "❌ STAGING_ENV_FILE does not exist"
+    exit 1
+  fi
+  ENV_PERMS="$(stat -c '%a' "$STAGING_ENV_FILE")"
+  if [ $((8#$ENV_PERMS & 077)) -ne 0 ]; then
+    echo "❌ STAGING_ENV_FILE must not be group/world readable; use chmod 600"
+    exit 1
+  fi
+  set -a
+  # shellcheck disable=SC1090
+  source "$STAGING_ENV_FILE"
+  set +a
+fi
+
 # ─── Validate required env vars (NO defaults) ───
 : "${DB_PASSWORD:?DB_PASSWORD is required for staging}"
 : "${JWT_SECRET:?JWT_SECRET is required for staging}"
