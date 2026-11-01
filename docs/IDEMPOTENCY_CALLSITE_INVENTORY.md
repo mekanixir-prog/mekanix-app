@@ -6,9 +6,9 @@
 
 ## Decision
 
-The generic `withIdempotency()` callback helper was unsafe and had no production call sites. It was removed in PR #39 and will not be reintroduced as a generic wrapper. MEKANIX now uses operation-specific contracts: each critical route defines its own key scope, canonical request fingerprint, atomic business writes, replay behavior, conflict behavior, and read-only reconciliation endpoint.
+The generic `withIdempotency()` callback helper was unsafe and had no production call sites. It was removed in PR #39 and will not be reintroduced as a generic wrapper. MEKANIX now uses operation-specific contracts: each critical route defines its own key scope, canonical SHA-256 SHA-256 request fingerprint, atomic business writes, replay behavior, conflict behavior, and read-only reconciliation endpoint.
 
-The historical `IdempotencyKey` table and migrations remain for compatibility; they are not treated as proof that any route is protected.
+The canonical request payload is normalized and SHA-256 hashed before persistence; raw addresses, descriptions, media URLs, and other submitted fields are not duplicated in fingerprint columns. The historical `IdempotencyKey` table and migrations remain for compatibility; they are not treated as proof that any route is protected.
 
 ## 1. Route-specific production contracts
 
