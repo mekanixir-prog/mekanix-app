@@ -48,7 +48,7 @@ jobs:
       
       - name: Validate staging compose and operational shell scripts
         run: |
-          bash -n scripts/backup-db.sh scripts/restore-db.sh scripts/test-backup-restore.sh scripts/deploy-staging.sh scripts/zap-scan.sh
+          bash -n scripts/lib/pg-service.sh scripts/backup-db.sh scripts/restore-db.sh scripts/test-backup-restore.sh scripts/deploy-staging.sh scripts/zap-scan.sh
           DB_PASSWORD=test_password JWT_SECRET=test_jwt_secret REDIS_PASSWORD=test_redis_password \
             docker compose -f docker-compose.staging.yml config --quiet
           echo "✅ Staging Compose and operational shell scripts are syntactically valid"
