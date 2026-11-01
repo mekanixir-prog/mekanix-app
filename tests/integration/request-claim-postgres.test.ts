@@ -79,7 +79,7 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
 
     const results = await Promise.all(
       Array.from({ length: 80 }, (_, index) =>
-        createServiceRequestAtomically(db, { ...input, code: `SR-PG-${runId}-${index}` })
+        createServiceRequestAtomically(db!, { ...input, code: `SR-PG-${runId}-${index}` })
       )
     );
 
@@ -102,7 +102,7 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
 
     const results = await Promise.all(
       Array.from({ length: 80 }, (_, index) =>
-        createInsuranceClaimAtomically(db, { ...input, code: `CLM-PG-${runId}-${index}` })
+        createInsuranceClaimAtomically(db!, { ...input, code: `CLM-PG-${runId}-${index}` })
       )
     );
 
@@ -132,7 +132,7 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
     `);
 
     try {
-      await expect(createServiceRequestAtomically(db, {
+      await expect(createServiceRequestAtomically(db!, {
         idempotencyKey: key,
         requestFingerprint: JSON.stringify({ userId, title: "failure" }),
         code: `SR-PG-FAIL-${suffix}`,
@@ -180,7 +180,7 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
     `);
 
     try {
-      await expect(createInsuranceClaimAtomically(db, {
+      await expect(createInsuranceClaimAtomically(db!, {
         idempotencyKey: key,
         requestFingerprint: JSON.stringify({ userId, policyId, amount: 500 }),
         code: `CLM-PG-FAIL-${suffix}`,
