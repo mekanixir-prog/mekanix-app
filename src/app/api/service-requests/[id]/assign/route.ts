@@ -43,7 +43,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const db = await getDbForLib();
   const sr = await db.serviceRequest.findUnique({
     where: { id },
-    include: { vehicle: true, job: { select: { id: true } } },
+    include: { vehicle: true, job: { select: { id: true, status: true } } },
   });
   if (!sr) return NextResponse.json({ error: "درخواست یافت نشد" }, { status: 404 });
 
@@ -57,7 +57,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
   }
 
-  if (sr.status !== "OPEN" || sr.matchedTechId !== null || sr.job) {
+  // A rejected Job is the previous technician attempt for this same request.
+  // Reuse that Job row when assigning a replacement technician; Job.requestId is unique.
+  if (
+    sr.status !== "OPEN" ||
+    sr.matchedTechId !== null ||
+    (sr.job && sr.job.status !== "REJECTED")
+  ) {
     return NextResponse.json({ error: "این درخواست دیگر باز یا قابل تخصیص نیست" }, { status: 409 });
   }
 
@@ -111,6 +117,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       technicianId: tech.id,
       category: sr.category,
       etaMins,
+      existingRejectedJobId: sr.job?.status === "REJECTED" ? sr.job.id : null,
     });
   } catch (error) {
     if (error instanceof ServiceRequestAssignmentConflictError) {
