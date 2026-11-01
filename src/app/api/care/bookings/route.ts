@@ -3,6 +3,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth, validateBody } from "@/lib/api-helpers";
 import { getCustomerFromSession } from "@/lib/auth";
 import { careBookingSchema } from "@/lib/schemas";
+import { requestFingerprint } from "@/lib/idempotency";
 import { calculatePrice } from "@/lib/pricing";
 import { checkVipStatus } from "@/lib/vip";
 import { wantsLite, liteResponse } from "@/lib/lite-response";
