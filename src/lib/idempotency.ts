@@ -19,8 +19,18 @@ function normalize(value: unknown): unknown {
   return value;
 }
 
-export function requestFingerprint(value: unknown): string {
-  return JSON.stringify(normalize(value));
+export async function requestFingerprint(value: unknown): Promise<string> {
+  // Persist only a digest, never a second copy of addresses, descriptions,
+  // media URLs, or other user-supplied payload fields.
+  const canonical = JSON.stringify(normalize(value));
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(canonical)
+  );
+  const hex = Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  return `sha256:${hex}`;
 }
 
 export function readIdempotencyKey(req: Request): string | null {
