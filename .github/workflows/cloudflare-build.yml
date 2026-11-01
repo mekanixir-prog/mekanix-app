@@ -28,6 +28,7 @@ on:
       - 'wrangler.wallet-release.toml'
       - 'tests/unit/wallet-escrow-scheduled-worker.test.ts'
       - 'tests/integration/wallet-release-d1-sqlite.test.ts'
+      - 'tests/integration/wallet-release-worker-cursor.test.ts'
       - 'tests/types/node-sqlite.d.ts'
       - 'src/**'
       - 'prisma/**'
