@@ -13,6 +13,7 @@ export type AssignServiceRequestInput = {
   technicianId: string;
   category: string;
   etaMins: number;
+  existingRejectedJobId: string | null;
 };
 
 async function assignWithPrisma(
@@ -27,7 +28,9 @@ async function assignWithPrisma(
         id: input.requestId,
         status: "OPEN",
         matchedTechId: null,
-        job: { is: null },
+        job: input.existingRejectedJobId
+          ? { is: { id: input.existingRejectedJobId, status: "REJECTED" } }
+          : { is: null },
       },
       data: {
         status: "ASSIGNED",
@@ -55,15 +58,40 @@ async function assignWithPrisma(
       throw new ServiceRequestAssignmentConflictError();
     }
 
-    await tx.job.create({
-      data: {
-        code: `JOB-${crypto.randomUUID().toUpperCase()}`,
-        requestId: input.requestId,
-        technicianId: input.technicianId,
-        status: "REQUESTED",
-        etaMins: input.etaMins,
-      },
-    });
+    if (input.existingRejectedJobId) {
+      const reassignment = await tx.job.updateMany({
+        where: {
+          id: input.existingRejectedJobId,
+          requestId: input.requestId,
+          status: "REJECTED",
+        },
+        data: {
+          technicianId: input.technicianId,
+          status: "REQUESTED",
+          etaMins: input.etaMins,
+          customerApproved: false,
+          startedAt: null,
+          arrivedAt: null,
+          completedAt: null,
+          diagnosis: null,
+          technicianNotes: null,
+          replacedParts: null,
+        },
+      });
+      if (reassignment.count !== 1) {
+        throw new ServiceRequestAssignmentConflictError();
+      }
+    } else {
+      await tx.job.create({
+        data: {
+          code: `JOB-${crypto.randomUUID().toUpperCase()}`,
+          requestId: input.requestId,
+          technicianId: input.technicianId,
+          status: "REQUESTED",
+          etaMins: input.etaMins,
+        },
+      });
+    }
   });
 }
 
@@ -83,7 +111,9 @@ async function assignWithD1(
       UPDATE "ServiceRequest"
       SET "status" = 'ASSIGNED', "matchedTechId" = ?, "updatedAt" = ?
       WHERE "id" = ? AND "status" = 'OPEN' AND "matchedTechId" IS NULL
-        AND NOT EXISTS (SELECT 1 FROM "Job" WHERE "requestId" = "ServiceRequest"."id")
+        AND ${input.existingRejectedJobId
+          ? 'EXISTS (SELECT 1 FROM "Job" j WHERE j."id" = ? AND j."requestId" = "ServiceRequest"."id" AND j."status" = \'REJECTED\')'
+          : 'NOT EXISTS (SELECT 1 FROM "Job" j WHERE j."requestId" = "ServiceRequest"."id")'}
         AND EXISTS (
           SELECT 1
           FROM "Technician" t
@@ -99,7 +129,14 @@ async function assignWithD1(
               WHERE s."technicianId" = t."id" AND s."category" = ?
             )
         )
-    `).bind(input.technicianId, now, input.requestId, input.technicianId, input.category),
+    `).bind(
+      input.technicianId,
+      now,
+      input.requestId,
+      ...(input.existingRejectedJobId ? [input.existingRejectedJobId] : []),
+      input.technicianId,
+      input.category,
+    ),
     d1.prepare(`
       UPDATE "Technician"
       SET "status" = 'ON_JOB', "updatedAt" = ?
@@ -120,16 +157,43 @@ async function assignWithD1(
             AND r."matchedTechId" = ?
         )
     `).bind(now, input.technicianId, input.category, input.requestId, input.technicianId),
-    d1.prepare(`
-      INSERT INTO "Job"
-        ("id", "code", "requestId", "technicianId", "status", "etaMins", "createdAt", "updatedAt")
-      SELECT ?, ?, r."id", t."id", 'REQUESTED', ?, ?, ?
-      FROM "ServiceRequest" r
-      INNER JOIN "Technician" t ON t."id" = ?
-      WHERE r."id" = ? AND r."status" = 'ASSIGNED'
-        AND r."matchedTechId" = ? AND t."status" = 'ON_JOB'
-        AND NOT EXISTS (SELECT 1 FROM "Job" j WHERE j."requestId" = r."id")
-    `).bind(jobId, jobCode, input.etaMins, now, now, input.technicianId, input.requestId, input.technicianId),
+    input.existingRejectedJobId
+      ? d1.prepare(`
+          UPDATE "Job"
+          SET "technicianId" = ?, "status" = 'REQUESTED', "etaMins" = ?,
+              "customerApproved" = 0, "startedAt" = NULL, "arrivedAt" = NULL,
+              "completedAt" = NULL, "diagnosis" = NULL, "technicianNotes" = NULL,
+              "replacedParts" = NULL, "updatedAt" = ?
+          WHERE "id" = ? AND "requestId" = ? AND "status" = 'REJECTED'
+            AND EXISTS (
+              SELECT 1 FROM "ServiceRequest" r
+              WHERE r."id" = ? AND r."status" = 'ASSIGNED'
+                AND r."matchedTechId" = ?
+            )
+            AND EXISTS (
+              SELECT 1 FROM "Technician" t
+              WHERE t."id" = ? AND t."status" = 'ON_JOB'
+            )
+        `).bind(
+          input.technicianId,
+          input.etaMins,
+          now,
+          input.existingRejectedJobId,
+          input.requestId,
+          input.requestId,
+          input.technicianId,
+          input.technicianId,
+        )
+      : d1.prepare(`
+          INSERT INTO "Job"
+            ("id", "code", "requestId", "technicianId", "status", "etaMins", "createdAt", "updatedAt")
+          SELECT ?, ?, r."id", t."id", 'REQUESTED', ?, ?, ?
+          FROM "ServiceRequest" r
+          INNER JOIN "Technician" t ON t."id" = ?
+          WHERE r."id" = ? AND r."status" = 'ASSIGNED'
+            AND r."matchedTechId" = ? AND t."status" = 'ON_JOB'
+            AND NOT EXISTS (SELECT 1 FROM "Job" j WHERE j."requestId" = r."id")
+        `).bind(jobId, jobCode, input.etaMins, now, now, input.technicianId, input.requestId, input.technicianId),
   ]);
 
   if (
@@ -143,7 +207,7 @@ async function assignWithD1(
   // Keep Prisma's view as the common post-commit verification for both D1 and
   // local SQLite/PostgreSQL execution paths.
   const job = await db.job.findUnique({ where: { requestId: input.requestId }, select: { id: true } });
-  if (!job) throw new Error("Assignment transaction committed without creating its job");
+  if (!job) throw new Error("Assignment transaction committed without creating or reassigning its job");
 }
 
 export async function assignServiceRequestAtomically(
