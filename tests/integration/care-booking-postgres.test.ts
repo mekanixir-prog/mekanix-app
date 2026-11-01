@@ -154,6 +154,7 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
 
   it("rolls back booking and pricing when snapshot-link update fails", async () => {
     const input = makeInput("fail-link");
+    input.pricing.pricingVersion = `fail-link-${runId}`;
     await withFailureTrigger(
       "ServiceBooking",
       "BEFORE UPDATE OF \"pricingSnapshotId\"",
@@ -170,6 +171,7 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
 
   it("rolls back booking, pricing and link when timeline insert fails", async () => {
     const input = makeInput("fail-timeline");
+    input.pricing.pricingVersion = `fail-timeline-${runId}`;
     const eventKey = `care-booking:${input.idempotencyKey}:created`;
     await withFailureTrigger(
       "ServiceTimelineEvent",
