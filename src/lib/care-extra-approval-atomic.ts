@@ -118,6 +118,12 @@ async function decideWithD1(
   ];
   if (input.findingId) approvalBindings.push(input.findingId, input.bookingId);
 
+  // D1 batch is transactional only when a statement errors. A zero-row CAS
+  // does not abort the batch by itself, so assert each write immediately.
+  // SELECT does not change SQLite's changes() counter.
+  const assertOneChange = () =>
+    d1.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '$') END`);
+
   const statements = [
     d1.prepare(`
       UPDATE "CustomerApproval"
@@ -130,7 +136,8 @@ async function decideWithD1(
         )
         ${findingGuard}
     `).bind(...approvalBindings),
-    d1.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '
+    assertOneChange(),
+    d1.prepare(`
       UPDATE "ServiceBooking"
       SET "status" = ?, "updatedAt" = ?
       WHERE "id" = ? AND "status" = 'WAITING_CUSTOMER_APPROVAL'
@@ -140,51 +147,68 @@ async function decideWithD1(
             AND a."status" = ?
         )
     `).bind(bookingStatus, now, input.bookingId, input.approvalId, input.bookingId, approvalStatus),
-    d1.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '
+    assertOneChange(),
+  ];
 
   if (input.findingId) {
-    statements.push(d1.prepare(`
-      UPDATE "Finding"
-      SET "status" = ?
-      WHERE "id" = ? AND "bookingId" = ?
+    statements.push(
+      d1.prepare(`
+        UPDATE "Finding"
+        SET "status" = ?
+        WHERE "id" = ? AND "bookingId" = ?
+          AND EXISTS (
+            SELECT 1 FROM "CustomerApproval" a
+            WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+          )
+      `).bind(
+        findingStatus,
+        input.findingId,
+        input.bookingId,
+        input.approvalId,
+        input.bookingId,
+        approvalStatus,
+      ),
+      assertOneChange(),
+    );
+  }
+
+  statements.push(
+    d1.prepare(`
+      INSERT INTO "ServiceTimelineEvent"
+        ("id", "bookingId", "eventType", "timestamp", "actor", "metadata")
+      SELECT ?, ?, ?, ?, ?, ?
+      WHERE EXISTS (
+        SELECT 1 FROM "ServiceBooking" b
+        WHERE b."id" = ? AND b."status" = ?
+      )
         AND EXISTS (
           SELECT 1 FROM "CustomerApproval" a
           WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
         )
     `).bind(
-      findingStatus,
-      input.findingId,
+      eventId,
       input.bookingId,
+      values.eventType,
+      now,
+      input.actorUserId,
+      JSON.stringify({ approvalId: input.approvalId }),
+      input.bookingId,
+      bookingStatus,
       input.approvalId,
       input.bookingId,
       approvalStatus,
-    ));
-    statements.push(d1.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '
-    INSERT INTO "ServiceTimelineEvent"
-      ("id", "bookingId", "eventType", "timestamp", "actor", "metadata")
-    SELECT ?, ?, ?, ?, ?, ?
-    WHERE EXISTS (
-      SELECT 1 FROM "ServiceBooking" b
-      WHERE b."id" = ? AND b."status" = ?
-    )
-      AND EXISTS (
-        SELECT 1 FROM "CustomerApproval" a
-        WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
-      )
-  `).bind(
-    eventId,
-    input.bookingId,
-    values.eventType,
-    now,
-    input.actorUserId,
-    JSON.stringify({ approvalId: input.approvalId }),
-    input.bookingId,
-    bookingStatus,
-    input.approvalId,
-    input.bookingId,
-    approvalStatus,
-  ));
-  statements.push(d1.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '
+    ),
+    assertOneChange(),
+  );
+
+  try {
+    await d1.batch(statements);
+  } catch (error) {
+    if (error instanceof Error && /malformed JSON/i.test(error.message)) {
+      throw new CareExtraApprovalConflictError();
+    }
+    throw error;
+  }
 
   const approval = await db.customerApproval.findUnique({
     where: { id: input.approvalId },
