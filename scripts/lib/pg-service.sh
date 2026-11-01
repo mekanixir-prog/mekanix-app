@@ -41,7 +41,8 @@ def quote(value: str) -> str:
 with open(target, "w", encoding="utf-8") as handle:
     handle.write("[mekanix]\n")
     for key, value in values.items():
-        handle.write(f"{key}={quote(value)}\n")
+        encoded = value if key == "port" else quote(value)
+        handle.write(f"{key}={encoded}\n")
 PY
   chmod 600 "$service_file"
 }
