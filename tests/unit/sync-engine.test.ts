@@ -23,7 +23,7 @@ import { syncQueue } from "@/lib/sync-engine";
 
 const action = (overrides: Record<string, unknown> = {}) => ({
   id: "qa-1",
-  url: "/api/service-requests",
+  url: "/api/reviews",
   method: "POST" as const,
   body: { description: "engine noise" },
   timestamp: Date.now(),
@@ -80,6 +80,19 @@ describe("offline sync retry safety", () => {
   it("retries a withdrawal POST after a network error because the endpoint has durable idempotency", async () => {
     mocks.getQueuedActions.mockReturnValue([action({ url: "/api/wallets/withdraw" })]);
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("connection reset")));
+    const result = await syncQueue();
+    expect(mocks.incrementRetry).toHaveBeenCalledWith("qa-1");
+    expect(mocks.markNeedsReconciliation).not.toHaveBeenCalled();
+    expect(result.reconciliationRequired).toBe(0);
+  });
+
+  it.each([
+    "/api/care/bookings",
+    "/api/service-requests",
+    "/api/insurance/claim",
+  ])("retries %s after an ambiguous 500 because the route has a durable idempotency contract", async (url) => {
+    mocks.getQueuedActions.mockReturnValue([action({ url })]);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500 }));
     const result = await syncQueue();
     expect(mocks.incrementRetry).toHaveBeenCalledWith("qa-1");
     expect(mocks.markNeedsReconciliation).not.toHaveBeenCalled();
