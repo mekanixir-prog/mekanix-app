@@ -1,9 +1,12 @@
 import { releaseWalletTransactionWithD1, type D1Binding, type D1PreparedStatement as ReleaseStatement } from "../../src/lib/wallet-release-d1";
 
 type DueTransaction = { id: string; walletId: string; holdUntil: string };
+type CursorState = { cursorHoldUntil: string | null; cursorId: string | null };
 type D1PreparedStatement = Omit<ReleaseStatement, "bind"> & {
   bind: (...values: unknown[]) => D1PreparedStatement;
   all: <T = unknown>() => Promise<{ results?: T[] }>;
+  first: <T = unknown>() => Promise<T | null>;
+  run: () => Promise<{ meta?: { changes?: number } }>;
 };
 type D1Database = Omit<D1Binding, "prepare"> & {
   prepare: (sql: string) => D1PreparedStatement;
@@ -14,16 +17,27 @@ type ExecutionContext = { waitUntil: (promise: Promise<unknown>) => void };
 
 const PAGE_SIZE = 100;
 const MAX_PER_RUN = 1_000;
+const CURSOR_ID = "wallet-release";
 
 async function releaseDueTransactions(env: Env, now: Date): Promise<void> {
-  let cursor: { holdUntil: string; id: string } | null = null;
+  const savedState = await env.DB.prepare(`
+    SELECT "cursorHoldUntil", "cursorId"
+    FROM "WalletReleaseWorkerState"
+    WHERE "id" = ?
+  `).bind(CURSOR_ID).first<CursorState>();
+
+  let cursor: { holdUntil: string; id: string } | null =
+    savedState?.cursorHoldUntil && savedState.cursorId
+      ? { holdUntil: String(savedState.cursorHoldUntil), id: savedState.cursorId }
+      : null;
+
   let scanned = 0;
   let released = 0;
   let unchanged = 0;
   let failed = 0;
 
-  // Keyset pagination ensures one repeatedly failing early row cannot prevent
-  // later matured rows from being attempted in the same scheduled run.
+  // The cursor is persisted between Cron runs. A permanently failing early
+  // transaction therefore cannot pin every run to the same first 1,000 rows.
   while (scanned < MAX_PER_RUN) {
     const limit = Math.min(PAGE_SIZE, MAX_PER_RUN - scanned);
     const query = cursor
@@ -54,7 +68,13 @@ async function releaseDueTransactions(env: Env, now: Date): Promise<void> {
         ).all<DueTransaction>()
       : await statement.bind(now.toISOString(), limit).all<DueTransaction>();
     const rows = page.results ?? [];
-    if (rows.length === 0) break;
+
+    if (rows.length === 0) {
+      // We reached the end of the current keyset cycle. Reset so the next
+      // Cron run picks up any still-pending failures and newly matured rows.
+      cursor = null;
+      break;
+    }
 
     for (const transaction of rows) {
       cursor = { holdUntil: transaction.holdUntil, id: transaction.id };
@@ -77,8 +97,27 @@ async function releaseDueTransactions(env: Env, now: Date): Promise<void> {
       }
     }
 
-    if (rows.length < limit) break;
+    if (rows.length < limit) {
+      // All rows after this cursor were exhausted. Start a fresh cycle next run.
+      cursor = null;
+      break;
+    }
   }
+
+  await env.DB.prepare(`
+    INSERT INTO "WalletReleaseWorkerState"
+      ("id", "cursorHoldUntil", "cursorId", "updatedAt")
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT("id") DO UPDATE SET
+      "cursorHoldUntil" = excluded."cursorHoldUntil",
+      "cursorId" = excluded."cursorId",
+      "updatedAt" = excluded."updatedAt"
+  `).bind(
+    CURSOR_ID,
+    cursor?.holdUntil ?? null,
+    cursor?.id ?? null,
+    now.toISOString()
+  ).run();
 
   console.log("[wallet-escrow-release] run complete", {
     scanned,
@@ -88,6 +127,7 @@ async function releaseDueTransactions(env: Env, now: Date): Promise<void> {
     pageLimit: PAGE_SIZE,
     maxPerRun: MAX_PER_RUN,
     limitReached: scanned === MAX_PER_RUN,
+    nextCursor: cursor?.id ?? null,
     at: now.toISOString(),
   });
 }
