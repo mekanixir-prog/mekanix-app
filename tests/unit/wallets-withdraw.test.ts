@@ -26,7 +26,7 @@ vi.mock("@/lib/rate-limit", () => ({
 
 import { POST } from "@/app/api/wallets/withdraw/route";
 
-function request(body: unknown, key = "withdrawal-request-0001") {
+function request(body: Record<string, unknown>, key = "withdrawal-request-0001") {
   return new Request("https://mekanix.test/api/wallets/withdraw", {
     method: "POST",
     headers: { "content-type": "application/json", "idempotency-key": key },
