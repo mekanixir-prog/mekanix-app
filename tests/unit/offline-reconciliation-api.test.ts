@@ -22,10 +22,14 @@ vi.mock("@/lib/db-access", () => ({
   getDbForLib: async () => ({
     wallet: { findUnique: mocks.wallet },
     withdrawalRequest: { findUnique: mocks.withdrawal },
-    walletLedger: { findUnique: mocks.withdrawalLedger },
+    walletLedger: {
+      findUnique: (args: { where?: { idempotencyKey?: string } }) =>
+        args.where?.idempotencyKey?.startsWith("withdrawal:")
+          ? mocks.withdrawalLedger(args)
+          : mocks.ledger(args),
+    },
     job: { findUnique: mocks.job },
     walletTransaction: { findUnique: mocks.walletTxn },
-    walletLedger: { findUnique: mocks.ledger },
   }),
 }));
 
