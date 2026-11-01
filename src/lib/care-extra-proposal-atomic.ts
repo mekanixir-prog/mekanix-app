@@ -111,19 +111,6 @@ async function createWithD1(
   const findingGuard = input.proposal.findingId
     ? 'AND EXISTS (SELECT 1 FROM "Finding" f WHERE f."id" = ? AND f."bookingId" = ?)'
     : "";
-  const bookingBindings: unknown[] = [
-    "WAITING_CUSTOMER_APPROVAL",
-    now,
-    input.bookingId,
-    input.expectedBookingStatus,
-  ];
-  if (input.proposal.findingId) {
-    bookingBindings.push(input.proposal.findingId, input.bookingId);
-  }
-
-  const findingGuard = input.proposal.findingId
-    ? 'AND EXISTS (SELECT 1 FROM "Finding" f WHERE f."id" = ? AND f."bookingId" = ?)'
-    : "";
   const timelineBindings: unknown[] = [
     timelineId,
     input.bookingId,
