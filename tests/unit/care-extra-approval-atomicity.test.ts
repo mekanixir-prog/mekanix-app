@@ -124,10 +124,10 @@ describe("CARE extra approval atomic writer", () => {
         },
       }),
       batch: vi.fn(async (_statements: unknown[]) => [
-        { meta: { changes: 1 } },
-        { meta: { changes: 1 } },
-        { meta: { changes: 1 } },
-        { meta: { changes: 1 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
       ]),
     };
     mocks.getD1Binding.mockResolvedValue(d1);
@@ -139,23 +139,22 @@ describe("CARE extra approval atomic writer", () => {
     await expect(decideCareExtraApprovalAtomically(db, input))
       .resolves.toMatchObject({ id: input.approvalId, status: input.decision });
     expect(d1.batch).toHaveBeenCalledTimes(1);
-    expect(d1.batch.mock.calls[0][0]).toHaveLength(4);
+    expect(d1.batch.mock.calls[0][0]).toHaveLength(8);
     expect(statements[0].sql).toContain('UPDATE "CustomerApproval"');
     expect(statements[0].sql).toContain('"findingId" IS ?');
-    expect(statements[1].sql).toContain('UPDATE "ServiceBooking"');
-    expect(statements[2].sql).toContain('UPDATE "Finding"');
-    expect(statements[3].sql).toContain('INSERT INTO "ServiceTimelineEvent"');
+    expect(statements[1].sql).toContain("json_extract('not-json'");
+    expect(statements[2].sql).toContain('UPDATE "ServiceBooking"');
+    expect(statements[3].sql).toContain("json_extract('not-json'");
+    expect(statements[4].sql).toContain('UPDATE "Finding"');
+    expect(statements[5].sql).toContain("json_extract('not-json'");
+    expect(statements[6].sql).toContain('INSERT INTO "ServiceTimelineEvent"');
+    expect(statements[7].sql).toContain("json_extract('not-json'");
   });
 
   it("rejects D1 decision batches when the compare-and-set precondition fails", async () => {
     const d1 = {
       prepare: (sql: string) => ({ bind: (...values: unknown[]) => ({ sql, values }) }),
-      batch: vi.fn(async (_statements: unknown[]) => [
-        { meta: { changes: 0 } },
-        { meta: { changes: 0 } },
-        { meta: { changes: 0 } },
-        { meta: { changes: 0 } },
-      ]),
+      batch: vi.fn(async () => { throw new Error("malformed JSON"); }),
     };
     mocks.getD1Binding.mockResolvedValue(d1);
     const db = { customerApproval: { findUnique: vi.fn() } } as any;
