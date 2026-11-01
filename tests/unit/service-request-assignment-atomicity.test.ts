@@ -180,8 +180,8 @@ describe("service request assignment atomic writer", () => {
       existingRejectedJobId: "job-rejected",
     })).resolves.toBeUndefined();
     expect(statements[0].sql).toContain('j."status" = \'REJECTED\'');
-    expect(statements[2].sql).toContain('UPDATE "Job"');
-    expect(statements[2].sql).toContain('"status" = \'REQUESTED\'');
+    expect(statements[4].sql).toContain('UPDATE "Job"');
+    expect(statements[4].sql).toContain('"status" = \'REQUESTED\'');
   });
 
   it("rejects a D1 batch when any compare-and-set step loses a race", async () => {
