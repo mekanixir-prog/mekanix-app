@@ -27,6 +27,7 @@ export async function releaseWalletTransactionWithPrisma(
         id: transactionId,
         walletId,
         status: "PENDING",
+        netAmount: { gte: 0 },
         holdUntil: { not: null, lte: now },
       },
       data: { status: "AVAILABLE", releasedAt: now },
