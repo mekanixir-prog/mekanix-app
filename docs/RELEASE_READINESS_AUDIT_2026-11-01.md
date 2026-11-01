@@ -1,7 +1,7 @@
 # MEKANIX — Release Readiness Audit
 
 **Audit date:** 2026-11-01  
-**Audited main commit:** `399e8c09dab4c1a8e376467ca940dab81f5bc3eb`  
+**Audited main commit:** `700eda53c99285404641cb9c59f1637d59138f5b`  
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Decision:** **NOT READY FOR PRODUCTION**
 
@@ -33,6 +33,8 @@ The following five-workflow PR heads passed before merge: PR #33, #35, #36, #38,
 SQLite integration tests cover the same rate-limit concurrency cases and the D1 escrow/withdrawal SQL paths. These are provider-parity tests; they do not replace a real Cloudflare D1 staging run.
 
 **PR #55 — production SMS fail-closed:** merged as `399e8c09dab4c1a8e376467ca940dab81f5bc3eb` after all five workflows passed on its exact head. This proves the production safety boundary in CI; it does not prove delivery through a selected live SMS vendor.
+
+**PR #57 — withdrawal reconciliation ledger proof:** merged as `700eda53c99285404641cb9c59f1637d59138f5b` after all five workflows passed on its exact head. The endpoint now requires a matching immutable wallet-ledger row, matching withdrawal reference, and exact negative debit amount before returning `COMMITTED`. Missing or inconsistent evidence returns `RECONCILIATION_REQUIRED` (409). Issue #49 is closed as completed.
 
 **PR #43 — scheduled escrow Worker:** draft, exact head `5e2b16de5f0f2c8f8931d884b83e943b3d0e09d9`. All five workflows (CI, Cloudflare Build, Production readiness, PostgreSQL CI, Docker E2E) have completed successfully on that head. The PR remains a draft because CI does not validate the target Cloudflare account, actual D1 binding, Cron Trigger deployment, or financial reconciliation. No staging deployment has been performed.
 
@@ -82,8 +84,8 @@ SQLite integration tests cover the same rate-limit concurrency cases and the D1 
 - Service-request creation can create an ad-hoc vehicle before the request, then sends notifications sequentially; ambiguous retries can create duplicate vehicles/requests.
 - Insurance claim creation can commit the claim while the policy status update fails; it has no claim idempotency/status lookup contract.
 - PR #50's merged reconciliation center deliberately keeps unsupported operations behind manual review. It does not invent server status or enable automatic retry for these endpoints.
-- PR #57 adds a final financial proof to withdrawal status reconciliation: a matching WalletLedger idempotency row, matching WithdrawalRequest reference, and exact negative debit amount must all be present before COMMITTED is returned. Missing/mismatched ledger data returns RECONCILIATION_REQUIRED and keeps the local action gated.
-- PR #57 is open on head `4786210fe1a5f5cc826115325e1c0066e8104c7a`. The first five-workflow attempt exposed a duplicate mock property in a test; that defect was fixed in the current head and all five workflows were re-triggered. Issue #49 remains open until this ledger-proof follow-up passes and merges.
+- PR #57 is merged. Its five exact-head workflows passed after fixing a duplicate test-mock property. Withdrawal status requires a matching WalletLedger idempotency row, matching WithdrawalRequest reference, and exact negative debit amount before returning COMMITTED. Missing/mismatched evidence returns RECONCILIATION_REQUIRED (409) and keeps the local action gated.
+- Issue #49 is closed as completed after PR #50 and PR #57 merged. This does not close issue #52 or enable automatic retries for unsupported operations.
 - Treat issue #52 as a release blocker for broad offline mutation sync and for enabling these flows at production scale until route-specific idempotency, atomicity/recovery, read-only status endpoints, and failure-injection tests are complete.
 
 ### 3.8 Production SMS delivery safety
@@ -103,7 +105,7 @@ SQLite integration tests cover the same rate-limit concurrency cases and the D1 
 3. Only after successful staging and at least one observed scheduled run, set `WALLET_RELEASE_SCHEDULED=true` on the main application Worker.
 4. Complete provider-specific SMS and payment integrations in sandbox; validate signed callbacks, ownership, amount, currency, replay, refunds, and reconciliation.
 5. Configure and verify `ADMIN_JWT_SECRET` and all production secrets without exposing them in Git or logs.
-6. Complete manual payout reconciliation; verify PR #50's merged reconciliation center in isolated staging and keep unsupported operations behind manual review.
+6. Complete manual payout reconciliation; verify PR #50 and PR #57's merged reconciliation center and ledger-proof behavior in isolated staging, and keep unsupported operations behind manual review.
 7. Resolve issue #52's multi-write booking/request/claim recovery risks before enabling broad offline mutation sync or production-scale create flows.
 8. PR #55 is merged; keep real SMS provider activation separate and owner-controlled until pre-release.
 9. Obtain explicit approval for the currency contract and historical-value handling.
