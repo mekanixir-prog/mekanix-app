@@ -29,16 +29,8 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
   const [timeWindow, setTimeWindow] = useState("");
   const [currentMileage, setCurrentMileage] = useState("");
   const [booking, setBooking] = useState(false);
-  // Persist the pending key for this vehicle across remounts in the same tab.
-  // Keep it until a successful response so an ambiguous network retry reuses it.
-  const [idempotencyKey, setIdempotencyKey] = useState("");
-  useEffect(() => {
-    const storageKey = `mekanix-care-booking:${vehicleId ?? "new"}`;
-    const existing = sessionStorage.getItem(storageKey);
-    const key = existing || globalThis.crypto.randomUUID();
-    if (!existing) sessionStorage.setItem(storageKey, key);
-    setIdempotencyKey(key);
-  }, [vehicleId]);
+  // Reuse this key for retries while the booking form remains mounted.
+  const [idempotencyKey] = useState(() => globalThis.crypto.randomUUID());
 
   const vehicleId = params.vehicleId;
 
@@ -73,7 +65,6 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      sessionStorage.removeItem(`mekanix-care-booking:${vehicleId ?? "new"}`);
       toast.success(isFa ? "سفارش ثبت شد!" : "Booking created!");
       go("care-detail", { bookingId: data.id });
     } catch (e: any) {
