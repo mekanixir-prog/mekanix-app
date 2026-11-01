@@ -6,8 +6,7 @@ const mocks = vi.hoisted(() => ({
   participant: vi.fn(),
   technicianSession: vi.fn(),
   jobFind: vi.fn(),
-  jobUpdate: vi.fn(),
-  technicianUpdate: vi.fn(),
+  transition: vi.fn(),
   notificationCreate: vi.fn(),
   messageCreate: vi.fn(),
 }));
@@ -19,12 +18,15 @@ vi.mock("@/lib/auth", () => ({
 }));
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: async () => ({
-    job: { findUnique: mocks.jobFind, updateMany: mocks.jobUpdate },
-    technician: { updateMany: mocks.technicianUpdate },
+    job: { findUnique: mocks.jobFind },
     notification: { create: mocks.notificationCreate },
     message: { create: mocks.messageCreate },
     walletTransaction: { updateMany: vi.fn() },
   }),
+}));
+vi.mock("@/lib/job-status-atomic", () => ({
+  JobStatusConflictError: class JobStatusConflictError extends Error {},
+  transitionJobStatusAtomically: mocks.transition,
 }));
 
 import { PATCH } from "@/app/api/jobs/[id]/status/route";
@@ -53,50 +55,46 @@ beforeEach(() => {
   mocks.auth.mockResolvedValue({ userId: "tech-user", role: "TECHNICIAN" });
   mocks.participant.mockResolvedValue(null);
   mocks.technicianSession.mockResolvedValue({ id: "tech-1" });
-  mocks.jobFind.mockResolvedValueOnce({ status: "REQUESTED", technicianId: "tech-1" })
-    .mockResolvedValue(job);
-  mocks.jobUpdate.mockResolvedValue({ count: 1 });
-  mocks.technicianUpdate.mockResolvedValue({ count: 1 });
+  mocks.jobFind.mockResolvedValueOnce({
+    status: "REQUESTED",
+    technicianId: "tech-1",
+    requestId: "request-1",
+  }).mockResolvedValue(job);
+  mocks.transition.mockResolvedValue(undefined);
   mocks.notificationCreate.mockResolvedValue({});
   mocks.messageCreate.mockResolvedValue({});
 });
 
-describe("job terminal transitions release technician capacity", () => {
-  it("returns a rejected technician to ONLINE after the request is reopened", async () => {
+describe("job status route delegates atomic state changes", () => {
+  it("atomically reopens the request and releases the technician on REJECTED", async () => {
     const response = await PATCH(makeRequest("REJECTED"), { params: Promise.resolve({ id: "job-1" }) });
     expect(response.status).toBe(200);
-    expect(mocks.technicianUpdate).toHaveBeenCalledWith({
-      where: {
-        id: "tech-1",
-        status: "ON_JOB",
-        jobsAssigned: {
-          none: {
-            status: {
-              in: [
-                "REQUESTED", "ACCEPTED", "EN_ROUTE", "ARRIVED",
-                "DIAGNOSING", "REPAIRING", "WAITING_APPROVAL",
-              ],
-            },
-          },
-        },
-      },
-      data: { status: "ONLINE" },
-    });
-  });
-
-  it("releases a technician when a customer cancels before arrival", async () => {
-    mocks.auth.mockResolvedValue({ userId: "customer-user", role: "CUSTOMER" });
-    const response = await PATCH(makeRequest("CANCELLED"), { params: Promise.resolve({ id: "job-1" }) });
-    expect(response.status).toBe(200);
-    expect(mocks.technicianUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ id: "tech-1", status: "ON_JOB" }),
-      data: { status: "ONLINE" },
+    expect(mocks.transition).toHaveBeenCalledWith(expect.objectContaining({
+      jobId: "job-1",
+      requestId: "request-1",
+      technicianId: "tech-1",
+      currentStatus: "REQUESTED",
+      nextStatus: "REJECTED",
+      updates: {},
     }));
   });
 
-  it("does not attempt to release a technician for a non-terminal transition", async () => {
+  it("atomically cancels the request and releases the technician on customer cancellation", async () => {
+    mocks.auth.mockResolvedValue({ userId: "customer-user", role: "CUSTOMER" });
+    const response = await PATCH(makeRequest("CANCELLED"), { params: Promise.resolve({ id: "job-1" }) });
+    expect(response.status).toBe(200);
+    expect(mocks.transition).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: "request-1",
+      nextStatus: "CANCELLED",
+    }));
+  });
+
+  it("delegates non-terminal transitions without requesting technician release", async () => {
     const response = await PATCH(makeRequest("ACCEPTED"), { params: Promise.resolve({ id: "job-1" }) });
     expect(response.status).toBe(200);
-    expect(mocks.technicianUpdate).not.toHaveBeenCalled();
+    expect(mocks.transition).toHaveBeenCalledWith(expect.objectContaining({
+      nextStatus: "ACCEPTED",
+      updates: { startedAt: expect.any(Date) },
+    }));
   });
 });
