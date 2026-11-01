@@ -93,7 +93,7 @@ export async function createWithdrawalWithD1(
   // did not affect exactly one row; that SQL error rolls back the full batch.
   // SELECT leaves SQLite's changes() value intact for the dependent statement.
   const assertOneChange = () =>
-    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '
+    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '$') END").bind();
   const statements = [
     d1.prepare(`
       INSERT INTO "WithdrawalRequest"
