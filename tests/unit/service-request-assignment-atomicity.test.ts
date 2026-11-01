@@ -97,7 +97,7 @@ describe("service request assignment atomic writer", () => {
           return { sql, values };
         },
       }),
-      batch: vi.fn(async () => [
+      batch: vi.fn(async (_statements: unknown[]) => [
         { meta: { changes: 1 } },
         { meta: { changes: 1 } },
         { meta: { changes: 1 } },
