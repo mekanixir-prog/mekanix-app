@@ -13,6 +13,13 @@ export type InsuranceClaimCreateInput = {
 
 type CreateResult = { id: string; code: string; created: boolean };
 
+export class InsurancePolicyInactiveError extends Error {
+  constructor() {
+    super("Insurance policy is no longer eligible for a claim");
+    this.name = "InsurancePolicyInactiveError";
+  }
+}
+
 function assertFingerprint(existing: { requestFingerprint: string | null }, fingerprint: string) {
   if (existing.requestFingerprint !== fingerprint) throw new IdempotencyConflictError();
 }
@@ -41,10 +48,11 @@ async function createWithPrisma(db: PrismaClient, input: InsuranceClaimCreateInp
       },
       select: { id: true, code: true },
     });
-    await tx.insurancePolicy.update({
-      where: { id: input.policyId },
+    const policyUpdate = await tx.insurancePolicy.updateMany({
+      where: { id: input.policyId, status: { notIn: ["expired", "cancelled"] } },
       data: { status: "claimed" },
     });
+    if (policyUpdate.count !== 1) throw new InsurancePolicyInactiveError();
     return { ...claim, created: true };
   });
 }
@@ -61,11 +69,13 @@ async function createWithD1(
       INSERT INTO "InsuranceClaim"
         ("id", "code", "policyId", "jobId", "description", "amount", "status",
          "idempotencyKey", "requestFingerprint", "createdAt")
-      VALUES (?, ?, ?, ?, ?, ?, 'submitted', ?, ?, ?)
+      SELECT ?, ?, ?, ?, ?, ?, 'submitted', ?, ?, ?
+      FROM "InsurancePolicy"
+      WHERE "id" = ? AND "status" NOT IN ('expired', 'cancelled')
       ON CONFLICT("idempotencyKey") DO NOTHING
     `).bind(
       claimId, input.code, input.policyId, input.jobId, input.description,
-      input.amount, input.idempotencyKey, input.requestFingerprint, now
+      input.amount, input.idempotencyKey, input.requestFingerprint, now, input.policyId
     ),
     d1.prepare(`
       UPDATE "InsurancePolicy"
@@ -85,7 +95,16 @@ async function createWithD1(
     where: { idempotencyKey: input.idempotencyKey },
     select: { id: true, code: true, policyId: true, requestFingerprint: true },
   });
-  if (!existing) throw new Error("D1 batch completed without a readable insurance claim");
+  if (!existing) {
+    const policy = await db.insurancePolicy.findUnique({
+      where: { id: input.policyId },
+      select: { status: true },
+    });
+    if (!policy || policy.status === "expired" || policy.status === "cancelled") {
+      throw new InsurancePolicyInactiveError();
+    }
+    throw new Error("D1 batch completed without a readable insurance claim");
+  }
   assertFingerprint(existing, input.requestFingerprint);
   if (existing.policyId !== input.policyId) throw new IdempotencyConflictError();
   return { id: existing.id, code: existing.code, created: existing.id === claimId };
