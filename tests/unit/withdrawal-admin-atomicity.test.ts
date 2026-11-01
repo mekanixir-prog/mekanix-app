@@ -160,9 +160,10 @@ describe("admin withdrawal transitions", () => {
       ]),
     };
     await expect(updateWithdrawalWithD1(d1 as any, { ...input, action: "PAID", payoutReference: "BANK-TRX-2026-0001" })).resolves.toBe(true);
-    expect(statements[2].sql).toContain('SELECT "amount" FROM "WithdrawalRequest"');
-    expect(statements[2].sql).toContain('"totalWithdrawn" = "totalWithdrawn" + CASE WHEN changes() = 1 THEN');
-    expect(statements[2].values).toContain("wd-1");
+    expect(statements[2].sql).toContain('INSERT INTO "WalletTransaction"');
+    expect(statements[4].sql).toContain('SELECT "amount" FROM "WithdrawalRequest"');
+    expect(statements[4].sql).toContain('"totalWithdrawn" = "totalWithdrawn" + CASE WHEN changes() = 1 THEN');
+    expect(statements[4].values).toContain("wd-1");
   });
 
   it("aborts dependent D1 writes through NOT NULL constraints if the prior statement did not change exactly one row", async () => {
