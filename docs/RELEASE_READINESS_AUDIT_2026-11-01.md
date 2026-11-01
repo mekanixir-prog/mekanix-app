@@ -18,7 +18,7 @@ This audit separates verified code/CI evidence from staging and provider operati
 | Insurance claim recovery | PR #63 | Claim + policy transition are atomic; eligibility guard and status lookup added |
 | Offline reconciliation | PR #50, extended by PR #63 | Persian reconciliation center checks route-specific server status; unsupported/ambiguous actions remain behind manual review |
 | Rate-limit atomicity | PR #35, #38, #40 | Atomic initialization and fail-closed outage handling; PostgreSQL concurrency tests merged |
-| Wallet escrow release | PR #12, #13 | Atomic D1/Prisma release logic exists; dedicated scheduled Worker is still PR #43 and requires Cloudflare staging |
+| Wallet escrow release | PR #12, #13 | Atomic D1/Prisma release logic exists; refreshed scheduled Worker is PR #65 (draft) and requires isolated Cloudflare staging |
 
 ## 2. Verified CI evidence
 
@@ -32,13 +32,12 @@ This audit separates verified code/CI evidence from staging and provider operati
 
 ## 3. Open code and operations work
 
-### 3.1 Scheduled wallet escrow Worker — PR #43
+### 3.1 Scheduled wallet escrow Worker — PR #65
 
-- PR #43 remains a draft.
-- Its exact head `ddb81b030fdc07328daf300b8f103489aac7554a` passed all five applicable workflows.
-- The branch has diverged from current mainline: 29 commits ahead and 13 commits behind the audited mainline baseline. It must be refreshed/rebased and revalidated before merge.
-- The worker has a 15-minute Cron Trigger, keyset pagination, durable cross-run cursor, per-row failure isolation, and shared atomic D1 release helper.
-- The committed Wrangler config contains an all-zero staging D1 placeholder. No Cloudflare Worker was deployed and no real D1 binding/Cron Trigger has been verified.
+- PR #43 was closed as superseded; PR #65 refreshes the implementation on the audited mainline baseline and remains a draft.
+- PR #65 adds the 15-minute Cron Trigger, keyset pagination, durable cross-run cursor, per-row failure isolation, shared atomic D1 release helper, PostgreSQL concurrency/ledger rollback coverage, and a guarded synthetic D1 staging fixture.
+- The committed Wrangler config contains an all-zero D1 placeholder. CI uses local D1 only; no Cloudflare Worker has been deployed and no real Cloudflare D1 binding/Cron Trigger has been verified.
+- The current PR #65 head is still undergoing its five CI workflows; do not treat prior/cancelled runs as evidence for the latest head.
 - Do not set `WALLET_RELEASE_SCHEDULED=true` until an isolated D1 staging database has been migrated, the Worker deployed, at least one scheduled run observed, and matured PENDING rows reconciled against AVAILABLE releases.
 
 ### 3.2 Real payment provider — issue #24
@@ -57,8 +56,9 @@ This audit separates verified code/CI evidence from staging and provider operati
 ### 3.4 Staging, backup/restore, performance, and security scans
 
 - Docker/PostgreSQL staging configuration exists, but no actual VPS staging deployment or Release Candidate smoke test has been performed in this session.
-- The backup/restore scripts and staging runbook are being hardened in the current PR branch: encrypted GPG backup support, no connection-string logging, fail-safe empty-target restore, disposable restore-test database guard, and a PostgreSQL CI restore rehearsal.
-- The current PR branch also adds Docker E2E migration assertions for CARE/service-request/claim idempotency indexes and shell/Compose syntax validation. These changes are pending CI and merge; they are not yet mainline evidence.
+- PR #64 is the operational-hardening PR. It adds encrypted GPG backup support, no connection-string logging, fail-safe empty-target restore, disposable restore-test database guard, Docker/PostgreSQL staging configuration, shell/Compose checks, and a PostgreSQL CI restore rehearsal.
+- A PostgreSQL-client/server major-version mismatch and then a noninteractive PGDG key-import issue were found in the rehearsal workflow and corrected on the PR branch; the latest exact head is queued for full CI. These changes are not yet mainline evidence.
+- Docker E2E checks also assert the additive CARE/service-request/claim idempotency indexes and schema objects.
 - k6 load test and OWASP ZAP baseline scripts are prepared, but no staging measurements or scan report exist. p95/p99, failure rate, resource use, and ZAP findings therefore remain unverified.
 - A production restore rehearsal must use a protected backup, a separate disposable target, and explicit approval. The automated test script refuses production as a source.
 
@@ -71,8 +71,8 @@ This audit separates verified code/CI evidence from staging and provider operati
 
 ## 4. Release sequence
 
-1. Complete CI for the current operational-hardening PR and merge only if all five required workflows pass on the exact head.
-2. Refresh PR #43 on current mainline, rerun its complete CI, then deploy only to isolated Cloudflare D1 staging.
+1. Complete CI for PR #64 and merge only if all four applicable workflows pass on the exact head.
+2. Complete PR #65's five workflows; keep it draft until isolated Cloudflare D1 staging evidence exists, then deploy only to that staging database.
 3. Observe scheduled escrow runs and reconcile ledger/balance effects; keep the production schedule flag disabled until separately approved.
 4. Select the payment provider and complete sandbox initiation, signed/server-side verification, replay, wrong-amount/currency, timeout, duplicate callback, and refund tests.
 5. Select and configure the SMS provider in staging; test delivery, rate limits, provider outage, monitoring, and alerting.
