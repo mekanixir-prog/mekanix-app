@@ -104,8 +104,12 @@ async function assignWithD1(
   const jobId = crypto.randomUUID();
   const jobCode = `JOB-${crypto.randomUUID().toUpperCase()}`;
 
-  // D1 batch is one atomic transaction. Every statement is conditional on the
-  // preceding claim, so no request, technician, or job can be half-assigned.
+  // A zero-row statement does not abort D1.batch. Force a SQL error after
+  // every compare-and-set unless exactly one row changed, so D1 rolls back
+  // the entire batch instead of committing a partial assignment.
+  const assertOneChange = () =>
+    d1.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '$') END`);
+
   const statements = [
     d1.prepare(`
       UPDATE "ServiceRequest"
@@ -137,6 +141,7 @@ async function assignWithD1(
       input.technicianId,
       input.category,
     ),
+    assertOneChange(),
     d1.prepare(`
       UPDATE "Technician"
       SET "status" = 'ON_JOB', "updatedAt" = ?
@@ -157,7 +162,9 @@ async function assignWithD1(
             AND r."matchedTechId" = ?
         )
     `).bind(now, input.technicianId, input.category, input.requestId, input.technicianId),
-    d1.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '
+    assertOneChange(),
+    input.existingRejectedJobId
+      ? d1.prepare(`
           UPDATE "Job"
           SET "technicianId" = ?, "status" = 'REQUESTED', "etaMins" = ?,
               "customerApproved" = 0, "startedAt" = NULL, "arrivedAt" = NULL,
@@ -193,11 +200,18 @@ async function assignWithD1(
             AND r."matchedTechId" = ? AND t."status" = 'ON_JOB'
             AND NOT EXISTS (SELECT 1 FROM "Job" j WHERE j."requestId" = r."id")
         `).bind(jobId, jobCode, input.etaMins, now, now, input.technicianId, input.requestId, input.technicianId),
+    assertOneChange(),
   ];
-  statements.push(d1.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '
 
-  // Keep Prisma's view as the common post-commit verification for both D1 and
-  // local SQLite/PostgreSQL execution paths.
+  try {
+    await d1.batch(statements);
+  } catch (error) {
+    if (error instanceof Error && /malformed JSON/i.test(error.message)) {
+      throw new ServiceRequestAssignmentConflictError();
+    }
+    throw error;
+  }
+
   const job = await db.job.findUnique({ where: { requestId: input.requestId }, select: { id: true } });
   if (!job) throw new Error("Assignment transaction committed without creating or reassigning its job");
 }
