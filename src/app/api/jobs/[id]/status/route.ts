@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { JobStatus as PrismaJobStatus } from "@prisma/client";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
@@ -151,8 +152,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       jobId: id,
       requestId: existing.requestId,
       technicianId: existing.technicianId,
-      currentStatus: existing.status,
-      nextStatus: status ?? existing.status,
+      currentStatus: existing.status as PrismaJobStatus,
+      nextStatus: (status ?? existing.status) as PrismaJobStatus,
       updates,
     });
   } catch (error) {
