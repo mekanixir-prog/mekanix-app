@@ -75,7 +75,7 @@ export async function POST(req: Request) {
     amount,
   };
   const idempotencyKey = `insurance-claim:${session.userId}:${rawKey}`;
-  const fingerprint = requestFingerprint(normalized);
+  const fingerprint = await requestFingerprint(normalized);
 
   try {
     const result = await createInsuranceClaimAtomically(db, {
