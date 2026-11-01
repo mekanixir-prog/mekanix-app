@@ -7,7 +7,6 @@
 *.p12
 *.pfx
 *.gpg
-*.sql
 *.sql.gz
 
 # Local credentials, database files, backups, and security reports
