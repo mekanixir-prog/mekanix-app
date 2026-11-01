@@ -1,73 +1,123 @@
 #!/bin/bash
-# MEKANIX — Backup/Restore Test
+# MEKANIX — isolated PostgreSQL backup/restore rehearsal
 #
-# Tests that backup + restore actually works:
-# 1. Backs up the production DB
-# 2. Restores to a temporary test DB
-# 3. Verifies record counts match
-# 4. Cleans up the test DB
+# This script intentionally refuses a production source. Use only CI test data
+# or an isolated staging database. Staging data export requires an extra opt-in.
 #
-# Usage:
-#   bash scripts/test-backup-restore.sh
-#
-# Environment:
-#   DATABASE_URL — production PostgreSQL URL
-#   TEST_DB_URL  — temporary test PostgreSQL URL (will be dropped)
+# Required:
+#   SOURCE_ENV=test|staging
+#   DATABASE_URL=<source PostgreSQL URL>
+#   TEST_DB_URL=<separate disposable restore-test database URL>
+#   ALLOW_TEST_DB_RESET=YES
+#   ALLOW_STAGING_DATA_EXPORT=YES (staging only)
 
 set -euo pipefail
+umask 077
 
-PROD_URL="${DATABASE_URL:?DATABASE_URL is required}"
-TEST_URL="${TEST_DB_URL:?TEST_DB_URL is required for restore test}"
-BACKUP_FILE="/tmp/mekanix-backup-test-$(date +%s).sql.gz"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/pg-service.sh"
 
-echo "🧪 MEKANIX — Backup/Restore Test"
-echo ""
+SOURCE_ENV="${SOURCE_ENV:-}"
+SOURCE_URL="${DATABASE_URL:?DATABASE_URL is required}"
+TEST_URL="${TEST_DB_URL:?TEST_DB_URL is required}"
+BACKUP_FILE="$(mktemp /tmp/mekanix-backup-test.XXXXXX.sql.gz)"
+KEEP_BACKUP=0
 
-# Step 1: Backup
-echo "1️⃣  Backing up production DB..."
-pg_dump "$PROD_URL" | gzip > "$BACKUP_FILE"
-BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
-echo "   ✅ Backup created: $BACKUP_SIZE"
+cleanup() {
+  if [ "$KEEP_BACKUP" = "0" ]; then
+    rm -f "$BACKUP_FILE"
+  else
+    echo "⚠️  Failed rehearsal archive retained at: $BACKUP_FILE"
+  fi
+}
+trap cleanup EXIT
 
-if [ ! -s "$BACKUP_FILE" ]; then
-  echo "   ❌ Backup is empty!"
+if [[ "$SOURCE_ENV" != "test" && "$SOURCE_ENV" != "staging" ]]; then
+  echo "❌ SOURCE_ENV must be test or staging; production sources are forbidden"
+  exit 1
+fi
+if [ "$SOURCE_URL" = "$TEST_URL" ]; then
+  echo "❌ Source and restore-test database must be different"
+  exit 1
+fi
+TEST_DB_NAME="${TEST_URL%%\?*}"
+TEST_DB_NAME="${TEST_DB_NAME##*/}"
+if [[ "$TEST_DB_NAME" != *_restore_test ]]; then
+  echo "❌ TEST_DB_URL must target a disposable database ending in _restore_test"
+  exit 1
+fi
+if [ "$SOURCE_ENV" = "staging" ] && [ "${ALLOW_STAGING_DATA_EXPORT:-}" != "YES" ]; then
+  echo "❌ Staging data export requires ALLOW_STAGING_DATA_EXPORT=YES"
+  exit 1
+fi
+if [ "${ALLOW_TEST_DB_RESET:-}" != "YES" ]; then
+  echo "❌ Resetting the disposable restore-test database requires ALLOW_TEST_DB_RESET=YES"
+  exit 1
+fi
+if ! command -v pg_dump >/dev/null 2>&1 || ! command -v psql >/dev/null 2>&1; then
+  echo "❌ pg_dump and psql are required; install postgresql-client"
   exit 1
 fi
 
-# Step 2: Count records in production
-echo ""
-echo "2️⃣  Counting records in production..."
-PROD_USERS=$(psql "$PROD_URL" -t -c "SELECT count(*) FROM \"User\"" 2>/dev/null | xargs)
-PROD_VEHICLES=$(psql "$PROD_URL" -t -c "SELECT count(*) FROM \"Vehicle\"" 2>/dev/null | xargs)
-echo "   Users: $PROD_USERS"
-echo "   Vehicles: $PROD_VEHICLES"
+echo "🧪 MEKANIX — Backup/Restore Rehearsal ($SOURCE_ENV)"
+echo "1. Creating compressed PostgreSQL backup (connection details hidden)..."
+pg_exec "$SOURCE_URL" pg_dump --no-owner --no-acl | gzip -c > "$BACKUP_FILE"
+gzip -t "$BACKUP_FILE"
+[ -s "$BACKUP_FILE" ] || { echo "❌ Backup is empty"; exit 1; }
 
-# Step 3: Restore to test DB
-echo ""
-echo "3️⃣  Restoring to test DB..."
-# Drop and recreate the test database
-psql "$TEST_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" 2>/dev/null || true
-gunzip -c "$BACKUP_FILE" | psql "$TEST_URL" 2>/dev/null
-echo "   ✅ Restore complete"
+table_counts() {
+  local url="$1"
+  local table
+  while IFS= read -r table; do
+    [ -n "$table" ] || continue
+    local count
+    count="$(pg_exec "$url" psql -v ON_ERROR_STOP=1 -Atqc "SELECT count(*) FROM public.\"$table\"")"
+    printf '%s:%s\n' "$table" "$count"
+  done < <(pg_exec "$url" psql -v ON_ERROR_STOP=1 -Atqc \
+    "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename")
+}
 
-# Step 4: Verify record counts match
-echo ""
-echo "4️⃣  Verifying record counts..."
-TEST_USERS=$(psql "$TEST_URL" -t -c "SELECT count(*) FROM \"User\"" 2>/dev/null | xargs)
-TEST_VEHICLES=$(psql "$TEST_URL" -t -c "SELECT count(*) FROM \"Vehicle\"" 2>/dev/null | xargs)
-echo "   Test DB Users: $TEST_USERS (expected: $PROD_USERS)"
-echo "   Test DB Vehicles: $TEST_VEHICLES (expected: $PROD_VEHICLES)"
+echo "2. Capturing source table row counts..."
+SOURCE_COUNTS="$(table_counts "$SOURCE_URL")"
 
-if [ "$PROD_USERS" = "$TEST_USERS" ] && [ "$PROD_VEHICLES" = "$TEST_VEHICLES" ]; then
-  echo ""
-  echo "✅ Backup/Restore test PASSED — record counts match!"
-  # Clean up
-  rm -f "$BACKUP_FILE"
-  psql "$TEST_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" 2>/dev/null || true
-  exit 0
-else
-  echo ""
-  echo "❌ Backup/Restore test FAILED — record counts don't match!"
-  echo "   Keeping backup at: $BACKUP_FILE for investigation"
+echo "3. Resetting only the explicitly approved restore-test database..."
+pg_exec "$TEST_URL" psql -v ON_ERROR_STOP=1 -c \
+  "DROP SCHEMA public CASCADE; CREATE SCHEMA public"
+
+echo "4. Restoring backup into the isolated test database..."
+gzip -dc "$BACKUP_FILE" | pg_exec "$TEST_URL" psql -v ON_ERROR_STOP=1
+
+echo "5. Comparing row counts for every public table..."
+RESTORED_COUNTS="$(table_counts "$TEST_URL")"
+if [ "$SOURCE_COUNTS" != "$RESTORED_COUNTS" ]; then
+  KEEP_BACKUP=1
+  echo "❌ Backup/restore mismatch"
+  diff -u <(printf '%s\n' "$SOURCE_COUNTS") <(printf '%s\n' "$RESTORED_COUNTS") || true
   exit 1
 fi
+
+echo "6. Comparing index inventories..."
+SOURCE_INDEXES="$(pg_exec "$SOURCE_URL" psql -v ON_ERROR_STOP=1 -Atqc \
+  "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' ORDER BY indexname")"
+RESTORED_INDEXES="$(pg_exec "$TEST_URL" psql -v ON_ERROR_STOP=1 -Atqc \
+  "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' ORDER BY indexname")"
+if [ "$SOURCE_INDEXES" != "$RESTORED_INDEXES" ]; then
+  KEEP_BACKUP=1
+  echo "❌ Restored index inventory does not match source"
+  diff -u <(printf '%s\n' "$SOURCE_INDEXES") <(printf '%s\n' "$RESTORED_INDEXES") || true
+  exit 1
+fi
+
+echo "6. Comparing primary, unique, foreign-key, and check constraints..."
+SOURCE_CONSTRAINTS="$(pg_exec "$SOURCE_URL" psql -v ON_ERROR_STOP=1 -Atqc \
+  "SELECT conrelid::regclass::text || ':' || conname::text || ':' || contype::text || ':' || pg_get_constraintdef(oid) FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1")"
+RESTORED_CONSTRAINTS="$(pg_exec "$TEST_URL" psql -v ON_ERROR_STOP=1 -Atqc \
+  "SELECT conrelid::regclass::text || ':' || conname::text || ':' || contype::text || ':' || pg_get_constraintdef(oid) FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1")"
+if [ "$SOURCE_CONSTRAINTS" != "$RESTORED_CONSTRAINTS" ]; then
+  KEEP_BACKUP=1
+  echo "❌ Restored constraint inventory does not match source"
+  diff -u <(printf '%s\n' "$SOURCE_CONSTRAINTS") <(printf '%s\n' "$RESTORED_CONSTRAINTS") || true
+  exit 1
+fi
+
+echo "✅ Backup/restore rehearsal passed: all public-table row counts, indexes, and constraints match"

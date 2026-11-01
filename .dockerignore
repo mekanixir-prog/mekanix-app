@@ -1,0 +1,36 @@
+# Secrets and local environment files
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.gpg
+*.sql.gz
+
+# Local credentials, database files, backups, and security reports
+backups/
+zap-reports/
+db/*.db
+db/*.sqlite
+*.log
+
+# Build outputs and local dependencies
+node_modules/
+.next/
+.open-next/
+.wrangler/
+coverage/
+test-results/
+playwright-report/
+
+# VCS and editor artifacts
+.git/
+.github/
+.DS_Store
+Thumbs.db
+
+# Synthetic Cloudflare D1 staging fixtures are never part of the app image
+scripts/wallet-release-staging-*.sql
+scripts/wallet-release-staging-fixture.sh

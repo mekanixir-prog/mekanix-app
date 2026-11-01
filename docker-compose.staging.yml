@@ -1,7 +1,7 @@
 # MEKANIX — Staging Environment
 # 
 # Same security as production:
-# - DB and Redis NOT exposed to host
+# - Redis is not exposed to host; PostgreSQL is bound to loopback only
 # - Redis password required
 # - App on 127.0.0.1:3001 only
 
@@ -43,6 +43,8 @@ services:
 
   db:
     image: postgres:16-alpine
+    ports:
+      - "127.0.0.1:5433:5432"
     environment:
       - POSTGRES_USER=mekanix
       - POSTGRES_PASSWORD=${DB_PASSWORD}
@@ -55,7 +57,7 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
-    # No ports — internal only
+    # Published only on loopback; never bind to a public interface
 
   redis:
     image: redis:7-alpine
