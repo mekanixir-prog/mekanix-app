@@ -21,7 +21,9 @@ Wallet escrow is currently released when the technician wallet is read. That mak
 
 ## Processing behavior
 
-- Each scheduled run scans matured PENDING transactions in keyset-paginated pages of 100, up to 1,000 per run. Ordering is by `holdUntil` and `id`; a failed early row cannot prevent later rows in the same run from being attempted. If the 1,000-row cap is reached, the next cron run continues from the oldest still-pending rows.
+- Each scheduled run scans matured PENDING transactions in keyset-paginated pages of 100, up to 1,000 per run. Ordering is by `holdUntil` and `id`. The last cursor is persisted in `WalletReleaseWorkerState`, so a permanently failing early row cannot pin every later Cron run to the first 1,000 rows. When the end of the current keyset cycle is reached, the cursor is reset so still-pending failures and newly matured rows are revisited on the next run.
+- The cursor table is created by the paired SQLite/D1 and PostgreSQL migration `20261101020000_wallet_release_worker_cursor`. It stores only the worker's pagination position and update time; it contains no customer or financial payload data.
+- A crash after a page is processed but before its cursor is saved may cause that page to be scanned again. The atomic release helper is idempotent: an already AVAILABLE transaction does not transfer the balance a second time.
 - Each release uses the same atomic D1 batch helper as the application path. A transaction is changed to AVAILABLE only when its matching wallet pending-to-available balance transfer succeeds.
 - One failed transaction is logged and does not prevent later due entries from being attempted. A permanently inconsistent row is retried on later cron runs and remains visible in `failed`/`unchanged` telemetry; operational reconciliation is still required.
 - The worker exposes no public HTTP action; fetch requests return 404.
