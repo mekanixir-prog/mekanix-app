@@ -216,7 +216,7 @@ export async function updateWithdrawalWithD1(
          "netAmount", "description", "idempotencyKey", "createdAt")
       SELECT ?, wr."walletId", 'PAYOUT', 'COMPLETED',
              CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END, 0,
-             -wr."amount', ?, ?, ?
+             -wr."amount", ?, ?, ?
       FROM "WithdrawalRequest" wr
       WHERE wr."id" = ? AND wr."status" = 'PAID' AND wr."txnId" = ?
     `).bind(
