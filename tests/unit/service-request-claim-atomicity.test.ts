@@ -53,7 +53,7 @@ const claimInput = {
   amount: 250,
 };
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 beforeEach(() => mocks.getD1Binding.mockResolvedValue(null));
 
 describe("service request atomic writer", () => {
@@ -154,6 +154,7 @@ describe("service request atomic writer", () => {
       batch: vi.fn(async () => [{ meta: { changes: 1 } }, { meta: { changes: 1 } }]),
     };
     mocks.getD1Binding.mockResolvedValue(d1);
+    vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValueOnce("request-d1").mockReturnValueOnce("vehicle-d1") });
     const db = {
       serviceRequest: {
         findUnique: vi.fn()
@@ -265,6 +266,7 @@ describe("insurance claim atomic writer", () => {
       batch: vi.fn(async () => [{ meta: { changes: 1 } }, { meta: { changes: 1 } }]),
     };
     mocks.getD1Binding.mockResolvedValue(d1);
+    vi.stubGlobal("crypto", { randomUUID: () => "claim-d1" });
     const db = {
       insuranceClaim: {
         findUnique: vi.fn()
@@ -277,7 +279,7 @@ describe("insurance claim atomic writer", () => {
     } as any;
 
     await expect(createInsuranceClaimAtomically(db, claimInput))
-      .resolves.toEqual({ id: "claim-d1", code: claimInput.code, created: false });
+      .resolves.toEqual({ id: "claim-d1", code: claimInput.code, created: true });
     expect(d1.batch).toHaveBeenCalledTimes(1);
     expect(d1.batch.mock.calls[0][0]).toHaveLength(2);
     expect(statements[0].sql).toContain('INSERT INTO "InsuranceClaim"');
