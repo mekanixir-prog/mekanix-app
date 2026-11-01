@@ -108,4 +108,16 @@ if [ "$SOURCE_INDEXES" != "$RESTORED_INDEXES" ]; then
   exit 1
 fi
 
-echo "✅ Backup/restore rehearsal passed: all public-table row counts and index inventories match"
+echo "6. Comparing primary, unique, foreign-key, and check constraints..."
+SOURCE_CONSTRAINTS="$(pg_exec "$SOURCE_URL" psql -v ON_ERROR_STOP=1 -Atqc \
+  "SELECT conrelid::regclass::text || ':' || conname || ':' || contype || ':' || pg_get_constraintdef(oid) FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1")"
+RESTORED_CONSTRAINTS="$(pg_exec "$TEST_URL" psql -v ON_ERROR_STOP=1 -Atqc \
+  "SELECT conrelid::regclass::text || ':' || conname || ':' || contype || ':' || pg_get_constraintdef(oid) FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1")"
+if [ "$SOURCE_CONSTRAINTS" != "$RESTORED_CONSTRAINTS" ]; then
+  KEEP_BACKUP=1
+  echo "❌ Restored constraint inventory does not match source"
+  diff -u <(printf '%s\n' "$SOURCE_CONSTRAINTS") <(printf '%s\n' "$RESTORED_CONSTRAINTS") || true
+  exit 1
+fi
+
+echo "✅ Backup/restore rehearsal passed: all public-table row counts, indexes, and constraints match"
