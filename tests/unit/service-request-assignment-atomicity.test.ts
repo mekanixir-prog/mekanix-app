@@ -134,9 +134,9 @@ describe("service request assignment atomic writer", () => {
         },
       }),
       batch: vi.fn(async (_statements: unknown[]) => [
-        { meta: { changes: 1 } },
-        { meta: { changes: 1 } },
-        { meta: { changes: 1 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
       ]),
     };
     mocks.getD1Binding.mockResolvedValue(d1);
@@ -145,13 +145,16 @@ describe("service request assignment atomic writer", () => {
 
     await expect(assignServiceRequestAtomically(db, input)).resolves.toBeUndefined();
     expect(d1.batch).toHaveBeenCalledTimes(1);
-    expect(d1.batch.mock.calls[0][0]).toHaveLength(3);
+    expect(d1.batch.mock.calls[0][0]).toHaveLength(6);
     expect(statements[0].sql).toContain('UPDATE "ServiceRequest"');
     expect(statements[0].sql).toContain('"status" = \'OPEN\'');
     expect(statements[0].sql).toContain('"verified" = 1');
     expect(statements[0].sql).toContain('"availableNow" = 1');
-    expect(statements[1].sql).toContain('UPDATE "Technician"');
-    expect(statements[2].sql).toContain('INSERT INTO "Job"');
+    expect(statements[1].sql).toContain("json_extract('not-json'");
+    expect(statements[2].sql).toContain('UPDATE "Technician"');
+    expect(statements[3].sql).toContain("json_extract('not-json'");
+    expect(statements[4].sql).toContain('INSERT INTO "Job"');
+    expect(statements[5].sql).toContain("json_extract('not-json'");
   });
 
   it("updates a previously rejected Job inside the D1 batch instead of inserting a duplicate", async () => {
@@ -184,11 +187,7 @@ describe("service request assignment atomic writer", () => {
   it("rejects a D1 batch when any compare-and-set step loses a race", async () => {
     const d1 = {
       prepare: (sql: string) => ({ bind: (...values: unknown[]) => ({ sql, values }) }),
-      batch: vi.fn(async () => [
-        { meta: { changes: 1 } },
-        { meta: { changes: 0 } },
-        { meta: { changes: 0 } },
-      ]),
+      batch: vi.fn(async () => { throw new Error("malformed JSON"); }),
     };
     mocks.getD1Binding.mockResolvedValue(d1);
     const db = { job: { findUnique: vi.fn() } } as any;
