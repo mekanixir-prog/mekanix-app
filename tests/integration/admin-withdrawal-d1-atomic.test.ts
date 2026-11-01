@@ -99,7 +99,7 @@ describe("admin withdrawal D1 transaction integration", () => {
     await expect(updateWithdrawalWithD1(d1 as any, {
       withdrawalId: "wd-1", action: "REJECTED", adminId: "admin-1",
       adminNotes: null, at: new Date("2026-10-30T10:00:00.000Z"),
-    })).rejects.toThrow();
+    })).resolves.toBe(false);
     expect(sqlite.prepare('SELECT "status" FROM "WithdrawalRequest" WHERE "id" = ?').get("wd-1"))
       .toEqual({ status: "REQUESTED" });
     expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletLedger"').get()).toEqual({ n: 0 });
