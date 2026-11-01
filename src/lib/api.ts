@@ -84,7 +84,12 @@ export const api = {
     if (technicianId) q.set("technicianId", technicianId);
     return req<{ data: ServiceRequest[]; total: number; page: number; limit: number } | ServiceRequest[]>(`/api/service-requests?${q.toString()}`).then((r: any) => Array.isArray(r) ? r : (r?.data ?? []));
   },
-  createRequest: (data: any) => req<ServiceRequest>(`/api/service-requests`, { method: "POST", body: JSON.stringify(data) }),
+  createRequest: (data: any, idempotencyKey: string) =>
+    req<ServiceRequest>(`/api/service-requests`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify(data),
+    }),
   listJobs: (params?: { technicianId?: string; customerId?: string; status?: string }) => {
     const q = new URLSearchParams();
     Object.entries(params ?? {}).forEach(([k, v]) => v && q.set(k, v));

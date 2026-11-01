@@ -224,6 +224,12 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, isFa, l
       let endpoint: string | null = null;
       if (path === "/api/wallets/withdraw" && action.idempotencyKey) {
         endpoint = `/api/wallets/withdraw/status?key=${encodeURIComponent(action.idempotencyKey)}`;
+      } else if (path === "/api/care/bookings" && action.idempotencyKey) {
+        endpoint = `/api/care/bookings/status?key=${encodeURIComponent(action.idempotencyKey)}`;
+      } else if (path === "/api/service-requests" && action.idempotencyKey) {
+        endpoint = `/api/service-requests/status?key=${encodeURIComponent(action.idempotencyKey)}`;
+      } else if (path === "/api/insurance/claim" && action.idempotencyKey) {
+        endpoint = `/api/insurance/claim/status?key=${encodeURIComponent(action.idempotencyKey)}`;
       } else if (path === "/api/prepay") {
         const jobId = getBody(action).jobId;
         if (typeof jobId === "string" && jobId.length > 0) {
@@ -239,9 +245,14 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, isFa, l
       const state = ["COMMITTED", "NOT_COMMITTED", "RECONCILIATION_REQUIRED", "KEY_CONFLICT"].includes(data.state)
         ? data.state as ServerCheck["state"]
         : "UNKNOWN";
-      const label = data.withdrawal?.code ?? data.prepay?.jobCode ?? undefined;
+      const label = data.withdrawal?.code ?? data.prepay?.jobCode ??
+        data.booking?.code ?? data.request?.code ?? data.claim?.code ?? undefined;
       const detail = state === "COMMITTED"
-        ? (data.withdrawal ? `${data.withdrawal.status} · ${data.withdrawal.amount}` : data.prepay ? data.prepay.jobCode : undefined)
+        ? (data.withdrawal ? `${data.withdrawal.status} · ${data.withdrawal.amount}` :
+          data.prepay ? data.prepay.jobCode :
+          data.booking ? data.booking.id :
+          data.request ? data.request.id :
+          data.claim ? data.claim.policyId : undefined)
         : undefined;
       setChecks((current) => ({ ...current, [action.id]: { state, label, detail, retryAllowed: data.retryAllowed !== false, checkedAt: Date.now() } }));
       if (!response.ok && state === "UNKNOWN") {
@@ -273,7 +284,10 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, isFa, l
   async function retrySafely(action: QueuedAction) {
     const check = checks[action.id];
     const path = getPath(action);
-    const safeRoute = path === "/api/wallets/withdraw" || path === "/api/prepay";
+    const safeRoute = [
+      "/api/wallets/withdraw", "/api/prepay", "/api/care/bookings",
+      "/api/service-requests", "/api/insurance/claim",
+    ].includes(path) && !!action.idempotencyKey;
     if (!isOnline || check?.state !== "NOT_COMMITTED" || !safeRoute || !action.needsReconciliation) return;
     setBusyId(action.id);
     try {
@@ -370,11 +384,16 @@ export function OfflineReconciliationCenter({ open, isOnline, queueSize, isFa, l
         ) : reviewActions.map((action) => {
           const check = checks[action.id];
           const path = getPath(action);
-          const canCheck = (path === "/api/wallets/withdraw" && !!action.idempotencyKey) ||
+          const idempotentCreateRoute = [
+            "/api/wallets/withdraw", "/api/care/bookings",
+            "/api/service-requests", "/api/insurance/claim",
+          ].includes(path);
+          const canCheck = (idempotentCreateRoute && !!action.idempotencyKey) ||
             (path === "/api/prepay" && typeof getBody(action).jobId === "string");
           const canRetry = check?.state === "NOT_COMMITTED" &&
-            (path === "/api/wallets/withdraw" || path === "/api/prepay") &&
-            !!action.needsReconciliation && check?.retryAllowed !== false;
+            (idempotentCreateRoute || path === "/api/prepay") &&
+            !!action.idempotencyKey && !!action.needsReconciliation &&
+            check?.retryAllowed !== false;
           return (
             <Card key={action.id} className="gap-0 overflow-hidden">
               <CardHeader className="gap-2 border-b border-border px-4 py-3">
