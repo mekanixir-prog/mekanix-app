@@ -129,14 +129,21 @@ describe("admin withdrawal transitions", () => {
         statements.push({ sql, values });
         return { sql, values };
       } }),
-      batch: vi.fn().mockResolvedValue(Array.from({ length: 3 }, () => ({ meta: { changes: 1 } }))),
+      batch: vi.fn().mockResolvedValue([
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+      ]),
     };
     await expect(updateWithdrawalWithD1(d1 as any, input)).resolves.toBe(true);
     expect(d1.batch).toHaveBeenCalledTimes(1);
-    expect(d1.batch.mock.calls[0][0]).toHaveLength(3);
-    expect(statements[1].sql).toContain("changes() = 1");
-    expect(statements[2].sql).toContain("CASE WHEN changes() = 1 THEN wr.\"amount\" ELSE NULL END");
-    expect(statements[2].values).toContain("withdrawal:wd-1:REJECT_REFUND");
+    expect(d1.batch.mock.calls[0][0]).toHaveLength(6);
+    expect(statements[1].sql).toContain("json_extract('not-json'");
+    expect(statements[2].sql).toContain("changes() = 1");
+    expect(statements[3].sql).toContain("json_extract('not-json'");
+    expect(statements[4].sql).toContain("CASE WHEN changes() = 1 THEN wr.\"amount\" ELSE NULL END");
+    expect(statements[4].values).toContain("withdrawal:wd-1:REJECT_REFUND");
+    expect(statements[5].sql).toContain("json_extract('not-json'");
   });
 
   it("uses the request amount for D1 payout accounting", async () => {
@@ -146,7 +153,11 @@ describe("admin withdrawal transitions", () => {
         statements.push({ sql, values });
         return { sql, values };
       } }),
-      batch: vi.fn().mockResolvedValue(Array.from({ length: 3 }, () => ({ meta: { changes: 1 } }))),
+      batch: vi.fn().mockResolvedValue([
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+      ]),
     };
     await expect(updateWithdrawalWithD1(d1 as any, { ...input, action: "PAID", payoutReference: "BANK-TRX-2026-0001" })).resolves.toBe(true);
     expect(statements[2].sql).toContain('SELECT "amount" FROM "WithdrawalRequest"');
@@ -164,9 +175,9 @@ describe("admin withdrawal transitions", () => {
       batch: vi.fn().mockResolvedValue([{ meta: { changes: 1 } }, { meta: { changes: 1 } }, { meta: { changes: 1 } }]),
     };
     await updateWithdrawalWithD1(d1 as any, input);
-    expect(statements[2].sql).toContain("ELSE NULL END");
-    expect(statements[2].sql).not.toContain("AND changes() = 1");
-    expect(statements[2].sql).toContain('FROM "WithdrawalRequest" wr');
+    expect(statements[4].sql).toContain("ELSE NULL END");
+    expect(statements[4].sql).not.toContain("AND changes() = 1");
+    expect(statements[4].sql).toContain('FROM "WithdrawalRequest" wr');
   });
 
   it("requires a real payout reference before issuing any D1 batch", async () => {
