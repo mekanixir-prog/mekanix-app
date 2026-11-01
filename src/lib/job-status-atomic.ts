@@ -86,7 +86,6 @@ async function transitionWithPrisma(db: PrismaClient, input: AtomicJobStatusInpu
 }
 
 async function transitionWithD1(
-  db: PrismaClient,
   d1: NonNullable<Awaited<ReturnType<typeof getD1Binding>>>,
   input: AtomicJobStatusInput,
 ) {
@@ -116,6 +115,7 @@ async function transitionWithD1(
   }
 
   let requestGuard = "";
+  values.push(input.jobId, input.currentStatus);
   if (isRequestTerminalTransition(input.nextStatus)) {
     requestGuard = `
       AND EXISTS (
@@ -125,7 +125,6 @@ async function transitionWithD1(
     `;
     values.push(input.requestId, input.technicianId);
   }
-  values.push(input.jobId, input.currentStatus);
 
   const statements = [
     d1.prepare(`
@@ -181,9 +180,8 @@ async function transitionWithD1(
     throw new JobStatusConflictError();
   }
 
-  // D1 batch is the transaction boundary. Prisma reads are not needed here;
-  // the route reloads the job with its relations after the commit.
-  void db;
+  // D1 batch is the transaction boundary. The route reloads the job with
+  // its relations after the commit.
 }
 
 export async function transitionJobStatusAtomically(
@@ -191,6 +189,6 @@ export async function transitionJobStatusAtomically(
   input: AtomicJobStatusInput,
 ): Promise<void> {
   const d1 = await getD1Binding();
-  if (d1) return transitionWithD1(db, d1, input);
+  if (d1) return transitionWithD1(d1, input);
   return transitionWithPrisma(db, input);
 }
