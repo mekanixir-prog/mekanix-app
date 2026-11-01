@@ -108,7 +108,394 @@ async function assignWithD1(
   // every compare-and-set unless exactly one row changed, so D1 rolls back
   // the entire batch instead of committing a partial assignment.
   const assertOneChange = () =>
-    d1.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '$') END`);
+    d1.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '
+
+  const statements = [
+    d1.prepare(`
+      UPDATE "ServiceRequest"
+      SET "status" = 'ASSIGNED', "matchedTechId" = ?, "updatedAt" = ?
+      WHERE "id" = ? AND "status" = 'OPEN' AND "matchedTechId" IS NULL
+        AND ${input.existingRejectedJobId
+          ? 'EXISTS (SELECT 1 FROM "Job" j WHERE j."id" = ? AND j."requestId" = "ServiceRequest"."id" AND j."status" = \'REJECTED\')'
+          : 'NOT EXISTS (SELECT 1 FROM "Job" j WHERE j."requestId" = "ServiceRequest"."id")'}
+        AND EXISTS (
+          SELECT 1
+          FROM "Technician" t
+          INNER JOIN "User" u ON u."id" = t."userId"
+          WHERE t."id" = ?
+            AND t."status" = 'ONLINE'
+            AND t."verified" = 1
+            AND t."availableNow" = 1
+            AND u."status" = 'ACTIVE'
+            AND u."role" = 'TECHNICIAN'
+            AND EXISTS (
+              SELECT 1 FROM "TechnicianSpecialty" s
+              WHERE s."technicianId" = t."id" AND s."category" = ?
+            )
+        )
+    `).bind(
+      input.technicianId,
+      now,
+      input.requestId,
+      ...(input.existingRejectedJobId ? [input.existingRejectedJobId] : []),
+      input.technicianId,
+      input.category,
+    ),
+    assertOneChange(),
+    d1.prepare(`
+      UPDATE "Technician"
+      SET "status" = 'ON_JOB', "updatedAt" = ?
+      WHERE "id" = ? AND "status" = 'ONLINE'
+        AND "verified" = 1 AND "availableNow" = 1
+        AND EXISTS (
+          SELECT 1 FROM "User" u
+          WHERE u."id" = "Technician"."userId"
+            AND u."status" = 'ACTIVE' AND u."role" = 'TECHNICIAN'
+        )
+        AND EXISTS (
+          SELECT 1 FROM "TechnicianSpecialty" s
+          WHERE s."technicianId" = "Technician"."id" AND s."category" = ?
+        )
+        AND EXISTS (
+          SELECT 1 FROM "ServiceRequest" r
+          WHERE r."id" = ? AND r."status" = 'ASSIGNED'
+            AND r."matchedTechId" = ?
+        )
+    `).bind(now, input.technicianId, input.category, input.requestId, input.technicianId),
+    assertOneChange(),
+    input.existingRejectedJobId
+      ? d1.prepare(`
+          UPDATE "Job"
+          SET "technicianId" = ?, "status" = 'REQUESTED', "etaMins" = ?,
+              "customerApproved" = 0, "startedAt" = NULL, "arrivedAt" = NULL,
+              "completedAt" = NULL, "diagnosis" = NULL, "technicianNotes" = NULL,
+              "replacedParts" = NULL, "updatedAt" = ?
+          WHERE "id" = ? AND "requestId" = ? AND "status" = 'REJECTED'
+            AND EXISTS (
+              SELECT 1 FROM "ServiceRequest" r
+              WHERE r."id" = ? AND r."status" = 'ASSIGNED'
+                AND r."matchedTechId" = ?
+            )
+            AND EXISTS (
+              SELECT 1 FROM "Technician" t
+              WHERE t."id" = ? AND t."status" = 'ON_JOB'
+            )
+        `).bind(
+          input.technicianId,
+          input.etaMins,
+          now,
+          input.existingRejectedJobId,
+          input.requestId,
+          input.requestId,
+          input.technicianId,
+          input.technicianId,
+        )
+      : d1.prepare(`
+          INSERT INTO "Job"
+            ("id", "code", "requestId", "technicianId", "status", "etaMins", "createdAt", "updatedAt")
+          SELECT ?, ?, r."id", t."id", 'REQUESTED', ?, ?, ?
+          FROM "ServiceRequest" r
+          INNER JOIN "Technician" t ON t."id" = ?
+          WHERE r."id" = ? AND r."status" = 'ASSIGNED'
+            AND r."matchedTechId" = ? AND t."status" = 'ON_JOB'
+            AND NOT EXISTS (SELECT 1 FROM "Job" j WHERE j."requestId" = r."id")
+        `).bind(jobId, jobCode, input.etaMins, now, now, input.technicianId, input.requestId, input.technicianId),
+    assertOneChange(),
+  ];
+
+  try {
+    await d1.batch(statements);
+  } catch (error) {
+    if (error instanceof Error && /malformed JSON/i.test(error.message)) {
+      throw new ServiceRequestAssignmentConflictError();
+    }
+    throw error;
+  }
+
+  const job = await db.job.findUnique({ where: { requestId: input.requestId }, select: { id: true } });
+  if (!job) throw new Error("Assignment transaction committed without creating or reassigning its job");
+}
+
+export async function assignServiceRequestAtomically(
+  db: PrismaClient,
+  input: AssignServiceRequestInput,
+): Promise<void> {
+  const d1 = await getD1Binding();
+  if (d1) return assignWithD1(db, d1, input);
+  return assignWithPrisma(db, input);
+}
+) END`),
+    d1.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '
+          UPDATE "Job"
+          SET "technicianId" = ?, "status" = 'REQUESTED', "etaMins" = ?,
+              "customerApproved" = 0, "startedAt" = NULL, "arrivedAt" = NULL,
+              "completedAt" = NULL, "diagnosis" = NULL, "technicianNotes" = NULL,
+              "replacedParts" = NULL, "updatedAt" = ?
+          WHERE "id" = ? AND "requestId" = ? AND "status" = 'REJECTED'
+            AND EXISTS (
+              SELECT 1 FROM "ServiceRequest" r
+              WHERE r."id" = ? AND r."status" = 'ASSIGNED'
+                AND r."matchedTechId" = ?
+            )
+            AND EXISTS (
+              SELECT 1 FROM "Technician" t
+              WHERE t."id" = ? AND t."status" = 'ON_JOB'
+            )
+        `).bind(
+          input.technicianId,
+          input.etaMins,
+          now,
+          input.existingRejectedJobId,
+          input.requestId,
+          input.requestId,
+          input.technicianId,
+          input.technicianId,
+        )
+      : d1.prepare(`
+          INSERT INTO "Job"
+            ("id", "code", "requestId", "technicianId", "status", "etaMins", "createdAt", "updatedAt")
+          SELECT ?, ?, r."id", t."id", 'REQUESTED', ?, ?, ?
+          FROM "ServiceRequest" r
+          INNER JOIN "Technician" t ON t."id" = ?
+          WHERE r."id" = ? AND r."status" = 'ASSIGNED'
+            AND r."matchedTechId" = ? AND t."status" = 'ON_JOB'
+            AND NOT EXISTS (SELECT 1 FROM "Job" j WHERE j."requestId" = r."id")
+        `).bind(jobId, jobCode, input.etaMins, now, now, input.technicianId, input.requestId, input.technicianId),
+  ]);
+
+  if (
+    (results[0]?.meta?.changes ?? 0) !== 1 ||
+    (results[1]?.meta?.changes ?? 0) !== 1 ||
+    (results[2]?.meta?.changes ?? 0) !== 1
+  ) {
+    throw new ServiceRequestAssignmentConflictError();
+  }
+
+  // Keep Prisma's view as the common post-commit verification for both D1 and
+  // local SQLite/PostgreSQL execution paths.
+  const job = await db.job.findUnique({ where: { requestId: input.requestId }, select: { id: true } });
+  if (!job) throw new Error("Assignment transaction committed without creating or reassigning its job");
+}
+
+export async function assignServiceRequestAtomically(
+  db: PrismaClient,
+  input: AssignServiceRequestInput,
+): Promise<void> {
+  const d1 = await getD1Binding();
+  if (d1) return assignWithD1(db, d1, input);
+  return assignWithPrisma(db, input);
+}
+) END`),
+    input.existingRejectedJobId
+      ? d1.prepare(`
+          UPDATE "Job"
+          SET "technicianId" = ?, "status" = 'REQUESTED', "etaMins" = ?,
+              "customerApproved" = 0, "startedAt" = NULL, "arrivedAt" = NULL,
+              "completedAt" = NULL, "diagnosis" = NULL, "technicianNotes" = NULL,
+              "replacedParts" = NULL, "updatedAt" = ?
+          WHERE "id" = ? AND "requestId" = ? AND "status" = 'REJECTED'
+            AND EXISTS (
+              SELECT 1 FROM "ServiceRequest" r
+              WHERE r."id" = ? AND r."status" = 'ASSIGNED'
+                AND r."matchedTechId" = ?
+            )
+            AND EXISTS (
+              SELECT 1 FROM "Technician" t
+              WHERE t."id" = ? AND t."status" = 'ON_JOB'
+            )
+        `).bind(
+          input.technicianId,
+          input.etaMins,
+          now,
+          input.existingRejectedJobId,
+          input.requestId,
+          input.requestId,
+          input.technicianId,
+          input.technicianId,
+        )
+      : d1.prepare(`
+          INSERT INTO "Job"
+            ("id", "code", "requestId", "technicianId", "status", "etaMins", "createdAt", "updatedAt")
+          SELECT ?, ?, r."id", t."id", 'REQUESTED', ?, ?, ?
+          FROM "ServiceRequest" r
+          INNER JOIN "Technician" t ON t."id" = ?
+          WHERE r."id" = ? AND r."status" = 'ASSIGNED'
+            AND r."matchedTechId" = ? AND t."status" = 'ON_JOB'
+            AND NOT EXISTS (SELECT 1 FROM "Job" j WHERE j."requestId" = r."id")
+        `).bind(jobId, jobCode, input.etaMins, now, now, input.technicianId, input.requestId, input.technicianId),
+  ]);
+
+  if (
+    (results[0]?.meta?.changes ?? 0) !== 1 ||
+    (results[1]?.meta?.changes ?? 0) !== 1 ||
+    (results[2]?.meta?.changes ?? 0) !== 1
+  ) {
+    throw new ServiceRequestAssignmentConflictError();
+  }
+
+  // Keep Prisma's view as the common post-commit verification for both D1 and
+  // local SQLite/PostgreSQL execution paths.
+  const job = await db.job.findUnique({ where: { requestId: input.requestId }, select: { id: true } });
+  if (!job) throw new Error("Assignment transaction committed without creating or reassigning its job");
+}
+
+export async function assignServiceRequestAtomically(
+  db: PrismaClient,
+  input: AssignServiceRequestInput,
+): Promise<void> {
+  const d1 = await getD1Binding();
+  if (d1) return assignWithD1(db, d1, input);
+  return assignWithPrisma(db, input);
+}
+) END`));
+
+  try {
+    await d1.batch(statements);
+  } catch (error) {
+    if (error instanceof Error && /malformed JSON/i.test(error.message)) {
+      throw new ServiceRequestAssignmentConflictError();
+    }
+    throw error;
+  }
+
+  // Keep Prisma's view as the common post-commit verification for both D1 and
+  // local SQLite/PostgreSQL execution paths.
+  const job = await db.job.findUnique({ where: { requestId: input.requestId }, select: { id: true } });
+  if (!job) throw new Error("Assignment transaction committed without creating or reassigning its job");
+}
+
+export async function assignServiceRequestAtomically(
+  db: PrismaClient,
+  input: AssignServiceRequestInput,
+): Promise<void> {
+  const d1 = await getD1Binding();
+  if (d1) return assignWithD1(db, d1, input);
+  return assignWithPrisma(db, input);
+}
+) END`),
+    d1.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '
+          UPDATE "Job"
+          SET "technicianId" = ?, "status" = 'REQUESTED', "etaMins" = ?,
+              "customerApproved" = 0, "startedAt" = NULL, "arrivedAt" = NULL,
+              "completedAt" = NULL, "diagnosis" = NULL, "technicianNotes" = NULL,
+              "replacedParts" = NULL, "updatedAt" = ?
+          WHERE "id" = ? AND "requestId" = ? AND "status" = 'REJECTED'
+            AND EXISTS (
+              SELECT 1 FROM "ServiceRequest" r
+              WHERE r."id" = ? AND r."status" = 'ASSIGNED'
+                AND r."matchedTechId" = ?
+            )
+            AND EXISTS (
+              SELECT 1 FROM "Technician" t
+              WHERE t."id" = ? AND t."status" = 'ON_JOB'
+            )
+        `).bind(
+          input.technicianId,
+          input.etaMins,
+          now,
+          input.existingRejectedJobId,
+          input.requestId,
+          input.requestId,
+          input.technicianId,
+          input.technicianId,
+        )
+      : d1.prepare(`
+          INSERT INTO "Job"
+            ("id", "code", "requestId", "technicianId", "status", "etaMins", "createdAt", "updatedAt")
+          SELECT ?, ?, r."id", t."id", 'REQUESTED', ?, ?, ?
+          FROM "ServiceRequest" r
+          INNER JOIN "Technician" t ON t."id" = ?
+          WHERE r."id" = ? AND r."status" = 'ASSIGNED'
+            AND r."matchedTechId" = ? AND t."status" = 'ON_JOB'
+            AND NOT EXISTS (SELECT 1 FROM "Job" j WHERE j."requestId" = r."id")
+        `).bind(jobId, jobCode, input.etaMins, now, now, input.technicianId, input.requestId, input.technicianId),
+  ]);
+
+  if (
+    (results[0]?.meta?.changes ?? 0) !== 1 ||
+    (results[1]?.meta?.changes ?? 0) !== 1 ||
+    (results[2]?.meta?.changes ?? 0) !== 1
+  ) {
+    throw new ServiceRequestAssignmentConflictError();
+  }
+
+  // Keep Prisma's view as the common post-commit verification for both D1 and
+  // local SQLite/PostgreSQL execution paths.
+  const job = await db.job.findUnique({ where: { requestId: input.requestId }, select: { id: true } });
+  if (!job) throw new Error("Assignment transaction committed without creating or reassigning its job");
+}
+
+export async function assignServiceRequestAtomically(
+  db: PrismaClient,
+  input: AssignServiceRequestInput,
+): Promise<void> {
+  const d1 = await getD1Binding();
+  if (d1) return assignWithD1(db, d1, input);
+  return assignWithPrisma(db, input);
+}
+) END`),
+    input.existingRejectedJobId
+      ? d1.prepare(`
+          UPDATE "Job"
+          SET "technicianId" = ?, "status" = 'REQUESTED', "etaMins" = ?,
+              "customerApproved" = 0, "startedAt" = NULL, "arrivedAt" = NULL,
+              "completedAt" = NULL, "diagnosis" = NULL, "technicianNotes" = NULL,
+              "replacedParts" = NULL, "updatedAt" = ?
+          WHERE "id" = ? AND "requestId" = ? AND "status" = 'REJECTED'
+            AND EXISTS (
+              SELECT 1 FROM "ServiceRequest" r
+              WHERE r."id" = ? AND r."status" = 'ASSIGNED'
+                AND r."matchedTechId" = ?
+            )
+            AND EXISTS (
+              SELECT 1 FROM "Technician" t
+              WHERE t."id" = ? AND t."status" = 'ON_JOB'
+            )
+        `).bind(
+          input.technicianId,
+          input.etaMins,
+          now,
+          input.existingRejectedJobId,
+          input.requestId,
+          input.requestId,
+          input.technicianId,
+          input.technicianId,
+        )
+      : d1.prepare(`
+          INSERT INTO "Job"
+            ("id", "code", "requestId", "technicianId", "status", "etaMins", "createdAt", "updatedAt")
+          SELECT ?, ?, r."id", t."id", 'REQUESTED', ?, ?, ?
+          FROM "ServiceRequest" r
+          INNER JOIN "Technician" t ON t."id" = ?
+          WHERE r."id" = ? AND r."status" = 'ASSIGNED'
+            AND r."matchedTechId" = ? AND t."status" = 'ON_JOB'
+            AND NOT EXISTS (SELECT 1 FROM "Job" j WHERE j."requestId" = r."id")
+        `).bind(jobId, jobCode, input.etaMins, now, now, input.technicianId, input.requestId, input.technicianId),
+  ]);
+
+  if (
+    (results[0]?.meta?.changes ?? 0) !== 1 ||
+    (results[1]?.meta?.changes ?? 0) !== 1 ||
+    (results[2]?.meta?.changes ?? 0) !== 1
+  ) {
+    throw new ServiceRequestAssignmentConflictError();
+  }
+
+  // Keep Prisma's view as the common post-commit verification for both D1 and
+  // local SQLite/PostgreSQL execution paths.
+  const job = await db.job.findUnique({ where: { requestId: input.requestId }, select: { id: true } });
+  if (!job) throw new Error("Assignment transaction committed without creating or reassigning its job");
+}
+
+export async function assignServiceRequestAtomically(
+  db: PrismaClient,
+  input: AssignServiceRequestInput,
+): Promise<void> {
+  const d1 = await getD1Binding();
+  if (d1) return assignWithD1(db, d1, input);
+  return assignWithPrisma(db, input);
+}
+) END`).bind();
 
   const statements = [
     d1.prepare(`
