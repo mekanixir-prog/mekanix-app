@@ -110,7 +110,7 @@ fi
 
 echo "6. Comparing primary, unique, foreign-key, and check constraints..."
 SOURCE_CONSTRAINTS="$(pg_exec "$SOURCE_URL" psql -v ON_ERROR_STOP=1 -Atqc \
-  "SELECT conrelid::regclass::text || ':' || conname || ':' || contype::text || ':' || pg_get_constraintdef(oid) FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1")"
+  "SELECT conrelid::regclass::text || ':' || conname::text || ':' || contype::text || ':' || pg_get_constraintdef(oid) FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1")"
 RESTORED_CONSTRAINTS="$(pg_exec "$TEST_URL" psql -v ON_ERROR_STOP=1 -Atqc \
   "SELECT conrelid::regclass::text || ':' || conname || ':' || contype || ':' || pg_get_constraintdef(oid) FROM pg_constraint WHERE connamespace = 'public'::regnamespace ORDER BY 1")"
 if [ "$SOURCE_CONSTRAINTS" != "$RESTORED_CONSTRAINTS" ]; then
