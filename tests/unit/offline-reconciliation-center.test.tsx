@@ -155,8 +155,29 @@ describe("offline reconciliation center", () => {
     await screen.findByText("عملیات در سرور ثبت نشده است");
   });
 
-  it("does not offer a status check or retry for an endpoint without a read-only contract", () => {
-    enqueueAction({ url: "/api/service-requests", method: "POST", body: { title: "Repair" } });
+  it.each([
+    ["/api/care/bookings", "/api/care/bookings/status"],
+    ["/api/service-requests", "/api/service-requests/status"],
+    ["/api/insurance/claim", "/api/insurance/claim/status"],
+  ])("checks authoritative status for %s", async (path, statusPath) => {
+    enqueueAction({ url: path, method: "POST", body: { vehicleId: "vehicle-1", policyId: "policy-1" } });
+    const queued = getQueuedActions();
+    queued[0].needsReconciliation = true;
+    localStorage.setItem("mekanix-offline-queue", JSON.stringify(queued));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ state: "NOT_COMMITTED" })));
+
+    renderCenter(1);
+    fireEvent.click(screen.getByRole("button", { name: "بررسی وضعیت سرور" }));
+    await screen.findByText("عملیات در سرور ثبت نشده است");
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining(statusPath),
+      expect.objectContaining({ method: "GET" })
+    );
+    expect(screen.getByRole("button", { name: "ارسال دوباره امن" })).toBeTruthy();
+  });
+
+  it("does not offer status checks or retries for an endpoint without a read-only contract", () => {
+    enqueueAction({ url: "/api/reviews", method: "POST", body: { rating: 5 } });
     const queued = getQueuedActions();
     queued[0].needsReconciliation = true;
     localStorage.setItem("mekanix-offline-queue", JSON.stringify(queued));
