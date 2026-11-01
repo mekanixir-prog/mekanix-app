@@ -69,7 +69,7 @@ describe("job status route delegates atomic state changes", () => {
   it("atomically reopens the request and releases the technician on REJECTED", async () => {
     const response = await PATCH(makeRequest("REJECTED"), { params: Promise.resolve({ id: "job-1" }) });
     expect(response.status).toBe(200);
-    expect(mocks.transition).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mocks.transition).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
       jobId: "job-1",
       requestId: "request-1",
       technicianId: "tech-1",
@@ -83,7 +83,7 @@ describe("job status route delegates atomic state changes", () => {
     mocks.auth.mockResolvedValue({ userId: "customer-user", role: "CUSTOMER" });
     const response = await PATCH(makeRequest("CANCELLED"), { params: Promise.resolve({ id: "job-1" }) });
     expect(response.status).toBe(200);
-    expect(mocks.transition).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mocks.transition).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
       requestId: "request-1",
       nextStatus: "CANCELLED",
     }));
@@ -92,7 +92,7 @@ describe("job status route delegates atomic state changes", () => {
   it("delegates non-terminal transitions without requesting technician release", async () => {
     const response = await PATCH(makeRequest("ACCEPTED"), { params: Promise.resolve({ id: "job-1" }) });
     expect(response.status).toBe(200);
-    expect(mocks.transition).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mocks.transition).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
       nextStatus: "ACCEPTED",
       updates: { startedAt: expect.any(Date) },
     }));
