@@ -45,6 +45,7 @@ async function decideWithPrisma(
         id: input.approvalId,
         bookingId: input.bookingId,
         status: "PROPOSED",
+        findingId: input.findingId,
         ...(input.findingId ? { finding: { is: { id: input.findingId, bookingId: input.bookingId } } } : {}),
       },
       data: {
@@ -112,6 +113,7 @@ async function decideWithD1(
     values.rejectedAt?.toISOString() ?? null,
     input.approvalId,
     input.bookingId,
+    input.findingId,
     input.bookingId,
   ];
   if (input.findingId) approvalBindings.push(input.findingId, input.bookingId);
@@ -121,6 +123,7 @@ async function decideWithD1(
       UPDATE "CustomerApproval"
       SET "status" = ?, "approvedAt" = ?, "rejectedAt" = ?
       WHERE "id" = ? AND "bookingId" = ? AND "status" = 'PROPOSED'
+        AND "findingId" IS ?
         AND EXISTS (
           SELECT 1 FROM "ServiceBooking" b
           WHERE b."id" = ? AND b."status" = 'WAITING_CUSTOMER_APPROVAL'
