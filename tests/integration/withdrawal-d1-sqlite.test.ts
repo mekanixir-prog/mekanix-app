@@ -110,6 +110,16 @@ describe("atomic withdrawal D1 SQLite integration", () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
   });
 
+  it("rolls back the request insert when the conditional wallet debit changes zero rows", async () => {
+    const { sqlite, d1 } = makeD1(); databases.push(sqlite); seed(sqlite);
+    sqlite.exec(`CREATE TRIGGER "skip_withdrawal_debit" BEFORE UPDATE ON "Wallet"
+      BEGIN SELECT RAISE(IGNORE); END;`);
+    expect(await createWithdrawalWithD1(d1 as never, input)).toBe(false);
+    expect(sqlite.prepare('SELECT "balance" FROM "Wallet" WHERE "id" = ?').get("wallet-1")).toEqual({ balance: 1000 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WithdrawalRequest"').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
+  });
+
   it("rolls back the debit and request when the ledger insert fails", async () => {
     const { sqlite, d1 } = makeD1(); databases.push(sqlite); seed(sqlite);
     sqlite.exec(`CREATE TRIGGER "fail_withdrawal_ledger" BEFORE INSERT ON "WalletLedger"
