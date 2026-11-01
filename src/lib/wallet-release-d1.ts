@@ -20,7 +20,7 @@ export async function releaseWalletTransactionWithD1(
   const timestamp = now.toISOString();
   const eligibleAmount = `(
     SELECT "netAmount" FROM "WalletTransaction"
-    WHERE "id" = ? AND "walletId" = ? AND "status" = 'PENDING'
+    WHERE "id" = ? AND "walletId" = ? AND "status" = 'PENDING' AND "netAmount" >= 0
       AND "holdUntil" IS NOT NULL AND "holdUntil" <= ?
   )`;
 
@@ -34,7 +34,7 @@ export async function releaseWalletTransactionWithD1(
       AND "pendingBalance" >= ${eligibleAmount}
       AND EXISTS (
         SELECT 1 FROM "WalletTransaction"
-        WHERE "id" = ? AND "walletId" = ? AND "status" = 'PENDING'
+        WHERE "id" = ? AND "walletId" = ? AND "status" = 'PENDING' AND "netAmount" >= 0
           AND "holdUntil" IS NOT NULL AND "holdUntil" <= ?
       )
   `).bind(
@@ -48,7 +48,7 @@ export async function releaseWalletTransactionWithD1(
   const transactionUpdate = d1.prepare(`
     UPDATE "WalletTransaction"
     SET "status" = 'AVAILABLE', "releasedAt" = ?
-    WHERE "id" = ? AND "walletId" = ? AND "status" = 'PENDING'
+    WHERE "id" = ? AND "walletId" = ? AND "status" = 'PENDING' AND "netAmount" >= 0
       AND "holdUntil" IS NOT NULL AND "holdUntil" <= ?
       AND changes() = 1
   `).bind(timestamp, transactionId, walletId, timestamp);
