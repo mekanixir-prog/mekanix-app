@@ -594,22 +594,38 @@ function FileClaimDialog({
         amount: parseFloat(amount) || 0,
       };
       const signature = JSON.stringify(payload);
-      if (!claimIdempotencyRef.current || claimIdempotencyRef.current.signature !== signature) {
-        claimIdempotencyRef.current = {
-          signature,
-          key: globalThis.crypto.randomUUID(),
-        };
+      const storageKey = `mekanix-insurance-claim:${policy.id}`;
+      let activeKey = claimIdempotencyRef.current?.signature === signature
+        ? claimIdempotencyRef.current.key
+        : "";
+      if (!activeKey) {
+        try {
+          const saved = sessionStorage.getItem(storageKey);
+          const parsed = saved ? JSON.parse(saved) : null;
+          activeKey = parsed?.signature === signature && typeof parsed?.key === "string"
+            ? parsed.key
+            : globalThis.crypto.randomUUID();
+          sessionStorage.setItem(storageKey, JSON.stringify({ signature, key: activeKey }));
+        } catch {
+          activeKey = globalThis.crypto.randomUUID();
+        }
+        claimIdempotencyRef.current = { signature, key: activeKey };
       }
       const res = await authFetch("/api/insurance/claim", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Idempotency-Key": claimIdempotencyRef.current.key,
+          "Idempotency-Key": activeKey,
         },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      try {
+        const saved = sessionStorage.getItem(storageKey);
+        if (saved && JSON.parse(saved)?.key === activeKey) sessionStorage.removeItem(storageKey);
+      } catch {}
+      claimIdempotencyRef.current = null;
       toast.success(t("ins.claimSubmitted"));
       onSubmitted();
       onOpenChange(false);
