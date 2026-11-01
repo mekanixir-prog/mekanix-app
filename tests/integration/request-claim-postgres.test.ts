@@ -11,7 +11,7 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
   const customerPhone = `+9891${runId.slice(0, 9)}`;
   const serviceKey = `service-request:pg-test:${runId}`;
   const claimKey = `insurance-claim:pg-test:${runId}`;
-  let db: Awaited<ReturnType<typeof getDbForLib>>;
+  let db: Awaited<ReturnType<typeof getDbForLib>> | null = null;
   let userId: string;
   let customerId: string;
   let policyId: string;
@@ -19,7 +19,7 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
   beforeAll(async () => {
     vi.stubEnv("NODE_ENV", "test");
     db = await getDbForLib();
-    const user = await db.user.create({
+    const user = await db!.user.create({
       data: {
         name: "Idempotency PostgreSQL Test",
         phone: customerPhone,
@@ -27,9 +27,9 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
       },
     });
     userId = user.id;
-    const customer = await db.customer.create({ data: { userId } });
+    const customer = await db!.customer.create({ data: { userId } });
     customerId = customer.id;
-    const policy = await db.insurancePolicy.create({
+    const policy = await db!.insurancePolicy.create({
       data: {
         code: `POL-PG-${runId}`,
         userId,
@@ -46,11 +46,11 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
 
   afterAll(async () => {
     if (db) {
-      await db.serviceRequest.deleteMany({ where: { idempotencyKey: serviceKey } });
-      await db.insuranceClaim.deleteMany({ where: { idempotencyKey: claimKey } });
-      if (policyId) await db.insurancePolicy.deleteMany({ where: { id: policyId } });
-      if (customerId) await db.customer.deleteMany({ where: { id: customerId } });
-      if (userId) await db.user.deleteMany({ where: { id: userId } });
+      await db!.serviceRequest.deleteMany({ where: { idempotencyKey: serviceKey } });
+      await db!.insuranceClaim.deleteMany({ where: { idempotencyKey: claimKey } });
+      if (policyId) await db!.insurancePolicy.deleteMany({ where: { id: policyId } });
+      if (customerId) await db!.customer.deleteMany({ where: { id: customerId } });
+      if (userId) await db!.user.deleteMany({ where: { id: userId } });
     }
     vi.unstubAllEnvs();
   });
@@ -85,8 +85,8 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
 
     expect(new Set(results.map((result) => result.id)).size).toBe(1);
     expect(results.filter((result) => result.created)).toHaveLength(1);
-    expect(await db.serviceRequest.count({ where: { idempotencyKey: serviceKey } })).toBe(1);
-    expect(await db.vehicle.count({ where: { customerId, notes: "Created atomically with service request" } })).toBe(1);
+    expect(await db!.serviceRequest.count({ where: { idempotencyKey: serviceKey } })).toBe(1);
+    expect(await db!.vehicle.count({ where: { customerId, notes: "Created atomically with service request" } })).toBe(1);
   });
 
   it("creates one claim and advances its policy once for 80 concurrent PostgreSQL retries", async () => {
@@ -108,8 +108,8 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
 
     expect(new Set(results.map((result) => result.id)).size).toBe(1);
     expect(results.filter((result) => result.created)).toHaveLength(1);
-    expect(await db.insuranceClaim.count({ where: { idempotencyKey: claimKey } })).toBe(1);
-    const policy = await db.insurancePolicy.findUnique({ where: { id: policyId } });
+    expect(await db!.insuranceClaim.count({ where: { idempotencyKey: claimKey } })).toBe(1);
+    const policy = await db!.insurancePolicy.findUnique({ where: { id: policyId } });
     expect(policy?.status).toBe("claimed");
   });
 
@@ -118,14 +118,14 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
     const functionName = `test_fail_service_request_${suffix}`;
     const triggerName = `test_fail_service_request_trigger_${suffix}`;
     const key = `service-request:pg-failure:${suffix}`;
-    const customerVehicleCount = await db.vehicle.count({ where: { customerId } });
+    const customerVehicleCount = await db!.vehicle.count({ where: { customerId } });
 
-    await db.$executeRawUnsafe(`
+    await db!.$executeRawUnsafe(`
       CREATE FUNCTION "${functionName}"() RETURNS trigger AS $$
       BEGIN RAISE EXCEPTION 'injected service request insert failure'; END;
       $$ LANGUAGE plpgsql;
     `);
-    await db.$executeRawUnsafe(`
+    await db!.$executeRawUnsafe(`
       CREATE TRIGGER "${triggerName}" BEFORE INSERT ON "ServiceRequest"
       FOR EACH ROW WHEN (NEW."customerId" = '${customerId}')
       EXECUTE FUNCTION "${functionName}"();
@@ -153,11 +153,11 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
         lng: 51.4,
       })).rejects.toThrow("injected service request insert failure");
 
-      expect(await db.serviceRequest.count({ where: { idempotencyKey: key } })).toBe(0);
-      expect(await db.vehicle.count({ where: { customerId } })).toBe(customerVehicleCount);
+      expect(await db!.serviceRequest.count({ where: { idempotencyKey: key } })).toBe(0);
+      expect(await db!.vehicle.count({ where: { customerId } })).toBe(customerVehicleCount);
     } finally {
-      await db.$executeRawUnsafe(`DROP TRIGGER IF EXISTS "${triggerName}" ON "ServiceRequest"`);
-      await db.$executeRawUnsafe(`DROP FUNCTION IF EXISTS "${functionName}"()`);
+      await db!.$executeRawUnsafe(`DROP TRIGGER IF EXISTS "${triggerName}" ON "ServiceRequest"`);
+      await db!.$executeRawUnsafe(`DROP FUNCTION IF EXISTS "${functionName}"()`);
     }
   });
 
@@ -166,14 +166,14 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
     const functionName = `test_fail_policy_update_${suffix}`;
     const triggerName = `test_fail_policy_update_trigger_${suffix}`;
     const key = `insurance-claim:pg-failure:${suffix}`;
-    await db.insurancePolicy.update({ where: { id: policyId }, data: { status: "active" } });
+    await db!.insurancePolicy.update({ where: { id: policyId }, data: { status: "active" } });
 
-    await db.$executeRawUnsafe(`
+    await db!.$executeRawUnsafe(`
       CREATE FUNCTION "${functionName}"() RETURNS trigger AS $$
       BEGIN RAISE EXCEPTION 'injected policy transition failure'; END;
       $$ LANGUAGE plpgsql;
     `);
-    await db.$executeRawUnsafe(`
+    await db!.$executeRawUnsafe(`
       CREATE TRIGGER "${triggerName}" BEFORE UPDATE ON "InsurancePolicy"
       FOR EACH ROW WHEN (NEW.status = 'claimed' AND NEW.id = '${policyId}')
       EXECUTE FUNCTION "${functionName}"();
@@ -190,12 +190,12 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
         amount: 500,
       })).rejects.toThrow("injected policy transition failure");
 
-      expect(await db.insuranceClaim.count({ where: { idempotencyKey: key } })).toBe(0);
-      const policy = await db.insurancePolicy.findUnique({ where: { id: policyId } });
+      expect(await db!.insuranceClaim.count({ where: { idempotencyKey: key } })).toBe(0);
+      const policy = await db!.insurancePolicy.findUnique({ where: { id: policyId } });
       expect(policy?.status).toBe("active");
     } finally {
-      await db.$executeRawUnsafe(`DROP TRIGGER IF EXISTS "${triggerName}" ON "InsurancePolicy"`);
-      await db.$executeRawUnsafe(`DROP FUNCTION IF EXISTS "${functionName}"()`);
+      await db!.$executeRawUnsafe(`DROP TRIGGER IF EXISTS "${triggerName}" ON "InsurancePolicy"`);
+      await db!.$executeRawUnsafe(`DROP FUNCTION IF EXISTS "${functionName}"()`);
     }
   });
 });
