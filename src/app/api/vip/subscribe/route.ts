@@ -54,9 +54,28 @@ export async function POST(req: Request) {
     !payment ||
     payment.userId !== userId ||
     payment.status !== "SUCCEEDED" ||
+    !payment.gatewayLogId ||
     Number(payment.amount) < Number(plan.priceIrr)
   ) {
     return NextResponse.json({ error: "Invalid or insufficient payment" }, { status: 400 });
+  }
+
+  // A successful Payment row alone is not proof that it was intended for VIP.
+  // Require the exact verified gateway attempt to belong to this user, to be
+  // marked for the VIP purpose, and to be the attempt that created this Payment.
+  const gatewayLog = await db.paymentGatewayLog.findUnique({
+    where: { id: payment.gatewayLogId },
+  });
+  if (
+    !gatewayLog ||
+    gatewayLog.userId !== userId ||
+    gatewayLog.status !== "VERIFIED" ||
+    gatewayLog.purpose !== "vip" ||
+    gatewayLog.paymentId !== payment.id ||
+    gatewayLog.currency !== payment.currency ||
+    Number(gatewayLog.amount) !== Number(payment.amount)
+  ) {
+    return NextResponse.json({ error: "Payment is not a verified VIP payment" }, { status: 400 });
   }
 
   // Check if this payment has already been used for a VIP subscription
