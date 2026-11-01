@@ -14,6 +14,9 @@
 set -euo pipefail
 umask 077
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/pg-service.sh"
+
 SOURCE_ENV="${SOURCE_ENV:-}"
 SOURCE_URL="${DATABASE_URL:?DATABASE_URL is required}"
 TEST_URL="${TEST_DB_URL:?TEST_DB_URL is required}"
@@ -58,7 +61,7 @@ fi
 
 echo "🧪 MEKANIX — Backup/Restore Rehearsal ($SOURCE_ENV)"
 echo "1. Creating compressed PostgreSQL backup (connection details hidden)..."
-PGDATABASE="$SOURCE_URL" pg_dump --no-owner --no-acl | gzip -c > "$BACKUP_FILE"
+pg_exec "$SOURCE_URL" pg_dump --no-owner --no-acl | gzip -c > "$BACKUP_FILE"
 gzip -t "$BACKUP_FILE"
 [ -s "$BACKUP_FILE" ] || { echo "❌ Backup is empty"; exit 1; }
 
@@ -68,9 +71,9 @@ table_counts() {
   while IFS= read -r table; do
     [ -n "$table" ] || continue
     local count
-    count="$(PGDATABASE="$url" psql -v ON_ERROR_STOP=1 -Atqc "SELECT count(*) FROM public.\"$table\"")"
+    count="$(pg_exec "$url" psql -v ON_ERROR_STOP=1 -Atqc "SELECT count(*) FROM public.\"$table\"")"
     printf '%s:%s\n' "$table" "$count"
-  done < <(PGDATABASE="$url" psql -v ON_ERROR_STOP=1 -Atqc \
+  done < <(pg_exec "$url" psql -v ON_ERROR_STOP=1 -Atqc \
     "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename")
 }
 
@@ -78,11 +81,11 @@ echo "2. Capturing source table row counts..."
 SOURCE_COUNTS="$(table_counts "$SOURCE_URL")"
 
 echo "3. Resetting only the explicitly approved restore-test database..."
-PGDATABASE="$TEST_URL" psql -v ON_ERROR_STOP=1 -c \
+pg_exec "$TEST_URL" psql -v ON_ERROR_STOP=1 -c \
   "DROP SCHEMA public CASCADE"
 
 echo "4. Restoring backup into the isolated test database..."
-gzip -dc "$BACKUP_FILE" | PGDATABASE="$TEST_URL" psql -v ON_ERROR_STOP=1
+gzip -dc "$BACKUP_FILE" | pg_exec "$TEST_URL" psql -v ON_ERROR_STOP=1
 
 echo "5. Comparing row counts for every public table..."
 RESTORED_COUNTS="$(table_counts "$TEST_URL")"
@@ -94,9 +97,9 @@ if [ "$SOURCE_COUNTS" != "$RESTORED_COUNTS" ]; then
 fi
 
 echo "6. Comparing index inventories..."
-SOURCE_INDEXES="$(PGDATABASE="$SOURCE_URL" psql -v ON_ERROR_STOP=1 -Atqc \
+SOURCE_INDEXES="$(pg_exec "$SOURCE_URL" psql -v ON_ERROR_STOP=1 -Atqc \
   "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' ORDER BY indexname")"
-RESTORED_INDEXES="$(PGDATABASE="$TEST_URL" psql -v ON_ERROR_STOP=1 -Atqc \
+RESTORED_INDEXES="$(pg_exec "$TEST_URL" psql -v ON_ERROR_STOP=1 -Atqc \
   "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' ORDER BY indexname")"
 if [ "$SOURCE_INDEXES" != "$RESTORED_INDEXES" ]; then
   KEEP_BACKUP=1
