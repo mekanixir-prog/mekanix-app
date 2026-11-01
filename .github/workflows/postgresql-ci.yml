@@ -63,6 +63,16 @@ jobs:
         env:
           DATABASE_URL: postgresql://mekanix:mekanix_test@localhost:5432/mekanix_test
       
+      - name: Backup and restore rehearsal on isolated test database
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+          PGPASSWORD=mekanix_test createdb -h 127.0.0.1 -p 5432 -U mekanix mekanix_restore_test
+          DATABASE_URL=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_test \
+          TEST_DB_URL=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_restore_test \
+          SOURCE_ENV=test ALLOW_TEST_DB_RESET=YES \
+            bash scripts/test-backup-restore.sh
+
       - name: Run TypeScript check
         run: bunx tsc --noEmit
         env:
