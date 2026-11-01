@@ -733,6 +733,7 @@ model WalletTransaction {
 
   @@index([walletId, status])
   @@index([jobId])
+  @@index([status, holdUntil, id])
 }
 
 enum WithdrawalStatus {
@@ -1363,4 +1364,13 @@ model IdempotencyKey {
   createdAt DateTime @default(now())
 
   @@index([key, expiresAt])
+}
+
+
+// Durable keyset pagination cursor for the scheduled wallet escrow Worker.
+model WalletReleaseWorkerState {
+  id              String   @id
+  cursorHoldUntil DateTime?
+  cursorId        String?
+  updatedAt       DateTime @updatedAt
 }

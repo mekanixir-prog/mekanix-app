@@ -1,7 +1,7 @@
 # MEKANIX — Release Readiness Audit
 
 **Audit date:** 2026-11-01  
-**Audited mainline baseline:** `5ca2651923af888547946ad5308e507dd4519266`  
+**Audited mainline baseline:** `4e701370d674cdcde40cabba3e360703b249c029`  
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Decision:** **NOT READY FOR PRODUCTION**
 
@@ -37,7 +37,7 @@ This audit separates verified code/CI evidence from staging and provider operati
 - PR #43 was closed as superseded; PR #65 refreshes the implementation on the audited mainline baseline and remains a draft.
 - PR #65 adds the 15-minute Cron Trigger, keyset pagination, durable cross-run cursor, per-row failure isolation, shared atomic D1 release helper, PostgreSQL concurrency/ledger rollback coverage, and a guarded synthetic D1 staging fixture.
 - The committed Wrangler config contains an all-zero D1 placeholder. CI uses local D1 only; no Cloudflare Worker has been deployed and no real Cloudflare D1 binding/Cron Trigger has been verified.
-- The current PR #65 head is still undergoing its five CI workflows; do not treat prior/cancelled runs as evidence for the latest head.
+- The pre-rebase PR #65 head passed all five workflows: CI, Production readiness, PostgreSQL CI (including 50 concurrent retries and injected RELEASE-ledger rollback), Cloudflare Build, and Docker E2E. Cloudflare Build applied the full Prisma SQLite migration history to local D1, verified the scan index/cursor table, and exercised the synthetic fixture seed/cleanup. The branch is being rebased onto the PR #64 merge; require a fresh five-workflow pass on the rebased head.
 - Do not set `WALLET_RELEASE_SCHEDULED=true` until an isolated D1 staging database has been migrated, the Worker deployed, at least one scheduled run observed, and matured PENDING rows reconciled against AVAILABLE releases.
 
 ### 3.2 Real payment provider — issue #24
@@ -56,8 +56,7 @@ This audit separates verified code/CI evidence from staging and provider operati
 ### 3.4 Staging, backup/restore, performance, and security scans
 
 - Docker/PostgreSQL staging configuration exists, but no actual VPS staging deployment or Release Candidate smoke test has been performed in this session.
-- PR #64 is the operational-hardening PR. It adds encrypted GPG backup support, no connection-string logging, fail-safe empty-target restore, disposable restore-test database guard, Docker/PostgreSQL staging configuration, shell/Compose checks, and a PostgreSQL CI restore rehearsal.
-- A PostgreSQL-client/server major-version mismatch and then a noninteractive PGDG key-import issue were found in the rehearsal workflow and corrected on the PR branch; the latest exact head is queued for full CI. These changes are not yet mainline evidence.
+- PR #64 is merged. It adds encrypted GPG backup support, no connection-string logging, a fail-safe empty-target restore, a disposable restore-test database guard, Docker/PostgreSQL staging configuration, protected staging environment-file loading, shell/Compose checks, and a PostgreSQL CI restore rehearsal. The encrypted restore utility and full schema/row/index/constraint comparison passed on the final PR head.
 - Docker E2E checks also assert the additive CARE/service-request/claim idempotency indexes and schema objects.
 - k6 load test and OWASP ZAP baseline scripts are prepared, but no staging measurements or scan report exist. p95/p99, failure rate, resource use, and ZAP findings therefore remain unverified.
 - A production restore rehearsal must use a protected backup, a separate disposable target, and explicit approval. The automated test script refuses production as a source.
@@ -71,8 +70,8 @@ This audit separates verified code/CI evidence from staging and provider operati
 
 ## 4. Release sequence
 
-1. Complete CI for PR #64 and merge only if all four applicable workflows pass on the exact head.
-2. Complete PR #65's five workflows; keep it draft until isolated Cloudflare D1 staging evidence exists, then deploy only to that staging database.
+1. PR #64 is complete and merged; retain its backup/restore and staging controls as the operational baseline.
+2. Re-run all five workflows on the rebased PR #65 head; keep it draft until isolated Cloudflare D1 staging evidence exists, then deploy only to that staging database.
 3. Observe scheduled escrow runs and reconcile ledger/balance effects; keep the production schedule flag disabled until separately approved.
 4. Select the payment provider and complete sandbox initiation, signed/server-side verification, replay, wrong-amount/currency, timeout, duplicate callback, and refund tests.
 5. Select and configure the SMS provider in staging; test delivery, rate limits, provider outage, monitoring, and alerting.
