@@ -1,7 +1,7 @@
-import type { PrismaClient } from "@prisma/client";
+import type { JobStatus, PrismaClient } from "@prisma/client";
 import { getD1Binding } from "@/lib/idempotency";
 
-const ACTIVE_JOB_STATUSES = [
+const ACTIVE_JOB_STATUSES: JobStatus[] = [
   "REQUESTED",
   "ACCEPTED",
   "EN_ROUTE",
