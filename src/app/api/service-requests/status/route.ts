@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { getCustomerFromSession } from "@/lib/auth";
-import { readIdempotencyKey } from "@/lib/idempotency";
 
 // Read-only proof used by offline reconciliation. A request is committed only
 // when its required vehicle relation exists and belongs to the same customer.
