@@ -54,6 +54,7 @@ export async function POST(req: Request) {
     !payment ||
     payment.userId !== userId ||
     payment.status !== "SUCCEEDED" ||
+    payment.currency !== "IRR" ||
     !payment.gatewayLogId ||
     Number(payment.amount) < Number(plan.priceIrr)
   ) {
