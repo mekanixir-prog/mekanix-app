@@ -122,7 +122,1135 @@ async function decideWithD1(
   // does not abort the batch by itself, so assert each write immediately.
   // SELECT does not change SQLite's changes() counter.
   const assertOneChange = () =>
-    d1.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '$') END`);
+    d1.prepare(`SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '
+
+  const statements = [
+    d1.prepare(`
+      UPDATE "CustomerApproval"
+      SET "status" = ?, "approvedAt" = ?, "rejectedAt" = ?
+      WHERE "id" = ? AND "bookingId" = ? AND "status" = 'PROPOSED'
+        AND "findingId" IS ?
+        AND EXISTS (
+          SELECT 1 FROM "ServiceBooking" b
+          WHERE b."id" = ? AND b."status" = 'WAITING_CUSTOMER_APPROVAL'
+        )
+        ${findingGuard}
+    `).bind(...approvalBindings),
+    assertOneChange(),
+    d1.prepare(`
+      UPDATE "ServiceBooking"
+      SET "status" = ?, "updatedAt" = ?
+      WHERE "id" = ? AND "status" = 'WAITING_CUSTOMER_APPROVAL'
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ?
+            AND a."status" = ?
+        )
+    `).bind(bookingStatus, now, input.bookingId, input.approvalId, input.bookingId, approvalStatus),
+    assertOneChange(),
+  ];
+
+  if (input.findingId) {
+    statements.push(
+      d1.prepare(`
+        UPDATE "Finding"
+        SET "status" = ?
+        WHERE "id" = ? AND "bookingId" = ?
+          AND EXISTS (
+            SELECT 1 FROM "CustomerApproval" a
+            WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+          )
+      `).bind(
+        findingStatus,
+        input.findingId,
+        input.bookingId,
+        input.approvalId,
+        input.bookingId,
+        approvalStatus,
+      ),
+      assertOneChange(),
+    );
+  }
+
+  statements.push(
+    d1.prepare(`
+      INSERT INTO "ServiceTimelineEvent"
+        ("id", "bookingId", "eventType", "timestamp", "actor", "metadata")
+      SELECT ?, ?, ?, ?, ?, ?
+      WHERE EXISTS (
+        SELECT 1 FROM "ServiceBooking" b
+        WHERE b."id" = ? AND b."status" = ?
+      )
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+        )
+    `).bind(
+      eventId,
+      input.bookingId,
+      values.eventType,
+      now,
+      input.actorUserId,
+      JSON.stringify({ approvalId: input.approvalId }),
+      input.bookingId,
+      bookingStatus,
+      input.approvalId,
+      input.bookingId,
+      approvalStatus,
+    ),
+    assertOneChange(),
+  );
+
+  try {
+    await d1.batch(statements);
+  } catch (error) {
+    if (error instanceof Error && /malformed JSON/i.test(error.message)) {
+      throw new CareExtraApprovalConflictError();
+    }
+    throw error;
+  }
+
+  const approval = await db.customerApproval.findUnique({
+    where: { id: input.approvalId },
+  });
+  if (!approval) throw new Error("Approved proposal could not be loaded after D1 batch");
+  return approval;
+}
+
+export async function decideCareExtraApprovalAtomically(
+  db: PrismaClient,
+  input: CareExtraApprovalDecisionInput,
+) {
+  const d1 = await getD1Binding();
+  if (d1) return decideWithD1(db, d1, input);
+  return decideWithPrisma(db, input);
+}
+) END`),
+    d1.prepare(`
+      UPDATE "ServiceBooking"
+      SET "status" = ?, "updatedAt" = ?
+      WHERE "id" = ? AND "status" = 'WAITING_CUSTOMER_APPROVAL'
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ?
+            AND a."status" = ?
+        )
+    `).bind(bookingStatus, now, input.bookingId, input.approvalId, input.bookingId, approvalStatus),
+  ];
+
+  if (input.findingId) {
+    statements.push(d1.prepare(`
+      UPDATE "Finding"
+      SET "status" = ?
+      WHERE "id" = ? AND "bookingId" = ?
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+        )
+    `).bind(
+      findingStatus,
+      input.findingId,
+      input.bookingId,
+      input.approvalId,
+      input.bookingId,
+      approvalStatus,
+    ));
+  }
+
+  statements.push(d1.prepare(`
+    INSERT INTO "ServiceTimelineEvent"
+      ("id", "bookingId", "eventType", "timestamp", "actor", "metadata")
+    SELECT ?, ?, ?, ?, ?, ?
+    WHERE EXISTS (
+      SELECT 1 FROM "ServiceBooking" b
+      WHERE b."id" = ? AND b."status" = ?
+    )
+      AND EXISTS (
+        SELECT 1 FROM "CustomerApproval" a
+        WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+      )
+  `).bind(
+    eventId,
+    input.bookingId,
+    values.eventType,
+    now,
+    input.actorUserId,
+    JSON.stringify({ approvalId: input.approvalId }),
+    input.bookingId,
+    bookingStatus,
+    input.approvalId,
+    input.bookingId,
+    approvalStatus,
+  ));
+
+  const results = await d1.batch(statements);
+  if (results.some((result) => (result?.meta?.changes ?? 0) !== 1)) {
+    throw new CareExtraApprovalConflictError();
+  }
+
+  const approval = await db.customerApproval.findUnique({
+    where: { id: input.approvalId },
+  });
+  if (!approval) throw new Error("Approved proposal could not be loaded after D1 batch");
+  return approval;
+}
+
+export async function decideCareExtraApprovalAtomically(
+  db: PrismaClient,
+  input: CareExtraApprovalDecisionInput,
+) {
+  const d1 = await getD1Binding();
+  if (d1) return decideWithD1(db, d1, input);
+  return decideWithPrisma(db, input);
+}
+) END`),
+  ];
+
+  if (input.findingId) {
+    statements.push(d1.prepare(`
+      UPDATE "Finding"
+      SET "status" = ?
+      WHERE "id" = ? AND "bookingId" = ?
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+        )
+    `).bind(
+      findingStatus,
+      input.findingId,
+      input.bookingId,
+      input.approvalId,
+      input.bookingId,
+      approvalStatus,
+    ));
+  }
+
+  statements.push(d1.prepare(`
+    INSERT INTO "ServiceTimelineEvent"
+      ("id", "bookingId", "eventType", "timestamp", "actor", "metadata")
+    SELECT ?, ?, ?, ?, ?, ?
+    WHERE EXISTS (
+      SELECT 1 FROM "ServiceBooking" b
+      WHERE b."id" = ? AND b."status" = ?
+    )
+      AND EXISTS (
+        SELECT 1 FROM "CustomerApproval" a
+        WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+      )
+  `).bind(
+    eventId,
+    input.bookingId,
+    values.eventType,
+    now,
+    input.actorUserId,
+    JSON.stringify({ approvalId: input.approvalId }),
+    input.bookingId,
+    bookingStatus,
+    input.approvalId,
+    input.bookingId,
+    approvalStatus,
+  ));
+
+  const results = await d1.batch(statements);
+  if (results.some((result) => (result?.meta?.changes ?? 0) !== 1)) {
+    throw new CareExtraApprovalConflictError();
+  }
+
+  const approval = await db.customerApproval.findUnique({
+    where: { id: input.approvalId },
+  });
+  if (!approval) throw new Error("Approved proposal could not be loaded after D1 batch");
+  return approval;
+}
+
+export async function decideCareExtraApprovalAtomically(
+  db: PrismaClient,
+  input: CareExtraApprovalDecisionInput,
+) {
+  const d1 = await getD1Binding();
+  if (d1) return decideWithD1(db, d1, input);
+  return decideWithPrisma(db, input);
+}
+) END`),
+    d1.prepare(`
+      UPDATE "ServiceBooking"
+      SET "status" = ?, "updatedAt" = ?
+      WHERE "id" = ? AND "status" = 'WAITING_CUSTOMER_APPROVAL'
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ?
+            AND a."status" = ?
+        )
+    `).bind(bookingStatus, now, input.bookingId, input.approvalId, input.bookingId, approvalStatus),
+  ];
+
+  if (input.findingId) {
+    statements.push(d1.prepare(`
+      UPDATE "Finding"
+      SET "status" = ?
+      WHERE "id" = ? AND "bookingId" = ?
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+        )
+    `).bind(
+      findingStatus,
+      input.findingId,
+      input.bookingId,
+      input.approvalId,
+      input.bookingId,
+      approvalStatus,
+    ));
+  }
+
+  statements.push(d1.prepare(`
+    INSERT INTO "ServiceTimelineEvent"
+      ("id", "bookingId", "eventType", "timestamp", "actor", "metadata")
+    SELECT ?, ?, ?, ?, ?, ?
+    WHERE EXISTS (
+      SELECT 1 FROM "ServiceBooking" b
+      WHERE b."id" = ? AND b."status" = ?
+    )
+      AND EXISTS (
+        SELECT 1 FROM "CustomerApproval" a
+        WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+      )
+  `).bind(
+    eventId,
+    input.bookingId,
+    values.eventType,
+    now,
+    input.actorUserId,
+    JSON.stringify({ approvalId: input.approvalId }),
+    input.bookingId,
+    bookingStatus,
+    input.approvalId,
+    input.bookingId,
+    approvalStatus,
+  ));
+
+  const results = await d1.batch(statements);
+  if (results.some((result) => (result?.meta?.changes ?? 0) !== 1)) {
+    throw new CareExtraApprovalConflictError();
+  }
+
+  const approval = await db.customerApproval.findUnique({
+    where: { id: input.approvalId },
+  });
+  if (!approval) throw new Error("Approved proposal could not be loaded after D1 batch");
+  return approval;
+}
+
+export async function decideCareExtraApprovalAtomically(
+  db: PrismaClient,
+  input: CareExtraApprovalDecisionInput,
+) {
+  const d1 = await getD1Binding();
+  if (d1) return decideWithD1(db, d1, input);
+  return decideWithPrisma(db, input);
+}
+) END`));
+  }
+
+  statements.push(d1.prepare(`
+    INSERT INTO "ServiceTimelineEvent"
+      ("id", "bookingId", "eventType", "timestamp", "actor", "metadata")
+    SELECT ?, ?, ?, ?, ?, ?
+    WHERE EXISTS (
+      SELECT 1 FROM "ServiceBooking" b
+      WHERE b."id" = ? AND b."status" = ?
+    )
+      AND EXISTS (
+        SELECT 1 FROM "CustomerApproval" a
+        WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+      )
+  `).bind(
+    eventId,
+    input.bookingId,
+    values.eventType,
+    now,
+    input.actorUserId,
+    JSON.stringify({ approvalId: input.approvalId }),
+    input.bookingId,
+    bookingStatus,
+    input.approvalId,
+    input.bookingId,
+    approvalStatus,
+  ));
+
+  const results = await d1.batch(statements);
+  if (results.some((result) => (result?.meta?.changes ?? 0) !== 1)) {
+    throw new CareExtraApprovalConflictError();
+  }
+
+  const approval = await db.customerApproval.findUnique({
+    where: { id: input.approvalId },
+  });
+  if (!approval) throw new Error("Approved proposal could not be loaded after D1 batch");
+  return approval;
+}
+
+export async function decideCareExtraApprovalAtomically(
+  db: PrismaClient,
+  input: CareExtraApprovalDecisionInput,
+) {
+  const d1 = await getD1Binding();
+  if (d1) return decideWithD1(db, d1, input);
+  return decideWithPrisma(db, input);
+}
+) END`),
+    d1.prepare(`
+      UPDATE "ServiceBooking"
+      SET "status" = ?, "updatedAt" = ?
+      WHERE "id" = ? AND "status" = 'WAITING_CUSTOMER_APPROVAL'
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ?
+            AND a."status" = ?
+        )
+    `).bind(bookingStatus, now, input.bookingId, input.approvalId, input.bookingId, approvalStatus),
+  ];
+
+  if (input.findingId) {
+    statements.push(d1.prepare(`
+      UPDATE "Finding"
+      SET "status" = ?
+      WHERE "id" = ? AND "bookingId" = ?
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+        )
+    `).bind(
+      findingStatus,
+      input.findingId,
+      input.bookingId,
+      input.approvalId,
+      input.bookingId,
+      approvalStatus,
+    ));
+  }
+
+  statements.push(d1.prepare(`
+    INSERT INTO "ServiceTimelineEvent"
+      ("id", "bookingId", "eventType", "timestamp", "actor", "metadata")
+    SELECT ?, ?, ?, ?, ?, ?
+    WHERE EXISTS (
+      SELECT 1 FROM "ServiceBooking" b
+      WHERE b."id" = ? AND b."status" = ?
+    )
+      AND EXISTS (
+        SELECT 1 FROM "CustomerApproval" a
+        WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+      )
+  `).bind(
+    eventId,
+    input.bookingId,
+    values.eventType,
+    now,
+    input.actorUserId,
+    JSON.stringify({ approvalId: input.approvalId }),
+    input.bookingId,
+    bookingStatus,
+    input.approvalId,
+    input.bookingId,
+    approvalStatus,
+  ));
+
+  const results = await d1.batch(statements);
+  if (results.some((result) => (result?.meta?.changes ?? 0) !== 1)) {
+    throw new CareExtraApprovalConflictError();
+  }
+
+  const approval = await db.customerApproval.findUnique({
+    where: { id: input.approvalId },
+  });
+  if (!approval) throw new Error("Approved proposal could not be loaded after D1 batch");
+  return approval;
+}
+
+export async function decideCareExtraApprovalAtomically(
+  db: PrismaClient,
+  input: CareExtraApprovalDecisionInput,
+) {
+  const d1 = await getD1Binding();
+  if (d1) return decideWithD1(db, d1, input);
+  return decideWithPrisma(db, input);
+}
+) END`),
+  ];
+
+  if (input.findingId) {
+    statements.push(d1.prepare(`
+      UPDATE "Finding"
+      SET "status" = ?
+      WHERE "id" = ? AND "bookingId" = ?
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+        )
+    `).bind(
+      findingStatus,
+      input.findingId,
+      input.bookingId,
+      input.approvalId,
+      input.bookingId,
+      approvalStatus,
+    ));
+  }
+
+  statements.push(d1.prepare(`
+    INSERT INTO "ServiceTimelineEvent"
+      ("id", "bookingId", "eventType", "timestamp", "actor", "metadata")
+    SELECT ?, ?, ?, ?, ?, ?
+    WHERE EXISTS (
+      SELECT 1 FROM "ServiceBooking" b
+      WHERE b."id" = ? AND b."status" = ?
+    )
+      AND EXISTS (
+        SELECT 1 FROM "CustomerApproval" a
+        WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+      )
+  `).bind(
+    eventId,
+    input.bookingId,
+    values.eventType,
+    now,
+    input.actorUserId,
+    JSON.stringify({ approvalId: input.approvalId }),
+    input.bookingId,
+    bookingStatus,
+    input.approvalId,
+    input.bookingId,
+    approvalStatus,
+  ));
+
+  const results = await d1.batch(statements);
+  if (results.some((result) => (result?.meta?.changes ?? 0) !== 1)) {
+    throw new CareExtraApprovalConflictError();
+  }
+
+  const approval = await db.customerApproval.findUnique({
+    where: { id: input.approvalId },
+  });
+  if (!approval) throw new Error("Approved proposal could not be loaded after D1 batch");
+  return approval;
+}
+
+export async function decideCareExtraApprovalAtomically(
+  db: PrismaClient,
+  input: CareExtraApprovalDecisionInput,
+) {
+  const d1 = await getD1Binding();
+  if (d1) return decideWithD1(db, d1, input);
+  return decideWithPrisma(db, input);
+}
+) END`),
+    d1.prepare(`
+      UPDATE "ServiceBooking"
+      SET "status" = ?, "updatedAt" = ?
+      WHERE "id" = ? AND "status" = 'WAITING_CUSTOMER_APPROVAL'
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ?
+            AND a."status" = ?
+        )
+    `).bind(bookingStatus, now, input.bookingId, input.approvalId, input.bookingId, approvalStatus),
+  ];
+
+  if (input.findingId) {
+    statements.push(d1.prepare(`
+      UPDATE "Finding"
+      SET "status" = ?
+      WHERE "id" = ? AND "bookingId" = ?
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+        )
+    `).bind(
+      findingStatus,
+      input.findingId,
+      input.bookingId,
+      input.approvalId,
+      input.bookingId,
+      approvalStatus,
+    ));
+  }
+
+  statements.push(d1.prepare(`
+    INSERT INTO "ServiceTimelineEvent"
+      ("id", "bookingId", "eventType", "timestamp", "actor", "metadata")
+    SELECT ?, ?, ?, ?, ?, ?
+    WHERE EXISTS (
+      SELECT 1 FROM "ServiceBooking" b
+      WHERE b."id" = ? AND b."status" = ?
+    )
+      AND EXISTS (
+        SELECT 1 FROM "CustomerApproval" a
+        WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+      )
+  `).bind(
+    eventId,
+    input.bookingId,
+    values.eventType,
+    now,
+    input.actorUserId,
+    JSON.stringify({ approvalId: input.approvalId }),
+    input.bookingId,
+    bookingStatus,
+    input.approvalId,
+    input.bookingId,
+    approvalStatus,
+  ));
+
+  const results = await d1.batch(statements);
+  if (results.some((result) => (result?.meta?.changes ?? 0) !== 1)) {
+    throw new CareExtraApprovalConflictError();
+  }
+
+  const approval = await db.customerApproval.findUnique({
+    where: { id: input.approvalId },
+  });
+  if (!approval) throw new Error("Approved proposal could not be loaded after D1 batch");
+  return approval;
+}
+
+export async function decideCareExtraApprovalAtomically(
+  db: PrismaClient,
+  input: CareExtraApprovalDecisionInput,
+) {
+  const d1 = await getD1Binding();
+  if (d1) return decideWithD1(db, d1, input);
+  return decideWithPrisma(db, input);
+}
+) END`));
+
+  let results;
+  try {
+    results = await d1.batch(statements);
+  } catch (error) {
+    if (error instanceof Error && /malformed JSON/i.test(error.message)) {
+      throw new CareExtraApprovalConflictError();
+    }
+    throw error;
+  }
+  const mutationResults = results.filter((_, index) => index % 2 === 0);
+  if (mutationResults.some((result) => (result?.meta?.changes ?? 0) !== 1)) {
+    throw new CareExtraApprovalConflictError();
+  }
+
+  const approval = await db.customerApproval.findUnique({
+    where: { id: input.approvalId },
+  });
+  if (!approval) throw new Error("Approved proposal could not be loaded after D1 batch");
+  return approval;
+}
+
+export async function decideCareExtraApprovalAtomically(
+  db: PrismaClient,
+  input: CareExtraApprovalDecisionInput,
+) {
+  const d1 = await getD1Binding();
+  if (d1) return decideWithD1(db, d1, input);
+  return decideWithPrisma(db, input);
+}
+) END`),
+    d1.prepare(`
+      UPDATE "ServiceBooking"
+      SET "status" = ?, "updatedAt" = ?
+      WHERE "id" = ? AND "status" = 'WAITING_CUSTOMER_APPROVAL'
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ?
+            AND a."status" = ?
+        )
+    `).bind(bookingStatus, now, input.bookingId, input.approvalId, input.bookingId, approvalStatus),
+  ];
+
+  if (input.findingId) {
+    statements.push(d1.prepare(`
+      UPDATE "Finding"
+      SET "status" = ?
+      WHERE "id" = ? AND "bookingId" = ?
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+        )
+    `).bind(
+      findingStatus,
+      input.findingId,
+      input.bookingId,
+      input.approvalId,
+      input.bookingId,
+      approvalStatus,
+    ));
+  }
+
+  statements.push(d1.prepare(`
+    INSERT INTO "ServiceTimelineEvent"
+      ("id", "bookingId", "eventType", "timestamp", "actor", "metadata")
+    SELECT ?, ?, ?, ?, ?, ?
+    WHERE EXISTS (
+      SELECT 1 FROM "ServiceBooking" b
+      WHERE b."id" = ? AND b."status" = ?
+    )
+      AND EXISTS (
+        SELECT 1 FROM "CustomerApproval" a
+        WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+      )
+  `).bind(
+    eventId,
+    input.bookingId,
+    values.eventType,
+    now,
+    input.actorUserId,
+    JSON.stringify({ approvalId: input.approvalId }),
+    input.bookingId,
+    bookingStatus,
+    input.approvalId,
+    input.bookingId,
+    approvalStatus,
+  ));
+
+  const results = await d1.batch(statements);
+  if (results.some((result) => (result?.meta?.changes ?? 0) !== 1)) {
+    throw new CareExtraApprovalConflictError();
+  }
+
+  const approval = await db.customerApproval.findUnique({
+    where: { id: input.approvalId },
+  });
+  if (!approval) throw new Error("Approved proposal could not be loaded after D1 batch");
+  return approval;
+}
+
+export async function decideCareExtraApprovalAtomically(
+  db: PrismaClient,
+  input: CareExtraApprovalDecisionInput,
+) {
+  const d1 = await getD1Binding();
+  if (d1) return decideWithD1(db, d1, input);
+  return decideWithPrisma(db, input);
+}
+) END`),
+  ];
+
+  if (input.findingId) {
+    statements.push(d1.prepare(`
+      UPDATE "Finding"
+      SET "status" = ?
+      WHERE "id" = ? AND "bookingId" = ?
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+        )
+    `).bind(
+      findingStatus,
+      input.findingId,
+      input.bookingId,
+      input.approvalId,
+      input.bookingId,
+      approvalStatus,
+    ));
+  }
+
+  statements.push(d1.prepare(`
+    INSERT INTO "ServiceTimelineEvent"
+      ("id", "bookingId", "eventType", "timestamp", "actor", "metadata")
+    SELECT ?, ?, ?, ?, ?, ?
+    WHERE EXISTS (
+      SELECT 1 FROM "ServiceBooking" b
+      WHERE b."id" = ? AND b."status" = ?
+    )
+      AND EXISTS (
+        SELECT 1 FROM "CustomerApproval" a
+        WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+      )
+  `).bind(
+    eventId,
+    input.bookingId,
+    values.eventType,
+    now,
+    input.actorUserId,
+    JSON.stringify({ approvalId: input.approvalId }),
+    input.bookingId,
+    bookingStatus,
+    input.approvalId,
+    input.bookingId,
+    approvalStatus,
+  ));
+
+  const results = await d1.batch(statements);
+  if (results.some((result) => (result?.meta?.changes ?? 0) !== 1)) {
+    throw new CareExtraApprovalConflictError();
+  }
+
+  const approval = await db.customerApproval.findUnique({
+    where: { id: input.approvalId },
+  });
+  if (!approval) throw new Error("Approved proposal could not be loaded after D1 batch");
+  return approval;
+}
+
+export async function decideCareExtraApprovalAtomically(
+  db: PrismaClient,
+  input: CareExtraApprovalDecisionInput,
+) {
+  const d1 = await getD1Binding();
+  if (d1) return decideWithD1(db, d1, input);
+  return decideWithPrisma(db, input);
+}
+) END`),
+    d1.prepare(`
+      UPDATE "ServiceBooking"
+      SET "status" = ?, "updatedAt" = ?
+      WHERE "id" = ? AND "status" = 'WAITING_CUSTOMER_APPROVAL'
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ?
+            AND a."status" = ?
+        )
+    `).bind(bookingStatus, now, input.bookingId, input.approvalId, input.bookingId, approvalStatus),
+  ];
+
+  if (input.findingId) {
+    statements.push(d1.prepare(`
+      UPDATE "Finding"
+      SET "status" = ?
+      WHERE "id" = ? AND "bookingId" = ?
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+        )
+    `).bind(
+      findingStatus,
+      input.findingId,
+      input.bookingId,
+      input.approvalId,
+      input.bookingId,
+      approvalStatus,
+    ));
+  }
+
+  statements.push(d1.prepare(`
+    INSERT INTO "ServiceTimelineEvent"
+      ("id", "bookingId", "eventType", "timestamp", "actor", "metadata")
+    SELECT ?, ?, ?, ?, ?, ?
+    WHERE EXISTS (
+      SELECT 1 FROM "ServiceBooking" b
+      WHERE b."id" = ? AND b."status" = ?
+    )
+      AND EXISTS (
+        SELECT 1 FROM "CustomerApproval" a
+        WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+      )
+  `).bind(
+    eventId,
+    input.bookingId,
+    values.eventType,
+    now,
+    input.actorUserId,
+    JSON.stringify({ approvalId: input.approvalId }),
+    input.bookingId,
+    bookingStatus,
+    input.approvalId,
+    input.bookingId,
+    approvalStatus,
+  ));
+
+  const results = await d1.batch(statements);
+  if (results.some((result) => (result?.meta?.changes ?? 0) !== 1)) {
+    throw new CareExtraApprovalConflictError();
+  }
+
+  const approval = await db.customerApproval.findUnique({
+    where: { id: input.approvalId },
+  });
+  if (!approval) throw new Error("Approved proposal could not be loaded after D1 batch");
+  return approval;
+}
+
+export async function decideCareExtraApprovalAtomically(
+  db: PrismaClient,
+  input: CareExtraApprovalDecisionInput,
+) {
+  const d1 = await getD1Binding();
+  if (d1) return decideWithD1(db, d1, input);
+  return decideWithPrisma(db, input);
+}
+) END`));
+  }
+
+  statements.push(d1.prepare(`
+    INSERT INTO "ServiceTimelineEvent"
+      ("id", "bookingId", "eventType", "timestamp", "actor", "metadata")
+    SELECT ?, ?, ?, ?, ?, ?
+    WHERE EXISTS (
+      SELECT 1 FROM "ServiceBooking" b
+      WHERE b."id" = ? AND b."status" = ?
+    )
+      AND EXISTS (
+        SELECT 1 FROM "CustomerApproval" a
+        WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+      )
+  `).bind(
+    eventId,
+    input.bookingId,
+    values.eventType,
+    now,
+    input.actorUserId,
+    JSON.stringify({ approvalId: input.approvalId }),
+    input.bookingId,
+    bookingStatus,
+    input.approvalId,
+    input.bookingId,
+    approvalStatus,
+  ));
+
+  const results = await d1.batch(statements);
+  if (results.some((result) => (result?.meta?.changes ?? 0) !== 1)) {
+    throw new CareExtraApprovalConflictError();
+  }
+
+  const approval = await db.customerApproval.findUnique({
+    where: { id: input.approvalId },
+  });
+  if (!approval) throw new Error("Approved proposal could not be loaded after D1 batch");
+  return approval;
+}
+
+export async function decideCareExtraApprovalAtomically(
+  db: PrismaClient,
+  input: CareExtraApprovalDecisionInput,
+) {
+  const d1 = await getD1Binding();
+  if (d1) return decideWithD1(db, d1, input);
+  return decideWithPrisma(db, input);
+}
+) END`),
+    d1.prepare(`
+      UPDATE "ServiceBooking"
+      SET "status" = ?, "updatedAt" = ?
+      WHERE "id" = ? AND "status" = 'WAITING_CUSTOMER_APPROVAL'
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ?
+            AND a."status" = ?
+        )
+    `).bind(bookingStatus, now, input.bookingId, input.approvalId, input.bookingId, approvalStatus),
+  ];
+
+  if (input.findingId) {
+    statements.push(d1.prepare(`
+      UPDATE "Finding"
+      SET "status" = ?
+      WHERE "id" = ? AND "bookingId" = ?
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+        )
+    `).bind(
+      findingStatus,
+      input.findingId,
+      input.bookingId,
+      input.approvalId,
+      input.bookingId,
+      approvalStatus,
+    ));
+  }
+
+  statements.push(d1.prepare(`
+    INSERT INTO "ServiceTimelineEvent"
+      ("id", "bookingId", "eventType", "timestamp", "actor", "metadata")
+    SELECT ?, ?, ?, ?, ?, ?
+    WHERE EXISTS (
+      SELECT 1 FROM "ServiceBooking" b
+      WHERE b."id" = ? AND b."status" = ?
+    )
+      AND EXISTS (
+        SELECT 1 FROM "CustomerApproval" a
+        WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+      )
+  `).bind(
+    eventId,
+    input.bookingId,
+    values.eventType,
+    now,
+    input.actorUserId,
+    JSON.stringify({ approvalId: input.approvalId }),
+    input.bookingId,
+    bookingStatus,
+    input.approvalId,
+    input.bookingId,
+    approvalStatus,
+  ));
+
+  const results = await d1.batch(statements);
+  if (results.some((result) => (result?.meta?.changes ?? 0) !== 1)) {
+    throw new CareExtraApprovalConflictError();
+  }
+
+  const approval = await db.customerApproval.findUnique({
+    where: { id: input.approvalId },
+  });
+  if (!approval) throw new Error("Approved proposal could not be loaded after D1 batch");
+  return approval;
+}
+
+export async function decideCareExtraApprovalAtomically(
+  db: PrismaClient,
+  input: CareExtraApprovalDecisionInput,
+) {
+  const d1 = await getD1Binding();
+  if (d1) return decideWithD1(db, d1, input);
+  return decideWithPrisma(db, input);
+}
+) END`),
+  ];
+
+  if (input.findingId) {
+    statements.push(d1.prepare(`
+      UPDATE "Finding"
+      SET "status" = ?
+      WHERE "id" = ? AND "bookingId" = ?
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+        )
+    `).bind(
+      findingStatus,
+      input.findingId,
+      input.bookingId,
+      input.approvalId,
+      input.bookingId,
+      approvalStatus,
+    ));
+  }
+
+  statements.push(d1.prepare(`
+    INSERT INTO "ServiceTimelineEvent"
+      ("id", "bookingId", "eventType", "timestamp", "actor", "metadata")
+    SELECT ?, ?, ?, ?, ?, ?
+    WHERE EXISTS (
+      SELECT 1 FROM "ServiceBooking" b
+      WHERE b."id" = ? AND b."status" = ?
+    )
+      AND EXISTS (
+        SELECT 1 FROM "CustomerApproval" a
+        WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+      )
+  `).bind(
+    eventId,
+    input.bookingId,
+    values.eventType,
+    now,
+    input.actorUserId,
+    JSON.stringify({ approvalId: input.approvalId }),
+    input.bookingId,
+    bookingStatus,
+    input.approvalId,
+    input.bookingId,
+    approvalStatus,
+  ));
+
+  const results = await d1.batch(statements);
+  if (results.some((result) => (result?.meta?.changes ?? 0) !== 1)) {
+    throw new CareExtraApprovalConflictError();
+  }
+
+  const approval = await db.customerApproval.findUnique({
+    where: { id: input.approvalId },
+  });
+  if (!approval) throw new Error("Approved proposal could not be loaded after D1 batch");
+  return approval;
+}
+
+export async function decideCareExtraApprovalAtomically(
+  db: PrismaClient,
+  input: CareExtraApprovalDecisionInput,
+) {
+  const d1 = await getD1Binding();
+  if (d1) return decideWithD1(db, d1, input);
+  return decideWithPrisma(db, input);
+}
+) END`),
+    d1.prepare(`
+      UPDATE "ServiceBooking"
+      SET "status" = ?, "updatedAt" = ?
+      WHERE "id" = ? AND "status" = 'WAITING_CUSTOMER_APPROVAL'
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ?
+            AND a."status" = ?
+        )
+    `).bind(bookingStatus, now, input.bookingId, input.approvalId, input.bookingId, approvalStatus),
+  ];
+
+  if (input.findingId) {
+    statements.push(d1.prepare(`
+      UPDATE "Finding"
+      SET "status" = ?
+      WHERE "id" = ? AND "bookingId" = ?
+        AND EXISTS (
+          SELECT 1 FROM "CustomerApproval" a
+          WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+        )
+    `).bind(
+      findingStatus,
+      input.findingId,
+      input.bookingId,
+      input.approvalId,
+      input.bookingId,
+      approvalStatus,
+    ));
+  }
+
+  statements.push(d1.prepare(`
+    INSERT INTO "ServiceTimelineEvent"
+      ("id", "bookingId", "eventType", "timestamp", "actor", "metadata")
+    SELECT ?, ?, ?, ?, ?, ?
+    WHERE EXISTS (
+      SELECT 1 FROM "ServiceBooking" b
+      WHERE b."id" = ? AND b."status" = ?
+    )
+      AND EXISTS (
+        SELECT 1 FROM "CustomerApproval" a
+        WHERE a."id" = ? AND a."bookingId" = ? AND a."status" = ?
+      )
+  `).bind(
+    eventId,
+    input.bookingId,
+    values.eventType,
+    now,
+    input.actorUserId,
+    JSON.stringify({ approvalId: input.approvalId }),
+    input.bookingId,
+    bookingStatus,
+    input.approvalId,
+    input.bookingId,
+    approvalStatus,
+  ));
+
+  const results = await d1.batch(statements);
+  if (results.some((result) => (result?.meta?.changes ?? 0) !== 1)) {
+    throw new CareExtraApprovalConflictError();
+  }
+
+  const approval = await db.customerApproval.findUnique({
+    where: { id: input.approvalId },
+  });
+  if (!approval) throw new Error("Approved proposal could not be loaded after D1 batch");
+  return approval;
+}
+
+export async function decideCareExtraApprovalAtomically(
+  db: PrismaClient,
+  input: CareExtraApprovalDecisionInput,
+) {
+  const d1 = await getD1Binding();
+  if (d1) return decideWithD1(db, d1, input);
+  return decideWithPrisma(db, input);
+}
+) END`).bind();
 
   const statements = [
     d1.prepare(`
