@@ -10,7 +10,7 @@ jobs:
   postgres-test:
     name: PostgreSQL Migration + Build
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     
     services:
       postgres:
@@ -72,6 +72,28 @@ jobs:
           TEST_DB_URL=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_restore_test \
           SOURCE_ENV=test ALLOW_TEST_DB_RESET=YES \
             bash scripts/test-backup-restore.sh
+
+      - name: Verify encrypted backup and safe restore utility
+        run: |
+          set -euo pipefail
+          PGPASSWORD=mekanix_test createdb -h 127.0.0.1 -p 5432 -U mekanix mekanix_restore_utility_test
+          BACKUP_DIR="$(mktemp -d)"
+          PASSPHRASE_FILE="$(mktemp)"
+          trap 'rm -rf "$BACKUP_DIR" "$PASSPHRASE_FILE"' EXIT
+          chmod 600 "$PASSPHRASE_FILE"
+          printf '%s' 'ci-only-backup-passphrase-2026' > "$PASSPHRASE_FILE"
+          DATABASE_URL=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_test \
+          BACKUP_DIR="$BACKUP_DIR" BACKUP_PASSPHRASE_FILE="$PASSPHRASE_FILE" \
+          BACKUP_ENCRYPTION_REQUIRED=true bash scripts/backup-db.sh
+          BACKUP_FILE="$(find "$BACKUP_DIR" -maxdepth 1 -name '*.sql.gz.gpg' -print -quit)"
+          test -n "$BACKUP_FILE"
+          DATABASE_URL=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_restore_utility_test \
+          BACKUP_PASSPHRASE_FILE="$PASSPHRASE_FILE" RESTORE_CONFIRM=RESTORE \
+            bash scripts/restore-db.sh "$BACKUP_FILE"
+          SOURCE_USERS=$(PGDATABASE=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_test psql -Atqc 'SELECT COUNT(*) FROM "User"')
+          RESTORED_USERS=$(PGDATABASE=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_restore_utility_test psql -Atqc 'SELECT COUNT(*) FROM "User"')
+          test "$SOURCE_USERS" = "$RESTORED_USERS"
+          echo "Encrypted backup/restore utility passed; User row counts match."
 
       - name: Run TypeScript check
         run: bunx tsc --noEmit
