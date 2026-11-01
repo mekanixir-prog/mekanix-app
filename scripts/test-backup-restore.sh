@@ -37,6 +37,12 @@ if [ "$SOURCE_URL" = "$TEST_URL" ]; then
   echo "❌ Source and restore-test database must be different"
   exit 1
 fi
+TEST_DB_NAME="${TEST_URL%%\?*}"
+TEST_DB_NAME="${TEST_DB_NAME##*/}"
+if [[ "$TEST_DB_NAME" != *_restore_test ]]; then
+  echo "❌ TEST_DB_URL must target a disposable database ending in _restore_test"
+  exit 1
+fi
 if [ "$SOURCE_ENV" = "staging" ] && [ "${ALLOW_STAGING_DATA_EXPORT:-}" != "YES" ]; then
   echo "❌ Staging data export requires ALLOW_STAGING_DATA_EXPORT=YES"
   exit 1
