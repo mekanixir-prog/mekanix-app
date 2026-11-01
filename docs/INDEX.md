@@ -22,7 +22,7 @@
 
 - Audits are point-in-time reports. Their stated branch, commit, test counts, and conclusions may refer to an earlier revision.
 - A green GitHub Actions run proves only that the named workflow passed for its tested commit and environment. It does not prove production secrets, external providers, remote D1 data, DNS/TLS, or live payment/SMS behavior.
-- The current release decision must follow `RELEASE_READINESS_AUDIT_2026-10-31.md`, not a historical statement such as “ready to ship” in an older report.
+- The current release decision must follow `RELEASE_READINESS_AUDIT_2026-11-01.md`, not a historical statement such as “ready to ship” in an older report.
 - Never run `prisma db push --accept-data-loss`, `prisma migrate reset`, or a remote D1 migration against production without a reviewed plan, backup/recovery strategy, and explicit release approval.
 - No deployment or remote database mutation is authorized by these documents. The runbook describes gates; it does not claim they have been executed.
 
