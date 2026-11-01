@@ -23,6 +23,12 @@ describe("wallet escrow release atomicity", () => {
 
     await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-1", new Date())).resolves.toBe(true);
     expect(db.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.walletTransaction.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ netAmount: { gte: 0 } }),
+    }));
+    expect(tx.walletTransaction.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ netAmount: { gte: 0 } }),
+    }));
     expect(tx.walletTransaction.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.wallet.updateMany).toHaveBeenCalledWith({
       where: { id: "wallet-1", pendingBalance: { gte: netAmount } },
@@ -79,6 +85,7 @@ describe("wallet escrow release atomicity", () => {
     expect(d1.batch).toHaveBeenCalledTimes(1);
     expect(d1.batch.mock.calls[0][0]).toHaveLength(2);
     expect(prepared[0].sql).toContain('"pendingBalance"');
+    expect(prepared[0].sql).toContain('"netAmount" >= 0');
     expect(prepared[1].sql).toContain("changes() = 1");
     expect(prepared[0].values).toHaveLength(14);
   });
