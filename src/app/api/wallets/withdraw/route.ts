@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { createWithdrawalAtomically } from "@/lib/withdrawal-atomic";
+import { isValidIranianSheba } from "@/lib/iranian-iban";
 
 export async function POST(req: Request) {
   const session = await requireAuth(req);
@@ -25,10 +26,8 @@ export async function POST(req: Request) {
   }
 
   const amount = typeof body.amount === "number" ? body.amount : Number.NaN;
-  const method = typeof body.method === "string" && body.method.trim()
-    ? body.method.trim()
-    : "card";
-  const cardNumber = typeof body.cardNumber === "string" ? body.cardNumber : null;
+  const method = typeof body.method === "string" ? body.method.trim() : "";
+  const cardNumber = null;
   const bankName = typeof body.bankName === "string" ? body.bankName : null;
   const shebaNumber = typeof body.shebaNumber === "string" ? body.shebaNumber : null;
   const maskedCardNumber = cardNumber?.replace(/.(?=.{4})/g, "*") ?? null;
@@ -44,10 +43,15 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-  if (!["card", "wallet", "bank", "cash"].includes(method) ||
-      (cardNumber && cardNumber.length > 30) ||
-      (bankName && bankName.length > 100) || (shebaNumber && shebaNumber.length > 30)) {
-    return NextResponse.json({ error: "اطلاعات حساب بانکی نامعتبر است" }, { status: 400 });
+  // The admin payout flow only supports verified bank transfers. Accepting
+  // card/wallet/cash here would create withdrawals that can never reach PAID.
+  if (method !== "bank" || !isValidIranianSheba(shebaNumber) ||
+      (bankName !== null && bankName.length > 100) ||
+      (shebaNumber && shebaNumber.length > 30)) {
+    return NextResponse.json(
+      { error: "فعلاً فقط برداشت به شبای بانکی معتبر امکان‌پذیر است" },
+      { status: 400 }
+    );
   }
 
   const technician = await getTechnicianFromSession(session);
