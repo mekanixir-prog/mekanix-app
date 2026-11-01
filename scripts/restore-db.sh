@@ -13,6 +13,7 @@ set -euo pipefail
 umask 077
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$REPO_DIR/scripts/lib/pg-service.sh"
 BACKUP_FILE="${1:?Usage: bash scripts/restore-db.sh <backup-file>}"
 DB_URL="${DATABASE_URL:-file:$REPO_DIR/db/custom.db}"
 PASSPHRASE_FILE="${BACKUP_PASSPHRASE_FILE:-}"
@@ -72,7 +73,7 @@ case "$DB_URL" in
       echo "❌ psql not installed — install postgresql-client"
       exit 1
     fi
-    TABLE_COUNT="$(PGDATABASE="$DB_URL" psql -v ON_ERROR_STOP=1 -Atqc \
+    TABLE_COUNT="$(pg_exec "$DB_URL" psql -v ON_ERROR_STOP=1 -Atqc \
       "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND c.relkind IN ('r','p','v','m','S','i','I')")"
     if [ "$TABLE_COUNT" != "0" ]; then
       echo "❌ PostgreSQL target is not empty; refusing to overwrite existing tables"
@@ -80,9 +81,9 @@ case "$DB_URL" in
     fi
     # pg_dump includes the public schema for this application; remove only
     # the empty schema so the archive can recreate it without collisions.
-    PGDATABASE="$DB_URL" psql -v ON_ERROR_STOP=1 -c "DROP SCHEMA public CASCADE"
-    PGDATABASE="$DB_URL" psql -v ON_ERROR_STOP=1 < "$RAW_TMP"
-    USER_TABLE="$(PGDATABASE="$DB_URL" psql -v ON_ERROR_STOP=1 -Atqc \
+    pg_exec "$DB_URL" psql -v ON_ERROR_STOP=1 -c "DROP SCHEMA public CASCADE"
+    pg_exec "$DB_URL" psql -v ON_ERROR_STOP=1 < "$RAW_TMP"
+    USER_TABLE="$(pg_exec "$DB_URL" psql -v ON_ERROR_STOP=1 -Atqc \
       "SELECT CASE WHEN to_regclass('public.\"User\"') IS NULL THEN 0 ELSE 1 END")"
     if [ "$USER_TABLE" != "1" ]; then
       echo "❌ Restore completed but the expected User table is missing"
