@@ -11,6 +11,7 @@ set -euo pipefail
 umask 077
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$REPO_DIR/scripts/lib/pg-service.sh"
 BACKUP_DIR="${BACKUP_DIR:-$REPO_DIR/backups}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
@@ -35,7 +36,7 @@ case "$DB_URL" in
       exit 1
     fi
     # Keep credentials out of process arguments and logs.
-    PGDATABASE="$DB_URL" pg_dump --no-owner --no-acl | gzip -c > "$COMPRESSED_TMP"
+    pg_exec "$DB_URL" pg_dump --no-owner --no-acl | gzip -c > "$COMPRESSED_TMP"
     ;;
   file:*)
     echo "   Type: SQLite"
