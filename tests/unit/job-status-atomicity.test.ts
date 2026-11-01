@@ -16,7 +16,7 @@ const input = {
   currentStatus: "REQUESTED",
   nextStatus: "REJECTED",
   updates: {},
-};
+} as const;
 
 beforeEach(() => mocks.getD1Binding.mockResolvedValue(null));
 afterEach(() => { vi.clearAllMocks(); vi.unstubAllGlobals(); });
@@ -100,7 +100,7 @@ describe("atomic job status writer", () => {
     const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)) } as any;
     const acceptedInput = {
       ...input,
-      nextStatus: "ACCEPTED",
+      nextStatus: "ACCEPTED" as const,
       updates: { startedAt: new Date("2026-11-01T09:00:00.000Z") },
     };
 
@@ -152,7 +152,7 @@ describe("atomic job status writer", () => {
     };
     mocks.getD1Binding.mockResolvedValue(d1);
     const db = {} as any;
-    const acceptedInput = { ...input, nextStatus: "ACCEPTED", updates: { startedAt: new Date() } };
+    const acceptedInput = { ...input, nextStatus: "ACCEPTED" as const, updates: { startedAt: new Date() } };
 
     await expect(transitionJobStatusAtomically(db, acceptedInput)).resolves.toBeUndefined();
     expect(d1.batch.mock.calls[0][0]).toHaveLength(1);
