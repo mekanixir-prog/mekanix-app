@@ -27,10 +27,10 @@ export async function POST(req: Request) {
 
   const amount = typeof body.amount === "number" ? body.amount : Number.NaN;
   const method = typeof body.method === "string" ? body.method.trim() : "";
-  const cardNumber = null;
   const bankName = typeof body.bankName === "string" ? body.bankName : null;
-  const shebaNumber = typeof body.shebaNumber === "string" ? body.shebaNumber : null;
-  const maskedCardNumber = cardNumber?.replace(/.(?=.{4})/g, "*") ?? null;
+  const shebaNumber = typeof body.shebaNumber === "string"
+    ? body.shebaNumber.replace(/\\s+/g, "").toUpperCase()
+    : null;
   const idempotencyKey = (req.headers.get("idempotency-key") ||
     (typeof body.idempotencyKey === "string" ? body.idempotencyKey : "")).trim();
 
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
   });
   if (existing) {
     if (existing.walletId !== wallet.id || Number(existing.amount) !== amount ||
-        existing.method !== method || existing.cardNumber !== maskedCardNumber ||
+        existing.method !== method || existing.cardNumber !== null ||
         existing.bankName !== bankName || existing.shebaNumber !== shebaNumber) {
       return NextResponse.json({ error: "کلید درخواست قبلاً برای عملیات دیگری استفاده شده است" }, { status: 409 });
     }
@@ -106,7 +106,7 @@ export async function POST(req: Request) {
       idempotencyKey,
       amount,
       method,
-      cardNumber: maskedCardNumber,
+      cardNumber: null,
       bankName,
       shebaNumber,
       code: `WD-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`,
@@ -116,7 +116,7 @@ export async function POST(req: Request) {
     const withdrawal = await db.withdrawalRequest.findUnique({ where: { idempotencyKey } });
     if (!created && withdrawal) {
       if (withdrawal.walletId !== wallet.id || Number(withdrawal.amount) !== amount ||
-          withdrawal.method !== method || withdrawal.cardNumber !== maskedCardNumber ||
+          withdrawal.method !== method || withdrawal.cardNumber !== null ||
           withdrawal.bankName !== bankName || withdrawal.shebaNumber !== shebaNumber) {
         return NextResponse.json({ error: "کلید درخواست قبلاً برای عملیات دیگری استفاده شده است" }, { status: 409 });
       }
@@ -155,7 +155,7 @@ export async function POST(req: Request) {
     // A concurrent request may win the unique idempotency key. Resolve it as a safe retry.
     const raced = await db.withdrawalRequest.findUnique({ where: { idempotencyKey } }).catch(() => null);
     if (raced && raced.walletId === wallet.id && Number(raced.amount) === amount &&
-        raced.method === method && raced.cardNumber === maskedCardNumber &&
+        raced.method === method && raced.cardNumber === null &&
         raced.bankName === bankName && raced.shebaNumber === shebaNumber) {
       const currentWallet = await db.wallet.findUnique({ where: { id: wallet.id }, select: { balance: true } });
       return NextResponse.json({
