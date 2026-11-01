@@ -73,11 +73,14 @@ case "$DB_URL" in
       exit 1
     fi
     TABLE_COUNT="$(PGDATABASE="$DB_URL" psql -v ON_ERROR_STOP=1 -Atqc \
-      "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")"
+      "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND c.relkind IN ('r','p','v','m','S','i','I')")"
     if [ "$TABLE_COUNT" != "0" ]; then
       echo "❌ PostgreSQL target is not empty; refusing to overwrite existing tables"
       exit 1
     fi
+    # pg_dump includes the public schema for this application; remove only
+    # the empty schema so the archive can recreate it without collisions.
+    PGDATABASE="$DB_URL" psql -v ON_ERROR_STOP=1 -c "DROP SCHEMA public CASCADE"
     PGDATABASE="$DB_URL" psql -v ON_ERROR_STOP=1 < "$RAW_TMP"
     USER_TABLE="$(PGDATABASE="$DB_URL" psql -v ON_ERROR_STOP=1 -Atqc \
       "SELECT CASE WHEN to_regclass('public.\\"User\\"') IS NULL THEN 0 ELSE 1 END")"
