@@ -81,6 +81,7 @@ async function createWithD1(
       UPDATE "InsurancePolicy"
       SET "status" = 'claimed'
       WHERE "id" = ?
+        AND "status" NOT IN ('expired', 'cancelled')
         AND EXISTS (
           SELECT 1 FROM "InsuranceClaim"
           WHERE "idempotencyKey" = ? AND "requestFingerprint" = ?
