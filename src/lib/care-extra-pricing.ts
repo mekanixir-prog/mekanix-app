@@ -24,10 +24,11 @@ export function validateExtraProposalInput(body: unknown):
 
   // All prices are integer toman amounts; reject coercion, fractions, negatives,
   // infinities, and values outside JavaScript's exact integer range.
-  for (const [name, value] of [["قیمت قطعه", partPrice], ["دستمزد", laborPrice]] as const) {
-    if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
-      return { ok: false, error: `${name} باید عدد صحیح و نامنفی به تومان باشد` };
-    }
+  if (typeof partPrice !== "number" || !Number.isSafeInteger(partPrice) || partPrice < 0) {
+    return { ok: false, error: "قیمت قطعه باید عدد صحیح و نامنفی به تومان باشد" };
+  }
+  if (typeof laborPrice !== "number" || !Number.isSafeInteger(laborPrice) || laborPrice < 0) {
+    return { ok: false, error: "دستمزد باید عدد صحیح و نامنفی به تومان باشد" };
   }
   if (typeof quantity !== "number" || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 100) {
     return { ok: false, error: "تعداد باید عدد صحیح بین ۱ تا ۱۰۰ باشد" };
