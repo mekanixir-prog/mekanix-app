@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   ChevronLeft, Loader2, Check, Package, MapPin, Calendar, Clock,
@@ -29,6 +29,8 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
   const [timeWindow, setTimeWindow] = useState("");
   const [currentMileage, setCurrentMileage] = useState("");
   const [booking, setBooking] = useState(false);
+  // Persist the pending operation key across remounts and same-payload retries.
+  const bookingKeyRef = useRef<{ fingerprint: string; key: string } | null>(null);
 
   const vehicleId = params.vehicleId;
 
@@ -50,19 +52,40 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
   async function handleBooking() {
     setBooking(true);
     try {
+      const payload = {
+        vehicleId, packageId: selectedPkg?.id,
+        serviceType: "periodic", location,
+        date: date || undefined, timeWindow: timeWindow || undefined,
+        currentMileage: currentMileage ? parseInt(currentMileage) : undefined,
+      };
+      const fingerprint = JSON.stringify(payload);
+      const storageKey = `mekanix-care-booking:${vehicleId ?? "new"}`;
+      let activeKey = bookingKeyRef.current?.fingerprint === fingerprint
+        ? bookingKeyRef.current.key
+        : "";
+      if (!activeKey) {
+        try {
+          const saved = sessionStorage.getItem(storageKey);
+          const parsed = saved ? JSON.parse(saved) : null;
+          activeKey = parsed?.fingerprint === fingerprint && typeof parsed?.key === "string"
+            ? parsed.key
+            : globalThis.crypto.randomUUID();
+          sessionStorage.setItem(storageKey, JSON.stringify({ fingerprint, key: activeKey }));
+        } catch {
+          activeKey = globalThis.crypto.randomUUID();
+        }
+        bookingKeyRef.current = { fingerprint, key: activeKey };
+      }
       const token = localStorage.getItem("mekanix-token");
       const res = await fetch("/api/care/bookings", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          vehicleId, packageId: selectedPkg?.id,
-          serviceType: "periodic", location,
-          date: date || undefined, timeWindow: timeWindow || undefined,
-          currentMileage: currentMileage ? parseInt(currentMileage) : undefined,
-        }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "Idempotency-Key": activeKey },
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      try { sessionStorage.removeItem(`mekanix-care-booking:${vehicleId ?? "new"}`); } catch {}
+      bookingKeyRef.current = null;
       toast.success(isFa ? "سفارش ثبت شد!" : "Booking created!");
       go("care-detail", { bookingId: data.id });
     } catch (e: any) {

@@ -1113,6 +1113,8 @@ model ServiceBooking {
   pricingSnapshotId String?
   warrantyId      String?
   currentMileage  Int?
+  idempotencyKey  String?  @unique
+  requestFingerprint String?
   notes           String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -1138,6 +1140,7 @@ model ServiceTimelineEvent {
   timestamp       DateTime @default(now())
   actor           String?  // userId or "system"
   metadata        String?  // JSON
+  idempotencyKey  String?  @unique
 
   @@index([bookingId, timestamp])
 }
