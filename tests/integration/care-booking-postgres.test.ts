@@ -7,7 +7,7 @@ const postgresConfigured = process.env.DATABASE_URL?.startsWith("postgresql://")
 
 describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integration", () => {
   const runId = crypto.randomUUID().replace(/-/g, "");
-  let db: Awaited<ReturnType<typeof getDbForLib>>;
+  let db: Awaited<ReturnType<typeof getDbForLib>> | null = null;
   let userId: string;
   let customerId: string;
   let vehicleId: string;
@@ -17,7 +17,7 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
   beforeAll(async () => {
     vi.stubEnv("NODE_ENV", "test");
     db = await getDbForLib();
-    const user = await db.user.create({
+    const user = await db!.user.create({
       data: {
         name: "CARE PostgreSQL Test",
         phone: `+9892${runId.slice(0, 9)}`,
@@ -25,9 +25,9 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
       },
     });
     userId = user.id;
-    const customer = await db.customer.create({ data: { userId } });
+    const customer = await db!.customer.create({ data: { userId } });
     customerId = customer.id;
-    const vehicle = await db.vehicle.create({
+    const vehicle = await db!.vehicle.create({
       data: {
         customerId,
         type: "EXCAVATOR",
@@ -41,18 +41,18 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
 
   afterAll(async () => {
     if (db) {
-      await db.serviceTimelineEvent.deleteMany({
+      await db!.serviceTimelineEvent.deleteMany({
         where: { bookingId: { in: bookingIds } },
       });
-      await db.pricingSnapshot.deleteMany({
+      await db!.pricingSnapshot.deleteMany({
         where: { bookingId: { in: bookingIds } },
       });
-      await db.serviceBooking.deleteMany({
+      await db!.serviceBooking.deleteMany({
         where: { idempotencyKey: { in: bookingKeys } },
       });
-      if (vehicleId) await db.vehicle.deleteMany({ where: { id: vehicleId } });
-      if (customerId) await db.customer.deleteMany({ where: { id: customerId } });
-      if (userId) await db.user.deleteMany({ where: { id: userId } });
+      if (vehicleId) await db!.vehicle.deleteMany({ where: { id: vehicleId } });
+      if (customerId) await db!.customer.deleteMany({ where: { id: customerId } });
+      if (userId) await db!.user.deleteMany({ where: { id: userId } });
     }
     vi.unstubAllEnvs();
   });
@@ -98,12 +98,12 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
     const token = crypto.randomUUID().replace(/-/g, "");
     const functionName = `test_care_fail_${token}`;
     const triggerName = `test_care_fail_trigger_${token}`;
-    await db.$executeRawUnsafe(`
+    await db!.$executeRawUnsafe(`
       CREATE FUNCTION "${functionName}"() RETURNS trigger AS $$
       BEGIN RAISE EXCEPTION '${failureMessage}'; END;
       $$ LANGUAGE plpgsql;
     `);
-    await db.$executeRawUnsafe(`
+    await db!.$executeRawUnsafe(`
       CREATE TRIGGER "${triggerName}" ${event} ON "${table}"
       FOR EACH ROW WHEN (${condition})
       EXECUTE FUNCTION "${functionName}"();
@@ -111,8 +111,8 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
     try {
       await action();
     } finally {
-      await db.$executeRawUnsafe(`DROP TRIGGER IF EXISTS "${triggerName}" ON "${table}"`);
-      await db.$executeRawUnsafe(`DROP FUNCTION IF EXISTS "${functionName}"()`);
+      await db!.$executeRawUnsafe(`DROP TRIGGER IF EXISTS "${triggerName}" ON "${table}"`);
+      await db!.$executeRawUnsafe(`DROP FUNCTION IF EXISTS "${functionName}"()`);
     }
   }
 
@@ -125,14 +125,14 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
     );
 
     expect(new Set(results.map((booking) => booking.id)).size).toBe(1);
-    expect(await db.serviceBooking.count({ where: { idempotencyKey: input.idempotencyKey } })).toBe(1);
-    const booking = await db.serviceBooking.findUnique({
+    expect(await db!.serviceBooking.count({ where: { idempotencyKey: input.idempotencyKey } })).toBe(1);
+    const booking = await db!.serviceBooking.findUnique({
       where: { idempotencyKey: input.idempotencyKey },
     });
     expect(booking?.pricingSnapshotId).toBeTruthy();
     bookingIds.push(booking!.id);
-    expect(await db.pricingSnapshot.count({ where: { bookingId: booking!.id } })).toBe(1);
-    expect(await db.serviceTimelineEvent.count({
+    expect(await db!.pricingSnapshot.count({ where: { bookingId: booking!.id } })).toBe(1);
+    expect(await db!.serviceTimelineEvent.count({
       where: { idempotencyKey: `care-booking:${input.idempotencyKey}:created` },
     })).toBe(1);
   });
@@ -150,8 +150,8 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
           .rejects.toThrow("injected pricing snapshot failure");
       }
     );
-    expect(await db.serviceBooking.count({ where: { idempotencyKey: input.idempotencyKey } })).toBe(0);
-    expect(await db.pricingSnapshot.count({ where: { pricingVersion: input.pricing.pricingVersion } })).toBe(0);
+    expect(await db!.serviceBooking.count({ where: { idempotencyKey: input.idempotencyKey } })).toBe(0);
+    expect(await db!.pricingSnapshot.count({ where: { pricingVersion: input.pricing.pricingVersion } })).toBe(0);
   });
 
   it("rolls back booking and pricing when snapshot-link update fails", async () => {
@@ -167,8 +167,8 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
           .rejects.toThrow("injected snapshot link failure");
       }
     );
-    expect(await db.serviceBooking.count({ where: { idempotencyKey: input.idempotencyKey } })).toBe(0);
-    expect(await db.pricingSnapshot.count({ where: { pricingVersion: input.pricing.pricingVersion } })).toBe(0);
+    expect(await db!.serviceBooking.count({ where: { idempotencyKey: input.idempotencyKey } })).toBe(0);
+    expect(await db!.pricingSnapshot.count({ where: { pricingVersion: input.pricing.pricingVersion } })).toBe(0);
   });
 
   it("rolls back booking, pricing and link when timeline insert fails", async () => {
@@ -185,8 +185,8 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
           .rejects.toThrow("injected timeline event failure");
       }
     );
-    expect(await db.serviceBooking.count({ where: { idempotencyKey: input.idempotencyKey } })).toBe(0);
-    expect(await db.pricingSnapshot.count({ where: { pricingVersion: input.pricing.pricingVersion } })).toBe(0);
-    expect(await db.serviceTimelineEvent.count({ where: { idempotencyKey: eventKey } })).toBe(0);
+    expect(await db!.serviceBooking.count({ where: { idempotencyKey: input.idempotencyKey } })).toBe(0);
+    expect(await db!.pricingSnapshot.count({ where: { pricingVersion: input.pricing.pricingVersion } })).toBe(0);
+    expect(await db!.serviceTimelineEvent.count({ where: { idempotencyKey: eventKey } })).toBe(0);
   });
 });
