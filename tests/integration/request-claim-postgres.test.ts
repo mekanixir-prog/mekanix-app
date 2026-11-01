@@ -123,7 +123,8 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
     `);
     await db.$executeRawUnsafe(`
       CREATE TRIGGER "${triggerName}" BEFORE INSERT ON "ServiceRequest"
-      FOR EACH ROW EXECUTE FUNCTION "${functionName}"();
+      FOR EACH ROW WHEN (NEW."customerId" = '${customerId}')
+      EXECUTE FUNCTION "${functionName}"();
     `);
 
     try {
@@ -170,7 +171,7 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
     `);
     await db.$executeRawUnsafe(`
       CREATE TRIGGER "${triggerName}" BEFORE UPDATE ON "InsurancePolicy"
-      FOR EACH ROW WHEN (NEW.status = 'claimed')
+      FOR EACH ROW WHEN (NEW.status = 'claimed' AND NEW.id = '${policyId}')
       EXECUTE FUNCTION "${functionName}"();
     `);
 
