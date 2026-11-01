@@ -120,13 +120,47 @@ async function createWithD1(
     bookingBindings.push(input.proposal.findingId, input.bookingId);
   }
 
+  const findingGuard = input.proposal.findingId
+    ? 'AND EXISTS (SELECT 1 FROM "Finding" f WHERE f."id" = ? AND f."bookingId" = ?)'
+    : "";
+  const timelineBindings: unknown[] = [
+    timelineId,
+    input.bookingId,
+    now,
+    input.actorUserId,
+    JSON.stringify({ approvalId }),
+    `extra-proposal:${approvalId}`,
+    input.bookingId,
+    input.expectedBookingStatus,
+  ];
+  if (input.proposal.findingId) {
+    timelineBindings.push(input.proposal.findingId, input.bookingId);
+  }
+
+  // The first insert is a transaction marker and the timeline event itself.
+  // Every later statement is gated by this unique event ID. A stale second
+  // proposal therefore cannot insert rows just because the booking is already
+  // WAITING_CUSTOMER_APPROVAL from a competing request.
   const statements = [
     d1.prepare(`
-      UPDATE "ServiceBooking"
-      SET "status" = ?, "updatedAt" = ?
-      WHERE "id" = ? AND "status" = ?
+      INSERT INTO "ServiceTimelineEvent"
+        ("id", "bookingId", "eventType", "timestamp", "actor", "metadata", "idempotencyKey")
+      SELECT ?, ?, 'extra_proposal', ?, ?, ?, ?
+      WHERE EXISTS (
+        SELECT 1 FROM "ServiceBooking" b
+        WHERE b."id" = ? AND b."status" = ?
+      )
       ${findingGuard}
-    `).bind(...bookingBindings),
+    `).bind(...timelineBindings),
+    d1.prepare(`
+      UPDATE "ServiceBooking"
+      SET "status" = 'WAITING_CUSTOMER_APPROVAL', "updatedAt" = ?
+      WHERE "id" = ? AND "status" = ?
+        AND EXISTS (
+          SELECT 1 FROM "ServiceTimelineEvent" e
+          WHERE e."id" = ? AND e."bookingId" = ?
+        )
+    `).bind(now, input.bookingId, input.expectedBookingStatus, timelineId, input.bookingId),
   ];
 
   if (input.newFinding && findingId) {
@@ -138,6 +172,10 @@ async function createWithD1(
         SELECT 1 FROM "ServiceBooking" b
         WHERE b."id" = ? AND b."status" = 'WAITING_CUSTOMER_APPROVAL'
       )
+        AND EXISTS (
+          SELECT 1 FROM "ServiceTimelineEvent" e
+          WHERE e."id" = ? AND e."bookingId" = ?
+        )
     `).bind(
       findingId,
       input.bookingId,
@@ -145,6 +183,8 @@ async function createWithD1(
       input.newFinding.title,
       input.newFinding.description,
       input.newFinding.severity,
+      input.bookingId,
+      timelineId,
       input.bookingId,
     ));
   }
@@ -159,6 +199,10 @@ async function createWithD1(
       SELECT 1 FROM "ServiceBooking" b
       WHERE b."id" = ? AND b."status" = 'WAITING_CUSTOMER_APPROVAL'
     )
+      AND EXISTS (
+        SELECT 1 FROM "ServiceTimelineEvent" e
+        WHERE e."id" = ? AND e."bookingId" = ?
+      )
       AND (? IS NULL OR EXISTS (
         SELECT 1 FROM "Finding" f
         WHERE f."id" = ? AND f."bookingId" = ?
@@ -180,31 +224,10 @@ async function createWithD1(
     input.details.imageUrl,
     input.details.technicianNote,
     input.bookingId,
-    findingId,
-    findingId,
-    input.bookingId,
-  ));
-
-  statements.push(d1.prepare(`
-    INSERT INTO "ServiceTimelineEvent"
-      ("id", "bookingId", "eventType", "timestamp", "actor", "metadata")
-    SELECT ?, ?, 'extra_proposal', ?, ?, ?
-    WHERE EXISTS (
-      SELECT 1 FROM "ServiceBooking" b
-      WHERE b."id" = ? AND b."status" = 'WAITING_CUSTOMER_APPROVAL'
-    )
-      AND EXISTS (
-        SELECT 1 FROM "CustomerApproval" a
-        WHERE a."id" = ? AND a."bookingId" = ?
-      )
-  `).bind(
     timelineId,
     input.bookingId,
-    now,
-    input.actorUserId,
-    JSON.stringify({ approvalId }),
-    input.bookingId,
-    approvalId,
+    findingId,
+    findingId,
     input.bookingId,
   ));
 
