@@ -46,6 +46,13 @@ jobs:
           echo "✅ Build context prepared with all PostgreSQL migrations"
           find /tmp/mekanix-build/prisma/migrations -maxdepth 2 -type f -print
       
+      - name: Validate staging compose and operational shell scripts
+        run: |
+          bash -n scripts/backup-db.sh scripts/restore-db.sh scripts/test-backup-restore.sh scripts/deploy-staging.sh scripts/zap-scan.sh
+          DB_PASSWORD=test_password JWT_SECRET=test_jwt_secret REDIS_PASSWORD=test_redis_password \
+            docker compose -f docker-compose.staging.yml config --quiet
+          echo "✅ Staging Compose and operational shell scripts are syntactically valid"
+
       - name: Build and start Docker Compose stack
         run: |
           cd /tmp/mekanix-build
