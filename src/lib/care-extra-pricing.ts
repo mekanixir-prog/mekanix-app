@@ -22,11 +22,11 @@ export function validateExtraProposalInput(body: unknown):
   const laborPrice = input.laborPrice === undefined ? 0 : input.laborPrice;
   const quantity = input.quantity === undefined ? 1 : input.quantity;
 
-  // All prices are integer IRR amounts; reject coercion, fractions, negatives,
+  // All prices are integer toman amounts; reject coercion, fractions, negatives,
   // infinities, and values outside JavaScript's exact integer range.
   for (const [name, value] of [["قیمت قطعه", partPrice], ["دستمزد", laborPrice]] as const) {
     if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
-      return { ok: false, error: `${name} باید عدد صحیح و نامنفی به ریال باشد` };
+      return { ok: false, error: `${name} باید عدد صحیح و نامنفی به تومان باشد` };
     }
   }
   if (typeof quantity !== "number" || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 100) {
