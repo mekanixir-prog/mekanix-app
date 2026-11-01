@@ -131,7 +131,7 @@ export async function POST(req: Request) {
   };
 
   const idempotencyKey = `service-request:${session.userId}:${rawKey}`;
-  const fingerprint = requestFingerprint(normalized);
+  const fingerprint = await requestFingerprint(normalized);
 
   try {
     const result = await createServiceRequestAtomically(db, {
