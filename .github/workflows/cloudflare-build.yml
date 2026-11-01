@@ -24,6 +24,7 @@ on:
       - 'src/lib/db.worker.ts'
       - 'src/lib/db-worker.ts'
       - 'src/lib/db-access.ts'
+      - 'tests/integration/idempotent-create-flows-d1-sqlite.test.ts'
       - 'src/**'
       - 'prisma/**'
       - 'package.json'
