@@ -60,24 +60,26 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
       };
       const fingerprint = JSON.stringify(payload);
       const storageKey = `mekanix-care-booking:${vehicleId ?? "new"}`;
-      let pending: { fingerprint: string; key: string } | null = bookingKeyRef.current;
-      if (!pending || pending.fingerprint !== fingerprint) {
+      let activeKey = bookingKeyRef.current?.fingerprint === fingerprint
+        ? bookingKeyRef.current.key
+        : "";
+      if (!activeKey) {
         try {
           const saved = sessionStorage.getItem(storageKey);
           const parsed = saved ? JSON.parse(saved) : null;
-          pending = parsed?.fingerprint === fingerprint && typeof parsed?.key === "string"
-            ? parsed
-            : { fingerprint, key: globalThis.crypto.randomUUID() };
-          sessionStorage.setItem(storageKey, JSON.stringify(pending));
+          activeKey = parsed?.fingerprint === fingerprint && typeof parsed?.key === "string"
+            ? parsed.key
+            : globalThis.crypto.randomUUID();
+          sessionStorage.setItem(storageKey, JSON.stringify({ fingerprint, key: activeKey }));
         } catch {
-          pending = { fingerprint, key: globalThis.crypto.randomUUID() };
+          activeKey = globalThis.crypto.randomUUID();
         }
-        bookingKeyRef.current = pending;
+        bookingKeyRef.current = { fingerprint, key: activeKey };
       }
       const token = localStorage.getItem("mekanix-token");
       const res = await fetch("/api/care/bookings", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "Idempotency-Key": pending.key },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "Idempotency-Key": activeKey },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
@@ -284,7 +286,7 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
             </div>
           </div>
 
-          <Button onClick={handleBooking} disabled={booking || !idempotencyKey} className="w-full bg-amber text-black hover:bg-amber/90">
+          <Button onClick={handleBooking} disabled={booking} className="w-full bg-amber text-black hover:bg-amber/90">
             {booking ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Check className="mr-2 size-4" />}
             {isFa ? "تأیید و رزرو" : "Confirm & Book"}
           </Button>
