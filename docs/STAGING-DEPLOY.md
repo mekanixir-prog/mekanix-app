@@ -1,88 +1,175 @@
-# MEKANIX — Staging Deployment Guide
+# MEKANIX — Isolated Staging Deployment & Release Rehearsal
 
-## Prerequisites
-- VPS (Ubuntu 22.04+, 2GB+ RAM, 20GB disk)
-- SSH access with sudo
+This guide is for an isolated staging VPS only. It does not authorize production deployment, production migrations, live SMS, or live payment activation.
 
-## Step 1: Prepare VPS
+## 1. Prerequisites
+
+- Ubuntu 22.04+ VPS with at least 2 vCPU, 4 GB RAM, and 30 GB disk for a realistic build/test run.
+- SSH access with sudo.
+- Docker Engine + Docker Compose plugin.
+- Git, curl, rsync, OpenSSL, Python 3, and `postgresql-client` (`pg_dump`, `psql`).
+- k6 for the performance smoke test.
+- Docker for the OWASP ZAP baseline scan.
+
+Install the basic packages:
+
 ```bash
-sudo apt update && sudo apt upgrade -y
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
-# Log out and back in
+sudo apt update
+sudo apt install -y git curl rsync openssl python3 postgresql-client
 ```
 
-## Step 2: Clone + Checkout
+## 2. Checkout the exact Release Candidate
+
+Use the exact reviewed release-candidate commit; do not deploy a floating branch or an old tag.
+
 ```bash
-git clone https://github.com/s6beheshti/mekanix.git
-cd mekanix
-git checkout v1.0.0
+git clone https://github.com/mekanixir-prog/mekanix-app.git
+cd mekanix-app
+git checkout <RELEASE_CANDIDATE_SHA>
 ```
 
-## Step 3: Set Secrets
+Replace `<RELEASE_CANDIDATE_SHA>` with the exact SHA approved by the release owner.
+
+## 3. Create staging-only secrets
+
+Use unique credentials that are not reused in production. Do not commit these files or paste their values into logs/chat.
+
 ```bash
-export DB_PASSWORD=$(openssl rand -hex 16)
-export JWT_SECRET=$(openssl rand -hex 32)
-export REDIS_PASSWORD=$(openssl rand -hex 16)
-echo "DB_PASSWORD=$DB_PASSWORD" > .env.staging
-echo "JWT_SECRET=$JWT_SECRET" >> .env.staging
-echo "REDIS_PASSWORD=$REDIS_PASSWORD" >> .env.staging
-source .env.staging
+umask 077
+export DB_PASSWORD="$(openssl rand -hex 32)"
+export JWT_SECRET="$(openssl rand -hex 48)"
+export REDIS_PASSWORD="$(openssl rand -hex 32)"
+mkdir -p "$HOME/.config/mekanix"
+openssl rand -hex 48 > "$HOME/.config/mekanix/backup-passphrase"
+chmod 600 "$HOME/.config/mekanix/backup-passphrase"
+export BACKUP_PASSPHRASE_FILE="$HOME/.config/mekanix/backup-passphrase"
 ```
 
-## Step 4: Deploy
+For a persistent deployment, store the staging environment variables in a protected secret manager or a root-owned environment file with mode 600. Do not rely on a temporary shell session after a reboot.
+
+## 4. Deploy the isolated staging stack
+
+The deployment script builds a temporary context, copies the complete PostgreSQL migration history, and uses a stable Compose project name (`mekanix-staging`). It does not use the production D1 database.
+
 ```bash
-bash scripts/db-switch-provider.sh postgresql
-rm -rf prisma/migrations
-mkdir -p prisma/migrations/20260925000000_init
-cp prisma/migrations-postgresql/20260925000000_init/migration.sql prisma/migrations/20260925000000_init/
-cp prisma/migrations-postgresql/migration_lock.toml prisma/migrations/
+export COMPOSE_PROJECT_NAME=mekanix-staging
 bash scripts/deploy-staging.sh
 ```
 
-## Step 5: Verify
+Staging services are isolated in their own volumes and network. PostgreSQL is published only on `127.0.0.1:5433` so host-side backup/restore rehearsal tools can connect; it is not exposed on a public interface.
+
+## 5. Verify health and readiness separately
+
 ```bash
-curl http://127.0.0.1:3001/api/health  # ok:true
-curl http://127.0.0.1:3001/api/ready  # 200
+curl --fail http://127.0.0.1:3001/api/health
+curl -i http://127.0.0.1:3001/api/ready
 ```
 
-## Step 6: Load Test
-```bash
-# Install k6
-sudo gpg -k && sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3715BE89A919199FBC3E0E7E7A1C6
-echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
-sudo apt update && sudo apt install k6
+- `/api/health` should return HTTP 200 and `ok: true` when the application can reach its database.
+- `/api/ready` is expected to return HTTP 503 in this staging profile while SMS is set to `console` and payments are set to `simulator`. Inspect the JSON gates; this is intentional fail-closed behavior, not a healthy production-readiness result.
+- OTP delivery and payment initiation must remain unavailable in this profile. Do not replace the simulator/console values with live credentials during this rehearsal.
 
-k6 run scripts/load-test.js --env BASE_URL=http://127.0.0.1:3001
+## 6. Performance smoke test
+
+Install k6 from its official package repository, then run:
+
+```bash
+k6 run scripts/load-test.js --vus 50 --duration 3m --env BASE_URL=http://127.0.0.1:3001
 ```
 
-## Step 7: ZAP Scan
+The script exercises the public home, health, readiness, and OTP fail-closed paths. It treats the expected staging OTP HTTP 503 as a valid safety outcome while still requiring health to be 200. It does not generate real SMS or payments.
+
+Record p95/p99 latency, request failure rate, CPU, memory, and database resource use. If the thresholds fail, do not proceed to Release Candidate approval; investigate and repeat the run.
+
+## 7. OWASP ZAP baseline scan
+
+The target must be reachable from the ZAP container. On Linux, the script adds the host-gateway mapping:
+
 ```bash
-bash scripts/zap-scan.sh http://127.0.0.1:3001
+bash scripts/zap-scan.sh http://host.docker.internal:3001
 ```
 
-## Step 8: Backup/Restore Test
+A missing report or any High-risk finding is a hard failure. Medium-risk findings must be reviewed and documented before release.
+
+## 8. Encrypted backup and restore rehearsal
+
+Create a protected, encrypted staging backup:
+
 ```bash
-docker compose -f docker-compose.staging.yml exec db psql -U mekanix -c "CREATE DATABASE mekanix_test_restore;"
-export TEST_DB_URL=postgresql://mekanix:$DB_PASSWORD@localhost:5432/mekanix_test_restore
+export DATABASE_URL="postgresql://mekanix:$DB_PASSWORD@127.0.0.1:5433/mekanix_staging"
+export BACKUP_PASSPHRASE_FILE="$HOME/.config/mekanix/backup-passphrase"
+export BACKUP_DIR="$HOME/mekanix-backups"
+export BACKUP_ENCRYPTION_REQUIRED=true
+bash scripts/backup-db.sh
+```
+
+Create a separate disposable restore-test database:
+
+```bash
+docker compose -p mekanix-staging -f docker-compose.staging.yml exec -T db \
+  psql -U mekanix -d postgres -c "CREATE DATABASE mekanix_restore_test;"
+```
+
+Then verify a full staging backup/restore to the separate test database. This copies staging data, so the extra export opt-in is deliberate:
+
+```bash
+export TEST_DB_URL="postgresql://mekanix:$DB_PASSWORD@127.0.0.1:5433/mekanix_restore_test"
+export SOURCE_ENV=staging
+export ALLOW_STAGING_DATA_EXPORT=YES
+export ALLOW_TEST_DB_RESET=YES
 bash scripts/test-backup-restore.sh
 ```
 
-## Step 9: Rollback Drill
-```bash
-# Break it
-echo "BROKEN" > src/app/page.tsx
-docker compose -f docker-compose.staging.yml up -d --build
-curl http://127.0.0.1:3001/api/health  # should fail
+The rehearsal compares row counts for every public table and the complete public index inventory. The test script resets only the explicitly supplied restore-test database; it refuses production as a source.
 
-# Rollback
-git checkout src/app/page.tsx
-docker compose -f docker-compose.staging.yml up -d --build
-curl http://127.0.0.1:3001/api/health  # should work
+To test the encrypted restore utility itself, create a fresh empty database, then run:
+
+```bash
+export DATABASE_URL="postgresql://mekanix:$DB_PASSWORD@127.0.0.1:5433/mekanix_restore_utility_test"
+docker compose -p mekanix-staging -f docker-compose.staging.yml exec -T db \
+  psql -U mekanix -d postgres -c "CREATE DATABASE mekanix_restore_utility_test;"
+RESTORE_CONFIRM=RESTORE bash scripts/restore-db.sh "$BACKUP_DIR/<BACKUP_FILE>.sql.gz.gpg"
 ```
 
-## Step 10: Monitoring
+The restore utility refuses to overwrite a non-empty PostgreSQL target. Keep the passphrase file and encrypted backup in separate protected locations. A production disaster-recovery procedure requires its own reviewed, explicitly approved runbook.
+
+## 9. Rollback rehearsal
+
+Do not deliberately corrupt the source tree. Rehearse rollback by deploying the previous known-good Release Candidate SHA into the isolated staging stack:
+
 ```bash
-crontab -e
-# Add: */1 * * * * bash /path/to/mekanix/scripts/monitor.sh --once http://127.0.0.1:3001 >> /var/log/mekanix-monitor.log 2>&1
+git checkout <PREVIOUS_KNOWN_GOOD_SHA>
+bash scripts/deploy-staging.sh
+curl --fail http://127.0.0.1:3001/api/health
 ```
+
+Record the deployed SHA, migration state, and observed health. Do not reverse database migrations automatically; use a forward-fix or a separately reviewed restore plan.
+
+## 10. Monitoring
+
+Run a one-shot health check from cron or a systemd timer. Configure an alert webhook only through a protected environment variable:
+
+```bash
+ALERT_WEBHOOK=<STAGING_ALERT_WEBHOOK> \
+  bash scripts/monitor.sh http://127.0.0.1:3001 --once
+```
+
+For continuous monitoring:
+
+```bash
+bash scripts/monitor.sh http://127.0.0.1:3001
+```
+
+## 11. Release evidence to capture
+
+Attach the following to the Release Candidate record:
+
+- Exact deployed Git SHA and database migration inventory.
+- `/api/health` response and the expected staging `/api/ready` gate details.
+- k6 summary including p95/p99 and failure rate.
+- ZAP HTML/JSON report, with all High findings resolved.
+- Encrypted backup artifact location (never the passphrase) and successful restore-rehearsal output.
+- Rollback SHA and health result.
+- Cloudflare D1/Cron staging evidence as a separate operational record; Docker/PostgreSQL staging does not substitute for Cloudflare D1.
+
+**Production remains blocked** until provider-specific SMS/payment sandbox tests, isolated Cloudflare D1/Cron validation, secrets, migration approval, restore rehearsal, and owner sign-off are complete.
