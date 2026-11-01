@@ -30,3 +30,7 @@ playwright-report/
 .github/
 .DS_Store
 Thumbs.db
+
+# Synthetic Cloudflare D1 staging fixtures are never part of the app image
+scripts/wallet-release-staging-*.sql
+scripts/wallet-release-staging-fixture.sh
