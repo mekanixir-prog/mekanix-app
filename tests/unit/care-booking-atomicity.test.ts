@@ -116,7 +116,7 @@ describe("CARE booking idempotency", () => {
           return { sql, values };
         },
       }),
-      batch: vi.fn(async () => [{ meta: { changes: 1 } }, { meta: { changes: 1 } }, { meta: { changes: 1 } }, { meta: { changes: 1 } }]),
+      batch: vi.fn(async (_statements: unknown[]) => [{ meta: { changes: 1 } }, { meta: { changes: 1 } }, { meta: { changes: 1 } }, { meta: { changes: 1 } }]),
     };
     const { getCloudflareContext } = await import("@opennextjs/cloudflare");
     vi.mocked(getCloudflareContext).mockResolvedValue({ env: { DB: d1 } } as any);
