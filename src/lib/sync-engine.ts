@@ -31,10 +31,14 @@ function getSameOriginUrl(action: { url: string }): URL | null {
   }
 }
 
-function supportsDurableIdempotency(action: { method: string }, target: URL): boolean {
-  return (action.method === "POST" && target.pathname === "/api/wallets/withdraw") ||
-    (action.method === "POST" && target.pathname === "/api/prepay") ||
-    (action.method === "POST" && target.pathname === "/api/gateway/verify");
+function supportsDurableIdempotency(action: { method: string; idempotencyKey?: string }, target: URL): boolean {
+  if (action.method !== "POST" || !action.idempotencyKey) return false;
+  return target.pathname === "/api/wallets/withdraw" ||
+    target.pathname === "/api/prepay" ||
+    target.pathname === "/api/gateway/verify" ||
+    target.pathname === "/api/care/bookings" ||
+    target.pathname === "/api/service-requests" ||
+    target.pathname === "/api/insurance/claim";
 }
 
 export async function syncQueue(actionIds?: string[]): Promise<SyncResult> {
