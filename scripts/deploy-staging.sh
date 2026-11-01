@@ -33,6 +33,8 @@ BUILD_CTX="$(mktemp -d /tmp/mekanix-staging.XXXXXX)"
 trap 'rm -rf "$BUILD_CTX"' EXIT
 
 rsync -a --exclude='node_modules' --exclude='.next' --exclude='.git' \
+  --exclude='.env' --exclude='.env.*' --exclude='backups/' --exclude='zap-reports/' \
+  --exclude='.wrangler/' --exclude='.open-next/' --exclude='coverage/' \
   --exclude='db/*.db' --exclude='*.log' \
   "$REPO_DIR/" "$BUILD_CTX/"
 
