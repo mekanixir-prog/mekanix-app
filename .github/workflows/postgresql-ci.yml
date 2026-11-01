@@ -97,8 +97,11 @@ jobs:
           DATABASE_URL=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_restore_utility_test \
           BACKUP_PASSPHRASE_FILE="$PASSPHRASE_FILE" RESTORE_CONFIRM=RESTORE \
             bash scripts/restore-db.sh "$BACKUP_FILE"
-          SOURCE_USERS=$(PGDATABASE=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_test psql -Atqc 'SELECT COUNT(*) FROM "User"')
-          RESTORED_USERS=$(PGDATABASE=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_restore_utility_test psql -Atqc 'SELECT COUNT(*) FROM "User"')
+          source scripts/lib/pg-service.sh
+          SOURCE_URL=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_test
+          RESTORE_URL=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_restore_utility_test
+          SOURCE_USERS="$(pg_exec "$SOURCE_URL" psql -v ON_ERROR_STOP=1 -Atqc 'SELECT COUNT(*) FROM public."User"')"
+          RESTORED_USERS="$(pg_exec "$RESTORE_URL" psql -v ON_ERROR_STOP=1 -Atqc 'SELECT COUNT(*) FROM public."User"')"
           test "$SOURCE_USERS" = "$RESTORED_USERS"
           echo "Encrypted backup/restore utility passed; User row counts match."
 
