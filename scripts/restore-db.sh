@@ -83,7 +83,7 @@ case "$DB_URL" in
     PGDATABASE="$DB_URL" psql -v ON_ERROR_STOP=1 -c "DROP SCHEMA public CASCADE"
     PGDATABASE="$DB_URL" psql -v ON_ERROR_STOP=1 < "$RAW_TMP"
     USER_TABLE="$(PGDATABASE="$DB_URL" psql -v ON_ERROR_STOP=1 -Atqc \
-      "SELECT CASE WHEN to_regclass('public.\\"User\\"') IS NULL THEN 0 ELSE 1 END")"
+      "SELECT CASE WHEN to_regclass('public.\"User\"') IS NULL THEN 0 ELSE 1 END")"
     if [ "$USER_TABLE" != "1" ]; then
       echo "❌ Restore completed but the expected User table is missing"
       exit 1
