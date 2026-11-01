@@ -22,7 +22,7 @@ type D1Database = {
 /** Node/SQLite and PostgreSQL: debit, request and ledger commit or roll back together. */
 export async function createWithdrawalWithPrisma(
   db: PrismaClient,
-  input: WithdrawalInput
+  input: WithdrawalInput,
 ): Promise<boolean> {
   return db.$transaction(async (tx) => {
     const existing = await tx.withdrawalRequest.findUnique({
@@ -77,23 +77,19 @@ export async function createWithdrawalWithPrisma(
 }
 
 /**
- * D1 batch is transactional. The request INSERT is the idempotency gate and
- * checks available balance. Only its winning insert permits the debit; only
- * the winning debit permits the ledger row. A retry or insufficient balance
- * produces zero changes and no partial financial state.
+ * D1 batch is transactional, but a zero-row conditional write is not an SQL
+ * error. The SELECT guards force the whole batch to abort unless each
+ * compare-and-set mutation changes exactly one row.
  */
 export async function createWithdrawalWithD1(
   d1: D1Database,
-  input: WithdrawalInput
+  input: WithdrawalInput,
 ): Promise<boolean> {
   const at = input.requestedAt.toISOString();
   const ledgerKey = `withdrawal:${input.idempotencyKey}:LEDGER`;
-  // D1.batch does not roll back on a zero-row conditional write. The SELECT
-  // guard deliberately raises a SQLite JSON error when the preceding write
-  // did not affect exactly one row; that SQL error rolls back the full batch.
-  // SELECT leaves SQLite's changes() value intact for the dependent statement.
   const assertOneChange = () =>
     d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '$') END").bind();
+
   const statements = [
     d1.prepare(`
       INSERT INTO "WithdrawalRequest"
@@ -106,7 +102,7 @@ export async function createWithdrawalWithD1(
     `).bind(
       crypto.randomUUID(), input.code, input.walletId, input.amount,
       input.method, input.cardNumber, input.bankName, input.shebaNumber,
-      input.idempotencyKey, at, input.walletId, input.amount
+      input.idempotencyKey, at, input.walletId, input.amount,
     ),
     assertOneChange(),
     d1.prepare(`
@@ -128,7 +124,7 @@ export async function createWithdrawalWithD1(
     `).bind(
       crypto.randomUUID(), -input.amount, input.amount,
       `Withdrawal request ${input.code}`, ledgerKey, at,
-      input.idempotencyKey, input.walletId, input.amount
+      input.idempotencyKey, input.walletId, input.amount,
     ),
     assertOneChange(),
   ];
@@ -137,209 +133,14 @@ export async function createWithdrawalWithD1(
     const results = await d1.batch(statements);
     return [0, 2, 4].every((index) => (results[index]?.meta?.changes ?? 0) === 1);
   } catch (error) {
-    if (error instanceof Error && /malformed JSON/i.test(error.message)) {
-      return false;
-    }
+    if (error instanceof Error && /malformed JSON/i.test(error.message)) return false;
     throw error;
   }
 }
+
 export async function createWithdrawalAtomically(
   db: PrismaClient,
-  input: WithdrawalInput
-): Promise<boolean> {
-  const isWorker = typeof navigator !== "undefined" &&
-    navigator.userAgent === "Cloudflare-Workers";
-  if (!isWorker) return createWithdrawalWithPrisma(db, input);
-
-  const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-  const context = await getCloudflareContext({ async: true });
-  const d1 = (context.env as unknown as { DB?: D1Database }).DB;
-  if (!d1) throw new Error("D1 binding 'DB' is unavailable for atomic withdrawal");
-  return createWithdrawalWithD1(d1, input);
-}
-) END`).bind();
-
-  const statements = [
-    d1.prepare(`
-      INSERT INTO "WithdrawalRequest"
-        ("id", "code", "walletId", "amount", "method", "cardNumber",
-         "bankName", "shebaNumber", "status", "idempotencyKey", "requestedAt")
-      SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'REQUESTED', ?, ?
-      FROM "Wallet"
-      WHERE "id" = ? AND "balance" >= ?
-      ON CONFLICT("idempotencyKey") DO NOTHING
-    `).bind(
-      crypto.randomUUID(), input.code, input.walletId, input.amount,
-      input.method, input.cardNumber, input.bankName, input.shebaNumber,
-      input.idempotencyKey, at, input.walletId, input.amount
-    ),
-    assertOneChange(),
-    d1.prepare(`
-      UPDATE "Wallet"
-      SET "balance" = "balance" - ?, "updatedAt" = ?
-      WHERE "id" = ? AND "balance" >= ? AND changes() = 1
-    `).bind(input.amount, at, input.walletId, input.amount),
-    assertOneChange(),
-    d1.prepare(`
-      INSERT INTO "WalletLedger"
-        ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
-         "referenceType", "referenceId", "description", "idempotencyKey", "createdAt")
-      SELECT ?, w."id", 'WITHDRAWAL', ?, w."balance" + ?, w."balance",
-             'Withdrawal', wr."id", ?, ?, ?
-      FROM "Wallet" w
-      JOIN "WithdrawalRequest" wr ON wr."idempotencyKey" = ?
-      WHERE w."id" = ? AND wr."walletId" = w."id"
-        AND wr."amount" = ? AND changes() = 1
-    `).bind(
-      crypto.randomUUID(), -input.amount, input.amount,
-      `Withdrawal request ${input.code}`, ledgerKey, at,
-      input.idempotencyKey, input.walletId, input.amount
-    ),
-    assertOneChange(),
-  ];
-
-  try {
-    const results = await d1.batch(statements);
-    return [0, 2, 4].every((index) => (results[index]?.meta?.changes ?? 0) === 1);
-  } catch (error) {
-    if (error instanceof Error && /malformed JSON/i.test(error.message)) {
-      return false;
-    }
-    throw error;
-  }
-}
-export async function createWithdrawalAtomically(
-  db: PrismaClient,
-  input: WithdrawalInput
-): Promise<boolean> {
-  const isWorker = typeof navigator !== "undefined" &&
-    navigator.userAgent === "Cloudflare-Workers";
-  if (!isWorker) return createWithdrawalWithPrisma(db, input);
-
-  const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-  const context = await getCloudflareContext({ async: true });
-  const d1 = (context.env as unknown as { DB?: D1Database }).DB;
-  if (!d1) throw new Error("D1 binding 'DB' is unavailable for atomic withdrawal");
-  return createWithdrawalWithD1(d1, input);
-}
-) END").bind();
-  const statements = [
-    d1.prepare(`
-      INSERT INTO "WithdrawalRequest"
-        ("id", "code", "walletId", "amount", "method", "cardNumber",
-         "bankName", "shebaNumber", "status", "idempotencyKey", "requestedAt")
-      SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'REQUESTED', ?, ?
-      FROM "Wallet"
-      WHERE "id" = ? AND "balance" >= ?
-      ON CONFLICT("idempotencyKey") DO NOTHING
-    `).bind(
-      crypto.randomUUID(), input.code, input.walletId, input.amount,
-      input.method, input.cardNumber, input.bankName, input.shebaNumber,
-      input.idempotencyKey, at, input.walletId, input.amount
-    ),
-    assertOneChange(),
-    d1.prepare(`
-      UPDATE "Wallet"
-      SET "balance" = "balance" - ?, "updatedAt" = ?
-      WHERE "id" = ? AND "balance" >= ? AND changes() = 1
-    `).bind(input.amount, at, input.walletId, input.amount),
-    assertOneChange(),
-    d1.prepare(`
-      INSERT INTO "WalletLedger"
-        ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
-         "referenceType", "referenceId", "description", "idempotencyKey", "createdAt")
-      SELECT ?, w."id", 'WITHDRAWAL', ?, w."balance" + ?, w."balance",
-             'Withdrawal', wr."id", ?, ?, ?
-      FROM "Wallet" w
-      JOIN "WithdrawalRequest" wr ON wr."idempotencyKey" = ?
-      WHERE w."id" = ? AND wr."walletId" = w."id"
-        AND wr."amount" = ? AND changes() = 1
-    `).bind(
-      crypto.randomUUID(), -input.amount, input.amount,
-      `Withdrawal request ${input.code}`, ledgerKey, at,
-      input.idempotencyKey, input.walletId, input.amount
-    ),
-    assertOneChange(),
-  ];
-
-  try {
-    const results = await d1.batch(statements);
-    return [0, 2, 4].every((index) => (results[index]?.meta?.changes ?? 0) === 1);
-  } catch (error) {
-    if (error instanceof Error && /malformed JSON/i.test(error.message)) {
-      return false;
-    }
-    throw error;
-  }
-}
-export async function createWithdrawalAtomically(
-  db: PrismaClient,
-  input: WithdrawalInput
-): Promise<boolean> {
-  const isWorker = typeof navigator !== "undefined" &&
-    navigator.userAgent === "Cloudflare-Workers";
-  if (!isWorker) return createWithdrawalWithPrisma(db, input);
-
-  const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-  const context = await getCloudflareContext({ async: true });
-  const d1 = (context.env as unknown as { DB?: D1Database }).DB;
-  if (!d1) throw new Error("D1 binding 'DB' is unavailable for atomic withdrawal");
-  return createWithdrawalWithD1(d1, input);
-}
-) END`).bind();
-
-  const statements = [
-    d1.prepare(`
-      INSERT INTO "WithdrawalRequest"
-        ("id", "code", "walletId", "amount", "method", "cardNumber",
-         "bankName", "shebaNumber", "status", "idempotencyKey", "requestedAt")
-      SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'REQUESTED', ?, ?
-      FROM "Wallet"
-      WHERE "id" = ? AND "balance" >= ?
-      ON CONFLICT("idempotencyKey") DO NOTHING
-    `).bind(
-      crypto.randomUUID(), input.code, input.walletId, input.amount,
-      input.method, input.cardNumber, input.bankName, input.shebaNumber,
-      input.idempotencyKey, at, input.walletId, input.amount
-    ),
-    assertOneChange(),
-    d1.prepare(`
-      UPDATE "Wallet"
-      SET "balance" = "balance" - ?, "updatedAt" = ?
-      WHERE "id" = ? AND "balance" >= ? AND changes() = 1
-    `).bind(input.amount, at, input.walletId, input.amount),
-    assertOneChange(),
-    d1.prepare(`
-      INSERT INTO "WalletLedger"
-        ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
-         "referenceType", "referenceId", "description", "idempotencyKey", "createdAt")
-      SELECT ?, w."id", 'WITHDRAWAL', ?, w."balance" + ?, w."balance",
-             'Withdrawal', wr."id", ?, ?, ?
-      FROM "Wallet" w
-      JOIN "WithdrawalRequest" wr ON wr."idempotencyKey" = ?
-      WHERE w."id" = ? AND wr."walletId" = w."id"
-        AND wr."amount" = ? AND changes() = 1
-    `).bind(
-      crypto.randomUUID(), -input.amount, input.amount,
-      `Withdrawal request ${input.code}`, ledgerKey, at,
-      input.idempotencyKey, input.walletId, input.amount
-    ),
-    assertOneChange(),
-  ];
-
-  try {
-    const results = await d1.batch(statements);
-    return [0, 2, 4].every((index) => (results[index]?.meta?.changes ?? 0) === 1);
-  } catch (error) {
-    if (error instanceof Error && /malformed JSON/i.test(error.message)) {
-      return false;
-    }
-    throw error;
-  }
-}
-export async function createWithdrawalAtomically(
-  db: PrismaClient,
-  input: WithdrawalInput
+  input: WithdrawalInput,
 ): Promise<boolean> {
   const isWorker = typeof navigator !== "undefined" &&
     navigator.userAgent === "Cloudflare-Workers";
