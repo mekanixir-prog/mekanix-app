@@ -4,7 +4,7 @@ import { validateBody } from "@/lib/api-helpers";
 import { rateLimitAsync, getClientId } from "@/lib/rate-limit";
 import { otpSendSchema } from "@/lib/schemas";
 import { generateOtpCode, hashOtpCode } from "@/lib/otp-crypto";
-import { sendOtp } from "@/lib/sms-provider";
+import { assertSmsProviderReady, sendOtp } from "@/lib/sms-provider";
 
 // Send an OTP code to a phone number.
 // - Rate-limited per-phone (5 / 10min) AND per-IP (20 / hour).
@@ -69,6 +69,18 @@ export async function POST(req: Request) {
     );
   }
 
+  // Validate SMS configuration before generating or persisting an OTP.
+  // Production must never fall back to console logging or return a false success.
+  try {
+    assertSmsProviderReady();
+  } catch (error) {
+    console.error("[otp/send] SMS provider is not ready:", error instanceof Error ? error.message : "configuration error");
+    return NextResponse.json(
+      { error: "سرویس ارسال پیامک در حال حاضر آماده نیست" },
+      { status: 503, headers: { "Retry-After": "60" } }
+    );
+  }
+
   // 6-digit numeric code, valid for 5 minutes.
   //
   // SECURITY: `generateOtpCode()` uses Node's CSPRNG (`crypto.randomInt`),
@@ -89,28 +101,37 @@ export async function POST(req: Request) {
   await db.otpCode.updateMany({ where: { phone, consumed: false }, data: { consumed: true } });
   await db.otpCode.create({ data: { phone, code: codeHash, expiresAt } });
 
-  // Deliver the OTP via the configured SMS provider.
-  //
-  // `sendOtp()` is env-driven (see `src/lib/sms-provider.ts`):
-  //   - SMS_PROVIDER=kavenegar    + KAVENEGAR_API_KEY    → Kavenegar verify/lookup
-  //   - SMS_PROVIDER=melipayamak  + MELIPAYAMAK_USERNAME  → MeliPayamak SendSMS
-  //   - SMS_PROVIDER=farapayamak  + FARAPAYAMAK_USERNAME  → Farapayamak SimpleSMS
-  //   - default                                          → console.log (dev mode)
-  //
-  // In production the plaintext `code` is sent to the user's phone; in dev
-  // mode it is logged to stdout AND returned in the response body so the
-  // splash UI can display it for manual testing.
-  //
-  // Send failure is logged but does NOT abort the request — the hashed code
-  // is already persisted, so the user can still verify via a retry / fallback
-  // channel. We surface the error in the response body in dev so a misconfigured
-  // SMS provider is visible during integration testing.
-  const smsResult = await sendOtp(phone, code);
-  if (!smsResult.success) {
-    console.warn(`⚠️  SMS delivery failed for ${phone}: ${smsResult.error}`);
+  // Deliver the OTP only after provider readiness has been proven.
+  // On any delivery failure, consume the newly stored hash so an undelivered
+  // code cannot remain usable. Never log the phone number or plaintext OTP.
+  let smsResult: Awaited<ReturnType<typeof sendOtp>>;
+  try {
+    smsResult = await sendOtp(phone, code);
+  } catch {
+    await db.otpCode.updateMany({
+      where: { phone, code: codeHash, consumed: false },
+      data: { consumed: true },
+    }).catch(() => undefined);
+    console.error("[otp/send] SMS delivery threw; plaintext OTP and recipient were not logged");
+    return NextResponse.json(
+      { error: "ارسال پیامک ناموفق بود؛ کمی بعد دوباره تلاش کنید" },
+      { status: 503, headers: { "Retry-After": "30" } }
+    );
   }
 
-  const isProduction = process.env.NODE_ENV === "production";
+  if (!smsResult.success) {
+    await db.otpCode.updateMany({
+      where: { phone, code: codeHash, consumed: false },
+      data: { consumed: true },
+    }).catch(() => undefined);
+    console.error("[otp/send] SMS delivery failed; provider details were withheld from logs");
+    return NextResponse.json(
+      { error: "ارسال پیامک ناموفق بود؛ کمی بعد دوباره تلاش کنید" },
+      { status: 502, headers: { "Retry-After": "30" } }
+    );
+  }
+
+  const isProduction = process.env.NODE_ENV !== "development" && process.env.NODE_ENV !== "test";
   const response: {
     ok: true;
     expiresAt: Date;
