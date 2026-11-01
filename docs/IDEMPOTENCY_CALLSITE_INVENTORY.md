@@ -20,8 +20,8 @@ The canonical request payload is normalized and SHA-256 hashed before persistenc
 | `POST /api/gateway/verify` | Unique `Payment.gatewayLogId`; duplicate callback convergence and recovery for a missing gateway-log link | Gateway log and payment record are checked together | Simulator-only; production endpoint returns 404 |
 | `POST /api/payments` | No live settlement contract by design | Not applicable | Simulator-only; production endpoint returns 404; never treat as real payment |
 | `POST /api/care/bookings` | PR #59: unique booking key + request fingerprint; booking, frozen pricing snapshot, link, and creation event in one Prisma transaction or D1 batch | `GET /api/care/bookings/status?key=...` requires booking, snapshot, link, and event to agree | D1/SQLite and PostgreSQL failure/concurrency integration coverage in PR #61 |
-| `POST /api/service-requests` | PR #62: unique request key + fingerprint; optional ad-hoc vehicle and request in one Prisma transaction or D1 batch; notifications post-commit | `GET /api/service-requests/status?key=...` verifies the request's vehicle relation and ownership | Same key + different payload returns 409 |
-| `POST /api/insurance/claim` | PR #62: unique claim key + fingerprint; claim and policy transition in one Prisma transaction or D1 batch; expired/cancelled policy guard; notifications post-commit | `GET /api/insurance/claim/status?key=...` verifies claim and policy status | Same key + different payload returns 409 |
+| `POST /api/service-requests` | PR #63: unique request key + fingerprint; optional ad-hoc vehicle and request in one Prisma transaction or D1 batch; notifications post-commit | `GET /api/service-requests/status?key=...` verifies the request's vehicle relation and ownership | Same key + different payload returns 409 |
+| `POST /api/insurance/claim` | PR #63: unique claim key + fingerprint; claim and policy transition in one Prisma transaction or D1 batch; expired/cancelled policy guard; notifications post-commit | `GET /api/insurance/claim/status?key=...` verifies claim and policy status | Same key + different payload returns 409 |
 
 ### Client key persistence
 
@@ -52,7 +52,7 @@ Other safety rules remain:
 
 - Wallet withdrawal and escrow release have D1/SQLite-compatible and PostgreSQL transaction coverage for duplicate release, insufficient balance, and rollback.
 - CARE booking: PR #61 adds 100 concurrent D1/SQLite retries and 80 concurrent PostgreSQL retries, plus injected failures after pricing insert, snapshot-link update, and timeline insert.
-- Service request and insurance claim: PR #62 adds 100 concurrent D1/SQLite retries and 80 concurrent PostgreSQL retries, plus rollback tests after vehicle insert and claim insert/policy transition.
+- Service request and insurance claim: PR #63 adds 100 concurrent D1/SQLite retries and 80 concurrent PostgreSQL retries, plus rollback tests after vehicle insert and claim insert/policy transition.
 - Rate-limit window initialization is atomic for SQLite/D1-compatible SQL and PostgreSQL (PR #40); production store failure remains fail-closed with HTTP 503 (PR #27).
 
 ## 4. Explicitly deferred
