@@ -19,7 +19,10 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 : "${JWT_SECRET:?JWT_SECRET is required for staging}"
 : "${REDIS_PASSWORD:?REDIS_PASSWORD is required for staging}"
 
+PROJECT_NAME="${COMPOSE_PROJECT_NAME:-mekanix-staging}"
+
 echo "🚀 MEKANIX Staging Deployment"
+echo "   Compose project: $PROJECT_NAME"
 echo "   Port: 3001"
 echo "   DB: mekanix_staging"
 echo "   Repo: $REPO_DIR"
@@ -39,7 +42,7 @@ cp -r "$REPO_DIR/prisma/migrations-postgresql" "$BUILD_CTX/prisma/migrations"
 sed -i 's/provider = "sqlite"/provider = "postgresql"/' "$BUILD_CTX/prisma/schema.prisma"
 
 cd "$BUILD_CTX"
-docker compose -f docker-compose.staging.yml up -d --build
+docker compose -p "$PROJECT_NAME" -f docker-compose.staging.yml up -d --build
 
 echo "⏳ Waiting for staging to be healthy..."
 for i in $(seq 1 90); do
@@ -55,5 +58,5 @@ for i in $(seq 1 90); do
   sleep 2
 done
 echo "❌ Staging did not become healthy"
-docker compose -f docker-compose.staging.yml logs
+docker compose -p "$PROJECT_NAME" -f docker-compose.staging.yml logs
 exit 1
