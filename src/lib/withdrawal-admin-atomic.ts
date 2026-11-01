@@ -124,7 +124,7 @@ export async function updateWithdrawalWithD1(d1: D1Database, input: Input): Prom
   // raise one when a required CAS write did not affect exactly one row, which
   // makes D1.batch roll back the complete financial transition.
   const assertOneChange = () =>
-    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '
+    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '$') END").bind();
   if (input.action === "APPROVED") {
     const result = await d1.batch([
       d1.prepare(`
