@@ -1,17 +1,4 @@
 // MEKANIX CARE — Extra cost proposal (technician → customer)
-//
-// Security:
-//   - requireAuth (any authenticated user)
-//   - requireAssignedTechnician — only the technician assigned to this booking (or ADMIN) may propose extras.
-//   - Booking must be in INSPECTING or IN_SERVICE state.
-//   - Transition to WAITING_CUSTOMER_APPROVAL is validated via the state machine in care-auth.
-//
-// Atomicity:
-//   - D1 does NOT support db.$transaction; all side effects (Finding create,
-//     CustomerApproval create, ServiceBooking status update,
-//     ServiceTimelineEvent create, Notification create) run sequentially via
-//     db.* directly. If a later write fails, earlier writes stay (acceptable
-//     for D1 — true batch transactions are not yet exposed through Prisma).
 
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
@@ -21,10 +8,30 @@ import {
   requireAssignedTechnician,
   isValidTransition,
 } from "@/lib/care-auth";
+import {
+  CareExtraProposalConflictError,
+  createCareExtraProposalAtomically,
+  type CareExtraFindingInput,
+} from "@/lib/care-extra-proposal-atomic";
 
-// Booking states in which a technician may propose an extra cost.
-// Any other state means the proposal is out-of-context for the current workflow.
-const EXTRA_PROPOSAL_ALLOWED_STATES = ["INSPECTING", "IN_SERVICE"];
+const EXTRA_PROPOSAL_ALLOWED_STATES = ["INSPECTING", "IN_SERVICE"] as const;
+const PART_TYPES = ["OEM", "AFTERMARKET", "ALTERNATIVE"] as const;
+const FINDING_SEVERITIES = ["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
+
+function optionalText(
+  input: Record<string, unknown>,
+  key: string,
+  maxLength: number,
+): { ok: true; value: string | null } | { ok: false } {
+  const value = input[key];
+  if (value === undefined || value === null || value === "") {
+    return { ok: true, value: null };
+  }
+  if (typeof value !== "string" || value.trim().length > maxLength) {
+    return { ok: false };
+  }
+  return { ok: true, value: value.trim() };
+}
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const db = await getDbForLib();
@@ -32,26 +39,73 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (session instanceof NextResponse) return session;
   const { id } = await ctx.params;
 
-  // Authorization: must be the assigned technician (or ADMIN).
-  // Replaces the previous role-only check which let ANY technician propose extras
-  // on bookings they were not assigned to (BOLA).
   const authz = await requireAssignedTechnician(session, id);
   if (authz) return authz;
 
-  // Parse request body early so we can fail fast on malformed input.
-  let body: any;
+  let rawBody: unknown;
   try {
-    body = await req.json();
+    rawBody = await req.json();
   } catch {
     return NextResponse.json({ error: "بدنه JSON نامعتبر است" }, { status: 400 });
   }
-  const validated = validateExtraProposalInput(body);
+
+  const validated = validateExtraProposalInput(rawBody);
   if (!validated.ok) {
     return NextResponse.json({ error: validated.error }, { status: 400 });
   }
+  const body = rawBody as Record<string, unknown>;
   const proposal = validated.value;
 
-  // Fetch booking (we need its status + customer userId for the notification).
+  const description = optionalText(body, "description", 2000);
+  const partName = optionalText(body, "partName", 160);
+  const partBrand = optionalText(body, "partBrand", 120);
+  const partNumber = optionalText(body, "partNumber", 120);
+  const imageUrl = optionalText(body, "imageUrl", 2048);
+  const technicianNote = optionalText(body, "technicianNote", 1000);
+  if (
+    !description.ok || !partName.ok || !partBrand.ok || !partNumber.ok ||
+    !imageUrl.ok || !technicianNote.ok
+  ) {
+    return NextResponse.json({ error: "یکی از فیلدهای متنی پیشنهاد نامعتبر یا بیش از حد طولانی است" }, { status: 400 });
+  }
+
+  const partTypeValue = body.partType === undefined || body.partType === null || body.partType === ""
+    ? "OEM"
+    : body.partType;
+  if (typeof partTypeValue !== "string" || !PART_TYPES.includes(partTypeValue as typeof PART_TYPES[number])) {
+    return NextResponse.json({ error: "نوع قطعه نامعتبر است" }, { status: 400 });
+  }
+
+  let newFinding: CareExtraFindingInput | null = null;
+  if (body.finding !== undefined && body.finding !== null) {
+    if (typeof body.finding !== "object" || Array.isArray(body.finding)) {
+      return NextResponse.json({ error: "اطلاعات عیب نامعتبر است" }, { status: 400 });
+    }
+    const finding = body.finding as Record<string, unknown>;
+    const title = typeof finding.title === "string" ? finding.title.trim() : "";
+    const category = finding.category === undefined ? "general" : finding.category;
+    const severity = finding.severity === undefined ? "MEDIUM" : finding.severity;
+    const findingDescription = optionalText(finding, "description", 2000);
+    if (
+      !title || title.length > 160 ||
+      typeof category !== "string" || !category.trim() || category.trim().length > 64 ||
+      typeof severity !== "string" ||
+      !FINDING_SEVERITIES.includes(severity as typeof FINDING_SEVERITIES[number]) ||
+      !findingDescription.ok
+    ) {
+      return NextResponse.json({ error: "اطلاعات عیب نامعتبر است" }, { status: 400 });
+    }
+    newFinding = {
+      category: category.trim(),
+      title,
+      description: findingDescription.value,
+      severity,
+    };
+  }
+  if (proposal.findingId && newFinding) {
+    return NextResponse.json({ error: "هم‌زمان شناسه عیب و عیب جدید ارسال نکنید" }, { status: 400 });
+  }
+
   const booking = await db.serviceBooking.findUnique({
     where: { id },
     select: { id: true, status: true, userId: true },
@@ -60,107 +114,73 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: "سفارش یافت نشد" }, { status: 404 });
   }
 
-  // Gate 1: booking must be in a state that semantically allows proposing extras.
-  if (!EXTRA_PROPOSAL_ALLOWED_STATES.includes(booking.status)) {
+  if (!EXTRA_PROPOSAL_ALLOWED_STATES.includes(booking.status as typeof EXTRA_PROPOSAL_ALLOWED_STATES[number])) {
     return NextResponse.json(
       {
         error: "در وضعیت فعلی سفارش امکان ثبت پیشنهاد هزینه اضافه وجود ندارد",
         currentStatus: booking.status,
         allowedStates: EXTRA_PROPOSAL_ALLOWED_STATES,
       },
-      { status: 409 }
+      { status: 409 },
     );
   }
 
-  // Gate 2: state-machine validation (role + current status → WAITING_CUSTOMER_APPROVAL).
-  if (
-    !isValidTransition(session.role, booking.status, "WAITING_CUSTOMER_APPROVAL")
-  ) {
+  if (!isValidTransition(session.role, booking.status, "WAITING_CUSTOMER_APPROVAL")) {
     return NextResponse.json(
       {
         error: `انتقال وضعیت مجاز نیست: ${booking.status} → WAITING_CUSTOMER_APPROVAL برای نقش ${session.role}`,
         currentStatus: booking.status,
         nextStatus: "WAITING_CUSTOMER_APPROVAL",
       },
-      { status: 409 }
+      { status: 409 },
     );
   }
 
-  // All side effects run sequentially (D1 has no $transaction).
-  // 1. Optionally create (or reuse) a Finding for this proposal.
-  let findingId = proposal.findingId;
-  if (findingId) {
-    const linkedFinding = await db.finding.findFirst({
-      where: { id: findingId, bookingId: id },
-      select: { id: true },
-    });
-    if (!linkedFinding) {
-      return NextResponse.json({ error: "عیب انتخاب‌شده متعلق به این سفارش نیست" }, { status: 400 });
-    }
-  }
-  if (!findingId && body.finding) {
-    const f = await db.finding.create({
-      data: {
-        bookingId: id,
-        category: body.finding.category || "general",
-        title: body.finding.title,
-        description: body.finding.description,
-        severity: body.finding.severity || "MEDIUM",
+  try {
+    const approval = await createCareExtraProposalAtomically(db, {
+      bookingId: id,
+      expectedBookingStatus: booking.status as "INSPECTING" | "IN_SERVICE",
+      actorUserId: session.userId,
+      proposal,
+      details: {
+        description: description.value,
+        partName: partName.value,
+        partBrand: partBrand.value,
+        partNumber: partNumber.value,
+        partType: partTypeValue,
+        imageUrl: imageUrl.value,
+        technicianNote: technicianNote.value,
       },
+      newFinding,
     });
-    findingId = f.id;
+
+    const totalPrice = proposal.partPrice * proposal.quantity + proposal.laborPrice;
+    try {
+      await db.notification.create({
+        data: {
+          userId: booking.userId,
+          type: "extra_proposal",
+          title: "پیشنهاد هزینه اضافه",
+          body: `${proposal.proposedItem} — ${totalPrice} تومان`,
+          category: "job",
+          link: "care-detail",
+        },
+      });
+    } catch (error) {
+      console.error(
+        "[care-extra-proposal] customer notification failed",
+        error instanceof Error ? error.message : "unknown error",
+      );
+    }
+
+    return NextResponse.json(approval);
+  } catch (error) {
+    if (error instanceof CareExtraProposalConflictError) {
+      return NextResponse.json(
+        { error: "وضعیت سفارش یا عیب هم‌زمان تغییر کرده است؛ صفحه را تازه‌سازی کنید" },
+        { status: 409 },
+      );
+    }
+    throw error;
   }
-
-  // 2. Create the CustomerApproval record (status: PROPOSED).
-  const newApproval = await db.customerApproval.create({
-    data: {
-      bookingId: id,
-      findingId: findingId || null,
-      proposedItem: proposal.proposedItem,
-      description: body.description || null,
-      partName: body.partName || null,
-      partBrand: body.partBrand || null,
-      partNumber: body.partNumber || null,
-      partType: body.partType || "OEM",
-      quantity: proposal.quantity,
-      partPrice: proposal.partPrice,
-      laborPrice: proposal.laborPrice,
-      totalPrice: proposal.partPrice * proposal.quantity + proposal.laborPrice,
-      imageUrl: body.imageUrl || null,
-      technicianNote: body.technicianNote || null,
-      status: "PROPOSED",
-    },
-  });
-
-  // 3. Transition booking → WAITING_CUSTOMER_APPROVAL.
-  await db.serviceBooking.update({
-    where: { id },
-    data: { status: "WAITING_CUSTOMER_APPROVAL" },
-  });
-
-  // 4. Timeline event.
-  await db.serviceTimelineEvent.create({
-    data: {
-      bookingId: id,
-      eventType: "extra_proposal",
-      actor: session.userId,
-      metadata: JSON.stringify({ approvalId: newApproval.id }),
-    },
-  });
-
-  // 5. Notify the customer.
-  await db.notification.create({
-    data: {
-      userId: booking.userId,
-      type: "extra_proposal",
-      title: "پیشنهاد هزینه اضافه",
-      body: `${proposal.proposedItem} — ${
-        proposal.partPrice * proposal.quantity + proposal.laborPrice
-      } تومان`,
-      category: "job",
-      link: "care-detail",
-    },
-  });
-
-  return NextResponse.json(newApproval);
 }
