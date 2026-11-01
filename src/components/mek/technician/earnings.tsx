@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 
 type Wallet = {
   id: string;
@@ -67,8 +67,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState("");
-  const [withdrawMethod, setWithdrawMethod] = useState("card");
-  const [withdrawCard, setWithdrawCard] = useState("");
+  const withdrawMethod = "bank";
   const [withdrawSheba, setWithdrawSheba] = useState("");
   const [withdrawBank, setWithdrawBank] = useState("");
   const [withdrawing, setWithdrawing] = useState(false);
@@ -136,7 +135,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
           technicianId: user.technician!.id,
           amount: amt,
           method: withdrawMethod,
-          cardNumber: withdrawCard,
+          cardNumber: null,
           shebaNumber: withdrawSheba,
           bankName: withdrawBank,
         }),
@@ -146,7 +145,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
       toast.success(t("tech.earnings.withdrawSubmitted"));
       setWithdrawOpen(false);
       withdrawalIdempotencyKey.current = null;
-      setWithdrawAmount(""); setWithdrawCard(""); setWithdrawSheba(""); setWithdrawBank("");
+      setWithdrawAmount(""); setWithdrawSheba(""); setWithdrawBank("");
       await loadWallet(user.technician!.id);
     } catch (e: any) {
       toast.error(e.message ?? "Withdrawal failed");
@@ -367,43 +366,26 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
             </div>
             <div>
               <Label className="text-xs">{t("tech.earnings.withdrawMethod")}</Label>
-              <Select value={withdrawMethod} onValueChange={(value) => { withdrawalIdempotencyKey.current = null; setWithdrawMethod(value); }}>
-                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="card">{t("pay.card")}</SelectItem>
-                  <SelectItem value="bank">{t("pay.gateway.bank")}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {withdrawMethod === "card" && (
-              <div>
-                <Label className="text-xs">{t("tech.earnings.withdrawCard")}</Label>
-                <Input
-                  value={withdrawCard}
-                  onChange={(e) => { withdrawalIdempotencyKey.current = null; setWithdrawCard(e.target.value.replace(/\D/g, "").slice(0, 16)); }}
-                  className="mt-1 font-mono"
-                  placeholder="6037 9911 2233 4455"
-                  inputMode="numeric"
-                />
+              <div className="mt-1 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">
+                {t("pay.gateway.bank")}
               </div>
-            )}
-            {withdrawMethod === "bank" && (
-              <>
-                <div>
-                  <Label className="text-xs">{t("tech.earnings.withdrawSheba")}</Label>
-                  <Input
-                    value={withdrawSheba}
-                    onChange={(e) => { withdrawalIdempotencyKey.current = null; setWithdrawSheba(e.target.value.slice(0, 26)); }}
-                    className="mt-1 font-mono"
-                    placeholder="IR000000000000000000000000"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">{t("tech.earnings.withdrawBank")}</Label>
-                  <Input value={withdrawBank} onChange={(e) => { withdrawalIdempotencyKey.current = null; setWithdrawBank(e.target.value); }} className="mt-1" placeholder="بانک ملت" />
-                </div>
-              </>
-            )}
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                برداشت فعلاً فقط به شبای بانکی معتبر انجام می‌شود.
+              </p>
+            </div>
+            <div>
+              <Label className="text-xs">{t("tech.earnings.withdrawSheba")}</Label>
+              <Input
+                value={withdrawSheba}
+                onChange={(e) => { withdrawalIdempotencyKey.current = null; setWithdrawSheba(e.target.value.replace(/\s/g, "").toUpperCase().slice(0, 26)); }}
+                className="mt-1 font-mono"
+                placeholder="IR000000000000000000000000"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">{t("tech.earnings.withdrawBank")}</Label>
+              <Input value={withdrawBank} onChange={(e) => { withdrawalIdempotencyKey.current = null; setWithdrawBank(e.target.value.slice(0, 100)); }} className="mt-1" placeholder="بانک ملت" />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setWithdrawOpen(false)}>{t("common.cancel")}</Button>
