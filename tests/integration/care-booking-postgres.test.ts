@@ -120,7 +120,7 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
     const input = makeInput("concurrent");
     const results = await Promise.all(
       Array.from({ length: 80 }, (_, index) =>
-        createCareBookingAtomically(db, { ...input, code: `CARE-PG-${runId}-concurrent-${index}` })
+        createCareBookingAtomically(db!, { ...input, code: `CARE-PG-${runId}-concurrent-${index}` })
       )
     );
 
@@ -146,7 +146,7 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
       `NEW."pricingVersion" = '${input.pricing.pricingVersion}'`,
       "injected pricing snapshot failure",
       async () => {
-        await expect(createCareBookingAtomically(db, input))
+        await expect(createCareBookingAtomically(db!, input))
           .rejects.toThrow("injected pricing snapshot failure");
       }
     );
@@ -163,7 +163,7 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
       `NEW."code" = '${input.code}'`,
       "injected snapshot link failure",
       async () => {
-        await expect(createCareBookingAtomically(db, input))
+        await expect(createCareBookingAtomically(db!, input))
           .rejects.toThrow("injected snapshot link failure");
       }
     );
@@ -181,7 +181,7 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
       `NEW."idempotencyKey" = '${eventKey}'`,
       "injected timeline event failure",
       async () => {
-        await expect(createCareBookingAtomically(db, input))
+        await expect(createCareBookingAtomically(db!, input))
           .rejects.toThrow("injected timeline event failure");
       }
     );
