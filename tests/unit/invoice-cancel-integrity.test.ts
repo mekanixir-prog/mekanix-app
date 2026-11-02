@@ -59,12 +59,9 @@ describe("PATCH /api/invoices/[id] cancellation integrity", () => {
     expect(mockInvoiceUpdate).not.toHaveBeenCalled();
   });
 
-  it("allows cancellation of an unpaid invoice", async () => {
+  it("rejects cancellation of an unpaid invoice until the state machine supports it", async () => {
     const response = await PATCH(request("CANCELLED"), { params: Promise.resolve({ id: "inv-1" }) });
-    expect(response.status).toBe(200);
-    expect(mockInvoiceUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: "inv-1" },
-      data: { status: "CANCELLED" },
-    }));
+    expect(response.status).toBe(409);
+    expect(mockInvoiceUpdate).not.toHaveBeenCalled();
   });
 });
