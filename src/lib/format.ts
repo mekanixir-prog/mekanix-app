@@ -30,7 +30,8 @@ function toPersianDigits(s: string | number): string {
 }
 
 export function fmtMoney(amount: number, currency = "IRR", lang: "en" | "fa" = "en"): string {
-  const c = CURRENCIES[currency] ?? CURRENCIES.USD;
+  const c = CURRENCIES[currency];
+  const symbol = c?.symbol ?? (currency || "?") + " ";
   const safeAmount = Number.isFinite(amount) ? amount : 0;
   const formatted = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 0,
@@ -38,10 +39,10 @@ export function fmtMoney(amount: number, currency = "IRR", lang: "en" | "fa" = "
   }).format(safeAmount);
 
   if (lang === "fa") {
-    return `${c.symbol}${toPersianDigits(formatted.replace(/,/g, "،"))}`;
+    return `${symbol}${toPersianDigits(formatted.replace(/,/g, "،"))}`;
   }
 
-  return `${c.symbol}${formatted}`;
+  return `${symbol}${formatted}`;
 }
 
 export function fmtNumber(n: number, lang: "en" | "fa" = "en"): string {
