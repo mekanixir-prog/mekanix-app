@@ -1,20 +1,26 @@
 // MEKANIX — formatting & utility helpers
 import { CURRENCIES } from "./constants";
 
-// USD → IRR conversion rate. Default fallback is 60,000 (realistic 2024 rate).
-// On the client, `useT()` triggers a fetch from /api/exchange-rate which updates
-// this live. In production, that endpoint scrapes Telegram rate channels or
-// calls a free FX API.
+// FX is only for explicit USD-to-IRR conversions. It is never applied by fmtMoney.
 let USD_TO_IRR = 60000;
 
 export function setUsdToIrrRate(rate: number) {
-  if (typeof rate === "number" && rate > 0) {
-    USD_TO_IRR = rate;
-  }
+  if (Number.isFinite(rate) && rate > 0) USD_TO_IRR = rate;
 }
 
 export function getUsdToIrrRate(): number {
   return USD_TO_IRR;
+}
+
+export function convertUsdToIrr(amountUsd: number): number {
+  if (!Number.isFinite(amountUsd) || amountUsd < 0) {
+    throw new RangeError("USD amount must be a finite non-negative number");
+  }
+  const converted = amountUsd * USD_TO_IRR;
+  if (!Number.isSafeInteger(Math.round(converted))) {
+    throw new RangeError("Converted IRR amount exceeds the safe integer range");
+  }
+  return Math.round(converted);
 }
 
 // Convert digits to Persian
@@ -25,28 +31,17 @@ function toPersianDigits(s: string | number): string {
 
 export function fmtMoney(amount: number, currency = "IRR", lang: "en" | "fa" = "en"): string {
   const c = CURRENCIES[currency] ?? CURRENCIES.USD;
-  let converted = amount || 0;
-  let symbol = c.symbol;
-
-  // Convert USD base to IRR
-  if (currency === "IRR") {
-    converted = converted * USD_TO_IRR;
-    symbol = "﷼";
-  }
-
-  // Format with proper grouping
+  const safeAmount = Number.isFinite(amount) ? amount : 0;
   const formatted = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 0,
     maximumFractionDigits: currency === "IRR" ? 0 : 2,
-  }).format(converted);
+  }).format(safeAmount);
 
-  // For Persian: convert digits to Persian + use ، (Persian comma) as thousands separator
   if (lang === "fa") {
-    const persianFormatted = toPersianDigits(formatted.replace(/,/g, "،"));
-    return `${symbol}${persianFormatted}`;
+    return `${c.symbol}${toPersianDigits(formatted.replace(/,/g, "،"))}`;
   }
 
-  return `${symbol}${formatted}`;
+  return `${c.symbol}${formatted}`;
 }
 
 export function fmtNumber(n: number, lang: "en" | "fa" = "en"): string {
