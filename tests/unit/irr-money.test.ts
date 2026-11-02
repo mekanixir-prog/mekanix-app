@@ -6,6 +6,7 @@ import {
   formatIrr,
   multiplyRatioIrr,
   parseIrrInput,
+  tomanToIrr,
 } from "@/lib/money/irr";
 
 describe("canonical IRR money primitives", () => {
@@ -23,6 +24,20 @@ describe("canonical IRR money primitives", () => {
 
     it("does not silently label an unknown currency as USD", () => {
       expect(fmtMoney(125, "XYZ", "en")).toBe("XYZ 125");
+    });
+  });
+
+  describe("Toman compatibility adapter", () => {
+    it("converts explicitly Toman-denominated values to IRR exactly once", () => {
+      expect(tomanToIrr(100)).toBe(1_000);
+      expect(tomanToIrr(100, 2)).toBe(2_000);
+    });
+
+    it("rejects fractional, negative, and unsafe Toman conversions", () => {
+      expect(() => tomanToIrr(1.5)).toThrow();
+      expect(() => tomanToIrr(-1)).toThrow();
+      expect(() => tomanToIrr(Number.MAX_SAFE_INTEGER)).toThrow();
+      expect(() => tomanToIrr(1, 0)).toThrow();
     });
   });
 
