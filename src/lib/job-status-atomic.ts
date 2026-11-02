@@ -20,6 +20,8 @@ export type AtomicJobStatusInput = {
   jobId: string;
   requestId: string;
   technicianId: string;
+  actorRole: "TECHNICIAN" | "ADMIN" | "CUSTOMER" | "FLEET_MANAGER";
+  actorTechnicianId: string | null;
   currentStatus: JobStatus;
   nextStatus: JobStatus;
   updates: JobStatusScalarUpdates;
@@ -40,6 +42,10 @@ async function transitionWithPrisma(db: PrismaClient, input: AtomicJobStatusInpu
       id: input.jobId,
       status: input.currentStatus,
     };
+    if (input.actorRole === "TECHNICIAN") {
+      if (!input.actorTechnicianId) throw new JobStatusConflictError();
+      jobWhere.technicianId = input.actorTechnicianId;
+    }
     if (requestTransition) {
       jobWhere.request = {
         is: { id: input.requestId, matchedTechId: input.technicianId },
@@ -114,7 +120,13 @@ async function transitionWithD1(
   }
 
   let requestGuard = "";
+  let technicianGuard = "";
   values.push(input.jobId, input.currentStatus);
+  if (input.actorRole === "TECHNICIAN") {
+    if (!input.actorTechnicianId) throw new JobStatusConflictError();
+    technicianGuard = 'AND "technicianId" = ?';
+    values.push(input.actorTechnicianId);
+  }
   if (isRequestTerminalTransition(input.nextStatus)) {
     requestGuard = `
       AND EXISTS (
@@ -125,11 +137,83 @@ async function transitionWithD1(
     values.push(input.requestId, input.technicianId);
   }
 
+  const assertOneChange = () =>
+    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '
+      UPDATE "Job"
+      SET ${assignments.join(", ")}
+      WHERE "id" = ? AND "status" = ?
+      ${technicianGuard}
+      ${requestGuard}
+    `).bind(...values),
+    assertOneChange(),
+  ];
+
+  if (isRequestTerminalTransition(input.nextStatus)) {
+    statements.push(d1.prepare(`
+      UPDATE "ServiceRequest"
+      SET "status" = ?, "matchedTechId" = ?, "updatedAt" = ?
+      WHERE "id" = ? AND "matchedTechId" = ?
+        AND EXISTS (
+          SELECT 1 FROM "Job" j
+          WHERE j."id" = ? AND j."status" = ?
+        )
+    `).bind(
+      input.nextStatus === "REJECTED" ? "OPEN" : "CANCELLED",
+      input.nextStatus === "REJECTED" ? null : input.technicianId,
+      now,
+      input.requestId,
+      input.technicianId,
+      input.jobId,
+      input.nextStatus,
+    ));
+    statements.push(assertOneChange());
+  }
+
+  if (isTechnicianReleaseTransition(input.nextStatus)) {
+    statements.push(d1.prepare(`
+      UPDATE "Technician"
+      SET "status" = 'ONLINE', "updatedAt" = ?
+      WHERE "id" = ? AND "status" = 'ON_JOB'
+        AND NOT EXISTS (
+          SELECT 1 FROM "Job" j
+          WHERE j."technicianId" = "Technician"."id"
+            AND j."status" IN (
+              'REQUESTED', 'ACCEPTED', 'EN_ROUTE', 'ARRIVED',
+              'DIAGNOSING', 'REPAIRING', 'WAITING_APPROVAL'
+            )
+        )
+    `).bind(now, input.technicianId));
+  }
+
+  try {
+    await d1.batch(statements);
+  } catch (error) {
+    if (error instanceof Error && /malformed JSON/i.test(error.message)) {
+      throw new JobStatusConflictError();
+    }
+    throw error;
+  }
+
+  // D1 batch is the transaction boundary. The route reloads the job with
+  // its relations after the commit.
+}
+
+export async function transitionJobStatusAtomically(
+  db: PrismaClient,
+  input: AtomicJobStatusInput,
+): Promise<void> {
+  const d1 = await getD1Binding();
+  if (d1) return transitionWithD1(d1, input);
+  return transitionWithPrisma(db, input);
+}
+) END").bind();
+
   const statements = [
     d1.prepare(`
       UPDATE "Job"
       SET ${assignments.join(", ")}
       WHERE "id" = ? AND "status" = ?
+      ${technicianGuard}
       ${requestGuard}
     `).bind(...values),
   ];
