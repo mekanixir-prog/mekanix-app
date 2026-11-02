@@ -113,12 +113,23 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
 
   const addPart = async () => {
     if (!job || !partName.trim()) { toast.error(t("tech.jobDetail.errorPartName")); return; }
+    const quantity = Number(partQty);
+    const unitPrice = Number(partPrice || 0);
+    if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 1000) {
+      toast.error("تعداد باید عدد صحیح بین ۱ تا ۱۰۰۰ باشد");
+      return;
+    }
+    if (!Number.isSafeInteger(unitPrice) || unitPrice < 0) {
+      toast.error("قیمت قطعه باید عدد صحیح و نامنفی به ریال باشد");
+      return;
+    }
     setAddingPart(true);
     try {
       await api.addPart(job.id, {
         name: partName.trim(),
-        quantity: parseInt(partQty) || 1,
-        unitPrice: parseFloat(partPrice) || 0,
+        quantity,
+        unitPrice,
+        currency: "IRR",
       });
       const fresh = await api.getJob(job.id);
       setJob(fresh);
