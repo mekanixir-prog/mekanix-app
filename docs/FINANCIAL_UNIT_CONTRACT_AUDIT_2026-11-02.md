@@ -307,3 +307,47 @@ This section records the state of the open branches reviewed on 2026-11-02. Pass
 2. Add a constrained currency enum/check or eliminate per-row currency where the domain is strictly IRR-only; do not rely on a default string.
 3. Add regression tests that attempt to write fractional IRR and non-IRR currency values through every supported adapter.
 4. Classify existing demo rows separately from production/real records before any migration. Seed reset is not a substitute for production reconciliation.
+
+
+## Next implementation slice — canonical IRR contract (design gate, not runtime code)
+
+This is the next safe engineering unit. It defines the implementation boundary without changing how existing records are interpreted.
+
+### Proposed shared money module
+
+Create one server-safe module (proposed path: `src/lib/money/irr.ts`) with a deliberately small API:
+
+- `assertIrrInteger(value, context)`: accept only finite, non-negative (or explicitly signed where the caller permits it), safe integer IRR values; reject fractional, NaN, Infinity, and unsafe integers.
+- `parseIrrInput(value, context)`: parse only documented API representations and return an integer IRR; do not silently coerce arbitrary strings, decimals, or Toman.
+- `addIrr(...amounts)`: validate operands and reject overflow beyond JavaScript's safe-integer range.
+- `multiplyRatioIrr(amount, numerator, denominator, roundingPolicy)`: perform integer-safe ratio arithmetic and require an explicitly selected rounding policy; do not use floating-point multiplication for commission, tax, or percentages.
+- `formatIrr(amount, locale)`: presentation-only formatting of an already validated integer IRR. No FX rate, currency fallback, network request, or unit conversion.
+
+The module must not contain tariff constants, withdrawal limits, FX rates, Toman conversion, or business policy. Those belong to separately approved domain boundaries. CARE's Toman-to-IRR conversion must remain a named, explicit boundary function with its own tests, not a generic parser behavior.
+
+### Implementation order after this design gate
+
+1. Add the shared module and unit tests without changing existing routes or persisted data.
+2. Add tests around the current formatter and identify all call sites; do not switch production formatting until seed and historical data are classified.
+3. Introduce validation at API boundaries in shadow/test paths first, then migrate each writer only after its source unit is proven.
+4. Route invoice calculation through the approved pricing calculation only after all rate inputs and rounding rules are owner-approved.
+5. Align withdrawal UI, schema, API, and admin payout only after minimum/maximum IRR policy is supplied.
+6. Add adapter-specific database constraints only after verifying equivalent behavior for PostgreSQL and D1/SQLite and planning a reversible migration.
+
+### Required tests for the shared module
+
+- Accept positive integer IRR values including 0 only where the caller explicitly permits zero.
+- Reject fractional values (for example, 1250.5), negative values where prohibited, strings not in the documented API format, NaN, Infinity, and values above `Number.MAX_SAFE_INTEGER`.
+- Reject overflow in addition and intermediate multiplication.
+- Verify the selected percentage-rounding rule with values that produce fractional results; the rule must be documented and approved before tests are finalized.
+- Confirm formatting does not change the numeric amount and performs no FX lookup.
+- Confirm Toman is rejected by generic IRR parsing and is converted only by the explicit CARE boundary.
+- Run the same contract tests in the repository's supported Node, PostgreSQL, and D1/SQLite test environments where applicable.
+
+### Decisions deliberately not fabricated
+
+The following remain owner/business decisions and must not be encoded as guessed defaults: hourly labor rates, visit/inspection/travel fees, service and parts prices, VIP plan prices, tax treatment/rate, commission percentage and rounding, technician settlement of invoice proceeds, and withdrawal minimum/maximum. Existing code defaults and seed values are not approval evidence.
+
+### Current status
+
+This section is an implementation plan only. No shared module, tests, schema constraint, migration, route change, formatter change, or financial-data conversion has been committed by PR #74. The latest PR #74 head commit has four successful checks (CI, PostgreSQL CI, Production readiness, and Docker E2E); those checks validate the documentation branch and do not certify financial behavior.
