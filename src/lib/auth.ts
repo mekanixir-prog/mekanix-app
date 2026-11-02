@@ -316,6 +316,10 @@ export async function requireJobParticipant(session: Session, jobId: string): Pr
     if (!technician || job.technicianId !== technician.id) {
       return NextResponse.json({ error: "دسترسی به این کار مجاز نیست" }, { status: 403 });
     }
+  } else {
+    // Fleet and partner roles have no verified job-ownership relation in the
+    // current schema. Never treat an unrecognized role as a participant.
+    return NextResponse.json({ error: "دسترسی به این کار مجاز نیست" }, { status: 403 });
   }
   return null;
 }
