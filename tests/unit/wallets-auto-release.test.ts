@@ -147,7 +147,11 @@ describe("GET /api/wallets — atomic escrow release orchestration", () => {
       .mockResolvedValueOnce(wallet([stranded]))
       .mockResolvedValueOnce(wallet([repaired]))
       .mockResolvedValueOnce(wallet([released]));
-    mockWalletTransactionFindMany.mockResolvedValueOnce([stranded]).mockResolvedValueOnce([{ id: "txn-prepay" }]).mockResolvedValueOnce([]);
+    mockWalletTransactionFindMany.mockImplementation(async (args: any) => {
+      if (args.where?.holdUntil === null) return [stranded];
+      if (args.where?.holdUntil?.not === null && args.where?.holdUntil?.lte) return [{ id: "txn-prepay" }];
+      return [];
+    });
     mockJobFindMany.mockResolvedValue([{ id: "job-1", completedAt }]);
 
     const response = await GET(makeRequest());
