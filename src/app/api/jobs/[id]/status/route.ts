@@ -137,6 +137,49 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "فقط مکانیک مسئول این کار مجاز است" }, { status: 403 });
   }
 
+  if (status === "WAITING_APPROVAL" && extra.laborHours !== undefined &&
+      (typeof extra.laborHours !== "number" || !Number.isFinite(extra.laborHours) ||
+       extra.laborHours <= 0 || extra.laborHours > 24)) {
+    return NextResponse.json({ error: "مدت کار باید عددی بین ۰ تا ۲۴ ساعت باشد" }, { status: 400 });
+  }
+
+  const invoiceInput = status === "WAITING_APPROVAL" && !existing.invoice
+    ? (() => {
+        const laborHours = extra.laborHours ?? 1.5;
+        const laborRate = Number(existing.technician.hourlyRate);
+        const laborTotal = laborHours * laborRate;
+        const partsTotal = existing.parts.reduce(
+          (sum, part) => sum + Number(part.unitPrice) * part.quantity,
+          0,
+        );
+        const travelFee = Number(existing.technician.travelFeeBase);
+        const subtotal = laborTotal + partsTotal + travelFee;
+        const taxRate = 0.09;
+        const taxTotal = subtotal * taxRate;
+        return {
+          id: crypto.randomUUID(),
+          code: `INV-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`,
+          jobId: id,
+          laborHours,
+          laborRate,
+          laborTotal,
+          partsTotal,
+          travelFee,
+          subtotal,
+          taxRate,
+          taxTotal,
+          discount: 0,
+          total: subtotal + taxTotal,
+          currency: "IRR",
+          status: "SENT" as const,
+          notes: "Parts covered by 6-month warranty.",
+        };
+      })()
+    : null;
+  const holdUntil = status === "COMPLETED"
+    ? new Date(Date.now() + HOLD_HOURS * 60 * 60 * 1000)
+    : null;
+
   const updates: {
     startedAt?: Date;
     arrivedAt?: Date;
@@ -159,6 +202,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         : session.role === "TECHNICIAN" ? "TECHNICIAN"
         : session.role === "FLEET_MANAGER" ? "FLEET_MANAGER" : "CUSTOMER",
       actorTechnicianId: actorTechnician?.id ?? null,
+      invoice: invoiceInput,
+      holdUntil,
       currentStatus: existing.status as PrismaJobStatus,
       nextStatus: (status ?? existing.status) as PrismaJobStatus,
       updates,
@@ -182,34 +227,29 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // When job is COMPLETED, run all post-completion side effects sequentially
   // (D1 has no $transaction; earlier writes stay if a later one throws).
   if (status === "COMPLETED") {
-    // Start 12-hour hold countdown on PENDING prepay transactions
-    const holdUntil = new Date(Date.now() + HOLD_HOURS * 60 * 60 * 1000);
-    await db.walletTransaction.updateMany({
-      where: { jobId: job.id, status: "PENDING" },
-      data: { holdUntil },
-    });
-
-    // Create completion notification
-    await db.notification.create({
-      data: {
-        userId: cust.id,
-        type: "job_completed",
-        title: "کار تکمیل شد",
-        body: `${tech.name} کار را تکمیل کرد. فاکتور آماده بررسی است.`,
-        category: "job",
-        link: "customer/invoice",
-      },
-    });
-
-    // Create system message in chat
-    await db.message.create({
-      data: {
-        jobId: job.id,
-        fromUserId: tech.id,
-        kind: "system",
-        body: `کار تکمیل شد — ${job.code}`,
-      },
-    });
+    // Notifications and chat are best-effort after the financial state commit.
+    try {
+      await db.notification.create({
+        data: {
+          userId: cust.id,
+          type: "job_completed",
+          title: "کار تکمیل شد",
+          body: `${tech.name} کار را تکمیل کرد. فاکتور آماده بررسی است.`,
+          category: "job",
+          link: "customer/invoice",
+        },
+      });
+      await db.message.create({
+        data: {
+          jobId: job.id,
+          fromUserId: tech.id,
+          kind: "system",
+          body: `کار تکمیل شد — ${job.code}`,
+        },
+      });
+    } catch (error) {
+      console.error("[jobs/status] Completion notification failed:", error);
+    }
   } else {
     // Side-effects: notifications + system messages
     const notifMap: Record<string, { type: string; title: string; body: string; category: string; link: string }> = {
@@ -266,59 +306,30 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const notif = notifMap[status];
   if (notif) {
     const notifCategory = status === "REJECTED" ? "alert" : notif.category;
-    await db.notification.create({
-      data: {
-        userId: cust.id,
-        type: notif.type,
-        title: notif.title,
-        body: notif.body,
-        category: notifCategory,
-        link: notif.link,
-      },
-    });
-    await db.message.create({
-      data: {
-        jobId: job.id,
-        fromUserId: tech.id,
-        kind: "system",
-        body: notif.title,
-      },
-    });
+    try {
+      await db.notification.create({
+        data: {
+          userId: cust.id,
+          type: notif.type,
+          title: notif.title,
+          body: notif.body,
+          category: notifCategory,
+          link: notif.link,
+        },
+      });
+      await db.message.create({
+        data: {
+          jobId: job.id,
+          fromUserId: tech.id,
+          kind: "system",
+          body: notif.title,
+        },
+      });
+    } catch (error) {
+      console.error("[jobs/status] Status notification failed:", error);
+    }
   }
 
-  // Auto-create invoice on WAITING_APPROVAL if none exists
-  if (status === "WAITING_APPROVAL" && !job.invoice) {
-    const laborHours = extra.laborHours ?? 1.5;
-    const laborRate = Number(job.technician.hourlyRate);
-    const laborTotal = laborHours * laborRate;
-    const partsTotal = job.parts.reduce((s, p) => s + Number(p.unitPrice) * p.quantity, 0);
-    const travelFee = Number(job.technician.travelFeeBase);
-    const subtotal = laborTotal + partsTotal + travelFee;
-    const taxTotal = subtotal * 0.09;
-    const total = subtotal + taxTotal;
-    await db.invoice.create({
-      data: {
-        code: `INV-${Math.floor(3000 + Math.random() * 6000)}`,
-        jobId: job.id,
-        laborHours,
-        laborRate,
-        laborTotal,
-        partsTotal,
-        travelFee,
-        subtotal,
-        taxRate: 0.09,
-        taxTotal,
-        discount: 0,
-        total,
-        currency: "IRR",
-        status: "SENT",
-        notes: "Parts covered by 6-month warranty.",
-      },
-    });
-    const fresh = await db.job.findUnique({ where: { id }, include });
-    return NextResponse.json(fresh);
-  }
-  }
 
   return NextResponse.json(job);
 }
