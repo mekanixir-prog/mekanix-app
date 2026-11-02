@@ -46,9 +46,13 @@ function makeD1() {
     batch(items: Array<{ sql: string; values: unknown[] }>) {
       try {
         sqlite.exec("BEGIN");
-        const results = items.map(({ sql, values }) => {
-          const result = sqlite.prepare(sql).run(...(values as never[]));
-          return { meta: { changes: Number(result.changes) } };
+        const results = items.map(({ sql, values }, index) => {
+          try {
+            const result = sqlite.prepare(sql).run(...(values as never[]));
+            return { meta: { changes: Number(result.changes) } };
+          } catch (error) {
+            throw new Error(`D1 batch statement ${index + 1}/${items.length} failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+          }
         });
         sqlite.exec("COMMIT");
         return Promise.resolve(results);
