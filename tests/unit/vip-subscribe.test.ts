@@ -331,8 +331,10 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     });
     const res = await POST(req);
     expect(res.status).toBe(200);
-    const createArgs = mockUserVipSubscriptionCreate.mock.calls[0][0];
-    // Must use session.userId (user-1), NOT the spoofed body.userId
-    expect(createArgs.data.userId).toBe("user-1");
+    // The atomic writer receives session.userId, never the spoofed body.userId.
+    expect(mockCreateVipSubscriptionAtomically).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ userId: "user-1", planId: "plan-1", paymentId: "pay-1" }),
+    );
   });
 });
