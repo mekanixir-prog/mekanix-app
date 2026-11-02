@@ -73,6 +73,8 @@ describe("job status route delegates atomic state changes", () => {
       jobId: "job-1",
       requestId: "request-1",
       technicianId: "tech-1",
+      actorRole: "TECHNICIAN",
+      actorTechnicianId: "tech-1",
       currentStatus: "REQUESTED",
       nextStatus: "REJECTED",
       updates: {},
@@ -85,6 +87,8 @@ describe("job status route delegates atomic state changes", () => {
     expect(response.status).toBe(200);
     expect(mocks.transition).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
       requestId: "request-1",
+      actorRole: "CUSTOMER",
+      actorTechnicianId: null,
       nextStatus: "CANCELLED",
     }));
   });
@@ -93,6 +97,8 @@ describe("job status route delegates atomic state changes", () => {
     const response = await PATCH(makeRequest("ACCEPTED"), { params: Promise.resolve({ id: "job-1" }) });
     expect(response.status).toBe(200);
     expect(mocks.transition).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
+      actorRole: "TECHNICIAN",
+      actorTechnicianId: "tech-1",
       nextStatus: "ACCEPTED",
       updates: { startedAt: expect.any(Date) },
     }));
