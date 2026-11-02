@@ -3,7 +3,7 @@ import { getD1Binding } from "@/lib/idempotency";
 
 export class JobStatusConflictError extends Error {
   constructor() {
-    super("The job or linked service request changed before this transition could commit");
+    super("The job, technician assignment, or linked service request changed before this transition could commit");
     this.name = "JobStatusConflictError";
   }
 }
@@ -119,70 +119,59 @@ async function transitionWithD1(
     values.push(input.updates.customerApproved ? 1 : 0);
   }
 
-  let requestGuard = "";
   let technicianGuard = "";
+  let requestGuard = "";
   values.push(input.jobId, input.currentStatus);
   if (input.actorRole === "TECHNICIAN") {
     if (!input.actorTechnicianId) throw new JobStatusConflictError();
-    technicianGuard = 'AND "technicianId" = ?';
+    technicianGuard = ' AND "technicianId" = ?';
     values.push(input.actorTechnicianId);
   }
   if (isRequestTerminalTransition(input.nextStatus)) {
-    requestGuard = `
-      AND EXISTS (
-        SELECT 1 FROM "ServiceRequest" r
-        WHERE r."id" = ? AND r."matchedTechId" = ?
-      )
-    `;
+    requestGuard = ' AND EXISTS (SELECT 1 FROM "ServiceRequest" r WHERE r."id" = ? AND r."matchedTechId" = ?)';
     values.push(input.requestId, input.technicianId);
   }
 
+  // A zero-row CAS does not abort D1.batch by itself. The assertion is part
+  // of the same batch, so a failed required write rolls back the full batch.
   const assertOneChange = () =>
-    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '
-      UPDATE "Job"
-      SET ${assignments.join(", ")}
-      WHERE "id" = ? AND "status" = ?
-      ${technicianGuard}
-      ${requestGuard}
-    `).bind(...values),
+    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '$') END").bind();
+
+  const statements = [
+    d1.prepare(
+      'UPDATE "Job" SET ' + assignments.join(", ") +
+      ' WHERE "id" = ? AND "status" = ?' + technicianGuard + requestGuard
+    ).bind(...values),
     assertOneChange(),
   ];
 
   if (isRequestTerminalTransition(input.nextStatus)) {
-    statements.push(d1.prepare(`
-      UPDATE "ServiceRequest"
-      SET "status" = ?, "matchedTechId" = ?, "updatedAt" = ?
-      WHERE "id" = ? AND "matchedTechId" = ?
-        AND EXISTS (
-          SELECT 1 FROM "Job" j
-          WHERE j."id" = ? AND j."status" = ?
-        )
-    `).bind(
-      input.nextStatus === "REJECTED" ? "OPEN" : "CANCELLED",
-      input.nextStatus === "REJECTED" ? null : input.technicianId,
-      now,
-      input.requestId,
-      input.technicianId,
-      input.jobId,
-      input.nextStatus,
-    ));
-    statements.push(assertOneChange());
+    statements.push(
+      d1.prepare(
+        'UPDATE "ServiceRequest" SET "status" = ?, "matchedTechId" = ?, "updatedAt" = ?' +
+        ' WHERE "id" = ? AND "matchedTechId" = ?' +
+        ' AND EXISTS (SELECT 1 FROM "Job" j WHERE j."id" = ? AND j."status" = ?)'
+      ).bind(
+        input.nextStatus === "REJECTED" ? "OPEN" : "CANCELLED",
+        input.nextStatus === "REJECTED" ? null : input.technicianId,
+        now,
+        input.requestId,
+        input.technicianId,
+        input.jobId,
+        input.nextStatus,
+      ),
+      assertOneChange(),
+    );
   }
 
   if (isTechnicianReleaseTransition(input.nextStatus)) {
-    statements.push(d1.prepare(`
-      UPDATE "Technician"
-      SET "status" = 'ONLINE', "updatedAt" = ?
-      WHERE "id" = ? AND "status" = 'ON_JOB'
-        AND NOT EXISTS (
-          SELECT 1 FROM "Job" j
-          WHERE j."technicianId" = "Technician"."id"
-            AND j."status" IN (
-              'REQUESTED', 'ACCEPTED', 'EN_ROUTE', 'ARRIVED',
-              'DIAGNOSING', 'REPAIRING', 'WAITING_APPROVAL'
-            )
-        )
-    `).bind(now, input.technicianId));
+    statements.push(d1.prepare(
+      'UPDATE "Technician" SET "status" = \'ONLINE\', "updatedAt" = ?' +
+      ' WHERE "id" = ? AND "status" = \'ON_JOB\'' +
+      ' AND NOT EXISTS (SELECT 1 FROM "Job" j WHERE j."technicianId" = "Technician"."id"' +
+      ' AND j."status" IN (\'REQUESTED\', \'ACCEPTED\', \'EN_ROUTE\', \'ARRIVED\',' +
+      ' \'DIAGNOSING\', \'REPAIRING\', \'WAITING_APPROVAL\'))'
+    ).bind(now, input.technicianId));
   }
 
   try {
@@ -193,78 +182,6 @@ async function transitionWithD1(
     }
     throw error;
   }
-
-  // D1 batch is the transaction boundary. The route reloads the job with
-  // its relations after the commit.
-}
-
-export async function transitionJobStatusAtomically(
-  db: PrismaClient,
-  input: AtomicJobStatusInput,
-): Promise<void> {
-  const d1 = await getD1Binding();
-  if (d1) return transitionWithD1(d1, input);
-  return transitionWithPrisma(db, input);
-}
-) END").bind();
-
-  const statements = [
-    d1.prepare(`
-      UPDATE "Job"
-      SET ${assignments.join(", ")}
-      WHERE "id" = ? AND "status" = ?
-      ${technicianGuard}
-      ${requestGuard}
-    `).bind(...values),
-  ];
-
-  if (isRequestTerminalTransition(input.nextStatus)) {
-    statements.push(d1.prepare(`
-      UPDATE "ServiceRequest"
-      SET "status" = ?, "matchedTechId" = ?, "updatedAt" = ?
-      WHERE "id" = ? AND "matchedTechId" = ?
-        AND EXISTS (
-          SELECT 1 FROM "Job" j
-          WHERE j."id" = ? AND j."status" = ?
-        )
-    `).bind(
-      input.nextStatus === "REJECTED" ? "OPEN" : "CANCELLED",
-      input.nextStatus === "REJECTED" ? null : input.technicianId,
-      now,
-      input.requestId,
-      input.technicianId,
-      input.jobId,
-      input.nextStatus,
-    ));
-  }
-
-  if (isTechnicianReleaseTransition(input.nextStatus)) {
-    statements.push(d1.prepare(`
-      UPDATE "Technician"
-      SET "status" = 'ONLINE', "updatedAt" = ?
-      WHERE "id" = ? AND "status" = 'ON_JOB'
-        AND NOT EXISTS (
-          SELECT 1 FROM "Job" j
-          WHERE j."technicianId" = "Technician"."id"
-            AND j."status" IN (
-              'REQUESTED', 'ACCEPTED', 'EN_ROUTE', 'ARRIVED',
-              'DIAGNOSING', 'REPAIRING', 'WAITING_APPROVAL'
-            )
-        )
-    `).bind(now, input.technicianId));
-  }
-
-  const results = await d1.batch(statements);
-  if ((results[0]?.meta?.changes ?? 0) !== 1) {
-    throw new JobStatusConflictError();
-  }
-  if (isRequestTerminalTransition(input.nextStatus) &&
-      (results[1]?.meta?.changes ?? 0) !== 1) {
-    throw new JobStatusConflictError();
-  }
-
-  // D1 batch is the transaction boundary. The route reloads the job with
-  // its relations after the commit.
 }
 
 export async function transitionJobStatusAtomically(
