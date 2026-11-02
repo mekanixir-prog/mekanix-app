@@ -241,8 +241,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     },
     WAITING_APPROVAL: {
       type: "estimate_ready",
-      title: "Estimate ready for approval",
-      body: `Review and approve your repair estimate for ${job.code}`,
+      title: "Repair requires customer approval",
+      body: `Repair approval requested for ${job.code}. The final amount will appear after the invoice is issued.`,
       category: "job",
       link: "customer/invoice",
     },
