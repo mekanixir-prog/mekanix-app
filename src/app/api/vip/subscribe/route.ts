@@ -46,6 +46,13 @@ export async function POST(req: Request) {
 
   if (process.env.MEKANIX_VIP_PLAN_PRICES_IRR_VERIFIED !== "true") {
     return NextResponse.json(
+      { error: "واحد قیمت طرح‌های VIP هنوز تأیید نشده است", code: "VIP_PRICE_CURRENCY_UNVERIFIED" },
+      { status: 409 }
+    );
+  }
+
+  if (process.env.MEKANIX_VIP_PLAN_PRICES_IRR_VERIFIED !== "true") {
+    return NextResponse.json(
       { error: "قیمت طرح‌های VIP هنوز به‌صورت ریالی تأیید نشده است", code: "VIP_PRICE_CURRENCY_UNVERIFIED" },
       { status: 409 }
     );
