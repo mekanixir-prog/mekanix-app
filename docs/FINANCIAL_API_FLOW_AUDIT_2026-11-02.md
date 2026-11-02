@@ -401,3 +401,24 @@ The prepay writer, atomic Prisma/D1 implementations, wallet read/release path, a
 
 **No runtime code, schema, migration, seed row, historical wallet balance, or production configuration was changed by this wallet/prepay trace.**
 
+### 8.10 Job completion lifecycle and second invoice writer
+
+A further trace of `src/app/api/jobs/[id]/status/route.ts` resolved the prepay hold lifecycle and found a second direct invoice writer.
+
+- When a job transitions to `COMPLETED`, the route first commits the Job status update via `job.updateMany`. Only afterward, as a separate write, it updates all PENDING `WalletTransaction` rows for that job and sets `holdUntil = now + 12 hours`. The generic wallet reader can then release matured transactions.
+- **Correction to §8.9:** a completion-time hold-start path does exist; the prepay transaction is intentionally created with `holdUntil: null` and the job-completion route sets it. The remaining concern is that this hold assignment is a separate post-status write, not part of the same transaction/batch. If the later update fails after the job is marked COMPLETED, the PENDING prepay transaction can remain with `holdUntil: null` and will not satisfy the generic release predicate. Add reconciliation/retry or make the completion + hold scheduling safely atomic for each supported database.
+- When status becomes `WAITING_APPROVAL`, this route can create an invoice directly if one does not exist. It calculates labor as `extra.laborHours * technician.hourlyRate`, parts from `JobPart.unitPrice * quantity`, travel from `technician.travelFeeBase`, adds 9% tax, and writes `currency: "IRR"`.
+- This is a second invoice calculation path alongside `POST /api/invoices` and the CARE pricing engine. It does not call `src/lib/pricing.ts`, does not validate that labor hours/rates/part prices/travel are safe integer IRR, and directly copies the technician fee fields whose seed comments say USD into an invoice labelled IRR.
+- `laborHours` is accepted from the request body via `extra.laborHours ?? 1.5` in this route's flow; this code excerpt does not show a numeric range/integer validation before multiplying. Decimal labor totals may therefore be persisted under an IRR label, conflicting with the proposed integer-IRR canonical contract.
+- The 9% tax and direct arithmetic use JavaScript Number. The result is not rounded/validated as a safe integer before persistence.
+
+#### Release implications
+
+1. Consolidate invoice creation into one server-side pricing service that returns a versioned, integer-IRR snapshot; all invoice writers must use it.
+2. Reconcile technician fee units and JobPart price units before invoice creation; schema default `currency: "IRR"` is not a conversion.
+3. Validate labor hours, rates, quantities, and all derived totals at the server boundary; use decimal/integer-safe arithmetic and reject non-integral or unsafe IRR results.
+4. Make the job-completion hold scheduling retryable and observable. A COMPLETED job with a PENDING prepay transaction whose `holdUntil` is null should be a reconciliation alert, not a permanently stuck balance.
+5. Test failure between Job completion and hold assignment, then verify a safe retry sets the hold exactly once and does not double-credit or release funds early.
+
+**No runtime code, schema, migration, seed row, historical wallet balance, or production configuration was changed by this follow-up.**
+
