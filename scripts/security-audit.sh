@@ -58,13 +58,13 @@ echo ""
 
 # ─── 3. Debug endpoints in production code ───
 echo "3. Checking for debug endpoints..."
-DEBUG_CHECKS=$(grep -rn "NODE_ENV.*development\|process\.env\.NODE_ENV.*!==.*production" src/app/api/ 2>/dev/null | head -5 || true)
+DEBUG_CHECKS=$(grep -rnE "debugger[[:space:]]*;|/api/debug|ENABLE_DEBUG_ENDPOINT|DEBUG_ROUTE" src/app/api/ 2>/dev/null | head -5 || true)
 if [ -n "$DEBUG_CHECKS" ]; then
-  echo "⚠️  Debug checks found (verify they're properly guarded by NODE_ENV):"
+  echo "❌ Debug endpoint or debugger statement found:"
   echo "$DEBUG_CHECKS"
-  WARNINGS=$((WARNINGS + 1))
+  ERRORS=$((ERRORS + 1))
 else
-  echo "✅ No unguarded debug checks"
+  echo "✅ No debug endpoints or debugger statements found"
 fi
 echo ""
 
@@ -148,14 +148,20 @@ if command -v bun &> /dev/null; then
   BUN_AUDIT=$(bun audit 2>&1 || true)
   if echo "$BUN_AUDIT" | grep -qi "vulnerabilit"; then
     echo "⚠️  Dependency vulnerabilities found:"
-    echo "$BUN_AUDIT" | tail -10
-    WARNINGS=$((WARNINGS + 1))
+    echo "$BUN_AUDIT" | tail -15
+    if echo "$BUN_AUDIT" | grep -Eqi '^[[:space:]]*(critical|high):'; then
+      echo "❌ Critical/high dependency advisories block production readiness"
+      ERRORS=$((ERRORS + 1))
+    else
+      echo "⚠️  No critical/high advisories detected; moderate/low findings require documented risk acceptance"
+      WARNINGS=$((WARNINGS + 1))
+    fi
   else
     echo "✅ No known dependency vulnerabilities"
   fi
 else
-  echo "⚠️  bun not available, skipping dependency audit"
-  WARNINGS=$((WARNINGS + 1))
+  echo "❌ bun not available; dependency audit cannot be completed"
+  ERRORS=$((ERRORS + 1))
 fi
 echo ""
 
