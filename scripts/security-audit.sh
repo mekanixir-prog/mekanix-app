@@ -62,7 +62,7 @@ DEBUG_CHECKS=$(grep -rnE "debugger[[:space:]]*;|/api/debug|ENABLE_DEBUG_ENDPOINT
 if [ -n "$DEBUG_CHECKS" ]; then
   echo "❌ Debug endpoint or debugger statement found:"
   echo "$DEBUG_CHECKS"
-  ERRORS=$((ERRORS + 1))
+  ISSUES=$((ISSUES + 1))
 else
   echo "✅ No debug endpoints or debugger statements found"
 fi
@@ -148,13 +148,13 @@ if command -v bun &> /dev/null; then
   BUN_AUDIT=$(bun audit 2>&1 || true)
   if echo "$BUN_AUDIT" | grep -qi "vulnerabilit"; then
     echo "⚠️  Dependency vulnerabilities found:"
-    echo "$BUN_AUDIT" | tail -15
+    printf "%s\n" "$BUN_AUDIT"
     # Bun audit output may prefix severity lines with ANSI color codes or
     # package-tree glyphs, so do not anchor the severity match to column 1.
     AUDIT_SEVERITY_TEXT=$(printf "%s\n" "$BUN_AUDIT" | sed -E "s/\\x1B\\[[0-9;]*[[:alpha:]]//g" | tr "[:upper:]" "[:lower:]")
     if printf "%s\n" "$AUDIT_SEVERITY_TEXT" | grep -Eq "(^|[[:space:]])(critical|high):"; then
       echo "❌ Critical/high dependency advisories block production readiness"
-      ERRORS=$((ERRORS + 1))
+      ISSUES=$((ISSUES + 1))
     else
       echo "⚠️  No critical/high advisories detected; moderate/low findings require documented risk acceptance"
       WARNINGS=$((WARNINGS + 1))
@@ -164,7 +164,7 @@ if command -v bun &> /dev/null; then
   fi
 else
   echo "❌ bun not available; dependency audit cannot be completed"
-  ERRORS=$((ERRORS + 1))
+  ISSUES=$((ISSUES + 1))
 fi
 echo ""
 
