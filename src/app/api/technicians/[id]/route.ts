@@ -103,5 +103,5 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       specialties: true,
     },
   });
-  return NextResponse.json(updated);
+  return NextResponse.json({ ...updated, feesCurrencyVerified: process.env.MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED === "true" });
 }
