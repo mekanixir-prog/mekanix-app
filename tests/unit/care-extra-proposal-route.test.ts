@@ -8,9 +8,11 @@ const mocks = vi.hoisted(() => ({
   bookingFind: vi.fn(),
   notificationCreate: vi.fn(),
   createProposal: vi.fn(),
+  technicianFromSession: vi.fn(),
 }));
 
 vi.mock("@/lib/api-helpers", () => ({ requireAuth: mocks.auth }));
+vi.mock("@/lib/auth", () => ({ getTechnicianFromSession: mocks.technicianFromSession }));
 vi.mock("@/lib/care-auth", () => ({
   requireAssignedTechnician: mocks.assigned,
   isValidTransition: mocks.validTransition,
@@ -60,6 +62,7 @@ const validBody = {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.auth.mockResolvedValue({ userId: "technician-user", role: "TECHNICIAN" });
+  mocks.technicianFromSession.mockResolvedValue({ id: "technician-profile-1" });
   mocks.assigned.mockResolvedValue(null);
   mocks.validTransition.mockReturnValue(true);
   mocks.bookingFind.mockResolvedValue({
@@ -82,7 +85,9 @@ describe("CARE extra proposal route", () => {
     expect(mocks.createProposal).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
       bookingId: "booking-1",
       expectedBookingStatus: "INSPECTING",
+      actorRole: "TECHNICIAN",
       actorUserId: "technician-user",
+      actorTechnicianId: "technician-profile-1",
       proposal: expect.objectContaining({
         proposedItem: validBody.proposedItem,
         partPrice: 120_000,
