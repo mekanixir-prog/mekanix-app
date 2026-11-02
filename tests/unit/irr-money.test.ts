@@ -62,6 +62,11 @@ describe("canonical IRR money primitives", () => {
       expect(multiplyRatioIrr(5, 1, 2, "up")).toBe(3);
     });
 
+    it("retains precision for ratios near the safe-integer boundary", () => {
+      const max = Number.MAX_SAFE_INTEGER;
+      expect(multiplyRatioIrr(max, max - 1, max, "down")).toBe(max - 1);
+    });
+
     it("rejects invalid ratios and unsafe results", () => {
       expect(() => multiplyRatioIrr(100, 1, 0, "half-up")).toThrow();
       expect(() => multiplyRatioIrr(100, -1, 2, "half-up")).toThrow();
