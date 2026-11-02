@@ -95,6 +95,22 @@ describe("read-only offline reconciliation endpoints", () => {
     });
   });
 
+  it("hides committed withdrawal amount until wallet currency is verified", async () => {
+    vi.stubEnv("MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED", "false");
+    mocks.withdrawal.mockResolvedValue({
+      id: "wd-1", walletId: "wallet-1", code: "WD-1001", amount: 500,
+      status: "REQUESTED", requestedAt: new Date("2026-10-31T10:00:00Z"), processedAt: null,
+    });
+    mocks.withdrawalLedger.mockResolvedValue({ id: "ledger-1", referenceId: "wd-1", amount: -500 });
+    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      state: "COMMITTED",
+      currency: "UNVERIFIED",
+      withdrawal: { amount: null },
+    });
+  });
+
   it("does not report a withdrawal committed when its debit ledger row is missing", async () => {
     mocks.withdrawal.mockResolvedValue({
       id: "wd-1", walletId: "wallet-1", code: "WD-1001", amount: 500,
