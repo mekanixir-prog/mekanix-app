@@ -40,6 +40,7 @@ import { createSession } from "@/lib/auth";
 // pass for whatever JWT we mint via `createSession()`.
 
 const mockJobFindUnique = vi.fn();
+const mockJobUpdateMany = vi.fn();
 const mockCustomerFindUnique = vi.fn();
 const mockCustomerCreate = vi.fn();
 const mockTechnicianFindUnique = vi.fn();
@@ -60,7 +61,10 @@ const mockAdminUserFindFirst = vi.fn();
 
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: vi.fn(async () => ({
-    job: { findUnique: (...args: any[]) => mockJobFindUnique(...args) },
+    job: {
+      findUnique: (...args: any[]) => mockJobFindUnique(...args),
+      updateMany: (...args: any[]) => mockJobUpdateMany(...args),
+    },
     customer: {
       findUnique: (...args: any[]) => mockCustomerFindUnique(...args),
       create: (...args: any[]) => mockCustomerCreate(...args),
@@ -253,6 +257,90 @@ describe("B-4 [BOLA] — Technician A cannot mutate Technician B's job status", 
 
     expect(res.status).toBe(403);
     // requireJobParticipant returned 403 — body parse + db.job.updateMany never run.
+  });
+});
+
+// ============================================================================
+// Job status authorization and state-machine hardening
+// ============================================================================
+describe("Job status authorization hardening", () => {
+  it("denies FLEET_MANAGER until a verified fleet/job ownership relation exists", async () => {
+    const token = await mintUserToken("fleet-user", "FLEET_MANAGER");
+    mockJobFindUnique.mockReset().mockResolvedValue({
+      id: "job-1",
+      request: { customerId: "customer-1" },
+      technicianId: "tech-1",
+    });
+
+    const req = jsonReq(
+      "PATCH",
+      "http://localhost/api/jobs/job-1/status",
+      token,
+      { status: "CANCELLED" },
+    );
+    const res = await jobStatusPATCH(req, { params: Promise.resolve({ id: "job-1" }) });
+
+    expect(res.status).toBe(403);
+    expect(mockJobFindUnique).toHaveBeenCalledTimes(1);
+    expect(mockJobUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not let a customer approve an estimate and complete the job in one request", async () => {
+    const token = await mintUserToken("customer-user", "CUSTOMER");
+    mockCustomerFindUnique.mockReset().mockResolvedValue({ id: "customer-1", userId: "customer-user" });
+    mockJobFindUnique.mockReset()
+      .mockResolvedValueOnce({
+        id: "job-1",
+        request: { customerId: "customer-1" },
+        technicianId: "tech-1",
+      })
+      .mockResolvedValueOnce({ status: "WAITING_APPROVAL", technicianId: "tech-1" });
+
+    const req = jsonReq(
+      "PATCH",
+      "http://localhost/api/jobs/job-1/status",
+      token,
+      { status: "COMPLETED", customerApproved: true },
+    );
+    const res = await jobStatusPATCH(req, { params: Promise.resolve({ id: "job-1" }) });
+
+    expect(res.status).toBe(403);
+    expect(mockJobUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-boolean customerApproved values instead of coercing strings to true", async () => {
+    const token = await mintUserToken("customer-user", "CUSTOMER");
+    mockCustomerFindUnique.mockReset().mockResolvedValue({ id: "customer-1", userId: "customer-user" });
+    mockJobFindUnique.mockReset().mockResolvedValue({
+      id: "job-1",
+      request: { customerId: "customer-1" },
+      technicianId: "tech-1",
+    });
+
+    const req = jsonReq(
+      "PATCH",
+      "http://localhost/api/jobs/job-1/status",
+      token,
+      { customerApproved: "false" },
+    );
+    const res = await jobStatusPATCH(req, { params: Promise.resolve({ id: "job-1" }) });
+
+    expect(res.status).toBe(400);
+    expect(mockJobUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects unknown status values before attempting a database mutation", async () => {
+    const token = await mintUserToken("admin-user", "ADMIN");
+    const req = jsonReq(
+      "PATCH",
+      "http://localhost/api/jobs/job-1/status",
+      token,
+      { status: "NOT_A_JOB_STATUS" },
+    );
+    const res = await jobStatusPATCH(req, { params: Promise.resolve({ id: "job-1" }) });
+
+    expect(res.status).toBe(400);
+    expect(mockJobUpdateMany).not.toHaveBeenCalled();
   });
 });
 
