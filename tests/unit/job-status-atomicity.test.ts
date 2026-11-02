@@ -151,6 +151,28 @@ describe("atomic job status writer", () => {
     expect(tx.invoice.create).toHaveBeenCalledWith({ data: invoice });
   });
 
+  it("sets the escrow hold in the same transaction as job completion", async () => {
+    const holdUntil = new Date("2026-11-03T12:00:00.000Z");
+    const tx = {
+      job: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      walletTransaction: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      technician: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      serviceRequest: { updateMany: vi.fn() },
+    };
+    const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)) } as any;
+
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      currentStatus: "REPAIRING",
+      nextStatus: "COMPLETED",
+      holdUntil,
+    })).resolves.toBeUndefined();
+    expect(tx.walletTransaction.updateMany).toHaveBeenCalledWith({
+      where: { jobId: input.jobId, status: "PENDING" },
+      data: { holdUntil },
+    });
+  });
+
   it("uses one D1 batch for job, request, and technician updates", async () => {
     const statements: Array<{ sql: string; values: unknown[] }> = [];
     const d1 = {
