@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { createWithdrawalAtomically } from "@/lib/withdrawal-atomic";
+import { assertIrrInteger } from "@/lib/money/irr";
 
 export async function POST(req: Request) {
   const session = await requireAuth(req);
@@ -35,8 +36,13 @@ export async function POST(req: Request) {
   const idempotencyKey = (req.headers.get("idempotency-key") ||
     (typeof body.idempotencyKey === "string" ? body.idempotencyKey : "")).trim();
 
-  if (!Number.isFinite(amount) || amount <= 0 || amount > 10_000) {
-    return NextResponse.json({ error: "مبلغ نامعتبر است" }, { status: 400 });
+  if (body.currency !== "IRR") {
+    return NextResponse.json({ error: "واحد برداشت باید ریال ایران (IRR) باشد" }, { status: 400 });
+  }
+  try {
+    assertIrrInteger(amount, "Withdrawal amount", { allowZero: false });
+  } catch {
+    return NextResponse.json({ error: "مبلغ برداشت باید عدد صحیح و مثبت به ریال باشد" }, { status: 400 });
   }
   if (!idempotencyKey || idempotencyKey.length < 8 || idempotencyKey.length > 128) {
     return NextResponse.json(
