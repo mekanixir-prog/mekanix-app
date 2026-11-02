@@ -100,7 +100,7 @@ describe("atomic escrow release D1 SQLite integration", () => {
 
   it("does not mark the transaction AVAILABLE or write a ledger row when pending balance is insufficient", async () => {
     const { sqlite, d1 } = makeD1(); databases.push(sqlite); seed(sqlite, 200);
-    expect(await releaseWalletTransactionWithD1(d1 as never, "wallet-1", "txn-1", new Date("2026-10-30T10:00:00.000Z"))).toBe(false);
+    await expect(releaseWalletTransactionWithD1(d1 as never, "wallet-1", "txn-1", new Date("2026-10-30T10:00:00.000Z"))).rejects.toThrow();
     expect(sqlite.prepare('SELECT "balance", "pendingBalance" FROM "Wallet" WHERE "id" = ?').get("wallet-1")).toEqual({
       balance: 2000, pendingBalance: 200,
     });
@@ -114,7 +114,7 @@ describe("atomic escrow release D1 SQLite integration", () => {
     sqlite.prepare('INSERT INTO "WalletTransaction" ("id", "walletId", "netAmount", "status", "holdUntil") VALUES (?, ?, ?, ?, ?)').run(
       "txn-negative", "wallet-1", -100, "PENDING", "2026-10-30T09:00:00.000Z"
     );
-    expect(await releaseWalletTransactionWithD1(d1 as never, "wallet-1", "txn-negative", new Date("2026-10-30T10:00:00.000Z"))).toBe(false);
+    await expect(releaseWalletTransactionWithD1(d1 as never, "wallet-1", "txn-negative", new Date("2026-10-30T10:00:00.000Z"))).rejects.toThrow();
     expect(sqlite.prepare('SELECT "balance", "pendingBalance" FROM "Wallet" WHERE "id" = ?').get("wallet-1")).toEqual({
       balance: 2000, pendingBalance: 1000,
     });
