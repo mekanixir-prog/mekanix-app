@@ -91,7 +91,7 @@ export function AdminOverview() {
                   <MekIcon name={iconForCategory(c.category)} className="size-3 text-amber" />
                   {t(`cat.${c.category}`, c.category.replace("-", " "))}
                 </span>
-                <span className="text-muted-foreground">{fmtNum(c.count)} · {money(c.revenue)}</span>
+                <span className="text-muted-foreground">{fmtNum(c.count)} · {money(c.invoicedAmount, c.currency)}</span>
               </div>
             ))}
           </div>
