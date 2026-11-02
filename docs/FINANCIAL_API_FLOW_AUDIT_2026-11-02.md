@@ -276,3 +276,14 @@ Consequently, a clean seed run is not evidence of an IRR-correct demo dataset. S
 
 **No runtime formatter, seed, schema, migration, or historical record was changed by this trace.**
 
+### 8.5 Exchange-rate endpoint adds a second display instability
+
+The exchange-rate endpoint was inspected after tracing the hook:
+
+- `src/app/api/exchange-rate/route.ts` prefers a Telegram-stored rate, then calls `open.er-api.com/v6/latest/USD`, then falls back to a hard-coded `6,000,000` IRR per USD.
+- `src/lib/format.ts` initializes its in-memory rate to `60,000`, while the endpoint's final fallback is `6,000,000`. If the endpoint falls through to its fallback, the displayed multiplier changes by 100× after `useT()` fetches it.
+- The endpoint also applies an admin-configured multiplier and caches its result for 60 seconds. The hook refreshes every five minutes.
+- The formatter's live-rate dependency therefore creates both a unit-contract defect and a visible timing/rate discontinuity. This is not an acceptable way to render persisted Iranian Rial amounts.
+
+**Required separation:** keep foreign-exchange rates in a dedicated FX/market-data feature for explicit USD↔IRR conversions only. Remove FX-rate fetching from the general-purpose money display hook only after all consumers have migrated to explicit unit-aware formatters. Do not repurpose or silently change the FX endpoint as part of the formatter fix.
+
