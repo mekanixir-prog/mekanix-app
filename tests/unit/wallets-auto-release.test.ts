@@ -170,18 +170,38 @@ describe("GET /api/wallets — atomic escrow release orchestration", () => {
     expect(payload.earningsSummary.currency).toBe("IRR");
   });
 
-  it("marks legacy wallet currency as unverified by default", async () => {
+  it("does not mutate escrow or expose legacy amounts while wallet currency is unverified", async () => {
     vi.stubEnv("MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED", "false");
+    const legacy: any = wallet([{
+      id: "txn-legacy",
+      grossAmount: 1200,
+      commissionAmount: 120,
+      netAmount: 1080,
+      status: "PENDING",
+      holdUntil: new Date(Date.now() - 60_000),
+    }]);
+    legacy.withdrawals = [{ id: "wd-legacy", amount: 500 }];
     mockWalletFindUnique
-      .mockResolvedValueOnce(wallet())
-      .mockResolvedValueOnce(wallet());
+      .mockResolvedValueOnce(legacy)
+      .mockResolvedValueOnce(legacy);
+
     const response = await GET(makeRequest());
     const payload = await response.json();
     expect(response.status).toBe(200);
     expect(payload.currency).toBe("UNVERIFIED");
+    expect(payload.balance).toBeNull();
+    expect(payload.pendingBalance).toBeNull();
+    expect(payload.transactions[0]).toMatchObject({
+      grossAmount: null,
+      commissionAmount: null,
+      netAmount: null,
+    });
+    expect(payload.withdrawals[0].amount).toBeNull();
     expect(payload.earningsSummary.currency).toBe("UNVERIFIED");
     expect(payload.earningsSummary.valid).toBe(false);
     expect(payload.earningsSummary.todayIrr).toBeNull();
+    expect(mockWalletTransactionUpdateMany).not.toHaveBeenCalled();
+    expect(mockReleaseWalletTransaction).not.toHaveBeenCalled();
   });
 
   it("builds earnings summaries only from released positive net IRR ledger entries", async () => {
