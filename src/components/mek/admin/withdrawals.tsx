@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { isValidIranianSheba } from "@/lib/iranian-iban";
 
 type Row = {
-  id: string; code: string; amount: number | string; method: string;
+  id: string; code: string; amount: number | string | null; currency: string; method: string;
   cardNumber: string | null; bankName: string | null; shebaNumber: string | null;
   status: "REQUESTED" | "APPROVED" | "PAID" | "REJECTED"; requestedAt: string;
   adminNotes: string | null; txnId: string | null;
@@ -74,7 +74,7 @@ export function AdminWithdrawals() {
                 <p className="mt-1 font-semibold">{row.wallet?.technician?.user?.name ?? "—"}</p>
                 <p className="text-xs text-muted-foreground">{fmtDateTime(row.requestedAt, lang)} · {t(`pay.${row.method}`, row.method)}</p>
               </div>
-              <p className="font-bold tabular-nums text-amber">{money(Number(row.amount))}</p>
+              <p className="font-bold tabular-nums text-amber">{row.currency === "IRR" && row.amount !== null ? money(Number(row.amount), "IRR") : (isFa ? "نیازمند تطبیق واحد پول" : "Currency reconciliation required")}</p>
             </div>
             <div className="mt-3 rounded-lg bg-muted/40 p-3 text-xs">
               <p>{t("admin.withdrawals.destination")}: {row.method === "bank" ? row.shebaNumber || "—" : row.cardNumber || "—"}</p>
@@ -84,12 +84,12 @@ export function AdminWithdrawals() {
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {row.status === "REQUESTED" && <>
-                <Button size="sm" disabled={busy === row.id} onClick={() => act(row, "APPROVED")}>{t("admin.withdrawals.approve")}</Button>
-                <Button size="sm" variant="destructive" disabled={busy === row.id} onClick={() => act(row, "REJECTED")}>{t("admin.withdrawals.reject")}</Button>
+                <Button size="sm" disabled={busy === row.id || row.currency !== "IRR"} onClick={() => act(row, "APPROVED")}>{t("admin.withdrawals.approve")}</Button>
+                <Button size="sm" variant="destructive" disabled={busy === row.id || row.currency !== "IRR"} onClick={() => act(row, "REJECTED")}>{t("admin.withdrawals.reject")}</Button>
               </>}
               {row.status === "APPROVED" && <>
                 {row.method === "bank" && isValidIranianSheba(row.shebaNumber) ? (
-                  <Button size="sm" disabled={busy === row.id} onClick={() => act(row, "PAID")}>{busy === row.id ? t("common.loading") : t("admin.withdrawals.markPaid")}</Button>
+                  <Button size="sm" disabled={busy === row.id || row.currency !== "IRR"} onClick={() => act(row, "PAID")}>{busy === row.id ? t("common.loading") : t("admin.withdrawals.markPaid")}</Button>
                 ) : (
                   <p className="w-full text-xs text-muted-foreground">{t("admin.withdrawals.destinationRequired")}</p>
                 )}
