@@ -340,3 +340,38 @@ The gateway and withdrawal server paths were inspected after the UI pass:
 
 **Correction to §8.6:** the gateway API's current simulator persistence contract is explicitly IRR, even though the component prop comment says USD. The unresolved issue is the disagreement between the UI annotation, client-controlled development amount, and production-provider requirements—not an unknown currency value on the current simulator log/payment rows.
 
+### 8.8 Dashboard and payment-ledger aggregation trace
+
+The dashboard API, payment admin screen, technician dashboard, technician earnings screen, payment schema, and invoice payment writer were inspected together.
+
+| Path | Current calculation / display | Financial correctness issue |
+|---|---|---|
+| `src/app/api/dashboard/route.ts` | `revenue30d` sums every SUCCEEDED payment amount created in the last 30 days. Daily series repeats the same unfiltered sum. | No `currency` predicate or normalization is applied. A mixed-currency dataset is arithmetically aggregated. The endpoint also labels the result as revenue without defining gross/net, refunds, or settlement basis. |
+| Same dashboard API: category revenue | Sums linked invoice totals for all service requests in each category. | Does not filter invoice status, payment status, or currency; it is billed/invoiced value, not necessarily realized revenue. |
+| Same dashboard API: technician performance | Sums all SUCCEEDED payments linked to invoices for a technician. | No currency filter; gross customer payments are labelled technician revenue/performance, not technician wallet net. |
+| `src/components/mek/admin/payments.tsx` | Sums all rows with status SUCCEEDED and formats each amount with `money()`. | The component receives `Payment.currency` through the Prisma type but ignores it both in row formatting and total/average. The admin total can combine unlike currencies. |
+| `src/components/mek/technician/dashboard.tsx` | Derives “today” from the first two completed jobs and “week” from every completed job returned by `listJobs`. | The code itself calls this a mock. It does not filter by date; “today” is not actually today and “week” is not actually this week. It sums invoice totals (customer gross), not wallet net earnings. |
+| `src/components/mek/technician/earnings.tsx` | Wallet KPIs use Wallet fields; 14-day chart instead sums payment amounts from completed-job invoice payments. | The chart is based on customer payment gross, while the adjacent KPIs are wallet balances/net/commission. The same “earned/revenue” visual grouping mixes different financial meanings. Payment currency is not checked in the chart. |
+| `src/app/api/payments/route.ts` | New payment amount and currency are copied from `inv.total` and `inv.currency`. | The normal writer preserves invoice currency, which is good, but downstream aggregators ignore it. The notification body still renders a dollar sign with the invoice total, contradicting an IRR invoice. The simulator is production-blocked. |
+| `prisma/schema.prisma` Payment | `amount Decimal`, `currency String @default("IRR")`. | Currency is stored per payment, but no enum/check constraint or repository-wide invariant enforces IRR-only domestic payments. A default does not validate legacy or explicitly supplied values. |
+
+#### Additional verified issues
+
+1. **Admin payments total is not currency-safe.** The API returns Payment rows with their currency field, but the UI reduces all successful amounts together and formats each with the locale-driven `money()`. A non-IRR row would be silently included in an IRR-looking total.
+2. **Platform dashboard revenue is not currency-safe.** `/api/dashboard` sums successful payment amounts without `currency: "IRR"` and does the same for each daily bucket and technician-performance bucket. If MEKANIX is to be IRR-only, reject/quarantine non-IRR domestic payment rows at write/read boundaries rather than silently mixing them.
+3. **Category “revenue” is actually invoice value.** It sums invoice totals regardless of invoice/payment state; unpaid, refunded, or draft/overdue invoice values may be counted. Rename the metric to invoiced amount or calculate collected revenue from succeeded payments with a defined refund policy.
+4. **Technician gross/net semantics are mixed.** Admin performance and technician dashboard use customer-side invoice/payment gross, while wallet `totalEarned` and `netAmount` are technician-side amounts after commission. Do not call gross invoice value “technician earnings”.
+5. **Technician dashboard date labels are incorrect.** The source comments say “mock today/week earnings”; today is the first two completed jobs in the returned list and week is all completed jobs. Replace with server-authoritative time-windowed wallet ledger aggregates, or label as lifetime/sample totals until that exists.
+6. **Technician earnings chart is a different measure from wallet KPIs.** It plots payment amounts, while wallet cards show balance/pending/net/commission. The graph must use the same ledger definition as the selected KPI (for example, net earnings credited/released) and the same explicit IRR unit.
+7. **Payment notification has a hard-coded dollar sign.** `src/app/api/payments/route.ts` emits a dollar sign before the invoice total even though the persisted payment copies the invoice currency and the product requirement is IRR.
+
+#### Required dashboard contract before release
+
+- Define separate server metrics: `collectedGrossIrr` (successful customer payments, net of explicitly handled refunds), `invoicedIrr` (invoice totals by invoice status), `technicianNetEarnedIrr` (wallet ledger net credits), `commissionIrr`, and `withdrawnIrr`.
+- All sums must be computed from canonical integer-IRR ledger values, with explicit currency filtering/validation. Unknown or non-IRR rows must not enter an IRR aggregate.
+- Date-window metrics must filter on the business event timestamp chosen for the metric (payment created/settled, invoice issued, wallet released), not on a convenient unrelated timestamp.
+- Dashboard response types must include metric names and currency/unit metadata; frontend must not infer the unit from language.
+- Add fixtures for IRR-only, mixed-currency, refunded, unpaid, and technician commission cases. Assert that mixed/unknown currencies cannot inflate IRR KPIs and that gross customer payments differ from technician net earnings where commission applies.
+
+**No runtime code, schema, migrations, seed rows, financial history, or production settings were modified by this dashboard trace.**
+
