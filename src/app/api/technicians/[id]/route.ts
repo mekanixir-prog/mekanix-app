@@ -38,7 +38,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     },
   });
   if (!tech) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(tech);
+  const feesCurrencyVerified = process.env.MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED === "true";
+  return NextResponse.json({ ...tech, feesCurrencyVerified });
 }
 
 // PATCH /api/technicians/[id]
