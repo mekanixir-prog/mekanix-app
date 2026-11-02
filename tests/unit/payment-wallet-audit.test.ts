@@ -793,7 +793,7 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
         vipSubscribePOST(req2),
       ]);
 
-      expect(mockUserVipSubscriptionCreate).toHaveBeenCalledTimes(2);
+      expect(mockCreateVipSubscriptionAtomically).toHaveBeenCalledTimes(2);
       expect([res1.status, res2.status].sort()).toEqual([200, 409]);
     }
   );
