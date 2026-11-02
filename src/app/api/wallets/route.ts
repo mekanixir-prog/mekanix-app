@@ -70,7 +70,7 @@ export async function GET(req: Request) {
     const completedAtByJob = new Map(
       completedJobs
         .filter((job) => job.completedAt !== null)
-        .map((job) => [job.id, job.completedAt as Date])
+        .map((job) => [job.id, job.completedAt as Date] as const)
     );
 
     for (const transaction of strandedPrepay) {
