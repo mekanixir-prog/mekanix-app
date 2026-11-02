@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
-import { calculatePrice, type PricingBreakdown } from "@/lib/pricing";
+import { calculatePrice, isProductionPricingApproved, type PricingBreakdown } from "@/lib/pricing";
 import { addIrr, assertIrrInteger } from "@/lib/money/irr";
 
 const FULL_INCLUDE = {
@@ -113,6 +113,13 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { error: "قیمت یا تعداد یکی از قطعات معتبر نیست؛ مبلغ باید عدد صحیح ریالی باشد" },
       { status: 400 }
+    );
+  }
+
+  if (!isProductionPricingApproved()) {
+    return NextResponse.json(
+      { error: "تعرفه‌های ریالی هنوز به تأیید مالک کسب‌وکار نرسیده‌اند؛ صدور فاکتور در محیط تولید موقتاً غیرفعال است", code: "IRR_RATE_CARD_NOT_APPROVED" },
+      { status: 409 }
     );
   }
 
