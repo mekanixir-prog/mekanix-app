@@ -47,7 +47,15 @@ function makeD1() {
       try {
         sqlite.exec("BEGIN");
         const results = items.map(({ sql, values }) => {
-          const result = sqlite.prepare(sql).run(...(values as never[]));
+          const statement = sqlite.prepare(sql);
+          if (/^\\s*SELECT CASE/i.test(sql)) {
+            // D1 returns SELECT rows without changing SQLite's changes() state.
+            // Use .get() here; node:sqlite .run() would reset the counter and
+            // make the following conditional statement diverge from D1.
+            const result = statement.get(...(values as never[]));
+            return { meta: { changes: 0 }, results: [result] };
+          }
+          const result = statement.run(...(values as never[]));
           return { meta: { changes: Number(result.changes) } };
         });
         sqlite.exec("COMMIT");
