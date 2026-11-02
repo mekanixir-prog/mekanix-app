@@ -182,6 +182,49 @@ describe("atomic job status writer", () => {
     expect(statements[4].sql).toContain('UPDATE "Technician"');
   });
 
+  it("inserts the invoice and asserts it inside the same D1 batch", async () => {
+    const statements: Array<{ sql: string; values: unknown[] }> = [];
+    const d1 = {
+      prepare: (sql: string) => ({
+        bind: (...values: unknown[]) => {
+          statements.push({ sql, values });
+          return { sql, values };
+        },
+      }),
+      batch: vi.fn(async (_statements: unknown[]) => []),
+    };
+    mocks.getD1Binding.mockResolvedValue(d1);
+    const invoice = {
+      id: "invoice-1",
+      code: "INV-123456789ABC",
+      jobId: input.jobId,
+      laborHours: 1.5,
+      laborRate: 15,
+      laborTotal: 22.5,
+      partsTotal: 10,
+      travelFee: 3,
+      subtotal: 35.5,
+      taxRate: 0.09,
+      taxTotal: 3.195,
+      discount: 0,
+      total: 38.695,
+      currency: "IRR",
+      status: "SENT" as const,
+      notes: "Parts covered by 6-month warranty.",
+    };
+
+    await expect(transitionJobStatusAtomically({} as any, {
+      ...input,
+      nextStatus: "WAITING_APPROVAL",
+      invoice,
+    })).resolves.toBeUndefined();
+
+    expect(d1.batch.mock.calls[0][0]).toHaveLength(4);
+    expect(statements[2].sql).toContain('INSERT INTO "Invoice"');
+    expect(statements[2].values).toContain("invoice-1");
+    expect(statements[3].sql).toContain("json_extract");
+  });
+
   it("does not release a technician for non-terminal status changes", async () => {
     const d1 = {
       prepare: (sql: string) => ({ bind: (...values: unknown[]) => ({ sql, values }) }),
