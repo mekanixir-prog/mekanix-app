@@ -72,6 +72,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
   const requestedWithdrawalStatus = body.status;
   const requestedWithdrawalAdminNotes = body.adminNotes;
   const requestedWithdrawalReference = body.transactionReference;
+  const requestedPaymentStatus = body.status;
   if (resource === "customers" && requestedUserStatus !== undefined) {
     if (
       typeof requestedUserStatus !== "string" ||
@@ -256,16 +257,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
       // Notifications are best-effort and cannot undo a committed financial action.
     }
   } else if (resource === "payments") {
-    if (body.status === "REFUNDED") {
+    if (requestedPaymentStatus === "REFUNDED") {
       return NextResponse.json(
         { error: "ثبت بازپرداخت بدون گردش بازپرداخت و تطبیق فاکتور مجاز نیست", code: "REFUND_FLOW_NOT_IMPLEMENTED" },
         { status: 409 }
       );
     }
     const allowed = RESOURCE_ALLOWED_FIELDS.payments ?? ALLOWED_FIELDS.review;
-    const safe = sanitizeInput(body, allowed);
-    // Validate payment status if provided
-    if (typeof body.status === "string" && !(VALID_PAYMENT_STATUSES as readonly string[]).includes(body.status)) {
+    const safe = sanitizeInput({ ...body, status: requestedPaymentStatus }, allowed);
+    // Validate the original requested status: the global mass-assignment filter
+    // removes status from body before this resource-specific admin policy runs.
+    if (typeof requestedPaymentStatus === "string" && !(VALID_PAYMENT_STATUSES as readonly string[]).includes(requestedPaymentStatus)) {
       return NextResponse.json(
         { error: `status باید یکی از ${VALID_PAYMENT_STATUSES.join("، ")} باشد` },
         { status: 400 }
