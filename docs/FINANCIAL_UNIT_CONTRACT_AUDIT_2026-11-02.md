@@ -130,3 +130,51 @@ This means that simply removing the USD-to-IRR display multiplier would make see
 ### Product pricing decision still needed
 
 The IRR-only unit is settled. Actual business prices are not. The repository's existing small seed numbers must not be treated as approved Iranian market prices. Until the product owner supplies or approves a pricing schedule, use test fixtures clearly labelled as synthetic and do not enable real financial flows.
+
+
+## Follow-up source trace — invoice, payment, VIP, CARE, and wallet
+
+The following findings were confirmed by reading the current `main` source after the initial audit. They are documentation findings only; no runtime behavior has been changed by this audit PR.
+
+### Invoice calculation has a separate legacy path
+
+- `src/lib/pricing.ts` declares an IRR-only pricing engine, uses Decimal arithmetic, and rounds calculated monetary results to integer IRR.
+- `src/app/api/invoices/route.ts` does **not** call that pricing engine. It calculates invoices directly from `Technician.hourlyRate`, `Part.unitPrice`, and `Technician.travelFeeBase`.
+- That route uses JavaScript `number` arithmetic for labor, parts, travel, tax, and total, then persists the result with `currency: "IRR"`; no integer-IRR rounding/validation is performed there.
+- The current seed writes technician hourly rates such as 52–90 and parts prices such as 340/28, while the invoice route labels the derived total IRR. These values must be reclassified before the invoice writer can be trusted.
+- Required fix: route every invoice calculation through one approved pricing contract (or an explicitly shared integer-IRR calculation module), reject non-integer IRR results at the persistence boundary, and remove duplicate legacy pricing logic. Do not simply connect the current pricing engine until its approved rate schedule and input units are confirmed.
+
+### Payment lifecycle is not live and still contains dollar semantics
+
+- `src/app/api/payments/route.ts` is a development-only simulator: it returns 404 in production and randomly reports success 95% of the time in non-production.
+- The simulated payment notification text still renders the invoice amount with a dollar sign (`${inv.total}`), despite the invoice currency field being IRR.
+- `src/lib/payment-provider.ts` declares provider amounts as IRR, but `getPaymentProviderStatus()` explicitly reports `integrationWired: false`; the adapter is not connected to an authoritative initiate → persisted attempt → callback verification → payment/ledger lifecycle.
+- The simulator's verification result returns amount 0. It must never be treated as a verified financial amount.
+- Required fix: wire a persisted IRR payment attempt to the provider, verify against the exact stored integer IRR amount, compare provider-returned amount/currency where supported, and only then mark the invoice/payment fulfilled. Keep production fail-closed until this is complete.
+
+### VIP subscription validation needs a currency equality check
+
+- `src/app/api/vip/subscribe/route.ts` is also hidden in production pending real gateway integration.
+- In development, it checks that the payment belongs to the user, has status `SUCCEEDED`, and that `payment.amount >= plan.priceIrr`; it does not explicitly require `payment.currency === "IRR"`, nor exact amount equality for the selected plan.
+- Required fix: require IRR currency and an integer amount, bind the payment to the intended VIP plan/purpose, and validate the exact payable amount under the approved plan/proration rules. A generic payment that happens to be numerically large enough must not activate VIP.
+
+### CARE extra proposals cross a Toman-labelled boundary without conversion
+
+- `src/app/api/care/bookings/[id]/extra-proposal/route.ts` accepts `partPrice` and `laborPrice` from the request body and persists their arithmetic result directly.
+- The customer notification labels that result as Toman. The handler does not validate safe integer Toman inputs, nor convert the amount to IRR before persisting it.
+- Required fix: define the CARE proposal contract explicitly as integer Toman only if that is the intended technician-facing input; validate it, convert exactly once using `Toman × 10 = IRR` at the approved invoice/payment boundary, and test that no proposal amount is charged or credited before conversion. If the API contract is changed to IRR, update every client and label together instead.
+
+### Wallet movement is atomic, but atomicity does not prove the unit
+
+- The withdrawal helper and escrow-release helper use transactional Prisma operations or D1 batches to keep wallet aggregate changes, withdrawal/ledger records, and escrow status transitions consistent.
+- These are useful integrity controls, but they currently move the numeric amount as supplied. They do not establish whether the amount represents IRR, USD-base units, or legacy demo values.
+- Required fix: preserve the atomic operations while adding integer-IRR validation at their shared boundaries; reconcile `Wallet`, `WalletTransaction`, `WalletLedger`, and `WithdrawalRequest` before any historical data conversion.
+
+### New release gates
+
+1. Unify invoice creation with the approved integer-IRR pricing engine and prove that every source rate/part price is IRR.
+2. Require `currency === "IRR"` and integer-safe amounts for VIP/payment fulfillment.
+3. Keep payment and VIP production routes disabled until the provider lifecycle is integrated and verified end-to-end.
+4. Make CARE's Toman input/output contract explicit and test the single conversion boundary.
+5. Retain wallet atomicity, but add unit and integer validation before any debit, credit, release, or payout.
+6. Add regression tests that fail on dollar symbols, USD-base thresholds, non-IRR currencies, fractional IRR, unconverted CARE Toman, or invoice calculations that bypass the canonical pricing module.
