@@ -68,13 +68,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       allowedUpdates.status = "SENT";
     } else if (body.status === "CANCELLED") {
       const settledPayment = inv.payment?.status === "SUCCEEDED" || inv.payment?.status === "REFUNDED";
-      if (["PAID", "REFUNDED"].includes(inv.status) || settledPayment) {
-        return NextResponse.json(
-          { error: "فاکتور دارای پرداخت نهایی است؛ لغو آن بدون فرایند بازپرداخت مجاز نیست" },
-          { status: 409 }
-        );
-      }
-      allowedUpdates.status = "CANCELLED";
+      return NextResponse.json(
+        {
+          error: ["PAID", "REFUNDED"].includes(inv.status) || settledPayment
+            ? "فاکتور دارای پرداخت نهایی است؛ لغو آن بدون فرایند بازپرداخت مجاز نیست"
+            : "لغو فاکتور هنوز در گردش وضعیت دیتابیس پشتیبانی نمی‌شود",
+        },
+        { status: 409 }
+      );
     } else {
       return NextResponse.json(
         { error: "تغییر وضعیت فاکتور مجاز نیست — برای پرداخت از /api/payments استفاده کنید" },
