@@ -179,11 +179,13 @@ describe("CARE extra proposal atomic writer", () => {
     expect(statements[0].values).toContain("technician-profile-1");
     expect(statements[0].sql).toContain('"idempotencyKey"');
     expect(statements[2].sql).toContain('UPDATE "ServiceBooking"');
-    expect(statements[2].sql).toContain('assigned."technicianId" = ?');
+    expect(statements[2].sql).toContain('"technicianId" = ?');
     expect(statements[4].sql).toContain('INSERT INTO "Finding"');
     expect(statements[6].sql).toContain('INSERT INTO "CustomerApproval"');
     expect(statements[1].sql).toContain("json_extract");
     expect(statements[3].sql).toContain("json_extract");
+    expect(statements[5].sql).toContain("json_extract");
+    expect(statements[7].sql).toContain("json_extract");
   });
 
   it("rejects a stale D1 booking without committing dependent rows", async () => {
