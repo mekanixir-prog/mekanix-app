@@ -194,18 +194,6 @@ beforeEach(() => {
     isGuest: false,
   });
 
-  // Simulate Prisma's callback transaction contract for the VIP route.
-  // The DB uniqueness constraints are modeled by the create mock in the race tests.
-  mockVipTransaction.mockImplementation(async (callback: (tx: any) => Promise<any>) =>
-    callback({
-      userVipSubscription: {
-        findFirst: (...args: any[]) => mockUserVipSubscriptionFindFirst(...args),
-        updateMany: (...args: any[]) => mockUserVipSubscriptionUpdateMany(...args),
-        create: (...args: any[]) => mockUserVipSubscriptionCreate(...args),
-      },
-    })
-  );
-
   // Default notification + warranty create — best-effort, never throw
   mockNotificationCreate.mockResolvedValue({});
   mockWarrantyCreate.mockResolvedValue({});
