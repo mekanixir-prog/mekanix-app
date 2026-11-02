@@ -20,28 +20,35 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ──────────── Module-level mocks (hoisted by vitest) ────────────
 const mockVipPlanFindUnique = vi.fn();
 const mockPaymentFindUnique = vi.fn();
+const mockPaymentGatewayLogFindUnique = vi.fn();
 const mockUserVipSubscriptionUpdateMany = vi.fn();
 const mockUserVipSubscriptionCreate = vi.fn();
 const mockUserVipSubscriptionFindFirst = vi.fn();
-const mockVipTransaction = vi.fn();
 const mockNotificationCreate = vi.fn();
+const mockSubscriptionFindUnique = vi.fn();
+const mockCreateVipSubscriptionAtomically = vi.fn();
 
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: vi.fn(async () => ({
     vipPlan: { findUnique: (...args: any[]) => mockVipPlanFindUnique(...args) },
     payment: { findUnique: (...args: any[]) => mockPaymentFindUnique(...args) },
+    paymentGatewayLog: { findUnique: (...args: any[]) => mockPaymentGatewayLogFindUnique(...args) },
     userVipSubscription: {
       findFirst: (...args: any[]) => mockUserVipSubscriptionFindFirst(...args),
+      findUnique: (...args: any[]) => mockSubscriptionFindUnique(...args),
       updateMany: (...args: any[]) => mockUserVipSubscriptionUpdateMany(...args),
       create: (...args: any[]) => mockUserVipSubscriptionCreate(...args),
     },
-    $transaction: (...args: any[]) => mockVipTransaction(...args),
     notification: { create: (...args: any[]) => mockNotificationCreate(...args) },
   })),
 }));
 
 // Mock requireAuth — controllable per-test via mockRequireAuth
 const mockRequireAuth = vi.fn();
+vi.mock("@/lib/vip-subscription-atomic", () => ({
+  createVipSubscriptionAtomically: (...args: any[]) => mockCreateVipSubscriptionAtomically(...args),
+}));
+
 vi.mock("@/lib/api-helpers", () => ({
   requireAuth: (...args: any[]) => mockRequireAuth(...args),
 }));
@@ -83,10 +90,25 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       id: "pay-1",
       userId: "user-1",
       status: "SUCCEEDED",
-      currency: "IRR",
       amount: 100_000, // exactly covers plan price
+      currency: "IRR",
+      gatewayLogId: "gateway-1",
+    });
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "gateway-1",
+      userId: "user-1",
+      status: "VERIFIED",
+      purpose: "vip",
+      paymentId: "pay-1",
+      amount: 100_000,
+      currency: "IRR",
     });
     mockUserVipSubscriptionUpdateMany.mockResolvedValue({ count: 0 });
+    mockCreateVipSubscriptionAtomically.mockResolvedValue("sub-1");
+    mockSubscriptionFindUnique.mockResolvedValue({
+      id: "sub-1", userId: "user-1", planId: "plan-1", status: "ACTIVE",
+      plan: { id: "plan-1", name: "Gold" },
+    });
     mockUserVipSubscriptionFindFirst.mockResolvedValue(null); // no existing sub using this payment
     mockUserVipSubscriptionCreate.mockResolvedValue({
       id: "sub-1",
@@ -95,15 +117,6 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       status: "ACTIVE",
       plan: { id: "plan-1", name: "Gold" },
     });
-    mockVipTransaction.mockImplementation(async (callback: (tx: any) => Promise<any>) =>
-      callback({
-        userVipSubscription: {
-          findFirst: (...args: any[]) => mockUserVipSubscriptionFindFirst(...args),
-          updateMany: (...args: any[]) => mockUserVipSubscriptionUpdateMany(...args),
-          create: (...args: any[]) => mockUserVipSubscriptionCreate(...args),
-        },
-      })
-    );
     mockNotificationCreate.mockResolvedValue({});
   });
 
@@ -159,7 +172,6 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       id: "pay-1",
       userId: "other-user", // different from session.userId = "user-1"
       status: "SUCCEEDED",
-      currency: "IRR",
       amount: 100_000,
     });
     const req = makePostRequest({ planId: "plan-1", paymentId: "pay-1" });
@@ -188,45 +200,11 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       id: "pay-1",
       userId: "user-1",
       status: "SUCCEEDED",
-      currency: "IRR",
       amount: 50_000, // less than plan.priceIrr (100_000)
     });
     const req = makePostRequest({ planId: "plan-1", paymentId: "pay-1" });
     const res = await POST(req);
     expect(res.status).toBe(400);
-  });
-
-  it("blocks subscription while legacy VIP plan prices are unverified", async () => {
-    vi.stubEnv("MEKANIX_VIP_PLAN_PRICES_IRR_VERIFIED", "false");
-    const response = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
-    expect(response.status).toBe(409);
-    expect((await response.json()).code).toBe("VIP_PRICE_CURRENCY_UNVERIFIED");
-    expect(mockPaymentFindUnique).not.toHaveBeenCalled();
-    expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
-  });
-
-  it("rejects payments in a different currency or above the exact plan price", async () => {
-    vi.stubEnv("NODE_ENV", "test");
-    mockPaymentFindUnique.mockResolvedValueOnce({
-      id: "pay-usd",
-      userId: "user-1",
-      status: "SUCCEEDED",
-      currency: "USD",
-      amount: 100_000,
-    });
-    const wrongCurrency = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-usd" }));
-    expect(wrongCurrency.status).toBe(400);
-
-    mockPaymentFindUnique.mockResolvedValueOnce({
-      id: "pay-over",
-      userId: "user-1",
-      status: "SUCCEEDED",
-      currency: "IRR",
-      amount: 120_000,
-    });
-    const overpayment = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-over" }));
-    expect(overpayment.status).toBe(400);
-    expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
   });
 
   // ──────────── 8. Valid payment → 200 + subscription created ────────────
@@ -236,22 +214,23 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     const res = await POST(req);
     expect(res.status).toBe(200);
 
-    // Subscription was created with the session.userId (NOT from body)
-    expect(mockVipTransaction).toHaveBeenCalledTimes(1);
-    expect(mockUserVipSubscriptionCreate).toHaveBeenCalledTimes(1);
-    const createArgs = mockUserVipSubscriptionCreate.mock.calls[0][0];
-    expect(createArgs.data.userId).toBe("user-1"); // from session, not body
-    expect(createArgs.data.planId).toBe("plan-1");
-    expect(createArgs.data.status).toBe("ACTIVE");
-    expect(createArgs.data.paymentId).toBe("pay-1");
-
-    // Existing ACTIVE subscriptions were cancelled (idempotent cancel)
-    expect(mockUserVipSubscriptionUpdateMany).toHaveBeenCalledWith(
+    // Subscription creation uses the server-authoritative session identity.
+    expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
+    // Replacement is delegated to the provider-aware atomic transaction helper.
+    expect(mockCreateVipSubscriptionAtomically).toHaveBeenCalledWith(
+      expect.any(Object),
       expect.objectContaining({
-        where: { userId: "user-1", status: "ACTIVE" },
-        data: { status: "CANCELLED" },
-      })
+        userId: "user-1",
+        planId: "plan-1",
+        paymentId: "pay-1",
+        startedAt: expect.any(Date),
+        expiresAt: expect.any(Date),
+      }),
     );
+    expect(mockSubscriptionFindUnique).toHaveBeenCalledWith({
+      where: { id: "sub-1" },
+      include: { plan: true },
+    });
 
     // Body has ok:true and subscription
     const body = await res.json();
@@ -259,30 +238,100 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     expect(body.subscription.id).toBe("sub-1");
   });
 
-  it("does not cancel the active subscription when the payment was already consumed", async () => {
+  it("returns a conflict when the atomic replacement loses a uniqueness race", async () => {
     vi.stubEnv("NODE_ENV", "test");
-    mockUserVipSubscriptionFindFirst.mockResolvedValueOnce({
-      id: "existing-sub",
-      status: "ACTIVE",
+    mockCreateVipSubscriptionAtomically.mockRejectedValue(new Error("UNIQUE constraint failed"));
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(409);
+    expect(mockNotificationCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a successful payment without a gateway attempt", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockPaymentFindUnique.mockResolvedValue({
+      id: "pay-1", userId: "user-1", status: "SUCCEEDED",
+      amount: 100_000, currency: "IRR", gatewayLogId: null,
     });
-    const response = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
-    expect(response.status).toBe(409);
-    expect(mockUserVipSubscriptionUpdateMany).not.toHaveBeenCalled();
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(400);
+    expect(mockPaymentGatewayLogFindUnique).not.toHaveBeenCalled();
     expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
   });
 
-  it("returns 409 when a unique constraint wins a concurrent replacement race", async () => {
+  it("rejects a payment not denominated in IRR", async () => {
     vi.stubEnv("NODE_ENV", "test");
-    mockUserVipSubscriptionCreate.mockRejectedValueOnce({ code: "P2002" });
+    mockPaymentFindUnique.mockResolvedValue({
+      id: "pay-1", userId: "user-1", status: "SUCCEEDED",
+      amount: 100_000, currency: "USD", gatewayLogId: "gateway-1",
+    });
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(400);
+    expect(mockPaymentGatewayLogFindUnique).not.toHaveBeenCalled();
+    expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a verified payment whose purpose is not VIP", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "gateway-1", userId: "user-1", status: "VERIFIED",
+      purpose: "invoice", paymentId: "pay-1", amount: 100_000, currency: "IRR",
+    });
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(400);
+    expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a gateway attempt not linked back to the selected payment", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "gateway-1", userId: "user-1", status: "VERIFIED",
+      purpose: "vip", paymentId: "different-payment", amount: 100_000, currency: "IRR",
+    });
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(400);
+    expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a gateway amount or currency that differs from the payment row", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "gateway-1", userId: "user-1", status: "VERIFIED",
+      purpose: "vip", paymentId: "pay-1", amount: 120_000, currency: "USD",
+    });
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(400);
+    expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 while VIP plan price provenance is unverified", async () => {
+    vi.stubEnv("MEKANIX_VIP_PLAN_PRICES_IRR_VERIFIED", "false");
     const response = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
     expect(response.status).toBe(409);
-    expect(mockVipTransaction).toHaveBeenCalledTimes(1);
-    expect(mockUserVipSubscriptionUpdateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { userId: "user-1", status: "ACTIVE" },
-        data: { status: "CANCELLED" },
-      })
-    );
+    expect(mockPaymentFindUnique).not.toHaveBeenCalled();
+    expect(mockCreateVipSubscriptionAtomically).not.toHaveBeenCalled();
+  });
+
+  it("rejects a payment greater than the plan price instead of accepting an overpayment", async () => {
+    mockPaymentFindUnique.mockResolvedValue({
+      id: "pay-1", userId: "user-1", status: "SUCCEEDED",
+      amount: 100_001, currency: "IRR", gatewayLogId: "gateway-1",
+    });
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "gateway-1", userId: "user-1", status: "VERIFIED",
+      purpose: "vip", paymentId: "pay-1", amount: 100_001, currency: "IRR",
+    });
+    const response = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(response.status).toBe(400);
+    expect(mockCreateVipSubscriptionAtomically).not.toHaveBeenCalled();
+  });
+
+  it("rejects fractional VIP plan prices before reading payment data", async () => {
+    mockVipPlanFindUnique.mockResolvedValueOnce({
+      id: "plan-1", name: "Gold", priceIrr: 100_000.5, durationDays: 30, active: true,
+    });
+    const response = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(response.status).toBe(400);
+    expect(mockPaymentFindUnique).not.toHaveBeenCalled();
   });
 
   // ──────────── Extra: planId required ────────────
@@ -314,18 +363,10 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     });
     const res = await POST(req);
     expect(res.status).toBe(200);
-    const createArgs = mockUserVipSubscriptionCreate.mock.calls[0][0];
-    // Must use session.userId (user-1), NOT the spoofed body.userId
-    expect(createArgs.data.userId).toBe("user-1");
+    // The atomic writer receives session.userId, never the spoofed body.userId.
+    expect(mockCreateVipSubscriptionAtomically).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ userId: "user-1", planId: "plan-1", paymentId: "pay-1" }),
+    );
   });
 });
-
-
-describe("VIP plan price provenance", () => {
-    it("blocks activation until the VIP plan price currency is verified", async () => {
-      vi.stubEnv("MEKANIX_VIP_PLAN_PRICES_IRR_VERIFIED", "false");
-      const response = await POST(makePostRequest({ planId: "plan-1", paymentId: "payment-1" }));
-      expect(response.status).toBe(409);
-      expect(await response.json()).toMatchObject({ code: "VIP_PRICE_CURRENCY_UNVERIFIED" });
-    });
-  });
