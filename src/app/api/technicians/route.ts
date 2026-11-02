@@ -69,7 +69,8 @@ export async function GET(req: Request) {
       .sort((a, b) => (a._dist as number) - (b._dist as number));
   }
 
-  return NextResponse.json(techs);
+  const feesCurrencyVerified = process.env.MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED === "true";
+  return NextResponse.json(techs.map((tech) => ({ ...tech, feesCurrencyVerified })));
 }
 
 // POST: create technician profile — ADMIN ONLY
