@@ -171,13 +171,7 @@ async function createWithD1(
       UPDATE "ServiceBooking"
       SET "status" = 'WAITING_CUSTOMER_APPROVAL', "updatedAt" = ?
       WHERE "id" = ? AND "status" = ?
-        AND (
-          ? = 'ADMIN'
-          OR EXISTS (
-            SELECT 1 FROM "ServiceBooking" assigned
-            WHERE assigned."id" = ? AND assigned."technicianId" = ?
-          )
-        )
+        AND (? = 'ADMIN' OR "technicianId" = ?)
         AND EXISTS (
           SELECT 1 FROM "ServiceTimelineEvent" e
           WHERE e."id" = ? AND e."bookingId" = ?
@@ -187,7 +181,6 @@ async function createWithD1(
       input.bookingId,
       input.expectedBookingStatus,
       input.actorRole,
-      input.bookingId,
       input.actorTechnicianId,
       timelineId,
       input.bookingId,
