@@ -27,5 +27,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!job) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const partsCurrencyVerified = process.env.MEKANIX_JOB_PART_IRR_PROVENANCE_VERIFIED === "true";
   const technicianFeesCurrencyVerified = process.env.MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED === "true";
-  return NextResponse.json({ ...job, partsCurrencyVerified, technicianFeesCurrencyVerified });
+  const walletCurrencyVerified = process.env.MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED === "true";
+  return NextResponse.json({ ...job, partsCurrencyVerified, technicianFeesCurrencyVerified, walletCurrencyVerified });
 }
