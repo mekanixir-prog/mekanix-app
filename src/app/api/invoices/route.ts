@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
-import { calculatePrice } from "@/lib/pricing";
+import { calculatePrice, type PricingBreakdown } from "@/lib/pricing";
 import { addIrr, assertIrrInteger } from "@/lib/money/irr";
 
 const FULL_INCLUDE = {
@@ -113,7 +113,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "تنظیم نرخ مالیات نامعتبر است" }, { status: 500 });
   }
 
-  let price;
+  let price: PricingBreakdown;
   try {
     price = await calculatePrice({
       vehicleType: job.request.vehicle.type,
