@@ -43,6 +43,7 @@ export interface PricingInput {
   isEmergency: boolean;
   vipDiscountPercent?: number;
   region?: string; // for region-based pricing
+  taxRate?: number; // validated fraction, e.g. 0.09
 }
 
 export interface PricingBreakdown {
@@ -114,6 +115,10 @@ export async function calculatePrice(input: PricingInput): Promise<PricingBreakd
   if (!Number.isFinite(input.travelDistanceKm) || input.travelDistanceKm < 0) {
     throw new RangeError("Travel distance must be a finite non-negative number");
   }
+  const taxRate = input.taxRate ?? DEFAULT_TAX_RATE;
+  if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 1) {
+    throw new RangeError("Tax rate must be between 0 and 1");
+  }
   const vipPercent = input.vipDiscountPercent ?? 0;
   if (!Number.isFinite(vipPercent) || vipPercent < 0 || vipPercent > 100) {
     throw new RangeError("VIP discount percent must be between 0 and 100");
@@ -177,7 +182,7 @@ export async function calculatePrice(input: PricingInput): Promise<PricingBreakd
   const afterDiscount = subtotal.sub(discount);
 
   // ── Tax (9% VAT on the after-discount subtotal) ────────────────────────
-  const taxTotal = afterDiscount.mul(DEFAULT_TAX_RATE);
+  const taxTotal = afterDiscount.mul(taxRate);
 
   // ── Total = afterDiscount + taxTotal ────────────────────────────────────
   const total = afterDiscount.add(taxTotal);
@@ -197,7 +202,7 @@ export async function calculatePrice(input: PricingInput): Promise<PricingBreakd
     emergency: round(emergency, "Emergency surcharge"),
     discount: round(discount, "Discount"),
     subtotal: round(subtotal, "Subtotal"),
-    taxRate: DEFAULT_TAX_RATE,
+    taxRate,
     taxTotal: round(taxTotal, "Tax total"),
     total: round(total, "Final total"),
     currency: "IRR",
