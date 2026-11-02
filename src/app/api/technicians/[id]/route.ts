@@ -91,6 +91,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const safe = sanitizeInput(body, ALLOWED_FIELDS.technician);
+  const feeFields = ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"];
+  if (feeFields.some((field) => field in safe) && process.env.MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED !== "true") {
+    return NextResponse.json({ error: "واحد تعرفه‌های تعمیرکار هنوز تأیید نشده است", code: "TECHNICIAN_FEE_CURRENCY_UNVERIFIED" }, { status: 409 });
+  }
   if (Object.keys(safe).length === 0) {
     return NextResponse.json({ error: "هیچ فیلد قابل ویرایشی ارسال نشده" }, { status: 400 });
   }
