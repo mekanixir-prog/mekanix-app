@@ -51,13 +51,18 @@ export async function GET(req: Request) {
   // Repair the crash window where the Job reached COMPLETED but the separate
   // holdUntil write failed. Only PREPAY rows are eligible; use the immutable
   // completedAt timestamp so retries never restart the 12-hour hold.
-  const strandedPrepay = wallet.transactions.filter(
-    (transaction) =>
-      transaction.kind === "PREPAY" &&
-      transaction.status === "PENDING" &&
-      transaction.holdUntil === null &&
-      transaction.jobId !== null
-  );
+  // Query the complete pending set, not the 50-row display window. Otherwise
+  // older escrow rows can remain stranded forever behind newer transactions.
+  const strandedPrepay = await db.walletTransaction.findMany({
+    where: {
+      walletId: wallet.id,
+      kind: "PREPAY",
+      status: "PENDING",
+      holdUntil: null,
+      jobId: { not: null },
+    },
+    select: { id: true, jobId: true },
+  });
   if (strandedPrepay.length > 0) {
     const completedJobs = await db.job.findMany({
       where: {
@@ -103,9 +108,17 @@ export async function GET(req: Request) {
   // transactional Node databases. A failed balance update cannot strand an
   // AVAILABLE transaction without its matching wallet credit.
   const now = new Date();
-  const releasable = wallet.transactions.filter(
-    (t) => t.status === "PENDING" && t.holdUntil && t.holdUntil.getTime() <= now.getTime()
-  );
+  // Release every matured row, independently of the recent-transactions
+  // pagination returned to the UI.
+  const releasable = await db.walletTransaction.findMany({
+    where: {
+      walletId: wallet.id,
+      status: "PENDING",
+      holdUntil: { not: null, lte: now },
+    },
+    select: { id: true },
+    orderBy: [{ holdUntil: "asc" }, { id: "asc" }],
+  });
   for (const transaction of releasable) {
     await releaseWalletTransaction(db, wallet.id, transaction.id, now);
   }
@@ -134,7 +147,7 @@ export async function GET(req: Request) {
         where: {
           walletId: fresh.id,
           status: "AVAILABLE",
-          createdAt: { gte: fourteenDaysStart },
+          createdAt: { gte: fourteenDaysStart, lte: nowForSummary },
           netAmount: { gt: 0 },
         },
         select: { createdAt: true, netAmount: true },
