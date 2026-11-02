@@ -286,3 +286,20 @@ describe("SEC-4 — admin PATCH audit logging", () => {
     expect(callArgs.find((a) => a.action === "CHANGE_USER_STATUS")).toBeUndefined();
   });
 });
+
+describe("financial provenance gates", () => {
+  it("blocks technician fee edits until their unit is verified", async () => {
+    vi.stubEnv("MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED", "false");
+    const req = makePatchRequest("technicians", "tech-1", { hourlyRate: 100 });
+    const res = await PATCH(req, { params: Promise.resolve({ resource: "technicians", id: "tech-1" }) });
+    expect(res.status).toBe(409);
+    expect(mockTechnicianUpdate).not.toHaveBeenCalled();
+  });
+
+  it("blocks manual payment refund status without an audited refund flow", async () => {
+    const req = makePatchRequest("payments", "pay-1", { status: "REFUNDED" });
+    const res = await PATCH(req, { params: Promise.resolve({ resource: "payments", id: "pay-1" }) });
+    expect(res.status).toBe(409);
+    expect(mockPaymentUpdate).not.toHaveBeenCalled();
+  });
+});
