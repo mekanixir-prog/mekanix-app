@@ -619,7 +619,7 @@ describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
     mockCreateWithdrawalAtomically.mockResolvedValue(true);
 
     const res = await withdrawPOST(makeWithdrawalRequest(
-      { amount: 500, currency: "IRR", method: "card" }, "test-withdrawal-key-002"
+      { amount: 500, currency: "IRR", method: "bank", bankName: "بانک ملت", shebaNumber: "IR062960000000100324200001" }, "test-withdrawal-key-002"
     ));
 
     expect(res.status).toBe(200);
