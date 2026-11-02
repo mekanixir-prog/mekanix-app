@@ -230,13 +230,13 @@ describe("SEC-4 — admin PATCH audit logging", () => {
   });
 
   // ──────────── 6. payments → UPDATE_PAYMENT ────────────
-  it("PATCH /api/admin/payments/:id creates AuditLog with action UPDATE_PAYMENT", async () => {
+  it("PATCH /api/admin/payments/:id creates AuditLog for an allowed status transition", async () => {
     const before = { id: "pay-1", status: "PENDING" };
-    const after = { id: "pay-1", status: "REFUNDED" };
+    const after = { id: "pay-1", status: "SUCCEEDED" };
     mockPaymentFindUnique.mockResolvedValue(before);
     mockPaymentUpdate.mockResolvedValue(after);
 
-    const req = makePatchRequest("payments", "pay-1", { status: "REFUNDED" });
+    const req = makePatchRequest("payments", "pay-1", { status: "SUCCEEDED" });
     const res = await PATCH(req, { params: Promise.resolve({ resource: "payments", id: "pay-1" }) });
 
     expect(res.status).toBe(200);
@@ -289,6 +289,8 @@ describe("financial provenance gates", () => {
     const req = makePatchRequest("payments", "pay-1", { status: "REFUNDED" });
     const res = await PATCH(req, { params: Promise.resolve({ resource: "payments", id: "pay-1" }) });
     expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: "REFUND_FLOW_NOT_IMPLEMENTED" });
+    expect(mockPaymentFindUnique).not.toHaveBeenCalled();
     expect(mockPaymentUpdate).not.toHaveBeenCalled();
   });
 });
