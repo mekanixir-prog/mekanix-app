@@ -157,7 +157,7 @@ describe("atomic job status writer", () => {
     const acceptedInput = { ...input, nextStatus: "ACCEPTED" as const, updates: { startedAt: new Date() } };
 
     await expect(transitionJobStatusAtomically(db, acceptedInput)).resolves.toBeUndefined();
-    expect(d1.batch.mock.calls[0][0]).toHaveLength(1);
+    expect(d1.batch.mock.calls[0][0]).toHaveLength(2);
   });
 
   it("returns a conflict when the D1 job compare-and-set fails", async () => {
