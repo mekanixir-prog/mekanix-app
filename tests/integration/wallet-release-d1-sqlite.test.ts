@@ -39,7 +39,13 @@ function makeD1() {
     prepare(sql: string) {
       return {
         bind(...values: unknown[]) {
-          return { sql, values };
+          return {
+            sql,
+            values,
+            async first<T = unknown>() {
+              return (sqlite.prepare(sql).get(...(values as never[])) as T | undefined) ?? null;
+            },
+          };
         },
       };
     },
