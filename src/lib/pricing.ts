@@ -34,6 +34,17 @@ import Decimal from "decimal.js";
 import { getDbForLib } from "./db-access";
 import { assertIrrInteger } from "./money/irr";
 
+/**
+ * Production pricing is fail-closed until the business owner approves the
+ * canonical IRR rate card. Development/test may continue using demo defaults.
+ */
+export function isProductionPricingApproved(
+  nodeEnv = process.env.NODE_ENV,
+  approved = process.env.MEKANIX_PRICING_IRR_APPROVED,
+): boolean {
+  return nodeEnv !== "production" || approved === "true";
+}
+
 export interface PricingInput {
   packageId?: string;
   vehicleType: string; // CAR, TRUCK, EXCAVATOR, etc.
