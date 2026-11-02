@@ -61,6 +61,7 @@ const mockVipPlanFindUnique = vi.fn();
 const mockUserVipSubscriptionFindFirst = vi.fn();
 const mockUserVipSubscriptionUpdateMany = vi.fn();
 const mockUserVipSubscriptionCreate = vi.fn();
+const mockVipTransaction = vi.fn();
 
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: vi.fn(async () => ({
@@ -106,6 +107,7 @@ vi.mock("@/lib/db-access", () => ({
       updateMany: (...args: any[]) => mockUserVipSubscriptionUpdateMany(...args),
       create: (...args: any[]) => mockUserVipSubscriptionCreate(...args),
     },
+    $transaction: (...args: any[]) => mockVipTransaction(...args),
   })),
 }));
 
@@ -189,6 +191,18 @@ beforeEach(() => {
     phone: "+989120000000",
     isGuest: false,
   });
+
+  // Simulate Prisma's callback transaction contract for the VIP route.
+  // The DB uniqueness constraints are modeled by the create mock in the race tests.
+  mockVipTransaction.mockImplementation(async (callback: (tx: any) => Promise<any>) =>
+    callback({
+      userVipSubscription: {
+        findFirst: (...args: any[]) => mockUserVipSubscriptionFindFirst(...args),
+        updateMany: (...args: any[]) => mockUserVipSubscriptionUpdateMany(...args),
+        create: (...args: any[]) => mockUserVipSubscriptionCreate(...args),
+      },
+    })
+  );
 
   // Default notification + warranty create — best-effort, never throw
   mockNotificationCreate.mockResolvedValue({});
@@ -615,20 +629,11 @@ describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
   });
 });
 
-// 7. VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId reuse)
-//
-// This test documents a KNOWN race condition in the VIP-01 fix: the
-// `findFirst` + check + `create` sequence is NON-ATOMIC. Two concurrent
-// subscribe requests with the same paymentId can both pass the findFirst
-// check (both see null) and both call create — resulting in two ACTIVE VIP
-// subscriptions linked to the same one-time-use Payment row.
-//
-// The test uses `it.fails()` to assert that the bug STILL EXISTS. If a
-// future fix makes the check atomic (e.g., a `@@unique` constraint on
-// UserVipSubscription.paymentId, or a conditional `updateMany` pattern),
-// this test will start to PASS — and `it.fails()` will flip the suite red,
-// alerting the team to remove the `.fails` marker.
-// ──────────────────────────────────────────────────────────────────────────
+// 7. VIP-01 — /api/vip/subscribe atomic replacement and uniqueness behavior.
+// The handler wraps the prior-subscription check, cancellation and insert in a
+// Prisma transaction. Unique constraints on paymentId and the single-ACTIVE
+// invariant remain the final concurrency defense; these mocks simulate P2002
+// from the database when a competing insert wins.
 describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", () => {
   beforeEach(() => {
     vi.stubEnv("MEKANIX_VIP_PLAN_PRICES_IRR_VERIFIED", "true");
