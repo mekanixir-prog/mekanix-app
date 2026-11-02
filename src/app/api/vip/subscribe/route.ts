@@ -58,6 +58,13 @@ export async function POST(req: Request) {
   if (typeof paymentId !== "string" || !paymentId) {
     return NextResponse.json({ error: "paymentId is required" }, { status: 400 });
   }
+  const planAmount = Number(plan.priceIrr);
+  try {
+    assertIrrInteger(planAmount, "VIP plan price");
+  } catch {
+    return NextResponse.json({ error: "مبلغ طرح VIP باید ریال صحیح و معتبر باشد" }, { status: 400 });
+  }
+
   const payment = await db.payment.findUnique({ where: { id: paymentId } });
   if (
     !payment ||
@@ -70,10 +77,8 @@ export async function POST(req: Request) {
   }
 
   const paymentAmount = Number(payment.amount);
-  const planAmount = Number(plan.priceIrr);
   try {
     assertIrrInteger(paymentAmount, "VIP payment amount");
-    assertIrrInteger(planAmount, "VIP plan price");
   } catch {
     return NextResponse.json({ error: "مبلغ اشتراک یا پرداخت، ریال صحیح و معتبر نیست" }, { status: 400 });
   }
