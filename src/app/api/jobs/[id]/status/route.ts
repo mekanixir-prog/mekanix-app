@@ -224,8 +224,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const cust = job.request.customer.user;
   const tech = job.technician.user;
 
-  // When job is COMPLETED, run all post-completion side effects sequentially
-  // (D1 has no $transaction; earlier writes stay if a later one throws).
+  // Financial state is already committed atomically; notifications are best-effort.
   if (status === "COMPLETED") {
     // Notifications and chat are best-effort after the financial state commit.
     try {
@@ -329,7 +328,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       console.error("[jobs/status] Status notification failed:", error);
     }
   }
-
+  }
 
   return NextResponse.json(job);
 }
