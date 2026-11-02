@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { assertIrrInteger } from "@/lib/money/irr";
+import { createVipSubscriptionAtomically } from "@/lib/vip-subscription-atomic";
 
 // Subscribe the authenticated user to a VIP plan.
 // userId is derived from the session — NEVER from the request body (BOLA fix).
@@ -58,7 +59,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "paymentId is required" }, { status: 400 });
   }
   const payment = await db.payment.findUnique({ where: { id: paymentId } });
-  if (!payment || payment.userId !== userId || payment.status !== "SUCCEEDED") {
+  if (
+    !payment ||
+    payment.userId !== userId ||
+    payment.status !== "SUCCEEDED" ||
+    payment.currency !== "IRR" ||
+    !payment.gatewayLogId
+  ) {
     return NextResponse.json({ error: "Invalid or insufficient payment" }, { status: 400 });
   }
 
@@ -70,56 +77,63 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "مبلغ اشتراک یا پرداخت، ریال صحیح و معتبر نیست" }, { status: 400 });
   }
-  if (payment.currency !== "IRR" || paymentAmount !== planAmount) {
+  if (paymentAmount !== planAmount) {
     return NextResponse.json({ error: "پرداخت باید دقیقاً با مبلغ طرح و با واحد IRR برابر باشد" }, { status: 400 });
   }
 
-  // Replace the user's active subscription atomically. If the unique
-  // paymentId or one-ACTIVE-per-user index rejects the create, the preceding
-  // cancellation is rolled back with the transaction — the previous ACTIVE
-  // subscription can never be lost by a failed replacement attempt.
+  // A SUCCEEDED Payment row alone does not prove this charge was intended for
+  // VIP. Bind it to the exact verified gateway attempt and purpose.
+  const gatewayLog = await db.paymentGatewayLog.findUnique({
+    where: { id: payment.gatewayLogId },
+  });
+  if (!gatewayLog) {
+    return NextResponse.json({ error: "Payment is not a verified VIP payment" }, { status: 400 });
+  }
+  let gatewayAmount: number;
+  try {
+    gatewayAmount = Number(gatewayLog.amount);
+    assertIrrInteger(gatewayAmount, "VIP gateway amount");
+  } catch {
+    return NextResponse.json({ error: "مبلغ تلاش درگاه، ریال صحیح و معتبر نیست" }, { status: 400 });
+  }
+  if (
+    gatewayLog.userId !== userId ||
+    gatewayLog.status !== "VERIFIED" ||
+    gatewayLog.purpose !== "vip" ||
+    gatewayLog.paymentId !== payment.id ||
+    gatewayLog.currency !== payment.currency ||
+    gatewayAmount !== paymentAmount
+  ) {
+    return NextResponse.json({ error: "Payment is not a verified VIP payment" }, { status: 400 });
+  }
+
+  // Replacing the previous ACTIVE subscription is atomic for both Prisma and
+  // D1. A partial unique index enforces one ACTIVE subscription per user and
+  // a unique paymentId index prevents reuse of a single payment.
+  const startedAt = new Date();
+  const expiresAt = new Date(startedAt.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
   let sub;
   try {
-    sub = await db.$transaction(async (tx) => {
-      const existingSub = await tx.userVipSubscription.findFirst({
-        where: { paymentId, status: { in: ["ACTIVE", "CANCELLED", "EXPIRED"] } },
-      });
-      if (existingSub) return null;
-
-      await tx.userVipSubscription.updateMany({
-        where: { userId, status: "ACTIVE" },
-        data: { status: "CANCELLED" },
-      });
-
-      const startedAt = new Date();
-      const expiresAt = new Date(startedAt.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
-      return tx.userVipSubscription.create({
-        data: {
-          userId,
-          planId,
-          status: "ACTIVE",
-          startedAt,
-          expiresAt,
-          paymentId,
-        },
-        include: { plan: true },
-      });
+    const subscriptionId = await createVipSubscriptionAtomically(db, {
+      userId,
+      planId,
+      paymentId,
+      startedAt,
+      expiresAt,
     });
+    sub = await db.userVipSubscription.findUnique({
+      where: { id: subscriptionId },
+      include: { plan: true },
+    });
+    if (!sub) throw new Error("VIP subscription could not be loaded after atomic creation");
   } catch (e: any) {
-    if (e?.code === "P2002" || e?.message?.includes("Unique constraint")) {
+    if (e?.code === "P2002" || /unique constraint/i.test(String(e?.message ?? ""))) {
       return NextResponse.json(
         { error: "پرداخت قبلاً استفاده شده یا اشتراک فعال دیگری ثبت شده است" },
         { status: 409 }
       );
     }
     throw e;
-  }
-
-  if (!sub) {
-    return NextResponse.json(
-      { error: "این پرداخت قبلاً برای اشتراک VIP استفاده شده است" },
-      { status: 409 }
-    );
   }
 
   // Notify user — best-effort, never fail a subscription over a notification.
