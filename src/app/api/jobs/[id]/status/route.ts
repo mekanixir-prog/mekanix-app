@@ -284,7 +284,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     });
   }
   }
-  }
 
   // Invoice creation is centralized in POST /api/invoices. This status
   // endpoint only changes workflow state and must never calculate money itself.
