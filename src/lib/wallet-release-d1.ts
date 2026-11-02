@@ -81,9 +81,7 @@ export async function releaseWalletTransactionWithD1(
   const assertOneChange = () => d1.prepare(`
     SELECT CASE
       WHEN changes() = 1 THEN 1
-      ELSE json_extract('not-json', '
-}
-)
+      ELSE json('not-json')
     END
   `).bind();
 
