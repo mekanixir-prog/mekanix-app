@@ -56,7 +56,7 @@ export function AdminOverview() {
         <StatCard label={t("admin.overview.kpi.techsOnline")} value={fmtNum(stats.kpis.techniciansOnline)} icon={Wrench} tone="emerald" />
         <StatCard label={t("admin.overview.kpi.jobsInProgress")} value={fmtNum(stats.kpis.jobsInProgress)} icon={TrendingUp} tone="violet" />
         <StatCard label={t("admin.overview.kpi.completed30")} value={fmtNum(stats.kpis.completedJobs30d)} icon={Activity} tone="blue" />
-        <StatCard label={t("admin.overview.kpi.revenue30")} value={money(stats.kpis.revenue30d)} icon={DollarSign} tone="amber" />
+        <StatCard label={t("admin.overview.kpi.collectedGross30")} value={money(stats.kpis.collectedGrossIrr30d, "IRR")} icon={DollarSign} tone="amber" />
         <StatCard label={t("admin.overview.kpi.avgResponse")} value={t("admin.overview.kpiAvgResponseSuffix").replace("{n}", fmtNum(stats.kpis.avgResponseMins))} icon={Clock} tone="emerald" />
         <StatCard label={t("admin.overview.kpi.satisfaction")} value={t("admin.overview.kpiSatisfactionSuffix").replace("{n}", fmtNum(stats.kpis.customerSatisfaction))} icon={Star} tone="violet" />
       </div>
