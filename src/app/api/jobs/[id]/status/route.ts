@@ -102,7 +102,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const db = await getDbForLib();
   const existing = await db.job.findUnique({
     where: { id },
-    select: { status: true, technicianId: true, requestId: true },
+    select: {
+      status: true,
+      technicianId: true,
+      requestId: true,
+      code: true,
+      parts: { select: { unitPrice: true, quantity: true } },
+      technician: { select: { hourlyRate: true, travelFeeBase: true } },
+      invoice: { select: { id: true } },
+    },
   });
   if (!existing) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
 
