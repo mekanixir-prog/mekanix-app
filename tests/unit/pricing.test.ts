@@ -235,6 +235,18 @@ describe("pricing — heavy machinery (TRUCK) has higher labor rate", () => {
 });
 
 describe("pricing — tax is 9% of after-discount subtotal", () => {
+  it("uses an explicitly configured validated tax rate", async () => {
+    const result = await calculatePrice({ ...baseInput, taxRate: 0.06 });
+    expect(result.taxRate).toBe(0.06);
+    expect(result.taxTotal).toBe(Math.round(result.subtotal * 0.06));
+  });
+
+  it("rejects an invalid configured tax rate", async () => {
+    await expect(calculatePrice({ ...baseInput, taxRate: -0.01 })).rejects.toThrow();
+    await expect(calculatePrice({ ...baseInput, taxRate: 1.01 })).rejects.toThrow();
+    await expect(calculatePrice({ ...baseInput, taxRate: Number.NaN })).rejects.toThrow();
+  });
+
   it("taxRate is 0.09", async () => {
     const result = await calculatePrice(baseInput);
     expect(result.taxRate).toBe(0.09);
