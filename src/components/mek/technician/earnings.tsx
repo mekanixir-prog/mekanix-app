@@ -22,9 +22,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 type Wallet = {
   id: string;
-  currency: "IRR";
+  currency: "IRR" | "UNVERIFIED";
   earningsSummary: {
-    currency: "IRR";
+    currency: "IRR" | "UNVERIFIED";
     valid: boolean;
     todayIrr: number | null;
     last7DaysIrr: number | null;
@@ -85,7 +85,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
       const res = await fetch(`/api/wallets?technicianId=${techId}`);
       if (!res.ok) throw new Error("Wallet request failed");
       const w = await res.json();
-      if (w?.currency !== "IRR" || w?.earningsSummary?.currency !== "IRR") {
+      if (!["IRR", "UNVERIFIED"].includes(w?.currency) || w?.earningsSummary?.currency !== w?.currency) {
         setWallet(null);
         return;
       }
@@ -105,6 +105,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
     ? wallet.earningsSummary.series14d
     : [];
   const spark = series.map((item) => item.revenue);
+  const moneyDisplay = (amount: number) => wallet?.currency === "IRR" ? money(amount, "IRR") : "—";
 
   const balance = wallet?.balance ?? 0;
   const pending = wallet?.pendingBalance ?? 0;
@@ -113,6 +114,10 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
   const totalWithdrawn = wallet?.totalWithdrawn ?? 0;
 
   const submitWithdraw = async () => {
+    if (wallet?.currency !== "IRR") {
+      toast.error("واحد موجودی کیف پول هنوز تأیید نشده است؛ برداشت پس از تطبیق مالی فعال می‌شود");
+      return;
+    }
     const amt = Number(withdrawAmount);
     if (!Number.isSafeInteger(amt) || amt < MIN_WITHDRAWAL_IRR) {
       toast.error(t("tech.earnings.withdrawMin").replace("{amount}", money(MIN_WITHDRAWAL_IRR)));
@@ -159,11 +164,16 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
   return (
     <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
       <SectionHeader title={t("tech.earnings.title")} subtitle={t("tech.earnings.subtitle")} />
+      {wallet?.currency === "UNVERIFIED" && (
+        <div className="rounded-lg border border-amber/30 bg-amber/5 p-3 text-xs leading-6 text-muted-foreground">
+          واحد پول موجودی‌های قدیمی هنوز با داده‌های منبع تطبیق داده نشده است. برای جلوگیری از نمایش یا برداشت مبلغ اشتباه، ارقام مالی و برداشت تا تکمیل تطبیق موقتاً غیرفعال‌اند.
+        </div>
+      )}
 
       {/* Wallet KPIs */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label={t("tech.earnings.availableBalance")} value={money(balance)} icon={Wallet} tone="amber" sub={t("tech.earnings.readyWithdraw")} />
-        <StatCard label={t("tech.earnings.pendingBalance")} value={money(pending)} icon={Clock} tone="blue" sub={t("tech.earnings.holdPeriod")} />
+        <StatCard label={t("tech.earnings.availableBalance")} value={moneyDisplay(balance)} icon={Wallet} tone="amber" sub={t("tech.earnings.readyWithdraw")} />
+        <StatCard label={t("tech.earnings.pendingBalance")} value={moneyDisplay(pending)} icon={Clock} tone="blue" sub={t("tech.earnings.holdPeriod")} />
         <StatCard label={t("tech.earnings.totalEarned")} value={money(totalEarned)} icon={TrendingUp} tone="emerald"  />
         <StatCard label={t("tech.earnings.commission")} value={money(totalCommission)} icon={AlertCircle} tone="violet" sub={t("tech.earnings.commissionDesc")} />
       </div>
@@ -200,7 +210,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
             <Button
               className="w-full bg-amber text-black hover:bg-amber/90"
               onClick={() => setWithdrawOpen(true)}
-              disabled={balance < MIN_WITHDRAWAL_IRR}
+              disabled={wallet?.currency !== "IRR" || balance < MIN_WITHDRAWAL_IRR}
             >
               <Banknote className="mr-2 size-4" /> {t("tech.earnings.withdrawNow")}
             </Button>
