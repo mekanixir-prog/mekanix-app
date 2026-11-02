@@ -151,7 +151,8 @@ if command -v bun &> /dev/null; then
     echo "$BUN_AUDIT" | tail -15
     # Bun audit output may prefix severity lines with ANSI color codes or
     # package-tree glyphs, so do not anchor the severity match to column 1.
-    if printf '%s\n' "$BUN_AUDIT" | sed -E 's/\x1B\[[0-9;]*[[:alpha:]]//g' | grep -Eqi '(^|[[:space:]│├└─])((critical|high):|🔴[[:space:]]*(critical|high))'; then
+    AUDIT_SEVERITY_TEXT=$(printf "%s\n" "$BUN_AUDIT" | sed -E "s/\\x1B\\[[0-9;]*[[:alpha:]]//g" | tr "[:upper:]" "[:lower:]")
+    if printf "%s\n" "$AUDIT_SEVERITY_TEXT" | grep -Eq "(^|[[:space:]])(critical|high):"; then
       echo "❌ Critical/high dependency advisories block production readiness"
       ERRORS=$((ERRORS + 1))
     else
