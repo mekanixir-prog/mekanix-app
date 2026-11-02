@@ -104,5 +104,5 @@ export async function POST(req: Request) {
       ...techInclude,
     },
   });
-  return NextResponse.json(tech);
+  return NextResponse.json({ ...tech, feesCurrencyVerified: process.env.MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED === "true" });
 }
