@@ -18,7 +18,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const db = await getDbForLib();
   const inv = await db.invoice.findUnique({
     where: { id },
-    select: { id: true, jobId: true, status: true, total: true, currency: true, code: true },
+    select: { id: true, jobId: true, status: true, total: true, currency: true, code: true, payment: { select: { status: true } } },
   });
   if (!inv) return NextResponse.json({ error: "فاکتور یافت نشد" }, { status: 404 });
 
@@ -67,6 +67,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (body.status === "SENT" && inv.status === "DRAFT") {
       allowedUpdates.status = "SENT";
     } else if (body.status === "CANCELLED") {
+      const settledPayment = inv.payment?.status === "SUCCEEDED" || inv.payment?.status === "REFUNDED";
+      if (["PAID", "REFUNDED"].includes(inv.status) || settledPayment) {
+        return NextResponse.json(
+          { error: "فاکتور دارای پرداخت نهایی است؛ لغو آن بدون فرایند بازپرداخت مجاز نیست" },
+          { status: 409 }
+        );
+      }
       allowedUpdates.status = "CANCELLED";
     } else {
       return NextResponse.json(
