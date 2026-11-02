@@ -53,6 +53,7 @@ function wallet(transactions: any[] = []) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED", "true");
   mockRequireAuth.mockResolvedValue({
     userId: "user-1", role: "TECHNICIAN", phone: "+989120000000", isGuest: false,
   });
@@ -141,6 +142,20 @@ describe("GET /api/wallets — atomic escrow release orchestration", () => {
     const payload = await response.json();
     expect(payload.currency).toBe("IRR");
     expect(payload.earningsSummary.currency).toBe("IRR");
+  });
+
+  it("marks legacy wallet currency as unverified by default", async () => {
+    vi.stubEnv("MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED", "false");
+    mockWalletFindUnique
+      .mockResolvedValueOnce(wallet())
+      .mockResolvedValueOnce(wallet());
+    const response = await GET(makeRequest());
+    const payload = await response.json();
+    expect(response.status).toBe(200);
+    expect(payload.currency).toBe("UNVERIFIED");
+    expect(payload.earningsSummary.currency).toBe("UNVERIFIED");
+    expect(payload.earningsSummary.valid).toBe(false);
+    expect(payload.earningsSummary.todayIrr).toBeNull();
   });
 
   it("builds earnings summaries only from released positive net IRR ledger entries", async () => {
