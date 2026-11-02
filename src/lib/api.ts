@@ -132,7 +132,7 @@ export const api = {
 
 export interface DashboardStats {
   currency: "IRR";
-  kpis: { activeRequests: number; techniciansOnline: number; jobsInProgress: number; completedJobs30d: number; revenue30d: number; avgResponseMins: number; customerSatisfaction: number; };
+  kpis: { activeRequests: number; techniciansOnline: number; jobsInProgress: number; completedJobs30d: number; collectedGrossIrr30d: number; avgResponseMins: number; customerSatisfaction: number; };
   revenueSeries: { date: string; revenue: number; jobs: number }[];
   statusBreakdown: { status: string; count: number }[];
   categoryBreakdown: { category: string; count: number; invoicedAmount: number; currency: "IRR" }[];
