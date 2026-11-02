@@ -218,3 +218,8 @@ A second pass through the financial writers found additional enforcement gaps:
 3. Reuse one canonical pricing function for both service estimates and invoice generation; do not let invoice generation bypass it.
 4. Decide and document whether invoice proceeds (repair labor/parts) are technician earnings, distinct from prepay inspection/travel proceeds.
 5. Keep all simulator-only routes production-blocked until the real provider lifecycle and reconciliation tests are complete.
+
+
+### Pricing-engine constants are implementation defaults, not approved tariffs
+
+The current `src/lib/pricing.ts` hardcodes a base labor rate of 50,000 IRR/hour, a base visit fee of 15,000 IRR, a distance rate of 2,000 IRR/km, a 1.5× emergency multiplier, and a 9% tax default. It fetches `ServicePackage.basePrice` but deliberately does not apply it to the calculation. These values demonstrate an IRR-shaped calculation path; they are **not evidence of an owner-approved MEKANIX price schedule**. They must be reviewed and approved before becoming live tariffs, and any configured tax rule must be reconciled with the applicable business/legal policy.
