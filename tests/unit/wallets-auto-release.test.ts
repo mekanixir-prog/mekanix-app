@@ -6,6 +6,9 @@ const mockWalletCreate = vi.fn();
 const mockReleaseWalletTransaction = vi.fn();
 const mockRequireAuth = vi.fn();
 const mockGetTechnicianFromSession = vi.fn();
+const mockJobFindMany = vi.fn();
+const mockWalletTransactionFindMany = vi.fn();
+const mockWalletTransactionUpdateMany = vi.fn();
 
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: vi.fn(async () => ({
@@ -14,10 +17,10 @@ vi.mock("@/lib/db-access", () => ({
       create: (...args: any[]) => mockWalletCreate(...args),
     },
     walletTransaction: {
-      findMany: vi.fn(async () => []),
-      updateMany: vi.fn(async () => ({ count: 1 })),
+      findMany: (...args: any[]) => mockWalletTransactionFindMany(...args),
+      updateMany: (...args: any[]) => mockWalletTransactionUpdateMany(...args),
     },
-    job: { findMany: vi.fn(async () => []) },
+    job: { findMany: (...args: any[]) => mockJobFindMany(...args) },
   })),
 }));
 vi.mock("@/lib/wallet-release", () => ({
@@ -57,6 +60,9 @@ beforeEach(() => {
   mockWalletFindUnique.mockResolvedValue(wallet());
   mockWalletCreate.mockResolvedValue(wallet());
   mockReleaseWalletTransaction.mockResolvedValue(true);
+  mockJobFindMany.mockResolvedValue([]);
+  mockWalletTransactionFindMany.mockResolvedValue([]);
+  mockWalletTransactionUpdateMany.mockResolvedValue({ count: 1 });
 });
 
 describe("GET /api/wallets — atomic escrow release orchestration", () => {
@@ -101,4 +107,40 @@ describe("GET /api/wallets — atomic escrow release orchestration", () => {
 
     await expect(GET(makeRequest())).rejects.toThrow("atomic batch failed");
   });
+  it("repairs a completed job's stranded prepay hold and releases it after the original 12-hour window", async () => {
+    const completedAt = new Date(Date.now() - 13 * 60 * 60 * 1000);
+    const holdUntil = new Date(completedAt.getTime() + 12 * 60 * 60 * 1000);
+    const stranded = {
+      id: "txn-prepay",
+      jobId: "job-1",
+      kind: "PREPAY",
+      status: "PENDING",
+      netAmount: 900,
+      holdUntil: null,
+    };
+    const repaired = { ...stranded, holdUntil };
+    const released = { ...repaired, status: "AVAILABLE" };
+
+    mockWalletFindUnique
+      .mockResolvedValueOnce(wallet([stranded]))
+      .mockResolvedValueOnce(wallet([repaired]))
+      .mockResolvedValueOnce(wallet([released]));
+    mockJobFindMany.mockResolvedValue([{ id: "job-1", completedAt }]);
+
+    const response = await GET(makeRequest());
+    expect(response.status).toBe(200);
+    expect(mockWalletTransactionUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        id: "txn-prepay",
+        status: "PENDING",
+        holdUntil: null,
+      }),
+      data: { holdUntil },
+    }));
+    expect(mockReleaseWalletTransaction).toHaveBeenCalledTimes(1);
+    const payload = await response.json();
+    expect(payload.currency).toBe("IRR");
+    expect(payload.earningsSummary.currency).toBe("IRR");
+  });
+
 });
