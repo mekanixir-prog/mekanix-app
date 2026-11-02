@@ -256,6 +256,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
       // Notifications are best-effort and cannot undo a committed financial action.
     }
   } else if (resource === "payments") {
+    if (body.status === "REFUNDED") {
+      return NextResponse.json(
+        { error: "ثبت بازپرداخت بدون گردش بازپرداخت و تطبیق فاکتور مجاز نیست", code: "REFUND_FLOW_NOT_IMPLEMENTED" },
+        { status: 409 }
+      );
+    }
     const allowed = RESOURCE_ALLOWED_FIELDS.payments ?? ALLOWED_FIELDS.review;
     const safe = sanitizeInput(body, allowed);
     // Validate payment status if provided
