@@ -259,3 +259,22 @@ The current `src/lib/pricing.ts` hardcodes a base labor rate of 50,000 IRR/hour,
 3. Enforce safe-integer IRR at every amount entry point, including technician withdrawal, admin package pricing, parts, prepay, invoice, and gateway.
 4. Do not set a replacement withdrawal minimum/maximum until MEKANIX approves the actual IRR policy.
 5. Add UI regression checks for no dollar symbol, no foreign-exchange dependency, and consistent IRR display across customer, technician, and admin surfaces.
+
+
+## Cross-check of the open implementation PRs
+
+This section records the state of the open branches reviewed on 2026-11-02. Passing CI is not a substitute for the IRR contract gates below.
+
+- **PR #66 — payment provider adapters:** adds provider adapter tests and IDPay verification that compares the returned integer amount and order ID with the persisted request. The adapter module itself explicitly remains disabled from the live payment lifecycle; the real route/persistence/callback/fulfillment integration is still a separate blocker. The shared payment UI still documents its amount as USD on `main`.
+- **PR #67 — VIP payment purpose:** improves the route by requiring `currency === "IRR"`, a verified gateway log, the VIP purpose, matching payment identity, and a matching gateway-log amount. However, the route still accepts `payment.amount >= plan.priceIrr` rather than exact plan-price equality, and it does not explicitly require the payment and plan amounts to be safe integer IRR. It remains production-disabled until the gateway lifecycle is wired.
+- **PR #72 — CARE extra proposal atomicity:** adds safe-integer validation for part and labor prices, but explicitly defines those values as Toman. The proposal total remains in Toman; this PR does not convert the amount to IRR or establish a single invoice/payment boundary. Its Zod schema also permits fractional prices even though the custom validator rejects them, so the route must consistently use the strict validator.
+- **PR #73 — bank withdrawal validation:** improves bank destination validation and atomic payout handling, but explicitly preserves USD-base amounts, a $5 minimum, a $10,000 maximum, and cent precision. It is incompatible with IRR-only money and remains release-blocked.
+- **PR #74 — financial audit:** documentation only; its CI, PostgreSQL CI, Docker E2E, and Production Readiness workflows passed on the preceding documented commit. The latest documentation commit has a new workflow run in progress at the time of this update.
+
+### Additional required gates from PR review
+
+1. For VIP, require `Number.isSafeInteger(payment.amount)`, integer IRR plan price, and the approved exact-price/discount policy. Do not silently accept overpayment unless an explicit credit/refund rule exists.
+2. For CARE, choose one boundary: keep technician proposal input in integer Toman and convert exactly once to integer IRR before invoice/payment persistence, or migrate all clients/API labels to integer IRR. The current atomicity PR alone does not make this decision.
+3. Align the CARE Zod schema and strict custom validator so fractional money cannot pass through an alternate call path.
+4. Keep PR #73 out of the release path until its USD-base contract is replaced by an approved IRR policy and integer-safe amount validation.
+5. Keep PR #66 adapter work separate from live payment activation until an authoritative persisted attempt, callback verification, and idempotent fulfillment path is complete.
