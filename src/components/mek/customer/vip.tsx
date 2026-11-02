@@ -64,6 +64,10 @@ export function CustomerVip({ userId }: { userId: string }) {
   }, [userId]);
 
   const subscribe = (plan: VipPlan) => {
+    if (!plan.priceCurrencyVerified || plan.priceIrr === null) {
+      toast.error(isFa ? "قیمت این طرح هنوز به ریال تأیید نشده است" : "This plan price is not yet verified in IRR");
+      return;
+    }
     setSelectedPlan(plan);
     setGatewayOpen(true);
   };
