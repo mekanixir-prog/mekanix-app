@@ -21,7 +21,7 @@ export function TechnicianProfile({ user }: { user: DemoUser }) {
   const tech = user.technician!;
   const level = TECH_LEVELS.find((l) => l.slug === tech.level) ?? TECH_LEVELS[0];
   const [bio, setBio] = useState(tech.bio ?? "");
-  const [hourlyRate, setHourlyRate] = useState(String(tech.hourlyRate));
+  const [hourlyRate, setHourlyRate] = useState(tech.feesCurrencyVerified === true ? String(tech.hourlyRate) : "");
   const [specs, setSpecs] = useState<string[]>(tech.specialties.map((s) => s.category));
 
   const toggleSpec = (slug: string) => {
@@ -54,7 +54,7 @@ export function TechnicianProfile({ user }: { user: DemoUser }) {
               <span className="text-muted-foreground">· {isFa ? toPersianDigits(tech.reviewCount) : tech.reviewCount} {t("tech.profile.reviews")} · {isFa ? toPersianDigits(tech.completedJobs) : tech.completedJobs} {t("tech.profile.jobs")} · {isFa ? toPersianDigits(tech.experienceYears) : tech.experienceYears} {t("common.yrs")}</span>
             </div>
             <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-              <span className="inline-flex items-center gap-1"><Wrench className="size-3 text-amber" /> {money(Number(tech.hourlyRate))}/{t("common.hr")}</span>
+              <span className="inline-flex items-center gap-1"><Wrench className="size-3 text-amber" /> {tech.feesCurrencyVerified === true ? `${money(Number(tech.hourlyRate), "IRR")}/${t("common.hr")}` : "—"}</span>
               <span className="inline-flex items-center gap-1"><Star className="size-3 text-amber" /> {t(`level.${tech.level}`, tech.level)}</span>
             </div>
           </div>
@@ -72,11 +72,11 @@ export function TechnicianProfile({ user }: { user: DemoUser }) {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">{t("tech.profile.hourlyRate")}</Label>
-                <Input value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} type="number" className="mt-1" />
+                <Input value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} type="number" disabled={tech.feesCurrencyVerified !== true} className="mt-1" />
               </div>
               <div>
                 <Label className="text-xs">{t("tech.profile.travelFee")}</Label>
-                <Input defaultValue={String(tech.travelFeeBase)} type="number" className="mt-1" />
+                <Input defaultValue={tech.feesCurrencyVerified === true ? String(tech.travelFeeBase) : ""} type="number" disabled={tech.feesCurrencyVerified !== true} className="mt-1" />
               </div>
             </div>
           </CardContent>
