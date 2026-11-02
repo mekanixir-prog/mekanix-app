@@ -25,6 +25,8 @@ const mockUserVipSubscriptionUpdateMany = vi.fn();
 const mockUserVipSubscriptionCreate = vi.fn();
 const mockUserVipSubscriptionFindFirst = vi.fn();
 const mockNotificationCreate = vi.fn();
+const mockSubscriptionFindUnique = vi.fn();
+const mockCreateVipSubscriptionAtomically = vi.fn();
 
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: vi.fn(async () => ({
@@ -33,6 +35,7 @@ vi.mock("@/lib/db-access", () => ({
     paymentGatewayLog: { findUnique: (...args: any[]) => mockPaymentGatewayLogFindUnique(...args) },
     userVipSubscription: {
       findFirst: (...args: any[]) => mockUserVipSubscriptionFindFirst(...args),
+      findUnique: (...args: any[]) => mockSubscriptionFindUnique(...args),
       updateMany: (...args: any[]) => mockUserVipSubscriptionUpdateMany(...args),
       create: (...args: any[]) => mockUserVipSubscriptionCreate(...args),
     },
@@ -42,6 +45,10 @@ vi.mock("@/lib/db-access", () => ({
 
 // Mock requireAuth — controllable per-test via mockRequireAuth
 const mockRequireAuth = vi.fn();
+vi.mock("@/lib/vip-subscription-atomic", () => ({
+  createVipSubscriptionAtomically: (...args: any[]) => mockCreateVipSubscriptionAtomically(...args),
+}));
+
 vi.mock("@/lib/api-helpers", () => ({
   requireAuth: (...args: any[]) => mockRequireAuth(...args),
 }));
@@ -96,6 +103,11 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       currency: "IRR",
     });
     mockUserVipSubscriptionUpdateMany.mockResolvedValue({ count: 0 });
+    mockCreateVipSubscriptionAtomically.mockResolvedValue("sub-1");
+    mockSubscriptionFindUnique.mockResolvedValue({
+      id: "sub-1", userId: "user-1", planId: "plan-1", status: "ACTIVE",
+      plan: { id: "plan-1", name: "Gold" },
+    });
     mockUserVipSubscriptionFindFirst.mockResolvedValue(null); // no existing sub using this payment
     mockUserVipSubscriptionCreate.mockResolvedValue({
       id: "sub-1",
@@ -209,13 +221,21 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     expect(createArgs.data.status).toBe("ACTIVE");
     expect(createArgs.data.paymentId).toBe("pay-1");
 
-    // Existing ACTIVE subscriptions were cancelled (idempotent cancel)
-    expect(mockUserVipSubscriptionUpdateMany).toHaveBeenCalledWith(
+    // Replacement is delegated to the provider-aware atomic transaction helper.
+    expect(mockCreateVipSubscriptionAtomically).toHaveBeenCalledWith(
+      expect.any(Object),
       expect.objectContaining({
-        where: { userId: "user-1", status: "ACTIVE" },
-        data: { status: "CANCELLED" },
-      })
+        userId: "user-1",
+        planId: "plan-1",
+        paymentId: "pay-1",
+        startedAt: expect.any(Date),
+        expiresAt: expect.any(Date),
+      }),
     );
+    expect(mockSubscriptionFindUnique).toHaveBeenCalledWith({
+      where: { id: "sub-1" },
+      include: { plan: true },
+    });
 
     // Body has ok:true and subscription
     const body = await res.json();
