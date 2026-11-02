@@ -53,6 +53,11 @@ function wallet(transactions: any[] = []) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // clearAllMocks preserves queued mockResolvedValueOnce implementations.
+  // Reset this mock so an unconsumed result from a throwing test cannot leak
+  // into the next test and change which ledger query receives the fixture.
+  mockWalletTransactionFindMany.mockReset();
+  mockWalletTransactionFindMany.mockResolvedValue([]);
   vi.stubEnv("MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED", "true");
   mockRequireAuth.mockResolvedValue({
     userId: "user-1", role: "TECHNICIAN", phone: "+989120000000", isGuest: false,
