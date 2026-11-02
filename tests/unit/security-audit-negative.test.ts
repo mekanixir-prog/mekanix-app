@@ -117,6 +117,7 @@ import { GET as jobsDetailGET } from "@/app/api/jobs/[id]/route";
 import { PATCH as vehiclesPATCH } from "@/app/api/vehicles/[id]/route";
 import { PATCH as jobStatusPATCH } from "@/app/api/jobs/[id]/status/route";
 import { GET as adminResourceGET } from "@/app/api/admin/[resource]/route";
+import { GET as dashboardGET } from "@/app/api/dashboard/route";
 import { GET as careAdminPackagesGET } from "@/app/api/care/admin/packages/route";
 import { POST as mechanicApprovePOST } from "@/app/api/mechanic-applications/[id]/approve/route";
 import { POST as otpVerifyPOST } from "@/app/api/auth/otp/verify/route";
@@ -341,6 +342,26 @@ describe("Job status authorization hardening", () => {
 
     expect(res.status).toBe(400);
     expect(mockJobUpdateMany).not.toHaveBeenCalled();
+  });
+});
+
+// ============================================================================
+ // Dashboard business intelligence is admin-only
+ // ============================================================================
+describe("Dashboard authorization", () => {
+  it("rejects a CUSTOMER before returning technician revenue or recent job identities", async () => {
+    const token = await mintUserToken("customer-user", "CUSTOMER", "+989120000003");
+    const req = jsonReq("GET", "http://localhost/api/dashboard", token);
+    const res = await dashboardGET(req);
+    expect(res.status).toBe(403);
+    expect(mockJobFindUnique).not.toHaveBeenCalled();
+  });
+
+  it("rejects a TECHNICIAN before returning platform-wide business intelligence", async () => {
+    const token = await mintUserToken("tech-user", "TECHNICIAN", "+989120000004");
+    const req = jsonReq("GET", "http://localhost/api/dashboard", token);
+    const res = await dashboardGET(req);
+    expect(res.status).toBe(403);
   });
 });
 
