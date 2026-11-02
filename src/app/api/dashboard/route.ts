@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
+import { requireRole } from "@/lib/auth";
 
 // GET /api/dashboard — platform-wide stats.
-// Authenticated users only. Customer/Technician see aggregate stats (no PII).
-// Admin sees the same stats (the data is already aggregate).
+// Admin only: response includes business intelligence and names tied to jobs.
 export async function GET(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
+  // This response includes cross-technician revenue and recent customer /
+  // technician identities. It is an admin-only business intelligence endpoint.
+  const forbidden = requireRole(session, "ADMIN");
+  if (forbidden) return forbidden;
 
   const now = Date.now();
   const day = 86400000;
