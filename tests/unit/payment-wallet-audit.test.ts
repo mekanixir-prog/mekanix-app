@@ -598,7 +598,7 @@ describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
     mockCreateWithdrawalAtomically.mockResolvedValue(false);
 
     const res = await withdrawPOST(makeWithdrawalRequest(
-      { amount: 500, currency: "IRR", method: "card" }, "test-withdrawal-key-001"
+      { amount: 500, currency: "IRR", method: "bank", bankName: "بانک ملت", shebaNumber: "IR062960000000100324200001" }, "test-withdrawal-key-001"
     ));
 
     expect(res.status).toBe(400);
@@ -610,7 +610,7 @@ describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
 
   it("returns the committed request after an atomic withdrawal", async () => {
     const withdrawal = {
-      id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, method: "card", cardNumber: null, bankName: null, shebaNumber: null, status: "REQUESTED",
+      id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, method: "bank", cardNumber: null, bankName: "بانک ملت", shebaNumber: "IR062960000000100324200001", status: "REQUESTED",
     };
     mockWalletFindUnique
       .mockResolvedValueOnce({ id: "wallet_1", balance: 1000, technicianId: "tech_1" })
