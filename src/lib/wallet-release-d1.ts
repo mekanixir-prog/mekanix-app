@@ -74,8 +74,28 @@ export async function releaseWalletTransactionWithD1(
     timestamp
   );
 
-  const results = await d1.batch([walletUpdate, transactionUpdate, ledgerInsert]);
+  // A conditional UPDATE/INSERT that affects zero rows is still valid SQL
+  // and does not abort D1.batch. Force a statement error after every required
+  // mutation so a zero-row result rolls the entire batch back, not just the
+  // final returned boolean.
+  const assertOneChange = () => d1.prepare(`
+    SELECT CASE
+      WHEN changes() = 1 THEN 1
+      ELSE json_extract('not-json', '
+}
+)
+    END
+  `).bind();
+
+  const results = await d1.batch([
+    walletUpdate,
+    assertOneChange(),
+    transactionUpdate,
+    assertOneChange(),
+    ledgerInsert,
+    assertOneChange(),
+  ]);
   return results[0]?.meta?.changes === 1 &&
-    results[1]?.meta?.changes === 1 &&
-    results[2]?.meta?.changes === 1;
+    results[2]?.meta?.changes === 1 &&
+    results[4]?.meta?.changes === 1;
 }
