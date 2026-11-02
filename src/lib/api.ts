@@ -100,7 +100,7 @@ export const api = {
     req<Job>(`/api/jobs/${id}/status`, { method: "PATCH", body: JSON.stringify({ status, ...extra }) }),
   setJobDiagnosis: (id: string, diagnosis: string, severity?: string, faultCode?: string) =>
     req<Job>(`/api/jobs/${id}/diagnosis`, { method: "PATCH", body: JSON.stringify({ diagnosis, severity, faultCode }) }),
-  addPart: (jobId: string, part: { name: string; sku?: string; quantity: number; unitPrice: number }) =>
+  addPart: (jobId: string, part: { name: string; sku?: string; quantity: number; unitPrice: number; currency: "IRR" }) =>
     req<Job>(`/api/jobs/${jobId}/parts`, { method: "POST", body: JSON.stringify(part) }),
   removePart: (jobId: string, partId: string) =>
     req<Job>(`/api/jobs/${jobId}/parts`, { method: "DELETE", body: JSON.stringify({ partId }) }),
