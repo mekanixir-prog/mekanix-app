@@ -59,7 +59,7 @@ type WithdrawalReq = {
   processedAt: string | null;
 };
 
-const MIN_WITHDRAWAL = 5; // USD
+const MIN_WITHDRAWAL_IRR = 1; // technical minimum: one integer Rial; no USD denomination
 
 export function TechnicianEarnings({ user }: { user: DemoUser }) {
   const { t, isFa, money, lang } = useT();
@@ -116,9 +116,9 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
   const totalWithdrawn = wallet?.totalWithdrawn ?? 0;
 
   const submitWithdraw = async () => {
-    const amt = parseFloat(withdrawAmount);
-    if (!amt || amt < MIN_WITHDRAWAL) {
-      toast.error(t("tech.earnings.withdrawMin").replace("{amount}", `$${MIN_WITHDRAWAL}`));
+    const amt = Number(withdrawAmount);
+    if (!Number.isSafeInteger(amt) || amt < MIN_WITHDRAWAL_IRR) {
+      toast.error(t("tech.earnings.withdrawMin").replace("{amount}", money(MIN_WITHDRAWAL_IRR)));
       return;
     }
     if (amt > balance) {
@@ -135,6 +135,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
         body: JSON.stringify({
           technicianId: user.technician!.id,
           amount: amt,
+          currency: "IRR",
           method: withdrawMethod,
           cardNumber: withdrawCard,
           shebaNumber: withdrawSheba,
@@ -202,13 +203,13 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
             <Button
               className="w-full bg-amber text-black hover:bg-amber/90"
               onClick={() => setWithdrawOpen(true)}
-              disabled={balance < MIN_WITHDRAWAL}
+              disabled={balance < MIN_WITHDRAWAL_IRR}
             >
               <Banknote className="mr-2 size-4" /> {t("tech.earnings.withdrawNow")}
             </Button>
             {balance < MIN_WITHDRAWAL && (
               <p className="text-center text-[10px] text-muted-foreground">
-                {t("tech.earnings.withdrawMin").replace("{amount}", `$${MIN_WITHDRAWAL}`)}
+                {t("tech.earnings.withdrawMin").replace("{amount}", money(MIN_WITHDRAWAL_IRR))}
               </p>
             )}
           </div>
