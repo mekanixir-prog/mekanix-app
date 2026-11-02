@@ -143,4 +143,29 @@ describe("GET /api/wallets — atomic escrow release orchestration", () => {
     expect(payload.earningsSummary.currency).toBe("IRR");
   });
 
+  it("builds earnings summaries only from released positive net IRR ledger entries", async () => {
+    const createdAt = new Date();
+    mockWalletFindUnique
+      .mockResolvedValueOnce(wallet())
+      .mockResolvedValueOnce(wallet());
+    mockWalletTransactionFindMany.mockResolvedValue([
+      { createdAt, netAmount: 250 },
+    ]);
+
+    const response = await GET(makeRequest());
+    expect(response.status).toBe(200);
+    expect(mockWalletTransactionFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        walletId: "wallet-1",
+        status: "AVAILABLE",
+        netAmount: { gt: 0 },
+      }),
+    }));
+    const payload = await response.json();
+    expect(payload.currency).toBe("IRR");
+    expect(payload.earningsSummary.valid).toBe(true);
+    expect(payload.earningsSummary.todayIrr).toBe(250);
+    expect(payload.earningsSummary.last7DaysIrr).toBe(250);
+  });
+
 });
