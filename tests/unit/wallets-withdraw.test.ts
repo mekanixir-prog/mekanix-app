@@ -30,7 +30,12 @@ function request(body: unknown, key = "withdrawal-request-0001") {
   return new Request("https://mekanix.test/api/wallets/withdraw", {
     method: "POST",
     headers: { "content-type": "application/json", "idempotency-key": key },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      method: "bank",
+      bankName: "بانک ملت",
+      shebaNumber: "IR062960000000100324200001",
+      ...body,
+    }),
   });
 }
 
@@ -44,7 +49,7 @@ beforeEach(() => {
 
 describe("atomic withdrawal route", () => {
   it("commits a withdrawal and returns the updated balance", async () => {
-    const withdrawal = { id: "wd-1", walletId: "wallet-1", amount: 500, method: "card", cardNumber: null, bankName: null, shebaNumber: null, status: "REQUESTED" };
+    const withdrawal = { id: "wd-1", walletId: "wallet-1", amount: 500, method: "bank", cardNumber: null, bankName: "بانک ملت", shebaNumber: "IR062960000000100324200001", status: "REQUESTED" };
     atomic.mockResolvedValue(true);
     db.withdrawalRequest.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(withdrawal);
     db.wallet.findUnique.mockResolvedValueOnce({ id: "wallet-1", balance: 1000 })
@@ -89,6 +94,13 @@ describe("atomic withdrawal route", () => {
     const response = await POST(request({ amount: 500, currency: "IRR" }));
     expect(response.status).toBe(409);
     expect((await response.json()).code).toBe("WALLET_CURRENCY_UNVERIFIED");
+    expect(atomic).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsupported payout methods and invalid Sheba before reserving funds", async () => {
+    expect((await POST(request({ amount: 500, currency: "IRR", method: "card" }))).status).toBe(400);
+    expect((await POST(request({ amount: 500, currency: "IRR", shebaNumber: "IR000000000000000000000000" }))).status).toBe(400);
+    expect((await POST(request({ amount: 500, currency: "IRR", bankName: "" }))).status).toBe(400);
     expect(atomic).not.toHaveBeenCalled();
   });
 
