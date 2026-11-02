@@ -149,7 +149,9 @@ if command -v bun &> /dev/null; then
   if echo "$BUN_AUDIT" | grep -qi "vulnerabilit"; then
     echo "⚠️  Dependency vulnerabilities found:"
     echo "$BUN_AUDIT" | tail -15
-    if echo "$BUN_AUDIT" | grep -Eqi '^[[:space:]]*(critical|high):'; then
+    # Bun audit output may prefix severity lines with ANSI color codes or
+    # package-tree glyphs, so do not anchor the severity match to column 1.
+    if printf '%s\n' "$BUN_AUDIT" | sed -E 's/\x1B\[[0-9;]*[[:alpha:]]//g' | grep -Eqi '(^|[[:space:]│├└─])((critical|high):|🔴[[:space:]]*(critical|high))'; then
       echo "❌ Critical/high dependency advisories block production readiness"
       ERRORS=$((ERRORS + 1))
     else
