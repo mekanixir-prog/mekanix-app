@@ -40,6 +40,10 @@ const TECH_TRANSITIONS: { to: Status; from: Status[] }[] = [
 //  - CANCEL only before technician arrives (REQUESTED, ACCEPTED, EN_ROUTE)
 //  - APPROVE_REPAIR (customerApproved=true) only when WAITING_APPROVAL
 const CUSTOMER_CANCEL_FROM: Status[] = ["REQUESTED", "ACCEPTED", "EN_ROUTE"];
+const VALID_JOB_STATUSES = new Set<Status>([
+  "REQUESTED", "ACCEPTED", "EN_ROUTE", "ARRIVED", "DIAGNOSING",
+  "REPAIRING", "WAITING_APPROVAL", "COMPLETED", "CANCELLED", "REJECTED",
+]);
 
 function isAllowedTransition(
   role: "CUSTOMER" | "TECHNICIAN" | "ADMIN" | "FLEET_MANAGER" | "PARTNER",
@@ -49,16 +53,17 @@ function isAllowedTransition(
 ): boolean {
   if (role === "ADMIN") return true;
 
-  // FLEET_MANAGER behaves like a customer for the job-status state machine
-  // (can cancel pre-service and approve repair estimates for fleet vehicles).
-  // PARTNER is read-only and cannot transition anything.
-  const actsAsCustomer = role === "CUSTOMER" || role === "FLEET_MANAGER";
-  if (role === "PARTNER") return false;
+  // Fleet-manager and partner access is denied by requireJobParticipant until
+  // the schema has a verified fleet/job ownership relation.
+  const actsAsCustomer = role === "CUSTOMER";
+  if (role === "FLEET_MANAGER" || role === "PARTNER") return false;
 
   // Special: customer setting customerApproved=true (approve repair)
   if (actsAsCustomer) {
     if (customerApproved === true) {
-      return currentStatus === "WAITING_APPROVAL";
+      // Approval changes only the approval flag; it must never smuggle a
+      // separate job-state transition (e.g. WAITING_APPROVAL → COMPLETED).
+      return currentStatus === "WAITING_APPROVAL" && nextStatus === currentStatus;
     }
     if (nextStatus === "CANCELLED") {
       return CUSTOMER_CANCEL_FROM.includes(currentStatus as Status);
@@ -93,6 +98,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const { status, ...extra } = body;
 
+  if (status !== undefined && (typeof status !== "string" || !VALID_JOB_STATUSES.has(status as Status))) {
+    return NextResponse.json({ error: "وضعیت کار نامعتبر است" }, { status: 400 });
+  }
+  if (extra.customerApproved !== undefined && typeof extra.customerApproved !== "boolean") {
+    return NextResponse.json({ error: "customerApproved باید مقدار بولی داشته باشد" }, { status: 400 });
+  }
+
   // Load the current job so we can validate the transition
   const db = await getDbForLib();
   const existing = await db.job.findUnique({ where: { id }, select: { status: true, technicianId: true } });
@@ -101,7 +113,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // For technicians, ensure they are the ASSIGNED technician (requireJobParticipant already checked)
   // For customers, ensure they own the request (requireJobParticipant already checked)
 
-  const customerApproved = extra.customerApproved != null ? Boolean(extra.customerApproved) : undefined;
+  const customerApproved = typeof extra.customerApproved === "boolean" ? extra.customerApproved : undefined;
 
   // If neither status nor customerApproved is provided, nothing to do
   if (!status && customerApproved === undefined) {
