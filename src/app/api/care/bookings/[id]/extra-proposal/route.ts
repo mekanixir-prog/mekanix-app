@@ -3,6 +3,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
+import { getTechnicianFromSession } from "@/lib/auth";
 import { validateExtraProposalInput } from "@/lib/care-extra-pricing";
 import {
   requireAssignedTechnician,
@@ -41,6 +42,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const authz = await requireAssignedTechnician(session, id);
   if (authz) return authz;
+
+  // Carry the trusted technician profile ID into the atomic write. The earlier
+  // route-level authorization alone is not sufficient: assignment may change
+  // between that check and the database compare-and-set.
+  const actorTechnician = session.role === "TECHNICIAN"
+    ? await getTechnicianFromSession(session)
+    : null;
+  if (session.role === "TECHNICIAN" && !actorTechnician?.id) {
+    return NextResponse.json({ error: "پروفایل مکانیک یافت نشد" }, { status: 403 });
+  }
 
   let rawBody: unknown;
   try {
@@ -140,7 +151,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const approval = await createCareExtraProposalAtomically(db, {
       bookingId: id,
       expectedBookingStatus: booking.status as "INSPECTING" | "IN_SERVICE",
+      actorRole: session.role === "ADMIN" ? "ADMIN" : "TECHNICIAN",
       actorUserId: session.userId,
+      actorTechnicianId: actorTechnician?.id ?? null,
       proposal,
       details: {
         description: description.value,
