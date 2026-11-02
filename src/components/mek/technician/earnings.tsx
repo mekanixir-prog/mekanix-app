@@ -174,7 +174,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label={t("tech.earnings.availableBalance")} value={moneyDisplay(balance)} icon={Wallet} tone="amber" sub={t("tech.earnings.readyWithdraw")} />
         <StatCard label={t("tech.earnings.pendingBalance")} value={moneyDisplay(pending)} icon={Clock} tone="blue" sub={t("tech.earnings.holdPeriod")} />
-        <StatCard label={t("tech.earnings.totalEarned")} value={moneyDisplay(totalEarned)} icon={TrendingUp} tone="emerald"  />
+        <StatCard label={t("tech.earnings.totalGross")} value={moneyDisplay(totalEarned)} icon={TrendingUp} tone="emerald"  />
         <StatCard label={t("tech.earnings.commission")} value={moneyDisplay(totalCommission)} icon={AlertCircle} tone="violet" sub={t("tech.earnings.commissionDesc")} />
       </div>
 
