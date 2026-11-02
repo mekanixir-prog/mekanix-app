@@ -24,9 +24,14 @@ function toPersianDigits(s: string | number): string {
 }
 
 export function fmtMoney(amount: number, currency = "IRR", lang: "en" | "fa" = "en"): string {
+  if (!Number.isFinite(amount)) return "—";
+  // IRR has no fractional unit. Never round an invalid/unsafe IRR amount into
+  // a plausible-looking financial figure at the presentation boundary.
+  if (currency === "IRR" && !Number.isSafeInteger(amount)) return "—";
+
   const c = CURRENCIES[currency];
   const symbol = c?.symbol ?? (currency || "?") + " ";
-  const safeAmount = Number.isFinite(amount) ? amount : 0;
+  const safeAmount = amount;
   const formatted = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 0,
     maximumFractionDigits: currency === "IRR" ? 0 : 2,
