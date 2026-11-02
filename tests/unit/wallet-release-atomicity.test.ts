@@ -98,23 +98,29 @@ describe("wallet escrow release atomicity", () => {
       }),
       batch: vi.fn().mockResolvedValue([
         { meta: { changes: 1 } },
+        { meta: { changes: 0 } },
         { meta: { changes: 1 } },
+        { meta: { changes: 0 } },
         { meta: { changes: 1 } },
+        { meta: { changes: 0 } },
       ]),
     };
 
     await expect(releaseWalletTransactionWithD1(d1 as any, "wallet-1", "txn-1", new Date()))
       .resolves.toBe(true);
     expect(d1.batch).toHaveBeenCalledTimes(1);
-    expect(d1.batch.mock.calls[0][0]).toHaveLength(3);
+    expect(d1.batch.mock.calls[0][0]).toHaveLength(6);
     expect(prepared[0].sql).toContain('"pendingBalance"');
     expect(prepared[0].sql).toContain('"netAmount" >= 0');
-    expect(prepared[1].sql).toContain("changes() = 1");
-    expect(prepared[2].sql).toContain('INSERT INTO "WalletLedger"');
-    expect(prepared[2].sql).toContain("'RELEASE'");
+    expect(prepared[1].sql).toContain("json('not-json')");
     expect(prepared[2].sql).toContain("changes() = 1");
+    expect(prepared[3].sql).toContain("json('not-json')");
+    expect(prepared[4].sql).toContain('INSERT INTO "WalletLedger"');
+    expect(prepared[4].sql).toContain("'RELEASE'");
+    expect(prepared[4].sql).toContain("changes() = 1");
+    expect(prepared[5].sql).toContain("json('not-json')");
     expect(prepared[0].values).toHaveLength(14);
-    expect(prepared[2].values).toContain("wallet-release:txn-1:LEDGER");
+    expect(prepared[4].values).toContain("wallet-release:txn-1:LEDGER");
   });
 
   it("returns false when the conditional wallet update loses the race", async () => {
