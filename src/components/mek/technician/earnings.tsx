@@ -83,7 +83,12 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
   const loadWallet = async (techId: string) => {
     try {
       const res = await fetch(`/api/wallets?technicianId=${techId}`);
+      if (!res.ok) throw new Error("Wallet request failed");
       const w = await res.json();
+      if (w?.currency !== "IRR" || w?.earningsSummary?.currency !== "IRR") {
+        setWallet(null);
+        return;
+      }
       setWallet(w);
     } catch {}
   };
