@@ -126,7 +126,7 @@ export function AdminOverview() {
         <div className="rounded-xl border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border p-4">
             <h3 className="font-display text-sm font-semibold">{t("admin.overview.techPerformance")}</h3>
-            <span className="text-[11px] text-muted-foreground">{t("admin.overview.topByRevenue")}</span>
+            <span className="text-[11px] text-muted-foreground">{t("admin.overview.topByGrossCollected")}</span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -135,7 +135,7 @@ export function AdminOverview() {
                   <th className="px-4 py-2 text-left font-medium">{t("admin.overview.col.technician")}</th>
                   <th className="px-4 py-2 text-right font-medium">{t("admin.overview.col.jobs")}</th>
                   <th className="px-4 py-2 text-right font-medium">{t("admin.overview.col.rating")}</th>
-                  <th className="px-4 py-2 text-right font-medium">{t("admin.overview.col.revenue")}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t("admin.overview.col.grossCollected")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -155,7 +155,7 @@ export function AdminOverview() {
                       <td className="px-4 py-2.5 text-right tabular-nums">
                         <span className="inline-flex items-center gap-1"><Star className="size-3 fill-amber text-amber" />{isFa ? toPersianDigits(tp.rating.toFixed(1)) : tp.rating.toFixed(1)}</span>
                       </td>
-                      <td className="px-4 py-2.5 text-right font-medium text-amber tabular-nums">{money(tp.revenue)}</td>
+                      <td className="px-4 py-2.5 text-right font-medium text-amber tabular-nums">{money(tp.collectedGrossIrr, "IRR")}</td>
                     </tr>
                   );
                 })}
