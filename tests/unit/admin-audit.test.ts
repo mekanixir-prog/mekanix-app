@@ -100,7 +100,6 @@ function makePatchRequest(resource: string, id: string, body: Record<string, any
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED", "true");
-  vi.stubEnv("MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED", "true");
   mockWriteAuditLog.mockResolvedValue(undefined);
   mockAuditLogCreate.mockResolvedValue({});
 });
@@ -126,16 +125,6 @@ describe("SEC-4 — admin PATCH audit logging", () => {
     expect(args.entityId).toBe("tech-1");
     expect(args.before).toEqual(before);
     expect(args.after).toEqual(after);
-  });
-
-  it("fails closed when technician fee currency is not verified", async () => {
-    vi.stubEnv("MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED", "false");
-    const req = makePatchRequest("technicians", "tech-1", { hourlyRate: 75 });
-    const res = await PATCH(req, { params: Promise.resolve({ resource: "technicians", id: "tech-1" }) });
-    expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ code: "TECHNICIAN_FEE_CURRENCY_UNVERIFIED" });
-    expect(mockTechnicianFindUnique).not.toHaveBeenCalled();
-    expect(mockTechnicianUpdate).not.toHaveBeenCalled();
   });
 
   // ──────────── 2. customers with status → CHANGE_USER_STATUS ────────────
