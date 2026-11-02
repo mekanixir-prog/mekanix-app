@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { convertUsdToIrr, fmtMoney, setUsdToIrrRate } from "@/lib/format";
 import {
   addIrr,
   assertIrrInteger,
@@ -8,6 +9,20 @@ import {
 } from "@/lib/money/irr";
 
 describe("canonical IRR money primitives", () => {
+  describe("money display and explicit FX conversion", () => {
+    it("formats IRR as stored and does not apply an exchange rate", () => {
+      setUsdToIrrRate(99_999);
+      expect(fmtMoney(125_000, "IRR", "en")).toBe("﷼125,000");
+      expect(fmtMoney(125_000, "IRR", "fa")).toContain("۱۲۵");
+      expect(convertUsdToIrr(1)).toBe(99_999);
+      setUsdToIrrRate(60_000);
+    });
+
+    it("keeps USD display in USD regardless of Persian locale", () => {
+      expect(fmtMoney(125, "USD", "fa")).toContain("$۱۲۵");
+    });
+  });
+
   describe("assertIrrInteger / parseIrrInput", () => {
     it("accepts zero and positive safe integer IRR values", () => {
       expect(parseIrrInput(0)).toBe(0);
