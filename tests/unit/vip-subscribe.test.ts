@@ -184,6 +184,15 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     expect(res.status).toBe(400);
   });
 
+  it("blocks subscription while legacy VIP plan prices are unverified", async () => {
+    vi.stubEnv("MEKANIX_VIP_PLAN_PRICES_IRR_VERIFIED", "false");
+    const response = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("VIP_PRICE_CURRENCY_UNVERIFIED");
+    expect(mockPaymentFindUnique).not.toHaveBeenCalled();
+    expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
+  });
+
   it("rejects payments in a different currency or above the exact plan price", async () => {
     vi.stubEnv("NODE_ENV", "test");
     mockPaymentFindUnique.mockResolvedValueOnce({
