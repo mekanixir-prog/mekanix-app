@@ -174,8 +174,8 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label={t("tech.earnings.availableBalance")} value={moneyDisplay(balance)} icon={Wallet} tone="amber" sub={t("tech.earnings.readyWithdraw")} />
         <StatCard label={t("tech.earnings.pendingBalance")} value={moneyDisplay(pending)} icon={Clock} tone="blue" sub={t("tech.earnings.holdPeriod")} />
-        <StatCard label={t("tech.earnings.totalEarned")} value={money(totalEarned)} icon={TrendingUp} tone="emerald"  />
-        <StatCard label={t("tech.earnings.commission")} value={money(totalCommission)} icon={AlertCircle} tone="violet" sub={t("tech.earnings.commissionDesc")} />
+        <StatCard label={t("tech.earnings.totalEarned")} value={moneyDisplay(totalEarned)} icon={TrendingUp} tone="emerald"  />
+        <StatCard label={t("tech.earnings.commission")} value={moneyDisplay(totalCommission)} icon={AlertCircle} tone="violet" sub={t("tech.earnings.commissionDesc")} />
       </div>
 
       {/* Hold policy banner */}
@@ -204,7 +204,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
           <div className="mt-3 space-y-2">
             <div className="rounded-lg border border-emerald-glow/30 bg-emerald-glow/5 p-3">
               <p className="text-[11px] uppercase tracking-wide text-emerald-glow">{t("tech.earnings.availableBalance")}</p>
-              <p className="mt-0.5 font-display text-lg font-bold text-amber">{money(balance)}</p>
+              <p className="mt-0.5 font-display text-lg font-bold text-amber">{moneyDisplay(balance)}</p>
               <p className="text-[11px] text-muted-foreground">{t("tech.earnings.released")}</p>
             </div>
             <Button
@@ -247,7 +247,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
                     <p className="text-[11px] text-muted-foreground">{fmtDate(txn.createdAt, undefined, lang)}</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-display text-sm font-semibold text-amber">{money(txn.netAmount)}</p>
+                    <p className="font-display text-sm font-semibold text-amber">{moneyDisplay(txn.netAmount)}</p>
                     <p className={`text-[10px] ${released ? "text-emerald-glow" : "text-muted-foreground"}`}>
                       {released ? t("tech.earnings.released") : t("tech.earnings.countdown").replace("{time}", countdown)}
                     </p>
@@ -296,7 +296,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
                         </span>
                       </td>
                       <td className={`px-4 py-2.5 text-right font-medium ${txn.netAmount >= 0 ? "text-amber" : "text-destructive"}`}>
-                        {money(Math.abs(txn.netAmount))} {txn.netAmount >= 0 ? "+" : "−"}
+                        {moneyDisplay(Math.abs(txn.netAmount))} {txn.netAmount >= 0 ? "+" : "−"}
                       </td>
                     </tr>
                   ))}
@@ -339,7 +339,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
                           {t(`tech.earnings.wdStatus.${w.status}` as any) ?? w.status}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 text-right font-medium text-amber">{money(w.amount)}</td>
+                      <td className="px-4 py-2.5 text-right font-medium text-amber">{moneyDisplay(w.amount)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -357,7 +357,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
               <Banknote className="size-5 text-amber" /> {t("tech.earnings.withdrawDialog")}
             </DialogTitle>
             <DialogDescription>
-              {t("tech.earnings.availableBalance")}: <span className="font-medium text-amber">{money(balance)}</span>
+              {t("tech.earnings.availableBalance")}: <span className="font-medium text-amber">{moneyDisplay(balance)}</span>
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
