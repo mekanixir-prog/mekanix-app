@@ -284,39 +284,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     });
   }
 
-  // Auto-create invoice on WAITING_APPROVAL if none exists
-  if (status === "WAITING_APPROVAL" && !job.invoice) {
-    const laborHours = extra.laborHours ?? 1.5;
-    const laborRate = Number(job.technician.hourlyRate);
-    const laborTotal = laborHours * laborRate;
-    const partsTotal = job.parts.reduce((s, p) => s + Number(p.unitPrice) * p.quantity, 0);
-    const travelFee = Number(job.technician.travelFeeBase);
-    const subtotal = laborTotal + partsTotal + travelFee;
-    const taxTotal = subtotal * 0.09;
-    const total = subtotal + taxTotal;
-    await db.invoice.create({
-      data: {
-        code: `INV-${Math.floor(3000 + Math.random() * 6000)}`,
-        jobId: job.id,
-        laborHours,
-        laborRate,
-        laborTotal,
-        partsTotal,
-        travelFee,
-        subtotal,
-        taxRate: 0.09,
-        taxTotal,
-        discount: 0,
-        total,
-        currency: "IRR",
-        status: "SENT",
-        notes: "Parts covered by 6-month warranty.",
-      },
-    });
-    const fresh = await db.job.findUnique({ where: { id }, include });
-    return NextResponse.json(fresh);
-  }
-  }
+  // Invoice creation is centralized in POST /api/invoices. This status
+  // endpoint only changes workflow state and must never calculate money itself.
 
   return NextResponse.json(job);
 }
