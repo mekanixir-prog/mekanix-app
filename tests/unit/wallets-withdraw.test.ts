@@ -36,6 +36,7 @@ function request(body: unknown, key = "withdrawal-request-0001") {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED", "true");
   rateLimit.mockResolvedValue({ success: true, resetMs: 60000 });
   db.wallet.findUnique.mockResolvedValue({ id: "wallet-1", balance: 1000 });
   db.withdrawalRequest.findUnique.mockResolvedValue(null);
@@ -80,6 +81,14 @@ describe("atomic withdrawal route", () => {
     expect((await POST(request({ amount: 500, currency: "USD" }))).status).toBe(400);
     expect((await POST(request({ amount: 500 }))).status).toBe(400);
     expect((await POST(request({ amount: 500, currency: "IRR" }, ""))).status).toBe(400);
+    expect(atomic).not.toHaveBeenCalled();
+  });
+
+  it("blocks withdrawals until legacy wallet currency provenance is verified", async () => {
+    vi.stubEnv("MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED", "false");
+    const response = await POST(request({ amount: 500, currency: "IRR" }));
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("WALLET_CURRENCY_UNVERIFIED");
     expect(atomic).not.toHaveBeenCalled();
   });
 
