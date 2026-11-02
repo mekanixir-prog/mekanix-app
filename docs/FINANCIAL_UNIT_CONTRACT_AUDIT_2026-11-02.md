@@ -278,3 +278,16 @@ This section records the state of the open branches reviewed on 2026-11-02. Pass
 3. Align the CARE Zod schema and strict custom validator so fractional money cannot pass through an alternate call path.
 4. Keep PR #73 out of the release path until its USD-base contract is replaced by an approved IRR policy and integer-safe amount validation.
 5. Keep PR #66 adapter work separate from live payment activation until an authoritative persisted attempt, callback verification, and idempotent fulfillment path is complete.
+
+
+### Gateway initiation branch still trusts the client amount (simulator only)
+
+- In PR #66, `src/app/api/gateway/initiate/route.ts` explicitly documents that the amount comes from the client for development testing and that production must resolve it from the linked invoice/plan. It is currently production-guarded and returns 404 in production.
+- The development route checks only positive/truthy amount and a 100,000,000 IRR ceiling; it does not require `Number.isSafeInteger`. It then stores the client amount with `currency: "IRR"`.
+- The paired verify route is also simulator-only. It creates a successful Payment from the stored gateway-log amount and uses a unique `gatewayLogId` for retry safety, but it is not a real provider callback/signature-verification flow.
+- Required fix before production: derive the payable amount server-side from the linked invoice or VIP plan, validate it as a safe integer IRR, persist purpose/entity linkage, and verify the real provider callback against that exact amount and currency. Never accept the amount from the browser as the source of truth.
+
+### CARE strict validator status clarification
+
+- The PR #72 route does call `validateExtraProposalInput`, which rejects fractional and unsafe integer Toman values before the atomic write. The separate Zod `extraProposalSchema` still permits fractional price values, so the two validation contracts can drift; consolidate them or add tests proving every route uses the strict integer validator.
+- The atomic writer persists the validated numeric amounts without converting them. The route's notification labels the calculated total as Toman. No conversion to IRR occurs in the proposal path itself.
