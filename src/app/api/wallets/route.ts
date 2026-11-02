@@ -48,6 +48,56 @@ export async function GET(req: Request) {
     });
   }
 
+  // Repair the crash window where the Job reached COMPLETED but the separate
+  // holdUntil write failed. Only PREPAY rows are eligible; use the immutable
+  // completedAt timestamp so retries never restart the 12-hour hold.
+  const strandedPrepay = wallet.transactions.filter(
+    (transaction) =>
+      transaction.kind === "PREPAY" &&
+      transaction.status === "PENDING" &&
+      transaction.holdUntil === null &&
+      transaction.jobId !== null
+  );
+  if (strandedPrepay.length > 0) {
+    const completedJobs = await db.job.findMany({
+      where: {
+        id: { in: strandedPrepay.map((transaction) => transaction.jobId as string) },
+        status: "COMPLETED",
+        completedAt: { not: null },
+      },
+      select: { id: true, completedAt: true },
+    });
+    const completedAtByJob = new Map(
+      completedJobs
+        .filter((job) => job.completedAt !== null)
+        .map((job) => [job.id, job.completedAt as Date])
+    );
+
+    for (const transaction of strandedPrepay) {
+      const completedAt = completedAtByJob.get(transaction.jobId as string);
+      if (!completedAt) continue;
+      const holdUntil = new Date(completedAt.getTime() + 12 * 60 * 60 * 1000);
+      await db.walletTransaction.updateMany({
+        where: {
+          id: transaction.id,
+          walletId: wallet.id,
+          kind: "PREPAY",
+          status: "PENDING",
+          holdUntil: null,
+        },
+        data: { holdUntil },
+      });
+    }
+
+    wallet = await db.wallet.findUnique({
+      where: { technicianId },
+      include: {
+        transactions: { orderBy: { createdAt: "desc" }, take: 50 },
+        withdrawals: { orderBy: { requestedAt: "desc" }, take: 20 },
+      },
+    }) ?? wallet;
+  }
+
   // Auto-release matured escrow entries. The helper commits the transaction
   // state transition and both wallet balance changes atomically for D1 and
   // transactional Node databases. A failed balance update cannot strand an
@@ -68,5 +118,5 @@ export async function GET(req: Request) {
     },
   });
 
-  return NextResponse.json(fresh);
+  return NextResponse.json(fresh ? { ...fresh, currency: "IRR" as const } : fresh);
 }
