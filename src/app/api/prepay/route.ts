@@ -71,6 +71,15 @@ export async function POST(req: Request) {
       { status: 409 }
     );
   }
+  // A new IRR prepay must not be mixed into a wallet whose historical
+  // balance/ledger currency has not been reconciled.
+  if (process.env.MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED !== "true") {
+    return NextResponse.json(
+      { error: "واحد موجودی کیف پول هنوز تأیید نشده است؛ ثبت پیش‌پرداخت تا تطبیق دفترکل متوقف است", code: "WALLET_IRR_PROVENANCE_UNVERIFIED" },
+      { status: 409 }
+    );
+  }
+
   // A paid marker without all four idempotent financial records is a legacy
   // partial-write state. Do not guess whether to credit again; surface it for
   // explicit reconciliation instead of silently claiming the wallet is correct.
