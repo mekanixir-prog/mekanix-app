@@ -82,6 +82,15 @@ export async function POST(req: Request) {
   });
   if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
 
+  // Existing JobPart rows predate the IRR-only writer and have no stored currency.
+  // Do not invoice them until a reviewed backfill verifies their unit.
+  if (job.parts.length > 0 && process.env.MEKANIX_JOB_PART_IRR_PROVENANCE_VERIFIED !== "true") {
+    return NextResponse.json(
+      { error: "واحد قیمت قطعات قدیمی هنوز تطبیق داده نشده است؛ صدور فاکتور پس از تأیید مالی فعال می‌شود", code: "JOB_PART_CURRENCY_UNVERIFIED" },
+      { status: 409 }
+    );
+  }
+
   const laborHours = body.laborHours === undefined ? 1.5 : body.laborHours;
   if (typeof laborHours !== "number" || !Number.isFinite(laborHours) || laborHours < 0 || laborHours > 100) {
     return NextResponse.json({ error: "ساعت کار باید عددی بین صفر تا صد باشد" }, { status: 400 });
