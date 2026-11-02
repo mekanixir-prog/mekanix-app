@@ -131,10 +131,11 @@ export const api = {
 };
 
 export interface DashboardStats {
+  currency: "IRR";
   kpis: { activeRequests: number; techniciansOnline: number; jobsInProgress: number; completedJobs30d: number; revenue30d: number; avgResponseMins: number; customerSatisfaction: number; };
   revenueSeries: { date: string; revenue: number; jobs: number }[];
   statusBreakdown: { status: string; count: number }[];
-  categoryBreakdown: { category: string; count: number; revenue: number }[];
-  techPerformance: { name: string; jobs: number; rating: number; revenue: number }[];
+  categoryBreakdown: { category: string; count: number; invoicedAmount: number; currency: "IRR" }[];
+  techPerformance: { name: string; jobs: number; rating: number; collectedGrossIrr: number; currency: "IRR" }[];
   recentActivity: { id: string; label: string; sub: string; tone: string; ts: string }[];
 }
