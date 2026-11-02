@@ -170,7 +170,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ withdrawal, newBalance });
-  } catch (error) {
+  } catch {
     // A concurrent request may win the unique idempotency key. Resolve it as a safe retry.
     const raced = await db.withdrawalRequest.findUnique({ where: { idempotencyKey } }).catch(() => null);
     if (raced && raced.walletId === wallet.id && Number(raced.amount) === amount &&
