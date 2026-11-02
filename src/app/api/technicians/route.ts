@@ -90,6 +90,11 @@ export async function POST(req: Request) {
     if (k in rest) safeData[k] = rest[k];
   }
 
+  const feeFields = ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"];
+  if (feeFields.some((field) => field in safeData) && process.env.MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED !== "true") {
+    return NextResponse.json({ error: "واحد تعرفه‌های تعمیرکار هنوز تأیید نشده است", code: "TECHNICIAN_FEE_CURRENCY_UNVERIFIED" }, { status: 409 });
+  }
+
   const db = await getDbForLib();
   const tech = await db.technician.create({
     data: {
