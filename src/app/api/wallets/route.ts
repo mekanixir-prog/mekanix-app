@@ -133,6 +133,7 @@ export async function GET(req: Request) {
     ? await db.walletTransaction.findMany({
         where: {
           walletId: fresh.id,
+          status: "AVAILABLE",
           createdAt: { gte: fourteenDaysStart },
           netAmount: { gt: 0 },
         },
