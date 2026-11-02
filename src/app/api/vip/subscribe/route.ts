@@ -129,7 +129,7 @@ export async function POST(req: Request) {
         userId,
         type: "vip_activated",
         title: "VIP activated",
-        body: `Your ${plan.name} plan is active until ${expiresAt.toLocaleDateString()}`,
+        body: `Your ${plan.name} plan is active until ${sub.expiresAt?.toLocaleDateString() ?? "further notice"}`,
         category: "system",
         link: "customer/settings",
       },
