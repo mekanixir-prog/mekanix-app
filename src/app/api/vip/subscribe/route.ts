@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
+import { assertIrrInteger } from "@/lib/money/irr";
 
 // Subscribe the authenticated user to a VIP plan.
 // userId is derived from the session — NEVER from the request body (BOLA fix).
@@ -50,13 +51,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "paymentId is required" }, { status: 400 });
   }
   const payment = await db.payment.findUnique({ where: { id: paymentId } });
-  if (
-    !payment ||
-    payment.userId !== userId ||
-    payment.status !== "SUCCEEDED" ||
-    Number(payment.amount) < Number(plan.priceIrr)
-  ) {
+  if (!payment || payment.userId !== userId || payment.status !== "SUCCEEDED") {
     return NextResponse.json({ error: "Invalid or insufficient payment" }, { status: 400 });
+  }
+
+  const paymentAmount = Number(payment.amount);
+  const planAmount = Number(plan.priceIrr);
+  try {
+    assertIrrInteger(paymentAmount, "VIP payment amount");
+    assertIrrInteger(planAmount, "VIP plan price");
+  } catch {
+    return NextResponse.json({ error: "مبلغ اشتراک یا پرداخت، ریال صحیح و معتبر نیست" }, { status: 400 });
+  }
+  if (payment.currency !== "IRR" || paymentAmount !== planAmount) {
+    return NextResponse.json({ error: "پرداخت باید دقیقاً با مبلغ طرح و با واحد IRR برابر باشد" }, { status: 400 });
   }
 
   // Check if this payment has already been used for a VIP subscription
