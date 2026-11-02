@@ -583,7 +583,7 @@ describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
     mockCreateWithdrawalAtomically.mockResolvedValue(false);
 
     const res = await withdrawPOST(makeWithdrawalRequest(
-      { amount: 500, method: "card" }, "test-withdrawal-key-001"
+      { amount: 500, currency: "IRR", method: "card" }, "test-withdrawal-key-001"
     ));
 
     expect(res.status).toBe(400);
@@ -604,7 +604,7 @@ describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
     mockCreateWithdrawalAtomically.mockResolvedValue(true);
 
     const res = await withdrawPOST(makeWithdrawalRequest(
-      { amount: 500, method: "card" }, "test-withdrawal-key-002"
+      { amount: 500, currency: "IRR", method: "card" }, "test-withdrawal-key-002"
     ));
 
     expect(res.status).toBe(200);
