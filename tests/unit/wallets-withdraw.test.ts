@@ -59,7 +59,7 @@ describe("atomic withdrawal route", () => {
     db.withdrawalRequest.findUnique.mockResolvedValue({
       id: "wd-existing", walletId: "wallet-1", amount: 500, method: "card", cardNumber: null, bankName: null, shebaNumber: null, status: "REQUESTED",
     });
-    const response = await POST(request({ amount: 500 }));
+    const response = await POST(request({ amount: 500, currency: "IRR" }));
     expect(response.status).toBe(200);
     expect((await response.json()).idempotent).toBe(true);
     expect(atomic).not.toHaveBeenCalled();
@@ -78,7 +78,7 @@ describe("atomic withdrawal route", () => {
     expect((await POST(request({ amount: 0, currency: "IRR" }))).status).toBe(400);
     expect((await POST(request({ amount: 1.5, currency: "IRR" }))).status).toBe(400);
     expect((await POST(request({ amount: 500, currency: "USD" }))).status).toBe(400);
-    expect((await POST(request({ amount: 500 }, ""))).status).toBe(400);
+    expect((await POST(request({ amount: 500, currency: "IRR" }, ""))).status).toBe(400);
     expect(atomic).not.toHaveBeenCalled();
   });
 
