@@ -107,6 +107,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Payment is not a verified VIP payment" }, { status: 400 });
   }
 
+  // Fast sequential-reuse check. Concurrent requests can both pass this
+  // read, so the unique paymentId index and atomic writer remain authoritative.
+  const existingSub = await db.userVipSubscription.findFirst({
+    where: { paymentId, status: { in: ["ACTIVE", "CANCELLED", "EXPIRED"] } },
+  });
+  if (existingSub) {
+    return NextResponse.json(
+      { error: "این پرداخت قبلاً برای اشتراک VIP استفاده شده است" },
+      { status: 409 }
+    );
+  }
+
   // Replacing the previous ACTIVE subscription is atomic for both Prisma and
   // D1. A partial unique index enforces one ACTIVE subscription per user and
   // a unique paymentId index prevents reuse of a single payment.
