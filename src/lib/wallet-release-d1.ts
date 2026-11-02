@@ -50,6 +50,7 @@ export async function releaseWalletTransactionWithD1(
     SET "status" = 'AVAILABLE', "releasedAt" = ?
     WHERE "id" = ? AND "walletId" = ? AND "status" = 'PENDING' AND "netAmount" >= 0
       AND "holdUntil" IS NOT NULL AND "holdUntil" <= ?
+      AND changes() = 1
   `).bind(timestamp, transactionId, walletId, timestamp);
 
   const ledgerInsert = d1.prepare(`
@@ -62,7 +63,7 @@ export async function releaseWalletTransactionWithD1(
     FROM "Wallet" w
     JOIN "WalletTransaction" wt ON wt."walletId" = w."id"
     WHERE w."id" = ? AND wt."id" = ? AND wt."status" = 'AVAILABLE'
-      AND wt."releasedAt" = ?
+      AND wt."releasedAt" = ? AND changes() = 1
   `).bind(
     crypto.randomUUID(),
     `Escrow released — transaction ${transactionId}`,
@@ -73,24 +74,36 @@ export async function releaseWalletTransactionWithD1(
     timestamp
   );
 
-  // A conditional UPDATE/INSERT that affects zero rows is still valid SQL
-  // and does not abort D1.batch. Force a statement error after every required
-  // mutation so a zero-row result rolls the entire batch back, not just the
-  // final returned boolean.
-  const assertOneChange = () => d1.prepare(`
-    SELECT CASE
-      WHEN changes() = 1 THEN 1
-      ELSE json('not-json')
-    END
-  `).bind();
+  // Use NOT NULL columns as rollback assertions instead of SELECT changes().
+  // D1/SQLite adapters may reset changes() when reading a SELECT result; these
+  // no-op UPDATEs preserve the counter for the next guarded write and force a
+  // constraint error if the immediately preceding required mutation changed
+  // zero rows. The entire D1 batch then rolls back.
+  const walletAssertAfterDebit = d1.prepare(`
+    UPDATE "Wallet"
+    SET "balance" = CASE WHEN changes() = 1 THEN "balance" ELSE NULL END
+    WHERE "id" = ?
+  `).bind(walletId);
+
+  const transactionAssertAfterTransition = d1.prepare(`
+    UPDATE "WalletTransaction"
+    SET "status" = CASE WHEN changes() = 1 THEN "status" ELSE NULL END
+    WHERE "id" = ?
+  `).bind(transactionId);
+
+  const walletAssertAfterLedger = d1.prepare(`
+    UPDATE "Wallet"
+    SET "balance" = CASE WHEN changes() = 1 THEN "balance" ELSE NULL END
+    WHERE "id" = ?
+  `).bind(walletId);
 
   const results = await d1.batch([
     walletUpdate,
-    assertOneChange(),
+    walletAssertAfterDebit,
     transactionUpdate,
-    assertOneChange(),
+    transactionAssertAfterTransition,
     ledgerInsert,
-    assertOneChange(),
+    walletAssertAfterLedger,
   ]);
   return results[0]?.meta?.changes === 1 &&
     results[2]?.meta?.changes === 1 &&
