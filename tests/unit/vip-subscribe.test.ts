@@ -62,6 +62,7 @@ const ORIGINAL_ENV = process.env.NODE_ENV;
 describe("SEC-7 — /api/vip/subscribe route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("MEKANIX_VIP_PLAN_PRICES_IRR_VERIFIED", "true");
     // Default happy-path mocks; tests can override.
     mockRequireAuth.mockResolvedValue({
       userId: "user-1",
