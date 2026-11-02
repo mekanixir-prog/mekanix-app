@@ -369,7 +369,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                   />
                   <EstLine label={t("tech.jobDetail.partsShort")} amount={Number(job.invoice.partsTotal)} moneyFn={(amount) => money(amount, job.invoice?.currency ?? "?")} />
                   <EstLine label={t("tech.jobDetail.travelFee")} amount={Number(job.invoice.travelFee)} moneyFn={(amount) => money(amount, job.invoice?.currency ?? "?")} />
-                  <EstLine label={t("invoice.tax")} amount={Number(job.invoice.taxTotal)} moneyFn={(amount) => money(amount, job.invoice?.currency ?? "?")} />
+                  <EstLine label={t("invoice.tax", isFa ? "مالیات" : "Tax")} amount={Number(job.invoice.taxTotal)} moneyFn={(amount) => money(amount, job.invoice?.currency ?? "?")} />
                   <div className="border-t border-border pt-1.5" />
                   <div className="flex items-center justify-between">
                     <span className="font-medium">{t("tech.jobDetail.estTotal")}</span>
@@ -380,7 +380,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                 </div>
               ) : (
                 <p className="mt-3 rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
-                  {t("tech.jobDetail.estimatePending", "مبلغ نهایی پس از محاسبه و صدور فاکتور مشخص می‌شود.")}
+                  {t("tech.jobDetail.estimatePending", isFa ? "مبلغ نهایی پس از محاسبه و صدور فاکتور مشخص می‌شود." : "The final amount will be shown after the invoice is calculated and issued.")}
                 </p>
               )}
               {job.status === "REPAIRING" && (
