@@ -172,10 +172,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (status === "COMPLETED") {
     // Start 12-hour hold countdown on PENDING prepay transactions
     const holdUntil = new Date(Date.now() + HOLD_HOURS * 60 * 60 * 1000);
-    await db.walletTransaction.updateMany({
-      where: { jobId: job.id, status: "PENDING" },
-      data: { holdUntil },
-    });
+    try {
+      await db.walletTransaction.updateMany({
+        where: { jobId: job.id, status: "PENDING" },
+        data: { holdUntil },
+      });
+    } catch (error) {
+      // The wallet GET reconciliation path repairs PREPAY rows from completedAt.
+      // Do not report the already-committed job completion as failed because this
+      // separate hold scheduling write can be retried safely.
+      console.error("Failed to schedule wallet hold after job completion", {
+        jobId: job.id,
+        error,
+      });
+    }
 
     // Create completion notification
     await db.notification.create({
