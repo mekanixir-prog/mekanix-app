@@ -4,7 +4,7 @@ import type { ExtraProposalInput } from "@/lib/care-extra-pricing";
 
 export class CareExtraProposalConflictError extends Error {
   constructor() {
-    super("The booking or linked finding changed before the proposal could be committed");
+    super("The booking, technician assignment, or linked finding changed before the proposal could be committed");
     this.name = "CareExtraProposalConflictError";
   }
 }
@@ -29,16 +29,31 @@ export type CareExtraFindingInput = {
 export type CreateCareExtraProposalInput = {
   bookingId: string;
   expectedBookingStatus: "INSPECTING" | "IN_SERVICE";
+  actorRole: "TECHNICIAN" | "ADMIN";
   actorUserId: string;
+  actorTechnicianId: string | null;
   proposal: ExtraProposalInput;
   details: CareExtraProposalDetails;
   newFinding: CareExtraFindingInput | null;
 };
 
+function assertActor(input: CreateCareExtraProposalInput) {
+  if (input.actorRole === "TECHNICIAN" && !input.actorTechnicianId) {
+    throw new CareExtraProposalConflictError();
+  }
+}
+
 async function createWithPrisma(db: PrismaClient, input: CreateCareExtraProposalInput) {
+  assertActor(input);
   return db.$transaction(async (tx) => {
     const bookingClaim = await tx.serviceBooking.updateMany({
-      where: { id: input.bookingId, status: input.expectedBookingStatus },
+      where: {
+        id: input.bookingId,
+        status: input.expectedBookingStatus,
+        ...(input.actorRole === "TECHNICIAN"
+          ? { technicianId: input.actorTechnicianId! }
+          : {}),
+      },
       data: { status: "WAITING_CUSTOMER_APPROVAL", updatedAt: new Date() },
     });
     if (bookingClaim.count !== 1) throw new CareExtraProposalConflictError();
@@ -101,6 +116,7 @@ async function createWithD1(
   d1: NonNullable<Awaited<ReturnType<typeof getD1Binding>>>,
   input: CreateCareExtraProposalInput,
 ) {
+  assertActor(input);
   const now = new Date().toISOString();
   const approvalId = crypto.randomUUID();
   const timelineId = crypto.randomUUID();
@@ -108,8 +124,8 @@ async function createWithD1(
   const totalPrice =
     input.proposal.partPrice * input.proposal.quantity + input.proposal.laborPrice;
 
-  const findingGuard = input.proposal.findingId
-    ? 'AND EXISTS (SELECT 1 FROM "Finding" f WHERE f."id" = ? AND f."bookingId" = ?)'
+  const technicianGuard = input.actorRole === "TECHNICIAN"
+    ? 'AND b."technicianId" = ?'
     : "";
   const timelineBindings: unknown[] = [
     timelineId,
@@ -121,14 +137,23 @@ async function createWithD1(
     input.bookingId,
     input.expectedBookingStatus,
   ];
+  if (input.actorRole === "TECHNICIAN") {
+    timelineBindings.push(input.actorTechnicianId);
+  }
+
+  const findingGuard = input.proposal.findingId
+    ? 'AND EXISTS (SELECT 1 FROM "Finding" f WHERE f."id" = ? AND f."bookingId" = ?)'
+    : "";
   if (input.proposal.findingId) {
     timelineBindings.push(input.proposal.findingId, input.bookingId);
   }
 
-  // The first insert is a transaction marker and the timeline event itself.
-  // Every later statement is gated by this unique event ID. A stale second
-  // proposal therefore cannot insert rows just because the booking is already
-  // WAITING_CUSTOMER_APPROVAL from a competing request.
+  // D1.batch is transactional, but a zero-row UPDATE/INSERT ... SELECT does not
+  // itself fail. Force a SQL error immediately after each required mutation so
+  // a failed compare-and-set rolls back every earlier statement in the batch.
+  const assertOneChange = () =>
+    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '$') END").bind();
+
   const statements = [
     d1.prepare(`
       INSERT INTO "ServiceTimelineEvent"
@@ -137,25 +162,75 @@ async function createWithD1(
       WHERE EXISTS (
         SELECT 1 FROM "ServiceBooking" b
         WHERE b."id" = ? AND b."status" = ?
+        ${technicianGuard}
       )
       ${findingGuard}
     `).bind(...timelineBindings),
+    assertOneChange(),
     d1.prepare(`
       UPDATE "ServiceBooking"
       SET "status" = 'WAITING_CUSTOMER_APPROVAL', "updatedAt" = ?
       WHERE "id" = ? AND "status" = ?
+        AND (
+          ? = 'ADMIN'
+          OR EXISTS (
+            SELECT 1 FROM "ServiceBooking" assigned
+            WHERE assigned."id" = ? AND assigned."technicianId" = ?
+          )
+        )
         AND EXISTS (
           SELECT 1 FROM "ServiceTimelineEvent" e
           WHERE e."id" = ? AND e."bookingId" = ?
         )
-    `).bind(now, input.bookingId, input.expectedBookingStatus, timelineId, input.bookingId),
+    `).bind(
+      now,
+      input.bookingId,
+      input.expectedBookingStatus,
+      input.actorRole,
+      input.bookingId,
+      input.actorTechnicianId,
+      timelineId,
+      input.bookingId,
+    ),
+    assertOneChange(),
   ];
 
   if (input.newFinding && findingId) {
-    statements.push(d1.prepare(`
-      INSERT INTO "Finding"
-        ("id", "bookingId", "category", "title", "description", "severity")
-      SELECT ?, ?, ?, ?, ?, ?
+    statements.push(
+      d1.prepare(`
+        INSERT INTO "Finding"
+          ("id", "bookingId", "category", "title", "description", "severity")
+        SELECT ?, ?, ?, ?, ?, ?
+        WHERE EXISTS (
+          SELECT 1 FROM "ServiceBooking" b
+          WHERE b."id" = ? AND b."status" = 'WAITING_CUSTOMER_APPROVAL'
+        )
+          AND EXISTS (
+            SELECT 1 FROM "ServiceTimelineEvent" e
+            WHERE e."id" = ? AND e."bookingId" = ?
+          )
+      `).bind(
+        findingId,
+        input.bookingId,
+        input.newFinding.category,
+        input.newFinding.title,
+        input.newFinding.description,
+        input.newFinding.severity,
+        input.bookingId,
+        timelineId,
+        input.bookingId,
+      ),
+      assertOneChange(),
+    );
+  }
+
+  statements.push(
+    d1.prepare(`
+      INSERT INTO "CustomerApproval"
+        ("id", "bookingId", "findingId", "proposedItem", "description",
+         "partName", "partBrand", "partNumber", "partType", "quantity",
+         "partPrice", "laborPrice", "totalPrice", "imageUrl", "technicianNote", "status")
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PROPOSED'
       WHERE EXISTS (
         SELECT 1 FROM "ServiceBooking" b
         WHERE b."id" = ? AND b."status" = 'WAITING_CUSTOMER_APPROVAL'
@@ -164,64 +239,43 @@ async function createWithD1(
           SELECT 1 FROM "ServiceTimelineEvent" e
           WHERE e."id" = ? AND e."bookingId" = ?
         )
+        AND (? IS NULL OR EXISTS (
+          SELECT 1 FROM "Finding" f
+          WHERE f."id" = ? AND f."bookingId" = ?
+        ))
     `).bind(
-      findingId,
+      approvalId,
       input.bookingId,
-      input.newFinding.category,
-      input.newFinding.title,
-      input.newFinding.description,
-      input.newFinding.severity,
+      findingId,
+      input.proposal.proposedItem,
+      input.details.description,
+      input.details.partName,
+      input.details.partBrand,
+      input.details.partNumber,
+      input.details.partType,
+      input.proposal.quantity,
+      input.proposal.partPrice,
+      input.proposal.laborPrice,
+      totalPrice,
+      input.details.imageUrl,
+      input.details.technicianNote,
       input.bookingId,
       timelineId,
       input.bookingId,
-    ));
-  }
+      findingId,
+      findingId,
+      input.bookingId,
+    ),
+    assertOneChange(),
+  );
 
-  statements.push(d1.prepare(`
-    INSERT INTO "CustomerApproval"
-      ("id", "bookingId", "findingId", "proposedItem", "description",
-       "partName", "partBrand", "partNumber", "partType", "quantity",
-       "partPrice", "laborPrice", "totalPrice", "imageUrl", "technicianNote", "status")
-    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PROPOSED'
-    WHERE EXISTS (
-      SELECT 1 FROM "ServiceBooking" b
-      WHERE b."id" = ? AND b."status" = 'WAITING_CUSTOMER_APPROVAL'
-    )
-      AND EXISTS (
-        SELECT 1 FROM "ServiceTimelineEvent" e
-        WHERE e."id" = ? AND e."bookingId" = ?
-      )
-      AND (? IS NULL OR EXISTS (
-        SELECT 1 FROM "Finding" f
-        WHERE f."id" = ? AND f."bookingId" = ?
-      ))
-  `).bind(
-    approvalId,
-    input.bookingId,
-    findingId,
-    input.proposal.proposedItem,
-    input.details.description,
-    input.details.partName,
-    input.details.partBrand,
-    input.details.partNumber,
-    input.details.partType,
-    input.proposal.quantity,
-    input.proposal.partPrice,
-    input.proposal.laborPrice,
-    totalPrice,
-    input.details.imageUrl,
-    input.details.technicianNote,
-    input.bookingId,
-    timelineId,
-    input.bookingId,
-    findingId,
-    findingId,
-    input.bookingId,
-  ));
-
-  const results = await d1.batch(statements);
-  if (results.some((result) => (result?.meta?.changes ?? 0) !== 1)) {
-    throw new CareExtraProposalConflictError();
+  try {
+    await d1.batch(statements);
+  } catch (error) {
+    if (error instanceof Error && /malformed JSON/i.test(error.message)) {
+      throw new CareExtraProposalConflictError();
+    }
+    throw error;
   }
 
   const approval = await db.customerApproval.findUnique({ where: { id: approvalId } });
@@ -233,6 +287,7 @@ export async function createCareExtraProposalAtomically(
   db: PrismaClient,
   input: CreateCareExtraProposalInput,
 ) {
+  assertActor(input);
   const d1 = await getD1Binding();
   if (d1) return createWithD1(db, d1, input);
   return createWithPrisma(db, input);
