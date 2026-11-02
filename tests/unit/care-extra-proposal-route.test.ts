@@ -114,6 +114,17 @@ describe("CARE extra proposal route", () => {
     });
   });
 
+  it("rejects a technician session without a trusted technician profile before writing", async () => {
+    mocks.technicianFromSession.mockResolvedValue(null);
+    const response = await POST(makeRequest(JSON.stringify(validBody)), {
+      params: Promise.resolve({ id: "booking-1" }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(mocks.bookingFind).not.toHaveBeenCalled();
+    expect(mocks.createProposal).not.toHaveBeenCalled();
+  });
+
   it("rejects malformed JSON before attempting database writes", async () => {
     const response = await POST(makeRequest("{"), {
       params: Promise.resolve({ id: "booking-1" }),
