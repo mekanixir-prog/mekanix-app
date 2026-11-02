@@ -291,3 +291,19 @@ This section records the state of the open branches reviewed on 2026-11-02. Pass
 
 - The PR #72 route does call `validateExtraProposalInput`, which rejects fractional and unsafe integer Toman values before the atomic write. The separate Zod `extraProposalSchema` still permits fractional price values, so the two validation contracts can drift; consolidate them or add tests proving every route uses the strict integer validator.
 - The atomic writer persists the validated numeric amounts without converting them. The route's notification labels the calculated total as Toman. No conversion to IRR occurs in the proposal path itself.
+
+
+## Database schema and seed-default findings
+
+- Monetary columns across technician rates, parts, invoice totals, payment amounts, wallet balances/ledger rows, VIP prices, and CARE proposals are Prisma `Decimal`, not integer-only database types. The schema therefore does not itself prevent fractional rial values.
+- Several fields have `currency String @default("IRR")`; a default label is not a currency constraint. The database can still accept other strings unless every writer validates them or a database constraint is added.
+- The Prisma schema's own Technician defaults label `hourlyRate @default(15)`, `travelFeeBase @default(3)`, `inspectionFee @default(7)`, and `inspectionFeeHeavy @default(20)` as IRR, while the seed explicitly documents travel and inspection values as USD-like. These defaults are not plausible owner-approved IRR tariffs and must be replaced only after the tariff schedule is approved.
+- Seeded VIP prices (9, 19, 39), service category base prices (70–220), and part prices (e.g. 340, 28) are stored in fields later labelled IRR. The seed also creates succeeded payment/invoice records from those same tiny values, so this affects demo history as well as editable catalogue data.
+- Seed wallet balance, pending balance, and commission values are not explicitly denominated in the seed. They cannot be safely reinterpreted as IRR without tracing the exact demo-data generation and all dependent test fixtures.
+
+### Database-level hardening required
+
+1. Decide whether the persisted monetary type should remain Decimal with strict safe-integer validation at every write boundary, or move to a database representation that enforces integer IRR. The migration must account for both PostgreSQL and Cloudflare D1.
+2. Add a constrained currency enum/check or eliminate per-row currency where the domain is strictly IRR-only; do not rely on a default string.
+3. Add regression tests that attempt to write fractional IRR and non-IRR currency values through every supported adapter.
+4. Classify existing demo rows separately from production/real records before any migration. Seed reset is not a substitute for production reconciliation.
