@@ -53,7 +53,7 @@ function makeD1() {
             previousChanges = Number(result.changes);
             return { meta: { changes: previousChanges } };
           } catch (error) {
-            throw new Error(`D1 batch statement ${index + 1}/${items.length} failed (previous changes=${previousChanges ?? "n/a"}, sqlite changes()=${Number(sqlite.prepare("SELECT changes() AS n").get()?.n ?? -1)}): ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+            throw new Error(`D1 batch statement ${index + 1}/${items.length} failed (previous changes=${previousChanges ?? "n/a"}, sqlite changes()=${Number(sqlite.prepare("SELECT changes() AS n").get()?.n ?? -1)}, wallet=${JSON.stringify(sqlite.prepare('SELECT * FROM "Wallet" WHERE "id" = ?').get("wallet-1"))}, transaction=${JSON.stringify(sqlite.prepare('SELECT * FROM "WalletTransaction" WHERE "id" = ?').get("txn-1"))}): ${error instanceof Error ? error.message : String(error)}`, { cause: error });
           }
         });
         sqlite.exec("COMMIT");
