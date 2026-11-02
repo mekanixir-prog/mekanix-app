@@ -69,6 +69,7 @@ beforeEach(() => {
 describe("GET /api/wallets — atomic escrow release orchestration", () => {
   it("delegates each matured pending transaction to the atomic release service", async () => {
     const due = new Date(Date.now() - 60_000);
+    mockWalletTransactionFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "txn-due" }]).mockResolvedValueOnce([]);
     mockWalletFindUnique
       .mockResolvedValueOnce(wallet([
         { id: "txn-due", status: "PENDING", netAmount: 1000, holdUntil: due },
@@ -88,6 +89,7 @@ describe("GET /api/wallets — atomic escrow release orchestration", () => {
   });
 
   it("does not attempt release for future holds or non-pending transactions", async () => {
+    mockWalletTransactionFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
     mockWalletFindUnique
       .mockResolvedValueOnce(wallet([
         { id: "txn-future", status: "PENDING", netAmount: 1000, holdUntil: new Date(Date.now() + 60_000) },
@@ -101,6 +103,7 @@ describe("GET /api/wallets — atomic escrow release orchestration", () => {
   });
 
   it("propagates a failed atomic release rather than returning stale success", async () => {
+    mockWalletTransactionFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "txn-due" }]).mockResolvedValueOnce([]);
     mockWalletFindUnique.mockResolvedValueOnce(wallet([
       { id: "txn-due", status: "PENDING", netAmount: 1000, holdUntil: new Date(Date.now() - 60_000) },
     ]));
@@ -126,6 +129,7 @@ describe("GET /api/wallets — atomic escrow release orchestration", () => {
       .mockResolvedValueOnce(wallet([stranded]))
       .mockResolvedValueOnce(wallet([repaired]))
       .mockResolvedValueOnce(wallet([released]));
+    mockWalletTransactionFindMany.mockResolvedValueOnce([stranded]).mockResolvedValueOnce([{ id: "txn-prepay" }]).mockResolvedValueOnce([]);
     mockJobFindMany.mockResolvedValue([{ id: "job-1", completedAt }]);
 
     const response = await GET(makeRequest());
@@ -163,7 +167,7 @@ describe("GET /api/wallets — atomic escrow release orchestration", () => {
     mockWalletFindUnique
       .mockResolvedValueOnce(wallet())
       .mockResolvedValueOnce(wallet());
-    mockWalletTransactionFindMany.mockResolvedValue([
+    mockWalletTransactionFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([
       { createdAt, netAmount: 250 },
     ]);
 
@@ -174,6 +178,7 @@ describe("GET /api/wallets — atomic escrow release orchestration", () => {
         walletId: "wallet-1",
         status: "AVAILABLE",
         netAmount: { gt: 0 },
+        createdAt: expect.objectContaining({ lte: expect.any(Date) }),
       }),
     }));
     const payload = await response.json();
