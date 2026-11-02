@@ -90,6 +90,16 @@ export async function POST(req: Request) {
   const tech = job.technician;
   if (!tech) return NextResponse.json({ error: "No technician assigned" }, { status: 400 });
 
+  // Technician inspection/travel fees in legacy seed/profile data have mixed or
+  // unknown units. Never persist them as IRR until an owner-reviewed price
+  // configuration and data reconciliation explicitly verify their currency.
+  if (process.env.MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED !== "true") {
+    return NextResponse.json(
+      { error: "واحد هزینه‌های تکنسین هنوز تأیید نشده است؛ پیش‌پرداخت پس از تنظیم قیمت‌های ریالی فعال می‌شود", code: "TECHNICIAN_FEE_CURRENCY_UNVERIFIED" },
+      { status: 409 }
+    );
+  }
+
   // Determine fee based on machine type (passenger CAR vs heavy)
   const machineType = job.request.vehicle.type;
   const heavy = isHeavyMachine(machineType);
