@@ -144,13 +144,20 @@ export async function GET(req: Request) {
     createdAt: row.createdAt,
     amount: Number(row.netAmount),
   }));
-  const earningsValid = normalizedEarnings.every(
+  const rowsValid = normalizedEarnings.every(
     (row) => Number.isSafeInteger(row.amount) && row.amount > 0
   );
-  const sumSince = (start: Date) =>
-    normalizedEarnings
-      .filter((row) => row.createdAt >= start)
-      .reduce((sum, row) => sum + row.amount, 0);
+  const safeSum = (rows: typeof normalizedEarnings): number | null => {
+    let total = 0;
+    for (const row of rows) {
+      const next = total + row.amount;
+      if (!Number.isSafeInteger(next)) return null;
+      total = next;
+    }
+    return total;
+  };
+  const sumSince = (startDate: Date) =>
+    safeSum(normalizedEarnings.filter((row) => row.createdAt >= startDate));
   const dateKey = (date: Date) =>
     new Intl.DateTimeFormat("en-CA", {
       timeZone: "Asia/Tehran",
@@ -158,14 +165,19 @@ export async function GET(req: Request) {
       month: "2-digit",
       day: "2-digit",
     }).format(date);
-  const earningsSeries14d = Array.from({ length: 14 }, (_, index) => {
+  const dailyTotals = Array.from({ length: 14 }, (_, index) => {
     const start = new Date(todayStart.getTime() + (index - 13) * dayMs);
     const end = new Date(start.getTime() + dayMs);
-    const revenue = normalizedEarnings
-      .filter((row) => row.createdAt >= start && row.createdAt < end)
-      .reduce((sum, row) => sum + row.amount, 0);
-    return { date: dateKey(start), revenue: earningsValid ? revenue : 0, jobs: 0 };
+    const total = safeSum(normalizedEarnings.filter((row) => row.createdAt >= start && row.createdAt < end));
+    return { date: dateKey(start), revenue: total, jobs: 0 };
   });
+  const todayIrr = sumSince(todayStart);
+  const last7DaysIrr = sumSince(new Date(todayStart.getTime() - 6 * dayMs));
+  const earningsValid = rowsValid && todayIrr !== null && last7DaysIrr !== null &&
+    dailyTotals.every((day) => day.revenue !== null);
+  const earningsSeries14d = earningsValid
+    ? dailyTotals.map((day) => ({ ...day, revenue: day.revenue as number }))
+    : [];
 
   return NextResponse.json(fresh ? {
     ...fresh,
@@ -173,8 +185,8 @@ export async function GET(req: Request) {
     earningsSummary: {
       currency: "IRR" as const,
       valid: earningsValid,
-      todayIrr: earningsValid ? sumSince(todayStart) : null,
-      last7DaysIrr: earningsValid ? sumSince(new Date(todayStart.getTime() - 6 * dayMs)) : null,
+      todayIrr: earningsValid ? todayIrr : null,
+      last7DaysIrr: earningsValid ? last7DaysIrr : null,
       series14d: earningsValid ? earningsSeries14d : [],
     },
   } : fresh);
