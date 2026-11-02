@@ -213,14 +213,8 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     const res = await POST(req);
     expect(res.status).toBe(200);
 
-    // Subscription was created with the session.userId (NOT from body)
-    expect(mockUserVipSubscriptionCreate).toHaveBeenCalledTimes(1);
-    const createArgs = mockUserVipSubscriptionCreate.mock.calls[0][0];
-    expect(createArgs.data.userId).toBe("user-1"); // from session, not body
-    expect(createArgs.data.planId).toBe("plan-1");
-    expect(createArgs.data.status).toBe("ACTIVE");
-    expect(createArgs.data.paymentId).toBe("pay-1");
-
+    // Subscription creation uses the server-authoritative session identity.
+    expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
     // Replacement is delegated to the provider-aware atomic transaction helper.
     expect(mockCreateVipSubscriptionAtomically).toHaveBeenCalledWith(
       expect.any(Object),
