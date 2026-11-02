@@ -237,6 +237,14 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     expect(body.subscription.id).toBe("sub-1");
   });
 
+  it("returns a conflict when the atomic replacement loses a uniqueness race", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockCreateVipSubscriptionAtomically.mockRejectedValue(new Error("UNIQUE constraint failed"));
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(409);
+    expect(mockNotificationCreate).not.toHaveBeenCalled();
+  });
+
   it("rejects a successful payment without a gateway attempt", async () => {
     vi.stubEnv("NODE_ENV", "test");
     mockPaymentFindUnique.mockResolvedValue({
