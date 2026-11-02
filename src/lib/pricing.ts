@@ -2,7 +2,7 @@
 //
 // FinalPrice = Labor + Parts + Travel + Emergency - Discount
 //
-// All amounts are in IRR (Iranian Rial) minor units (toman × 10).
+// All monetary amounts are integer IRR. IRR has no minor units.
 //
 // ─────────────────────────────────────────────────────────────────────────────
 // Decimal-safe money math (v2.1)
@@ -32,6 +32,7 @@
 
 import Decimal from "decimal.js";
 import { getDbForLib } from "./db-access";
+import { assertIrrInteger } from "./money/irr";
 
 export interface PricingInput {
   packageId?: string;
@@ -99,12 +100,26 @@ const VEHICLE_TYPE_MULTIPLIERS: Record<string, number> = {
 // IRR has no minor units — all money values are integers. Decimal.round()
 // yields a Decimal that exactly represents the rounded integer; toNumber()
 // then converts without precision loss.
-function round(dec: Decimal): number {
-  return dec.round().toNumber();
+function round(dec: Decimal, context: string): number {
+  const amount = dec.round().toNumber();
+  assertIrrInteger(amount, context);
+  return amount;
 }
 
 export async function calculatePrice(input: PricingInput): Promise<PricingBreakdown> {
-    const db = await getDbForLib();
+  if (!Number.isFinite(input.laborHours) || input.laborHours < 0) {
+    throw new RangeError("Labor hours must be a finite non-negative number");
+  }
+  assertIrrInteger(input.partsCost, "Parts cost");
+  if (!Number.isFinite(input.travelDistanceKm) || input.travelDistanceKm < 0) {
+    throw new RangeError("Travel distance must be a finite non-negative number");
+  }
+  const vipPercent = input.vipDiscountPercent ?? 0;
+  if (!Number.isFinite(vipPercent) || vipPercent < 0 || vipPercent > 100) {
+    throw new RangeError("VIP discount percent must be between 0 and 100");
+  }
+
+  const db = await getDbForLib();
   // Get package base price if provided. Today the package base price is
   // informational — the primary price driver is vehicle-type-scaled labor +
   // parts + travel. Phase 5 will fold it into the calculation (e.g. as a
@@ -156,7 +171,6 @@ export async function calculatePrice(input: PricingInput): Promise<PricingBreakd
 
   // ── Discount (VIP or promo) ─────────────────────────────────────────────
   //   discount = subtotal × vipPercent / 100
-  const vipPercent = input.vipDiscountPercent ?? 0;
   const discount = subtotal.mul(vipPercent).div(100);
 
   // ── After-discount subtotal ─────────────────────────────────────────────
@@ -177,21 +191,21 @@ export async function calculatePrice(input: PricingInput): Promise<PricingBreakd
   void input.region;
 
   return {
-    labor: round(labor),
-    parts: round(parts),
-    travel: round(travel),
-    emergency: round(emergency),
-    discount: round(discount),
-    subtotal: round(subtotal),
+    labor: round(labor, "Labor total"),
+    parts: round(parts, "Parts total"),
+    travel: round(travel, "Travel total"),
+    emergency: round(emergency, "Emergency surcharge"),
+    discount: round(discount, "Discount"),
+    subtotal: round(subtotal, "Subtotal"),
     taxRate: DEFAULT_TAX_RATE,
-    taxTotal: round(taxTotal),
-    total: round(total),
+    taxTotal: round(taxTotal, "Tax total"),
+    total: round(total, "Final total"),
     currency: "IRR",
     pricingVersion: "2.1", // Bumped for Decimal-safe arithmetic
     breakdown: {
-      laborRate: laborRate.toNumber(),
+      laborRate: round(laborRate, "Labor rate"),
       laborHours: input.laborHours,
-      travelRate: perKmRate.toNumber(),
+      travelRate: round(perKmRate, "Travel rate"),
       travelDistanceKm: input.travelDistanceKm,
       emergencyMultiplier: input.isEmergency ? EMERGENCY_MULTIPLIER : 1,
       vipDiscountPercent: vipPercent,
