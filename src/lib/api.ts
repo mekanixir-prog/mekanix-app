@@ -9,7 +9,7 @@ export type User = UserModel;
 export type Customer = Prisma.CustomerGetPayload<{ include: { user: true } }>;
 export type Technician = Prisma.TechnicianGetPayload<{
   include: { user: true; specialties: true; certifications: true; serviceAreas: true; };
-}>;
+}> & { feesCurrencyVerified?: boolean };
 export type Vehicle = VehicleModel;
 export type ServiceRequest = Prisma.ServiceRequestGetPayload<{
   include: {
