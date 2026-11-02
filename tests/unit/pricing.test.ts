@@ -17,7 +17,7 @@
 //   - Decimal-safe arithmetic (v2.1): exact money math via decimal.js
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import Decimal from "decimal.js";
-import { calculatePrice, type PricingInput } from "@/lib/pricing";
+import { calculatePrice, isProductionPricingApproved, type PricingInput } from "@/lib/pricing";
 
 // calculatePrice resolves the shared DB adapter even when no packageId is supplied.
 vi.mock("@/lib/db-access", () => ({
@@ -426,5 +426,18 @@ describe("pricing — Decimal-safe arithmetic (v2.1)", () => {
     expect(result.subtotal).toBe(203_345);
     expect(result.taxTotal).toBe(18_301);
     expect(result.total).toBe(203_345 + 18_301);
+  });
+});
+
+describe("pricing — production rate-card approval gate", () => {
+  it("blocks production pricing until the owner explicitly approves the IRR rate card", () => {
+    expect(isProductionPricingApproved("production", undefined)).toBe(false);
+    expect(isProductionPricingApproved("production", "false")).toBe(false);
+    expect(isProductionPricingApproved("production", "true")).toBe(true);
+  });
+
+  it("keeps demo pricing available outside production", () => {
+    expect(isProductionPricingApproved("development", undefined)).toBe(true);
+    expect(isProductionPricingApproved("test", "false")).toBe(true);
   });
 });
