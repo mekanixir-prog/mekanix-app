@@ -44,6 +44,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
   }
 
+  if (process.env.MEKANIX_VIP_PLAN_PRICES_IRR_VERIFIED !== "true") {
+    return NextResponse.json(
+      { error: "قیمت طرح‌های VIP هنوز به‌صورت ریالی تأیید نشده است", code: "VIP_PRICE_CURRENCY_UNVERIFIED" },
+      { status: 409 }
+    );
+  }
+
   // 3. Validate paymentId — must be a real SUCCEEDED payment by this user
   //    that covers the plan price. This closes the free-VIP bypass.
   //    Note: VipPlan stores price as `priceIrr` (Decimal, Iranian Rial).
