@@ -178,3 +178,43 @@ The following findings were confirmed by reading the current `main` source after
 4. Make CARE's Toman input/output contract explicit and test the single conversion boundary.
 5. Retain wallet atomicity, but add unit and integer validation before any debit, credit, release, or payout.
 6. Add regression tests that fail on dollar symbols, USD-base thresholds, non-IRR currencies, fractional IRR, unconverted CARE Toman, or invoice calculations that bypass the canonical pricing module.
+
+
+## Follow-up source trace — prepay, parts, and payout settlement
+
+A second pass through the financial writers found additional enforcement gaps:
+
+### Pre-service payment is the only confirmed wallet-credit path in the inspected job-payment flow
+
+- `src/app/api/prepay/route.ts` derives inspection and travel fees from the technician profile and passes them to `recordPrepayAtomically`.
+- The route is a development simulator and returns 404 in production. Its code comments say a non-empty card number is sufficient for the simulated card flow.
+- `recordPrepayAtomically` correctly groups the job paid marker, PREPAY/COMMISSION transactions, ledger rows, and wallet aggregate updates in a Prisma transaction or D1 batch.
+- However, the route calculates `commission = gross * 0.10` and `net = gross - commission` with JavaScript numbers and does not reject fractional, unsafe, negative, or otherwise invalid IRR amounts before the atomic writer.
+- The seed inspection/travel values feeding this route are explicitly USD-like. Atomic writes therefore preserve consistency but can consistently persist the wrong monetary unit.
+- Required fix: the server must resolve approved integer-IRR inspection/travel fees, use deterministic integer rounding for commission, validate all amounts before the atomic write, and keep the simulator inaccessible in production.
+
+### Parts endpoint and invoice endpoint do not enforce integer IRR
+
+- `src/app/api/jobs/[id]/parts/route.ts` accepts `unitPrice` as a JavaScript number and rejects only negative values. It does not require a safe integer or establish that the input is IRR.
+- `src/app/api/invoices/route.ts` then multiplies those part values by quantity and calculates tax/total using floating-point numbers.
+- Required fix: make the part API contract explicitly integer IRR, validate `Number.isSafeInteger`, and use the shared integer-safe pricing calculation for all invoice components.
+
+### Invoice payment does not currently settle a technician wallet entry
+
+- The inspected `src/app/api/payments/route.ts` marks the invoice/payment successful, completes the job, creates a warranty, and sends notifications.
+- It does not create a `WalletTransaction`, `WalletLedger` entry, or technician wallet credit for the invoice total. The separate prepay flow does create wallet entries for inspection + travel only.
+- This is an unresolved settlement-model question, not an assumed defect: confirm whether repair labor/parts invoice proceeds are intended to become technician earnings, and if so implement a separately auditable, idempotent settlement path with the platform commission and hold policy. Do not infer this from the existing prepay flow.
+
+### Admin payout atomicity still lacks monetary-unit validation
+
+- `src/lib/withdrawal-admin-atomic.ts` atomically handles approval, rejection/refund, and PAID status plus payout transaction/aggregate updates.
+- It requires a bank transfer reference before marking a withdrawal PAID, which is a useful operational safeguard.
+- It moves `WithdrawalRequest.amount` as-is and does not independently validate integer IRR. Unit and integer validation must be enforced before the admin transition as well as at request creation.
+
+### Updated implementation checklist
+
+1. Validate every external monetary input as a safe integer IRR at the API boundary (parts, prepay, invoice, gateway, withdrawal, and admin payout).
+2. Move commission and tax calculations to deterministic integer arithmetic with explicitly documented rounding.
+3. Reuse one canonical pricing function for both service estimates and invoice generation; do not let invoice generation bypass it.
+4. Decide and document whether invoice proceeds (repair labor/parts) are technician earnings, distinct from prepay inspection/travel proceeds.
+5. Keep all simulator-only routes production-blocked until the real provider lifecycle and reconciliation tests are complete.
