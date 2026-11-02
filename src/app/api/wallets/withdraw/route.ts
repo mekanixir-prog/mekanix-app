@@ -70,6 +70,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "کیف پول یافت نشد" }, { status: 404 });
   }
 
+  // Legacy wallet aggregates have no persisted currency provenance. Do not
+  // debit them as IRR until a reviewed migration/backfill explicitly verifies them.
+  if (process.env.MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED !== "true") {
+    return NextResponse.json(
+      { error: "واحد موجودی کیف پول هنوز تأیید نشده است؛ برداشت پس از تطبیق مالی فعال می‌شود", code: "WALLET_CURRENCY_UNVERIFIED" },
+      { status: 409 }
+    );
+  }
+
   // A retry with the same key returns the original request and never debits again.
   const existing = await db.withdrawalRequest.findUnique({
     where: { idempotencyKey },
