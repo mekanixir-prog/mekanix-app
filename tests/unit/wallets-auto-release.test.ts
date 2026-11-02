@@ -88,6 +88,19 @@ describe("GET /api/wallets — atomic escrow release orchestration", () => {
     expect(db.wallet.findUnique).toBeTypeOf("function");
   });
 
+  it("releases matured escrow rows older than the 50-transaction UI window", async () => {
+    const dueRows = Array.from({ length: 60 }, (_, index) => ({ id: `old-due-${index}` }));
+    mockWalletTransactionFindMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(dueRows)
+      .mockResolvedValueOnce([]);
+    const response = await GET(makeRequest());
+    expect(response.status).toBe(200);
+    expect(mockReleaseWalletTransaction).toHaveBeenCalledTimes(60);
+    const maturedQuery = mockWalletTransactionFindMany.mock.calls[1][0];
+    expect(maturedQuery.take).toBeUndefined();
+  });
+
   it("does not attempt release for future holds or non-pending transactions", async () => {
     mockWalletTransactionFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
     mockWalletFindUnique
