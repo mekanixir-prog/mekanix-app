@@ -94,11 +94,11 @@ export function CareDetail() {
               <div className="mt-2 flex items-center justify-between">
                 <div className="text-sm">
                   <span className="text-muted-foreground">{isFa ? "قطعه:" : "Part:"} </span>
-                  <span className="font-medium">{money(tomanToIrr(ap.partPrice, ap.quantity), "IRR")}</span>
+                  <span className="font-medium">{money(tomanToIrr(Number(ap.partPrice), Number(ap.quantity)), "IRR")}</span>
                   <span className="ms-3 text-muted-foreground">{isFa ? "اجرت:" : "Labor:"} </span>
-                  <span className="font-medium">{money(tomanToIrr(ap.laborPrice), "IRR")}</span>
+                  <span className="font-medium">{money(tomanToIrr(Number(ap.laborPrice)), "IRR")}</span>
                 </div>
-                <span className="font-display text-lg font-bold text-amber">{money(tomanToIrr(ap.totalPrice), "IRR")}</span>
+                <span className="font-display text-lg font-bold text-amber">{money(tomanToIrr(Number(ap.totalPrice)), "IRR")}</span>
               </div>
               <div className="mt-3 flex gap-2">
                 <Button size="sm" onClick={() => handleApprove(ap.id)} className="bg-emerald-600 text-white hover:bg-emerald-700">
