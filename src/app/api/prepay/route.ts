@@ -3,6 +3,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant } from "@/lib/auth";
 import { recordPrepayAtomically } from "@/lib/prepay-atomic";
+import { addIrr, assertIrrInteger, multiplyRatioIrr } from "@/lib/money/irr";
 
 // Pre-service payment: customer pays inspection fee + travel fee.
 // This activates chat/call with the mechanic.
@@ -25,7 +26,8 @@ import { recordPrepayAtomically } from "@/lib/prepay-atomic";
 //
 // MIGRATION: Uses getDbForLib() instead of direct db import.
 
-const COMMISSION_RATE = 0.10; // 10% platform cut
+const COMMISSION_NUMERATOR = 1;
+const COMMISSION_DENOMINATOR = 10; // 10% platform cut, rounded to integer IRR (half-up)
 const HOLD_HOURS = 12; // 12-hour hold from job completion
 
 function isHeavyMachine(type: string): boolean {
@@ -42,9 +44,20 @@ export async function POST(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
-  const body = await req.json();
-  const { jobId, method, cardNumber, mobile } = body;
-  if (!jobId) return NextResponse.json({ error: "jobId is required" }, { status: 400 });
+  let body: Record<string, unknown>;
+  try {
+    const parsed: unknown = await req.json();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+    body = parsed as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const { jobId, method, cardNumber } = body;
+  if (typeof jobId !== "string" || !jobId) {
+    return NextResponse.json({ error: "jobId is required" }, { status: 400 });
+  }
 
   // Job ownership: caller must be a participant (customer who owns it, or admin)
   const access = await requireJobParticipant(session, jobId);
@@ -114,9 +127,29 @@ export async function POST(req: Request) {
   const heavy = isHeavyMachine(machineType);
   const inspectionFee = Number(heavy ? tech.inspectionFeeHeavy : tech.inspectionFee);
   const travelFee = Number(tech.travelFeeBase);
-  const gross = inspectionFee + travelFee;
-  const commission = gross * COMMISSION_RATE;
-  const net = gross - commission;
+  let gross: number;
+  let commission: number;
+  let net: number;
+  try {
+    // IRR has no minor units. Reject fractional legacy rates and use the
+    // canonical explicit half-up rule for the 10% platform commission.
+    assertIrrInteger(inspectionFee, "Technician inspection fee");
+    assertIrrInteger(travelFee, "Technician travel fee");
+    gross = addIrr(inspectionFee, travelFee);
+    commission = multiplyRatioIrr(
+      gross,
+      COMMISSION_NUMERATOR,
+      COMMISSION_DENOMINATOR,
+      "half-up",
+    );
+    net = gross - commission;
+    assertIrrInteger(net, "Technician net prepay earnings");
+  } catch {
+    return NextResponse.json(
+      { error: "تعرفه پیش‌پرداخت باید مبلغ صحیح و معتبر به ریال باشد" },
+      { status: 400 }
+    );
+  }
 
   // Simulate gateway success (in production: call Zarinpal/IDPay verify here)
   if (!cardNumber && method === "card") {
