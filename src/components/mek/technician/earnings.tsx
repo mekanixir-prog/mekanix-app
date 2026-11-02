@@ -199,7 +199,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
             >
               <Banknote className="mr-2 size-4" /> {t("tech.earnings.withdrawNow")}
             </Button>
-            {balance < MIN_WITHDRAWAL && (
+            {balance < MIN_WITHDRAWAL_IRR && (
               <p className="text-center text-[10px] text-muted-foreground">
                 {t("tech.earnings.withdrawMin").replace("{amount}", money(MIN_WITHDRAWAL_IRR))}
               </p>
@@ -350,12 +350,12 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
               <Label className="text-xs">{t("tech.earnings.withdrawAmount")}</Label>
               <Input
                 type="number"
-                min={MIN_WITHDRAWAL}
+                min={MIN_WITHDRAWAL_IRR}
                 max={balance}
                 value={withdrawAmount}
                 onChange={(e) => { withdrawalIdempotencyKey.current = null; setWithdrawAmount(e.target.value); }}
                 className="mt-1"
-                placeholder={`Min $${MIN_WITHDRAWAL}`}
+                placeholder={`حداقل ${money(MIN_WITHDRAWAL_IRR)}`}
               />
             </div>
             <div>
