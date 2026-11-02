@@ -51,7 +51,7 @@ function makeD1() {
             const result = sqlite.prepare(sql).run(...(values as never[]));
             return { meta: { changes: Number(result.changes) } };
           } catch (error) {
-            throw new Error(`D1 batch statement ${index + 1}/${items.length} failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+            throw new Error(`D1 batch statement ${index + 1}/${items.length} failed (previous changes=${results[index - 1]?.meta?.changes ?? "n/a"}, sqlite changes()=${Number(sqlite.prepare("SELECT changes() AS n").get()?.n ?? -1)}): ${error instanceof Error ? error.message : String(error)}`, { cause: error });
           }
         });
         sqlite.exec("COMMIT");
