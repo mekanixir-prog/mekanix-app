@@ -14,6 +14,9 @@ export interface IrrValidationOptions {
 }
 
 const MAX_IRR = Number.MAX_SAFE_INTEGER;
+// Safe-integer operands can produce up to 32 significant product digits.
+// Keep ample guard precision so near-integer ratios round correctly.
+const IrrDecimal = Decimal.clone({ precision: 80 });
 
 export function assertIrrInteger(
   value: unknown,
@@ -81,7 +84,7 @@ export function multiplyRatioIrr(
     throw new TypeError("A supported IRR rounding mode must be selected");
   }
 
-  const result = new Decimal(amount)
+  const result = new IrrDecimal(amount)
     .mul(numerator)
     .div(denominator)
     .toDecimalPlaces(0, decimalRounding);
