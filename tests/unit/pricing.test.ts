@@ -19,17 +19,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import Decimal from "decimal.js";
 import { calculatePrice, type PricingInput } from "@/lib/pricing";
 
-// Mock the db module — calculatePrice only calls db.servicePackage.findUnique
-// when packageId is provided. The pricing math itself is pure.
-vi.mock("@/lib/db", () => ({
-  db: {
+// calculatePrice resolves the shared DB adapter even when no packageId is supplied.
+vi.mock("@/lib/db-access", () => ({
+  getDbForLib: vi.fn(async () => ({
     servicePackage: {
       findUnique: vi.fn().mockResolvedValue(null),
     },
-    pricingSnapshot: {
-      create: vi.fn(),
-    },
-  },
+  })),
 }));
 
 // Base input that produces a known-good calculation for a CAR.
