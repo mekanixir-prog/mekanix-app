@@ -135,6 +135,7 @@ export async function GET(req: Request) {
           walletId: fresh.id,
           status: "AVAILABLE",
           createdAt: { gte: fourteenDaysStart },
+          status: "AVAILABLE",
           netAmount: { gt: 0 },
         },
         select: { createdAt: true, netAmount: true },
