@@ -281,3 +281,13 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     expect(createArgs.data.userId).toBe("user-1");
   });
 });
+
+
+describe("VIP plan price provenance", () => {
+    it("blocks activation until the VIP plan price currency is verified", async () => {
+      vi.stubEnv("MEKANIX_VIP_PLAN_PRICES_IRR_VERIFIED", "false");
+      const response = await POST(makeRequest({ planId: "plan-1", paymentId: "payment-1" }));
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code: "VIP_PRICE_CURRENCY_UNVERIFIED" });
+    });
+  });
