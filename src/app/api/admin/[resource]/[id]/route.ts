@@ -97,6 +97,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
   if (resource === "technicians") {
     const allowed = RESOURCE_ALLOWED_FIELDS.technicians ?? ALLOWED_FIELDS.technician;
     const safe = sanitizeInput(body, allowed);
+    const feeFields = ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"];
+    if (feeFields.some((field) => field in safe) && process.env.MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED !== "true") {
+      return NextResponse.json({ error: "واحد تعرفه‌های تعمیرکار هنوز تأیید نشده است", code: "TECHNICIAN_FEE_CURRENCY_UNVERIFIED" }, { status: 409 });
+    }
     // SEC-4: snapshot BEFORE the update for audit log.
     const before = await db.technician.findUnique({ where: { id } });
     result = await db.technician.update({ where: { id }, data: safe as any, include: { user: true } });
