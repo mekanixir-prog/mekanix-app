@@ -93,7 +93,7 @@ export function AdminWithdrawals() {
                 ) : (
                   <p className="w-full text-xs text-muted-foreground">{t("admin.withdrawals.destinationRequired")}</p>
                 )}
-                <Button size="sm" variant="destructive" disabled={busy === row.id} onClick={() => act(row, "REJECTED")}>{t("admin.withdrawals.reject")}</Button>
+                <Button size="sm" variant="destructive" disabled={busy === row.id || row.currency !== "IRR"} onClick={() => act(row, "REJECTED")}>{t("admin.withdrawals.reject")}</Button>
               </>}
             </div>
           </article>
