@@ -12,7 +12,9 @@ import {
 const input = {
   bookingId: "booking-1",
   expectedBookingStatus: "INSPECTING" as const,
+  actorRole: "TECHNICIAN" as const,
   actorUserId: "technician-user-1",
+  actorTechnicianId: "technician-profile-1",
   proposal: {
     proposedItem: "Hydraulic hose replacement",
     partPrice: 120_000,
@@ -55,7 +57,7 @@ describe("CARE extra proposal atomic writer", () => {
 
     await expect(createCareExtraProposalAtomically(db, input)).resolves.toEqual(approval);
     expect(tx.serviceBooking.updateMany).toHaveBeenCalledWith({
-      where: { id: input.bookingId, status: "INSPECTING" },
+      where: { id: input.bookingId, status: "INSPECTING", technicianId: "technician-profile-1" },
       data: { status: "WAITING_CUSTOMER_APPROVAL", updatedAt: expect.any(Date) },
     });
     expect(tx.finding.create).toHaveBeenCalledWith({
@@ -155,12 +157,7 @@ describe("CARE extra proposal atomic writer", () => {
           return { sql, values };
         },
       }),
-      batch: vi.fn(async (_statements: unknown[]) => [
-        { meta: { changes: 1 } },
-        { meta: { changes: 1 } },
-        { meta: { changes: 1 } },
-        { meta: { changes: 1 } },
-      ]),
+      batch: vi.fn(async (_statements: unknown[]) => []),
     };
     mocks.getD1Binding.mockResolvedValue(d1);
     vi.stubGlobal("crypto", {
@@ -176,23 +173,23 @@ describe("CARE extra proposal atomic writer", () => {
     await expect(createCareExtraProposalAtomically(db, input))
       .resolves.toMatchObject({ id: "approval-id" });
     expect(d1.batch).toHaveBeenCalledTimes(1);
-    expect(d1.batch.mock.calls[0][0]).toHaveLength(4);
+    expect(d1.batch.mock.calls[0][0]).toHaveLength(8);
     expect(statements[0].sql).toContain('INSERT INTO "ServiceTimelineEvent"');
+    expect(statements[0].sql).toContain('b."technicianId" = ?');
+    expect(statements[0].values).toContain("technician-profile-1");
     expect(statements[0].sql).toContain('"idempotencyKey"');
-    expect(statements[1].sql).toContain('UPDATE "ServiceBooking"');
-    expect(statements[2].sql).toContain('INSERT INTO "Finding"');
-    expect(statements[3].sql).toContain('INSERT INTO "CustomerApproval"');
+    expect(statements[2].sql).toContain('UPDATE "ServiceBooking"');
+    expect(statements[2].sql).toContain('assigned."technicianId" = ?');
+    expect(statements[4].sql).toContain('INSERT INTO "Finding"');
+    expect(statements[6].sql).toContain('INSERT INTO "CustomerApproval"');
+    expect(statements[1].sql).toContain("json_extract");
+    expect(statements[3].sql).toContain("json_extract");
   });
 
   it("rejects a stale D1 booking without committing dependent rows", async () => {
     const d1 = {
       prepare: (sql: string) => ({ bind: (...values: unknown[]) => ({ sql, values }) }),
-      batch: vi.fn(async (_statements: unknown[]) => [
-        { meta: { changes: 0 } },
-        { meta: { changes: 0 } },
-        { meta: { changes: 0 } },
-        { meta: { changes: 0 } },
-      ]),
+      batch: vi.fn(async (_statements: unknown[]) => { throw new Error("malformed JSON"); }),
     };
     mocks.getD1Binding.mockResolvedValue(d1);
     vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("id") });
