@@ -113,12 +113,14 @@ describe("wallet escrow release atomicity", () => {
     expect(statements).toHaveLength(6);
     expect(statements[0].sql).toContain('"pendingBalance"');
     expect(statements[0].sql).toContain('"netAmount" >= 0');
-    expect(statements[1].sql).toContain("json('not-json')");
+    expect(statements[1].sql).toContain('SET "balance" = CASE WHEN changes() = 1 THEN "balance" ELSE NULL END');
     expect(statements[2].sql).toContain('"status" = \'PENDING\'');
-    expect(statements[3].sql).toContain("json('not-json')");
+    expect(statements[2].sql).toContain("changes() = 1");
+    expect(statements[3].sql).toContain('SET "status" = CASE WHEN changes() = 1 THEN "status" ELSE NULL END');
     expect(statements[4].sql).toContain('INSERT INTO "WalletLedger"');
     expect(statements[4].sql).toContain("'RELEASE'");
-    expect(statements[5].sql).toContain("json('not-json')");
+    expect(statements[4].sql).toContain("changes() = 1");
+    expect(statements[5].sql).toContain('SET "balance" = CASE WHEN changes() = 1 THEN "balance" ELSE NULL END');
     expect(statements[0].values).toHaveLength(14);
     expect(statements[4].values).toContain("wallet-release:txn-1:LEDGER");
   });
@@ -127,6 +129,9 @@ describe("wallet escrow release atomicity", () => {
     const d1 = {
       prepare: (sql: string) => ({ bind: (...values: unknown[]) => ({ sql, values }) }),
       batch: vi.fn().mockResolvedValue([
+        { meta: { changes: 0 } },
+        { meta: { changes: 0 } },
+        { meta: { changes: 0 } },
         { meta: { changes: 0 } },
         { meta: { changes: 0 } },
         { meta: { changes: 0 } },
