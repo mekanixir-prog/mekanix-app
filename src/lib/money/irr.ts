@@ -96,6 +96,19 @@ export function multiplyRatioIrr(
   return result.toNumber();
 }
 
+/**
+ * Convert an explicitly Toman-denominated legacy/API amount to canonical IRR.
+ * This is a unit adapter, not an FX conversion: 1 Toman = 10 IRR.
+ * quantity is used for unit-price × quantity before converting the total.
+ */
+export function tomanToIrr(amountToman: number, quantity = 1): number {
+  assertIrrInteger(amountToman, "Toman amount");
+  assertIrrInteger(quantity, "Toman quantity", { allowZero: false });
+  const totalIrr = amountToman * quantity * 10;
+  assertIrrInteger(totalIrr, "Converted IRR amount");
+  return totalIrr;
+}
+
 /** Format an already validated IRR amount; presentation only, no FX lookup. */
 export function formatIrr(amount: number, locale = "fa-IR"): string {
   assertIrrInteger(amount, "IRR amount");
