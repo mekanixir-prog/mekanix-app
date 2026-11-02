@@ -40,7 +40,7 @@ const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
     return list;
   },
   withdrawals: async (db) => {
-    return db.withdrawalRequest.findMany({
+    const rows = await db.withdrawalRequest.findMany({
       select: {
         id: true,
         code: true,
@@ -64,6 +64,12 @@ const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
       },
       orderBy: { requestedAt: "desc" },
     });
+    const currencyVerified = process.env.MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED === "true";
+    return rows.map((row) => ({
+      ...row,
+      currency: currencyVerified ? "IRR" : "UNVERIFIED",
+      amount: currencyVerified ? String(row.amount) : null,
+    }));
   },
   reviews: async (db) => {
     const list = await db.review.findMany({
