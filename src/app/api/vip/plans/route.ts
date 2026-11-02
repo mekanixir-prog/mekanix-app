@@ -9,5 +9,11 @@ export async function GET() {
     orderBy: { order: "asc" },
     include: { subscriptions: false },
   });
-  return NextResponse.json(plans);
+  const priceCurrencyVerified =
+    process.env.MEKANIX_VIP_PLAN_PRICES_IRR_VERIFIED === "true";
+  return NextResponse.json(plans.map((plan) => ({
+    ...plan,
+    priceIrr: priceCurrencyVerified ? Number(plan.priceIrr) : null,
+    priceCurrencyVerified,
+  })));
 }
