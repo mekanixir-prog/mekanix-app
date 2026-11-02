@@ -1,5 +1,8 @@
 export type D1Result = { meta?: { changes?: number } };
-export type D1PreparedStatement = { bind: (...values: unknown[]) => D1PreparedStatement };
+export type D1PreparedStatement = {
+  bind: (...values: unknown[]) => D1PreparedStatement;
+  first<T = unknown>(): Promise<T | null>;
+};
 export type D1Binding = {
   prepare: (query: string) => D1PreparedStatement;
   batch: (statements: D1PreparedStatement[]) => Promise<D1Result[]>;
@@ -97,14 +100,42 @@ export async function releaseWalletTransactionWithD1(
     WHERE "id" = ?
   `).bind(walletId);
 
-  const results = await d1.batch([
-    walletUpdate,
-    walletAssertAfterDebit,
-    transactionUpdate,
-    transactionAssertAfterTransition,
-    ledgerInsert,
-    walletAssertAfterLedger,
-  ]);
+  let results: D1Result[];
+  try {
+    results = await d1.batch([
+      walletUpdate,
+      walletAssertAfterDebit,
+      transactionUpdate,
+      transactionAssertAfterTransition,
+      ledgerInsert,
+      walletAssertAfterLedger,
+    ]);
+  } catch (error) {
+    // A second scheduler invocation can race with a successful release. The
+    // batch's rollback assertions intentionally fail closed on a zero-row
+    // debit; distinguish that already-committed idempotent case from a real
+    // partial-write failure before deciding whether to return false.
+    try {
+      const state = await d1.prepare(`
+        SELECT wt."status" AS status,
+          (SELECT COUNT(*) FROM "WalletLedger" wl
+           WHERE wl."walletId" = wt."walletId"
+             AND wl."referenceType" = 'WalletTransaction'
+             AND wl."referenceId" = wt."id"
+             AND wl."type" = 'RELEASE'
+             AND wl."idempotencyKey" = ?) AS releaseLedgerCount
+        FROM "WalletTransaction" wt
+        WHERE wt."id" = ? AND wt."walletId" = ?
+      `).bind(`wallet-release:${transactionId}:LEDGER`, transactionId, walletId)
+        .first<{ status: string; releaseLedgerCount: number }>();
+      if (state?.status === "AVAILABLE" && Number(state.releaseLedgerCount) === 1) {
+        return false;
+      }
+    } catch {
+      // Preserve the original batch error if the diagnostic read also fails.
+    }
+    throw error;
+  }
   return results[0]?.meta?.changes === 1 &&
     results[2]?.meta?.changes === 1 &&
     results[4]?.meta?.changes === 1;
