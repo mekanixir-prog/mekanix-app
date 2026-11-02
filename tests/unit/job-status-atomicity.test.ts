@@ -116,6 +116,41 @@ describe("atomic job status writer", () => {
     expect(tx.technician.updateMany).not.toHaveBeenCalled();
   });
 
+  it("creates the approval invoice inside the same Prisma transaction as WAITING_APPROVAL", async () => {
+    const invoice = {
+      id: "invoice-1",
+      code: "INV-123456789ABC",
+      jobId: input.jobId,
+      laborHours: 1.5,
+      laborRate: 15,
+      laborTotal: 22.5,
+      partsTotal: 10,
+      travelFee: 3,
+      subtotal: 35.5,
+      taxRate: 0.09,
+      taxTotal: 3.195,
+      discount: 0,
+      total: 38.695,
+      currency: "IRR",
+      status: "SENT" as const,
+      notes: "Parts covered by 6-month warranty.",
+    };
+    const tx = {
+      job: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      invoice: { create: vi.fn().mockResolvedValue(invoice) },
+      serviceRequest: { updateMany: vi.fn() },
+      technician: { updateMany: vi.fn() },
+    };
+    const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)) } as any;
+
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      nextStatus: "WAITING_APPROVAL",
+      invoice,
+    })).resolves.toBeUndefined();
+    expect(tx.invoice.create).toHaveBeenCalledWith({ data: invoice });
+  });
+
   it("uses one D1 batch for job, request, and technician updates", async () => {
     const statements: Array<{ sql: string; values: unknown[] }> = [];
     const d1 = {
