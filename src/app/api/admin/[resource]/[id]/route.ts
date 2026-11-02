@@ -182,13 +182,24 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
       select: {
         id: true, code: true, walletId: true, amount: true, method: true,
         status: true, requestedAt: true, processedAt: true, reviewerId: true,
-        adminNotes: true, txnId: true, shebaNumber: true,
+        adminNotes: true, txnId: true, shebaNumber: true, bankName: true,
         wallet: { select: { technician: { select: { userId: true } } } },
       },
     });
     if (!before) return NextResponse.json({ error: "درخواست برداشت پیدا نشد" }, { status: 404 });
 
     let payoutReference: string | null = null;
+    if (action === "APPROVED" && (
+      before.method !== "bank" ||
+      !before.bankName?.trim() ||
+      !isValidIranianSheba(before.shebaNumber)
+    )) {
+      return NextResponse.json(
+        { error: "فقط درخواست برداشت بانکی با نام بانک و شبای معتبر قابل تأیید است" },
+        { status: 409 }
+      );
+    }
+
     if (action === "PAID") {
       payoutReference = typeof requestedWithdrawalReference === "string"
         ? requestedWithdrawalReference.trim()
