@@ -29,7 +29,7 @@ import { PATCH } from "@/app/api/admin/[resource]/[id]/route";
 
 const admin = { adminId: "admin-1", username: "operator", role: "ADMIN" };
 const before = {
-  id: "wd-1", walletId: "wallet-1", amount: 500, method: "bank", shebaNumber: "IR123456789012345678901234", status: "REQUESTED",
+  id: "wd-1", walletId: "wallet-1", amount: 500, method: "bank", bankName: "بانک ملت", shebaNumber: "IR062960000000100324200001", status: "REQUESTED",
   wallet: { technician: { userId: "tech-user-1", user: { name: "Technician" } } },
 };
 const after = { ...before, status: "APPROVED" };
@@ -79,6 +79,20 @@ describe("admin withdrawal API", () => {
     }));
     expect(mocks.audit).toHaveBeenCalledTimes(1);
     expect(mocks.notify).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not approve unsupported card-only or invalid-bank destinations", async () => {
+    mocks.find.mockReset().mockResolvedValueOnce({
+      ...before,
+      method: "card",
+      bankName: null,
+      shebaNumber: null,
+    });
+    const response = await PATCH(request({ status: "APPROVED" }), {
+      params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
+    });
+    expect(response.status).toBe(409);
+    expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it("rejects unknown transitions before any financial write", async () => {
