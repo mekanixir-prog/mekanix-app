@@ -327,3 +327,16 @@ A targeted source pass over 19 money-bearing UI/helper files found additional co
 
 **No runtime code, schema, seed, migration, production configuration, or historical financial record was changed by this expanded trace.**
 
+### 8.7 Server contract resolves two apparent UI comments—and exposes a stricter mismatch
+
+The gateway and withdrawal server paths were inspected after the UI pass:
+
+- `src/app/api/gateway/initiate/route.ts` persists `PaymentGatewayLog.amount` with `currency: "IRR"`; `verify` copies the log amount and currency into `Payment`. Thus the `PaymentGatewayDialog.amount // USD` annotation is stale or incorrect relative to the current simulator server contract. However, initiate is explicitly development-only, accepts the amount from the client, and returns 404 in production. The production provider must derive amount from the linked invoice/plan, not this client amount.
+- The gateway route's cap is `100_000_000` and its comment explicitly describes that cap as IRR. It does not validate integer/safe-integer status or prove that the client amount was produced by the invoice/plan. Do not treat its `currency: "IRR"` assignment as proof of correct commercial pricing.
+- `prisma/schema.prisma` explicitly labels wallet balance, pending balance, total earned, commission, total withdrawn, wallet transaction gross/commission/net, and withdrawal amount as IRR.
+- `src/app/api/wallets/withdraw/route.ts` accepts any finite positive number up to `10_000`; it has no lower bound and no currency field in the request. It does not enforce an integer or safe integer. The UI's `MIN_WITHDRAWAL = 5 // USD` and literal dollar display therefore do not match the current server's apparent IRR amount contract or its maximum. This is a real cross-layer defect, not merely an outdated comment.
+- `prisma/seed.ts` initializes wallet balances and lifetime totals with small unlabelled values (for example balance 50, pending 20, totalEarned 200). Schema comments say IRR, but the seed does not declare a unit or realistic demo-money convention. These rows must be explicitly marked as demo fixtures or regenerated with a documented IRR fixture policy; do not infer USD or IRR solely from magnitude.
+- The technician seed assigns `travelFeeBase`, `inspectionFee`, and `inspectionFeeHeavy` in USD in comments while Prisma schema comments say IRR. Invoice seed writers then copy calculated values into invoices whose currency is IRR. This is a confirmed seed-to-invoice unit provenance break.
+
+**Correction to §8.6:** the gateway API's current simulator persistence contract is explicitly IRR, even though the component prop comment says USD. The unresolved issue is the disagreement between the UI annotation, client-controlled development amount, and production-provider requirements—not an unknown currency value on the current simulator log/payment rows.
+
