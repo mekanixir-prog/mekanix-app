@@ -18,7 +18,8 @@ const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
       include: { user: true, specialties: true, certifications: true },
       orderBy: { rating: "desc" },
     });
-    return list;
+    const feesCurrencyVerified = process.env.MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED === "true";
+    return list.map((tech) => ({ ...tech, feesCurrencyVerified }));
   },
   jobs: async (db) => {
     const list = await db.job.findMany({
