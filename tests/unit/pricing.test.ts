@@ -95,6 +95,29 @@ describe("pricing — calculatePrice base breakdown (CAR, no emergency)", () => 
   });
 });
 
+describe("pricing — monetary input validation", () => {
+  it("rejects fractional or negative parts costs", async () => {
+    await expect(calculatePrice({ ...baseInput, partsCost: 100_000.5 })).rejects.toThrow();
+    await expect(calculatePrice({ ...baseInput, partsCost: -1 })).rejects.toThrow();
+  });
+
+  it("rejects invalid labor hours and travel distances", async () => {
+    await expect(calculatePrice({ ...baseInput, laborHours: Number.NaN })).rejects.toThrow();
+    await expect(calculatePrice({ ...baseInput, laborHours: -1 })).rejects.toThrow();
+    await expect(calculatePrice({ ...baseInput, travelDistanceKm: Number.POSITIVE_INFINITY })).rejects.toThrow();
+    await expect(calculatePrice({ ...baseInput, travelDistanceKm: -1 })).rejects.toThrow();
+  });
+
+  it("rejects discounts outside the supported percentage range", async () => {
+    await expect(calculatePrice({ ...baseInput, vipDiscountPercent: 101 })).rejects.toThrow();
+    await expect(calculatePrice({ ...baseInput, vipDiscountPercent: -1 })).rejects.toThrow();
+  });
+
+  it("rejects outputs outside the safe integer IRR range", async () => {
+    await expect(calculatePrice({ ...baseInput, laborHours: Number.MAX_VALUE })).rejects.toThrow();
+  });
+});
+
 describe("pricing — emergency surcharge", () => {
   it("Emergency adds 50% surcharge on (labor + parts + travel)", async () => {
     const result = await calculatePrice({ ...baseInput, isEmergency: true });
