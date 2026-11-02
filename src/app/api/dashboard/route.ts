@@ -61,10 +61,10 @@ export async function GET(req: Request) {
     cats.map(async (c) => {
       const reqs = await db.serviceRequest.findMany({
         where: { category: c.category },
-        select: { job: { select: { invoice: { select: { total: true, currency: true } } } } },
+        select: { job: { select: { invoice: { select: { total: true, currency: true, status: true } } } } },
       });
       const invoicedAmount = reqs.reduce(
-        (s, r) => s + (r.job?.invoice?.currency === "IRR" && r.job.invoice.total != null ? Number(r.job.invoice.total) : 0),
+        (s, r) => s + (r.job?.invoice?.currency === "IRR" && r.job.invoice.status !== "DRAFT" && r.job.invoice.status !== "REFUNDED" && r.job.invoice.total != null ? Number(r.job.invoice.total) : 0),
         0
       );
       return { category: c.category, count: c._count, invoicedAmount: Math.round(invoicedAmount), currency: "IRR" as const };
