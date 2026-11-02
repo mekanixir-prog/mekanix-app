@@ -31,6 +31,10 @@ export async function GET(req: Request) {
 
   // Find or create wallet
   const db = await getDbForLib();
+  // Legacy wallet rows have no persisted currency provenance. A read request
+  // must not repair escrow or release funds until the ledger has been verified.
+  const walletCurrencyVerified =
+    process.env.MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED === "true";
   let wallet = await db.wallet.findUnique({
     where: { technicianId },
     include: {
@@ -48,6 +52,7 @@ export async function GET(req: Request) {
     });
   }
 
+  if (wallet && walletCurrencyVerified) {
   // Repair the crash window where the Job reached COMPLETED but the separate
   // holdUntil write failed. Only PREPAY rows are eligible; use the immutable
   // completedAt timestamp so retries never restart the 12-hour hold.
@@ -123,6 +128,8 @@ export async function GET(req: Request) {
     await releaseWalletTransaction(db, wallet.id, transaction.id, now);
   }
 
+  }
+
   const fresh = await db.wallet.findUnique({
     where: { technicianId },
     include: {
@@ -142,7 +149,7 @@ export async function GET(req: Request) {
   const part = (type: string) => Number(tehranDateParts.find((item) => item.type === type)?.value);
   const todayStart = new Date(Date.UTC(part("year"), part("month") - 1, part("day")) - 210 * 60 * 1000);
   const fourteenDaysStart = new Date(todayStart.getTime() - 13 * dayMs);
-  const earningRows = fresh
+  const earningRows = fresh && walletCurrencyVerified
     ? await db.walletTransaction.findMany({
         where: {
           walletId: fresh.id,
@@ -189,8 +196,6 @@ export async function GET(req: Request) {
   const last7DaysIrr = sumSince(new Date(todayStart.getTime() - 6 * dayMs));
   // Legacy Wallet / WalletTransaction rows have no persisted currency marker.
   // Fail closed until a reviewed schema migration and data reconciliation are complete.
-  const walletCurrencyVerified =
-    process.env.MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED === "true";
   const walletCurrency = walletCurrencyVerified ? "IRR" as const : "UNVERIFIED" as const;
   const earningsValid = walletCurrencyVerified && rowsValid &&
     todayIrr !== null && last7DaysIrr !== null &&
@@ -201,6 +206,23 @@ export async function GET(req: Request) {
 
   return NextResponse.json(fresh ? {
     ...fresh,
+    // Do not serialize legacy monetary values as IRR until their provenance
+    // has been verified. Redact every wallet, transaction and withdrawal amount.
+    balance: walletCurrencyVerified ? fresh.balance : null,
+    pendingBalance: walletCurrencyVerified ? fresh.pendingBalance : null,
+    totalEarned: walletCurrencyVerified ? fresh.totalEarned : null,
+    totalCommission: walletCurrencyVerified ? fresh.totalCommission : null,
+    totalWithdrawn: walletCurrencyVerified ? fresh.totalWithdrawn : null,
+    transactions: fresh.transactions.map((transaction) => ({
+      ...transaction,
+      grossAmount: walletCurrencyVerified ? transaction.grossAmount : null,
+      commissionAmount: walletCurrencyVerified ? transaction.commissionAmount : null,
+      netAmount: walletCurrencyVerified ? transaction.netAmount : null,
+    })),
+    withdrawals: fresh.withdrawals.map((withdrawal) => ({
+      ...withdrawal,
+      amount: walletCurrencyVerified ? withdrawal.amount : null,
+    })),
     currency: walletCurrency,
     earningsSummary: {
       currency: walletCurrency,
