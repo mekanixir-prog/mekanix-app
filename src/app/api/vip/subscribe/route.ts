@@ -74,57 +74,52 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "پرداخت باید دقیقاً با مبلغ طرح و با واحد IRR برابر باشد" }, { status: 400 });
   }
 
-  // Check if this payment has already been used for a VIP subscription
-  const existingSub = await db.userVipSubscription.findFirst({
-    where: { paymentId, status: { in: ["ACTIVE", "CANCELLED", "EXPIRED"] } },
-  });
-  if (existingSub) {
-    return NextResponse.json({ error: "این پرداخت قبلاً برای اشتراک VIP استفاده شده است" }, { status: 409 });
-  }
-
-  // Cancel any existing ACTIVE subscription for this user. This alone is NOT
-  // a concurrency guard: two requests can both observe zero rows before either
-  // creates. The provider-specific partial unique index in the migration is the
-  // final atomic guard against two ACTIVE subscriptions for one user.
-  await db.userVipSubscription.updateMany({
-    where: { userId, status: "ACTIVE" },
-    data: { status: "CANCELLED" },
-  });
-
-  // A partial unique index (userId WHERE status='ACTIVE') is created by the
-  // provider-specific migrations because Prisma schema cannot express it.
-  // The database—not this read/update sequence—must enforce the invariant.
-
-  const startedAt = new Date();
-  const expiresAt = new Date(startedAt.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
-
-  // Create the subscription. With @@unique([paymentId]) in the schema, the DB
-  // itself rejects duplicate paymentId inserts (P2002). This is the real
-  // race guard — even if two concurrent requests both pass the findFirst
-  // check above, only one create succeeds.
+  // Replace the user's active subscription atomically. If the unique
+  // paymentId or one-ACTIVE-per-user index rejects the create, the preceding
+  // cancellation is rolled back with the transaction — the previous ACTIVE
+  // subscription can never be lost by a failed replacement attempt.
   let sub;
   try {
-    sub = await db.userVipSubscription.create({
-      data: {
-        userId,
-        planId,
-        status: "ACTIVE",
-        startedAt,
-        expiresAt,
-        paymentId: paymentId ?? null,
-      },
-      include: { plan: true },
+    sub = await db.$transaction(async (tx) => {
+      const existingSub = await tx.userVipSubscription.findFirst({
+        where: { paymentId, status: { in: ["ACTIVE", "CANCELLED", "EXPIRED"] } },
+      });
+      if (existingSub) return null;
+
+      await tx.userVipSubscription.updateMany({
+        where: { userId, status: "ACTIVE" },
+        data: { status: "CANCELLED" },
+      });
+
+      const startedAt = new Date();
+      const expiresAt = new Date(startedAt.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
+      return tx.userVipSubscription.create({
+        data: {
+          userId,
+          planId,
+          status: "ACTIVE",
+          startedAt,
+          expiresAt,
+          paymentId,
+        },
+        include: { plan: true },
+      });
     });
   } catch (e: any) {
-    // P2002 may mean either this payment was already consumed or another
-    // request won the one-ACTIVE-subscription-per-user race.
     if (e?.code === "P2002" || e?.message?.includes("Unique constraint")) {
       return NextResponse.json(
         { error: "پرداخت قبلاً استفاده شده یا اشتراک فعال دیگری ثبت شده است" },
         { status: 409 }
       );
     }
-    throw e; // re-throw unexpected errors
+    throw e;
+  }
+
+  if (!sub) {
+    return NextResponse.json(
+      { error: "این پرداخت قبلاً برای اشتراک VIP استفاده شده است" },
+      { status: 409 }
+    );
   }
 
   // Notify user — best-effort, never fail a subscription over a notification.
