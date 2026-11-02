@@ -34,7 +34,7 @@ function request(body: unknown, key = "withdrawal-request-0001") {
       method: "bank",
       bankName: "بانک ملت",
       shebaNumber: "IR062960000000100324200001",
-      ...body,
+      ...(body as Record<string, unknown>),
     }),
   });
 }
@@ -63,7 +63,7 @@ describe("atomic withdrawal route", () => {
 
   it("returns the existing request on retry without debiting again", async () => {
     db.withdrawalRequest.findUnique.mockResolvedValue({
-      id: "wd-existing", walletId: "wallet-1", amount: 500, method: "card", cardNumber: null, bankName: null, shebaNumber: null, status: "REQUESTED",
+      id: "wd-existing", walletId: "wallet-1", amount: 500, method: "bank", cardNumber: null, bankName: "بانک ملت", shebaNumber: "IR062960000000100324200001", status: "REQUESTED",
     });
     const response = await POST(request({ amount: 500, currency: "IRR" }));
     expect(response.status).toBe(200);
@@ -73,7 +73,7 @@ describe("atomic withdrawal route", () => {
 
   it("rejects reuse of an idempotency key with a different request payload", async () => {
     db.withdrawalRequest.findUnique.mockResolvedValue({
-      id: "wd-existing", walletId: "wallet-1", amount: 400, method: "card", cardNumber: null, bankName: null, shebaNumber: null, status: "REQUESTED",
+      id: "wd-existing", walletId: "wallet-1", amount: 400, method: "bank", cardNumber: null, bankName: "بانک ملت", shebaNumber: "IR062960000000100324200001", status: "REQUESTED",
     });
     const response = await POST(request({ amount: 500, currency: "IRR" }));
     expect(response.status).toBe(409);
