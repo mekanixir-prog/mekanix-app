@@ -7,9 +7,9 @@ export type D1Binding = {
 
 /**
  * D1 batch is a single SQLite transaction. The wallet aggregate is changed
- * first; the transaction transition is conditioned on changes() from that
- * exact wallet UPDATE; the RELEASE ledger proof is conditioned on changes()
- * from the transaction transition. Any ledger conflict aborts the whole batch.
+ * first, then each required write is followed by an assertion that exactly one
+ * row changed. The assertion deliberately raises a SQL error on zero rows, so
+ * D1 rolls back the entire batch instead of committing a partial transfer.
  */
 export async function releaseWalletTransactionWithD1(
   d1: D1Binding,
@@ -50,7 +50,6 @@ export async function releaseWalletTransactionWithD1(
     SET "status" = 'AVAILABLE', "releasedAt" = ?
     WHERE "id" = ? AND "walletId" = ? AND "status" = 'PENDING' AND "netAmount" >= 0
       AND "holdUntil" IS NOT NULL AND "holdUntil" <= ?
-      AND changes() = 1
   `).bind(timestamp, transactionId, walletId, timestamp);
 
   const ledgerInsert = d1.prepare(`
@@ -63,7 +62,7 @@ export async function releaseWalletTransactionWithD1(
     FROM "Wallet" w
     JOIN "WalletTransaction" wt ON wt."walletId" = w."id"
     WHERE w."id" = ? AND wt."id" = ? AND wt."status" = 'AVAILABLE'
-      AND wt."releasedAt" = ? AND changes() = 1
+      AND wt."releasedAt" = ?
   `).bind(
     crypto.randomUUID(),
     `Escrow released — transaction ${transactionId}`,
