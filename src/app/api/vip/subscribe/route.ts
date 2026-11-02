@@ -109,7 +109,7 @@ export async function POST(req: Request) {
     });
     if (!sub) throw new Error("VIP subscription could not be loaded after atomic creation");
   } catch (e: any) {
-    if (e?.code === "P2002" || e?.message?.includes("Unique constraint")) {
+    if (e?.code === "P2002" || /unique constraint/i.test(String(e?.message ?? ""))) {
       return NextResponse.json(
         { error: "پرداخت قبلاً استفاده شده یا اشتراک فعال دیگری ثبت شده است" },
         { status: 409 }
