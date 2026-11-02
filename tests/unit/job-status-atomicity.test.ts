@@ -13,6 +13,8 @@ const input = {
   jobId: "job-1",
   requestId: "request-1",
   technicianId: "technician-1",
+  actorRole: "TECHNICIAN" as const,
+  actorTechnicianId: "technician-1",
   currentStatus: "REQUESTED",
   nextStatus: "REJECTED",
   updates: {},
@@ -37,6 +39,7 @@ describe("atomic job status writer", () => {
       where: {
         id: input.jobId,
         status: input.currentStatus,
+        technicianId: input.actorTechnicianId,
         request: { is: { id: input.requestId, matchedTechId: input.technicianId } },
       },
       data: { status: "REJECTED" },
@@ -106,7 +109,7 @@ describe("atomic job status writer", () => {
 
     await expect(transitionJobStatusAtomically(db, acceptedInput)).resolves.toBeUndefined();
     expect(tx.job.updateMany).toHaveBeenCalledWith({
-      where: { id: input.jobId, status: input.currentStatus },
+      where: { id: input.jobId, status: input.currentStatus, technicianId: input.actorTechnicianId },
       data: { status: "ACCEPTED", startedAt: acceptedInput.updates.startedAt },
     });
     expect(tx.serviceRequest.updateMany).not.toHaveBeenCalled();
@@ -122,27 +125,26 @@ describe("atomic job status writer", () => {
           return { sql, values };
         },
       }),
-      batch: vi.fn(async (_statements: unknown[]) => [
-        { meta: { changes: 1 } },
-        { meta: { changes: 1 } },
-        { meta: { changes: 1 } },
-      ]),
+      batch: vi.fn(async (_statements: unknown[]) => []),
     };
     mocks.getD1Binding.mockResolvedValue(d1);
     const db = {} as any;
 
     await expect(transitionJobStatusAtomically(db, input)).resolves.toBeUndefined();
     expect(d1.batch).toHaveBeenCalledTimes(1);
-    expect(d1.batch.mock.calls[0][0]).toHaveLength(3);
+    expect(d1.batch.mock.calls[0][0]).toHaveLength(5);
     expect(statements[0].sql).toContain('UPDATE "Job"');
-    expect(statements[0].values.slice(-4)).toEqual([
+    expect(statements[0].values.slice(-5)).toEqual([
       input.jobId,
       input.currentStatus,
+      input.actorTechnicianId,
       input.requestId,
       input.technicianId,
     ]);
-    expect(statements[1].sql).toContain('UPDATE "ServiceRequest"');
-    expect(statements[2].sql).toContain('UPDATE "Technician"');
+    expect(statements[1].sql).toContain("json_extract");
+    expect(statements[2].sql).toContain('UPDATE "ServiceRequest"');
+    expect(statements[3].sql).toContain("json_extract");
+    expect(statements[4].sql).toContain('UPDATE "Technician"');
   });
 
   it("does not release a technician for non-terminal status changes", async () => {
@@ -161,11 +163,7 @@ describe("atomic job status writer", () => {
   it("returns a conflict when the D1 job compare-and-set fails", async () => {
     const d1 = {
       prepare: (sql: string) => ({ bind: (...values: unknown[]) => ({ sql, values }) }),
-      batch: vi.fn(async (_statements: unknown[]) => [
-        { meta: { changes: 0 } },
-        { meta: { changes: 0 } },
-        { meta: { changes: 0 } },
-      ]),
+      batch: vi.fn(async (_statements: unknown[]) => { throw new Error("malformed JSON"); }),
     };
     mocks.getD1Binding.mockResolvedValue(d1);
     const db = {} as any;
