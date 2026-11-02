@@ -117,7 +117,7 @@ export async function GET(req: Request) {
         techniciansOnline,
         jobsInProgress,
         completedJobs30d,
-        revenue30d: Math.round(revenue30d),
+        collectedGrossIrr30d: Math.round(revenue30d),
         avgResponseMins,
         customerSatisfaction: Math.round(customerSatisfaction * 10) / 10,
       },
