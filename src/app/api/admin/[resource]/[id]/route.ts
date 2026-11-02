@@ -72,6 +72,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
   const requestedWithdrawalStatus = body.status;
   const requestedWithdrawalAdminNotes = body.adminNotes;
   const requestedWithdrawalReference = body.transactionReference;
+
+  if (resource === "payments" && body.status === "REFUNDED") {
+    return NextResponse.json(
+      { error: "ثبت بازپرداخت بدون گردش بازپرداخت و تطبیق فاکتور مجاز نیست", code: "REFUND_FLOW_NOT_IMPLEMENTED" },
+      { status: 409 }
+    );
+  }
   const requestedPaymentStatus = body.status;
   if (resource === "customers" && requestedUserStatus !== undefined) {
     if (
