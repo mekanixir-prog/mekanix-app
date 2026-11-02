@@ -118,5 +118,64 @@ export async function GET(req: Request) {
     },
   });
 
-  return NextResponse.json(fresh ? { ...fresh, currency: "IRR" as const } : fresh);
+  const nowForSummary = new Date();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const tehranDateParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Tehran",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(nowForSummary);
+  const part = (type: string) => Number(tehranDateParts.find((item) => item.type === type)?.value);
+  const todayStart = new Date(Date.UTC(part("year"), part("month") - 1, part("day")) - 210 * 60 * 1000);
+  const fourteenDaysStart = new Date(todayStart.getTime() - 13 * dayMs);
+  const earningRows = fresh
+    ? await db.walletTransaction.findMany({
+        where: {
+          walletId: fresh.id,
+          createdAt: { gte: fourteenDaysStart },
+          netAmount: { gt: 0 },
+        },
+        select: { createdAt: true, netAmount: true },
+      })
+    : [];
+
+  const normalizedEarnings = earningRows.map((row) => ({
+    createdAt: row.createdAt,
+    amount: Number(row.netAmount),
+  }));
+  const earningsValid = normalizedEarnings.every(
+    (row) => Number.isSafeInteger(row.amount) && row.amount > 0
+  );
+  const sumSince = (start: Date) =>
+    normalizedEarnings
+      .filter((row) => row.createdAt >= start)
+      .reduce((sum, row) => sum + row.amount, 0);
+  const dateKey = (date: Date) =>
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Tehran",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(date);
+  const earningsSeries14d = Array.from({ length: 14 }, (_, index) => {
+    const start = new Date(todayStart.getTime() + (index - 13) * dayMs);
+    const end = new Date(start.getTime() + dayMs);
+    const revenue = normalizedEarnings
+      .filter((row) => row.createdAt >= start && row.createdAt < end)
+      .reduce((sum, row) => sum + row.amount, 0);
+    return { date: dateKey(start), revenue: earningsValid ? revenue : 0, jobs: 0 };
+  });
+
+  return NextResponse.json(fresh ? {
+    ...fresh,
+    currency: "IRR" as const,
+    earningsSummary: {
+      currency: "IRR" as const,
+      valid: earningsValid,
+      todayIrr: earningsValid ? sumSince(todayStart) : null,
+      last7DaysIrr: earningsValid ? sumSince(new Date(todayStart.getTime() - 6 * dayMs)) : null,
+      series14d: earningsValid ? earningsSeries14d : [],
+    },
+  } : fresh);
 }
