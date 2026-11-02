@@ -45,7 +45,8 @@ export async function GET(req: Request) {
   });
   const partsCurrencyVerified = process.env.MEKANIX_JOB_PART_IRR_PROVENANCE_VERIFIED === "true";
   const technicianFeesCurrencyVerified = process.env.MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED === "true";
-  const enriched = list.map((job) => ({ ...job, partsCurrencyVerified, technicianFeesCurrencyVerified }));
+  const walletCurrencyVerified = process.env.MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED === "true";
+  const enriched = list.map((job) => ({ ...job, partsCurrencyVerified, technicianFeesCurrencyVerified, walletCurrencyVerified }));
   const lite = wantsLite(req);
   return NextResponse.json(liteResponse(enriched, lite));
 }
