@@ -491,3 +491,16 @@ At commit `89ffc8674c8e788b1c1a9fc177476d51c67bdc6c`, all five PR #78 workflow g
 - Cloudflare Worker build
 
 Subsequent small UI/unit-contract commits were pushed after that checkpoint and have a new workflow run pending; do not carry forward the green status until that latest run completes.
+
+## 8.17 Additional provenance gates — prepay and VIP plan prices
+
+Two additional legacy-unit risks were found and guarded in PR #78:
+
+- `POST /api/prepay` reads technician inspection/travel fee fields whose seed units are USD or ambiguous. The route now returns 409 (`TECHNICIAN_FEE_CURRENCY_UNVERIFIED`) before both the first write and the already-paid replay path unless `MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED=true`. This prevents old prepay amounts from being exposed or re-credited as if they were IRR.
+- `GET /api/vip/plans` returns `priceIrr: null` and `priceCurrencyVerified: false` by default. The UI shows a pending-verification label and disables checkout. `POST /api/vip/subscribe` returns 409 (`VIP_PRICE_CURRENCY_UNVERIFIED`) unless `MEKANIX_VIP_PLAN_PRICES_IRR_VERIFIED=true`; existing exact-currency and safe-integer checks still apply.
+
+These flags are not set by this change. They are activation gates, not substitutes for a currency column, approved IRR price list, or a historical-data backfill. The current VIP seed values (9/19/39) remain unverified and must not be treated as approved commercial prices.
+
+## 8.18 Updated validation status
+
+The latest fully completed five-workflow checkpoint at commit `89ffc8674c8e788b1c1a9fc177476d51c67bdc6c` was green. Subsequent changes add fleet-currency filtering, explicit payment-gateway currency, prepay and VIP price provenance gates, and corresponding tests. A fresh CI run was triggered for the latest head; its result is pending and must be checked before claiming the new head is green.
