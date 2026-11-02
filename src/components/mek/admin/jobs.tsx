@@ -12,7 +12,7 @@ type JobRow = {
   id: string; code: string; status: string;
   request: { title: string; urgency: string; customer: { user: { name: string } }; vehicle: { make: string; model: string; type: string } };
   technician: { user: { name: string } } | null;
-  invoice: { total: number; status: string } | null;
+  invoice: { total: number; status: string; currency?: string } | null;
   createdAt: string; completedAt: string | null;
 };
 
@@ -31,7 +31,7 @@ export function AdminJobs() {
     { key: "tech", header: t("admin.jobs.col.technician"), cell: (r) => r.technician?.user.name ?? <span className="text-muted-foreground">{t("admin.jobs.unassigned")}</span>, sortValue: (r) => r.technician?.user.name ?? "" },
     { key: "urgency", header: t("admin.jobs.col.urgency"), cell: (r) => <UrgencyBadge urgency={r.request.urgency} /> },
     { key: "status", header: t("admin.jobs.col.status"), cell: (r) => <StatusBadge status={r.status} /> },
-    { key: "total", header: t("admin.jobs.col.total"), cell: (r) => r.invoice ? <span className="tabular-nums text-amber">{money(r.invoice.total)}</span> : <span className="text-muted-foreground">—</span>, sortValue: (r) => r.invoice?.total ?? 0 },
+    { key: "total", header: t("admin.jobs.col.total"), cell: (r) => r.invoice ? <span className="tabular-nums text-amber">{money(r.invoice.total, r.invoice.currency ?? "?")}</span> : <span className="text-muted-foreground">—</span>, sortValue: (r) => r.invoice?.total ?? 0 },
     { key: "date", header: t("admin.jobs.col.created"), cell: (r) => <span className="text-muted-foreground">{fmtDate(r.createdAt, undefined, lang)}</span>, sortValue: (r) => new Date(r.createdAt).getTime() },
   ];
 
