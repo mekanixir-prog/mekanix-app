@@ -157,6 +157,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     result = await db.review.update({ where: { id }, data: safe as any });
     await safeAudit({ session: adminSession, action: "UPDATE_REVIEW", entity: "review", entityId: id, before, after: result, req });
   } else if (resource === "withdrawals") {
+    if (process.env.MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED !== "true") {
+      return NextResponse.json({ error: "واحد دفترکل کیف پول هنوز تأیید نشده است؛ تغییر وضعیت برداشت تا زمان تطبیق متوقف است", code: "WALLET_IRR_PROVENANCE_UNVERIFIED" }, { status: 409 });
+    }
     const action = requestedWithdrawalStatus;
     if (!["APPROVED", "REJECTED", "PAID"].includes(action)) {
       return NextResponse.json({ error: "وضعیت عملیات برداشت نامعتبر است" }, { status: 400 });
