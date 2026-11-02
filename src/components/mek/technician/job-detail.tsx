@@ -342,25 +342,36 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
             <div className="mt-4"><JobStatusTimeline status={job.status} /></div>
           </div>
 
-          {/* Estimate preview */}
+          {/* Invoice preview — show only server-issued, currency-tagged amounts. */}
           {["REPAIRING", "WAITING_APPROVAL", "COMPLETED"].includes(job.status) && (
             <div className="rounded-xl border border-border bg-card p-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-display text-sm font-semibold">{t("tech.jobDetail.estimatePreview")}</h3>
                 {job.invoice && <StatusBadge status={job.invoice.status === "PAID" ? "COMPLETED" : "WAITING_APPROVAL"} />}
               </div>
-              <div className="mt-3 space-y-1.5 text-sm">
-                <EstLine label={t("tech.jobDetail.labor").replace("{hours}", isFa ? toPersianDigits(String(job.invoice?.laborHours ?? 1.5)) : String(job.invoice?.laborHours ?? 1.5))} amount={(job.invoice?.laborHours ?? 1.5) * Number(job.technician.hourlyRate)} moneyFn={money} />
-                <EstLine label={t("tech.jobDetail.partsShort")} amount={job.parts.reduce((s, p) => s + Number(p.unitPrice) * p.quantity, 0)} moneyFn={money} />
-                <EstLine label={t("tech.jobDetail.travelFee")} amount={Number(job.technician.travelFeeBase)} moneyFn={money} />
-                <div className="border-t border-border pt-1.5" />
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{t("tech.jobDetail.estTotal")}</span>
-                  <span className="font-display text-lg font-bold text-amber">
-                    {money(Number(job.invoice?.total ?? (1.5 * Number(job.technician.hourlyRate) + job.parts.reduce((s, p) => s + Number(p.unitPrice) * p.quantity, 0) + Number(job.technician.travelFeeBase)) * 1.09))}
-                  </span>
+              {job.invoice ? (
+                <div className="mt-3 space-y-1.5 text-sm">
+                  <EstLine
+                    label={t("tech.jobDetail.labor").replace("{hours}", isFa ? toPersianDigits(String(job.invoice.laborHours)) : String(job.invoice.laborHours))}
+                    amount={Number(job.invoice.laborTotal)}
+                    moneyFn={(amount) => money(amount, job.invoice?.currency ?? "?")}
+                  />
+                  <EstLine label={t("tech.jobDetail.partsShort")} amount={Number(job.invoice.partsTotal)} moneyFn={(amount) => money(amount, job.invoice?.currency ?? "?")} />
+                  <EstLine label={t("tech.jobDetail.travelFee")} amount={Number(job.invoice.travelFee)} moneyFn={(amount) => money(amount, job.invoice?.currency ?? "?")} />
+                  <EstLine label={t("invoice.tax")} amount={Number(job.invoice.taxTotal)} moneyFn={(amount) => money(amount, job.invoice?.currency ?? "?")} />
+                  <div className="border-t border-border pt-1.5" />
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{t("tech.jobDetail.estTotal")}</span>
+                    <span className="font-display text-lg font-bold text-amber">
+                      {money(Number(job.invoice.total), job.invoice.currency ?? "?")}
+                    </span>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <p className="mt-3 rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
+                  {t("tech.jobDetail.estimatePending", "مبلغ نهایی پس از محاسبه و صدور فاکتور مشخص می‌شود.")}
+                </p>
+              )}
               {job.status === "REPAIRING" && (
                 <Button onClick={advance} className="mt-3 w-full bg-amber text-black hover:bg-amber/90">
                   <FileText className="mr-2 size-4" /> {t("tech.jobDetail.sendEstimate")}
@@ -371,12 +382,11 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                   {job.invoice.status === "PAID" ? t("tech.jobDetail.invoicePaid") : job.customerApproved ? t("tech.jobDetail.customerApproved") : t("tech.jobDetail.waitingApproval")}
                 </div>
               )}
-              {job.invoice && (
+              {job.invoice ? (
                 <Button onClick={resendInvoice} variant="outline" size="sm" className="mt-2 w-full">
                   <FileText className="mr-1.5 size-3.5" /> {t("tech.jobDetail.issueInvoice").replace("{code}", isFa ? toPersianDigits(job.invoice.code) : job.invoice.code)}
                 </Button>
-              )}
-              {!job.invoice && (
+              ) : (
                 <Button onClick={issueInvoice} variant="outline" size="sm" className="mt-2 w-full">
                   <FileText className="mr-1.5 size-3.5" /> {t("tech.jobDetail.sendEstimate")}
                 </Button>
