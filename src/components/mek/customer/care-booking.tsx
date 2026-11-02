@@ -160,7 +160,7 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
                     </div>
                   </div>
                   <div className="text-end">
-                    <p className="font-display text-lg font-bold text-amber">{money(pkg.basePrice)}</p>
+                    <p className="text-xs text-muted-foreground">{isFa ? "قیمت پس از بررسی" : "Quote after inspection"}</p>
                   </div>
                 </div>
                 {pkg.items && pkg.items.length > 0 && (
