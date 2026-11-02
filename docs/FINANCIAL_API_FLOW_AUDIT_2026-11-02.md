@@ -375,3 +375,29 @@ The dashboard API, payment admin screen, technician dashboard, technician earnin
 
 **No runtime code, schema, migrations, seed rows, financial history, or production settings were modified by this dashboard trace.**
 
+### 8.9 Pre-service payment and wallet-ledger provenance
+
+The prepay writer, atomic Prisma/D1 implementations, wallet read/release path, and withdrawal reconciliation endpoint were inspected.
+
+- `src/app/api/prepay/route.ts` computes gross as technician `inspectionFee` + `travelFeeBase`, commission as 10% of gross, and net as gross minus commission. These source fields have the seed/schema unit conflict already recorded in §8.5/§8.7. The route copies the computed amounts into Job fields and wallet records without a currency/unit field.
+- The route is a simulator and explicitly returns 404 in production. That prevents current production use, but the data contract still must be corrected before enabling a real provider.
+- `recordPrepayWithPrisma` and `recordPrepayWithD1` persist wallet transaction gross/commission/net and ledger amount/balance snapshots as Decimal/SQLite numeric values, but the records do not carry currency. The atomicity/idempotency work is useful but does not establish the monetary unit.
+- The Prisma wallet aggregate increments `totalEarned` by gross and `totalCommission` by commission; `pendingBalance` receives net. Therefore the field name `totalEarned` is documented in schema as lifetime gross, while the technician UI labels it “net earnings”. This is a semantic labeling mismatch.
+- The prepay wallet transaction is created with status `PENDING` and `holdUntil: null`; the generic wallet release path only releases PENDING rows with non-null matured `holdUntil`. The prepay route's Job row sets `holdUntil: null` too. The source reviewed here does not establish how this prepay hold is later released; identify the separate release trigger/flow before relying on it. Do not assume the generic `/api/wallets` auto-release will release this particular prepay transaction.
+- `src/app/api/wallets/route.ts` returns wallet values without currency metadata. It does release matured transactions before returning a refreshed wallet; the release transition is atomic, but currency remains implicit.
+- `src/app/api/wallets/withdraw/status/route.ts` correctly checks that a withdrawal request has a matching immutable negative ledger entry before reporting COMMITTED. It compares amount equality but has no currency field to verify.
+- `src/app/api/wallets/withdraw/route.ts` validates only finite positive amount and a maximum of 10,000; it does not require an integer/safe integer or a currency field. The database schema comments say IRR, so this is an apparent IRR-only route with no explicit boundary assertion.
+- `src/components/mek/technician/earnings.tsx` calls `parseFloat` on user-entered withdrawal text, uses `MIN_WITHDRAWAL = 5 // USD`, and shows a dollar sign in the minimum error. It posts that raw number to the IRR-labelled API. A technician entering “5” is therefore ambiguous by a factor that must not be guessed.
+
+#### Wallet/prepay release blockers
+
+1. Resolve technician fee seed units and historical fee values before enabling prepay in a real payment flow.
+2. Add a canonical integer-IRR validation boundary to prepay input derivation, commission calculation, wallet transaction writes, and ledger writes; reject unsafe/fractional values.
+3. Add explicit unit metadata or an IRR-only invariant for wallet and ledger records; do not infer unit from the Persian locale or schema comments alone.
+4. Decide whether `totalEarned` means gross lifetime amount or net technician earnings. Preserve gross and net as separate fields/metrics and label them accurately in UI.
+5. Trace the prepay hold-release lifecycle. The generic release helper requires non-null `holdUntil`, while prepay rows currently have null. Verify a separate, idempotent completion-time hold scheduler or fix the lifecycle before production.
+6. Replace USD minimum withdrawal text with the owner-approved IRR policy only after the intended amount scale and historical wallet data are reconciled. Do not just replace the string “$” with “ریال”.
+7. Preserve the existing atomicity and reconciliation checks while adding currency/safe-integer constraints; do not weaken idempotency or transaction boundaries.
+
+**No runtime code, schema, migration, seed row, historical wallet balance, or production configuration was changed by this wallet/prepay trace.**
+
