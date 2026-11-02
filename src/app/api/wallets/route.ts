@@ -174,7 +174,13 @@ export async function GET(req: Request) {
   });
   const todayIrr = sumSince(todayStart);
   const last7DaysIrr = sumSince(new Date(todayStart.getTime() - 6 * dayMs));
-  const earningsValid = rowsValid && todayIrr !== null && last7DaysIrr !== null &&
+  // Legacy Wallet / WalletTransaction rows have no persisted currency marker.
+  // Fail closed until a reviewed schema migration and data reconciliation are complete.
+  const walletCurrencyVerified =
+    process.env.MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED === "true";
+  const walletCurrency = walletCurrencyVerified ? "IRR" as const : "UNVERIFIED" as const;
+  const earningsValid = walletCurrencyVerified && rowsValid &&
+    todayIrr !== null && last7DaysIrr !== null &&
     dailyTotals.every((day) => day.revenue !== null);
   const earningsSeries14d = earningsValid
     ? dailyTotals.map((day) => ({ ...day, revenue: day.revenue as number }))
@@ -182,9 +188,9 @@ export async function GET(req: Request) {
 
   return NextResponse.json(fresh ? {
     ...fresh,
-    currency: "IRR" as const,
+    currency: walletCurrency,
     earningsSummary: {
-      currency: "IRR" as const,
+      currency: walletCurrency,
       valid: earningsValid,
       todayIrr: earningsValid ? todayIrr : null,
       last7DaysIrr: earningsValid ? last7DaysIrr : null,
