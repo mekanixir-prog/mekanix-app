@@ -60,6 +60,7 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
 
   const parts = job.parts;
   const mediaUrls = parseMedia(job.request.mediaUrls);
+  const invoiceMoney = (amount: number) => money(amount, invoice?.currency ?? "?");
 
   return (
     <div className="mx-auto max-w-3xl space-y-4" dir={isFa ? "rtl" : "ltr"}>
@@ -117,8 +118,8 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
                           {p.sku && <span className="ml-2 font-mono text-[10px] text-muted-foreground">{p.sku}</span>}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">{isFa ? toPersianDigits(p.quantity) : p.quantity}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{money(Number(p.unitPrice))}</td>
-                        <td className="px-3 py-2 text-right font-medium tabular-nums">{money(Number(p.unitPrice) * p.quantity)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{invoiceMoney(Number(p.unitPrice))}</td>
+                        <td className="px-3 py-2 text-right font-medium tabular-nums">{invoiceMoney(Number(p.unitPrice) * p.quantity)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -142,16 +143,16 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
         {invoice && (
           <div className="border-t border-border bg-muted/20 p-5">
             <div className="mx-auto max-w-xs space-y-1.5 text-sm">
-              <Line label={t("invoice.labor")} value={`${isFa ? toPersianDigits(invoice.laborHours) : invoice.laborHours}${t("common.hourShort")} × ${money(Number(invoice.laborRate))}`} amount={Number(invoice.laborTotal)} moneyFn={money} />
-              <Line label={t("invoice.partsMaterials")} amount={Number(invoice.partsTotal)} moneyFn={money} />
-              <Line label={t("invoice.travelFee")} amount={Number(invoice.travelFee)} moneyFn={money} />
+              <Line label={t("invoice.labor")} value={`${isFa ? toPersianDigits(invoice.laborHours) : invoice.laborHours}${t("common.hourShort")} × ${invoiceMoney(Number(invoice.laborRate))}`} amount={Number(invoice.laborTotal)} moneyFn={invoiceMoney} />
+              <Line label={t("invoice.partsMaterials")} amount={Number(invoice.partsTotal)} moneyFn={invoiceMoney} />
+              <Line label={t("invoice.travelFee")} amount={Number(invoice.travelFee)} moneyFn={invoiceMoney} />
               <div className="border-t border-border pt-1.5" />
-              <Line label={t("invoice.subtotal")} amount={Number(invoice.subtotal)} muted moneyFn={money} />
-              <Line label={t("invoice.tax", undefined).replace("{rate}", isFa ? toPersianDigits(Math.round(Number(invoice.taxRate) * 100)) : String(Math.round(Number(invoice.taxRate) * 100)))} amount={Number(invoice.taxTotal)} muted moneyFn={money} />
-              {Number(invoice.discount) > 0 && <Line label={t("invoice.discount")} amount={-Number(invoice.discount)} muted tone="emerald" moneyFn={money} />}
+              <Line label={t("invoice.subtotal")} amount={Number(invoice.subtotal)} muted moneyFn={invoiceMoney} />
+              <Line label={t("invoice.tax", undefined).replace("{rate}", isFa ? toPersianDigits(Math.round(Number(invoice.taxRate) * 100)) : String(Math.round(Number(invoice.taxRate) * 100)))} amount={Number(invoice.taxTotal)} muted moneyFn={invoiceMoney} />
+              {Number(invoice.discount) > 0 && <Line label={t("invoice.discount")} amount={-Number(invoice.discount)} muted tone="emerald" moneyFn={invoiceMoney} />}
               <div className="flex items-center justify-between border-t border-border pt-2">
                 <span className="font-display text-base font-semibold">{t("invoice.total")}</span>
-                <span className="font-display text-xl font-bold text-amber">{money(Number(invoice.total))}</span>
+                <span className="font-display text-xl font-bold text-amber">{invoiceMoney(Number(invoice.total))}</span>
               </div>
             </div>
           </div>
@@ -191,7 +192,7 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
 
           <Button onClick={approveAndPay} disabled={paying} className="mt-3 w-full bg-amber text-black hover:bg-amber/90">
             {paying ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Lock className="mr-2 size-4" />}
-            {t("pay.approveAndPay")} {money(Number(invoice.total))}
+            {t("pay.approveAndPay")} {invoiceMoney(Number(invoice.total))}
           </Button>
         </div>
       )}
@@ -203,7 +204,7 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
             <h3 className="font-display text-sm font-semibold">{t("invoice.paymentComplete")}</h3>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            {t("invoice.paidOn").replace("{amount}", money(Number(invoice.total))).replace("{date}", fmtDate(invoice.updatedAt, undefined, isFa ? "fa" : "en"))}
+            {t("invoice.paidOn").replace("{amount}", invoiceMoney(Number(invoice.total))).replace("{date}", fmtDate(invoice.updatedAt, undefined, isFa ? "fa" : "en"))}
           </p>
           <div className="mt-3 flex gap-2">
             <Button onClick={() => go("invoice-document", { jobId: job.id })} variant="outline" className="flex-1">
