@@ -64,6 +64,16 @@ File: `src/app/api/care/bookings/[id]/extra-proposal/route.ts`
 
 **Required later:** define a Zod contract with safe integer Toman values if that is the retained public contract; reject all ambiguous input shapes. Convert once at a named CARE-to-invoice adapter (`Toman × 10 = IRR`) and persist/use IRR after that boundary. Add tests proving there is no second conversion.
 
+### CARE follow-up PR review — validation and atomicity do not yet complete the IRR boundary
+
+The following open Draft PRs were reviewed after the baseline audit. They are not merged into `main`, so the findings above continue to describe the reviewed main-branch behavior until those changes are integrated.
+
+- **PR #68** adds strict validation for CARE proposal prices as nonnegative safe-integer **Toman** amounts, quantity 1–100, and a safe computed total. This closes the malformed/fractional/unsafe-input gap on its branch; it does not convert Toman to IRR.
+- **PR #72** depends on PR #68 and makes proposal creation atomic across the Prisma transaction and D1 batch paths. Its proposal writer still persists the validated Toman values directly into `CustomerApproval` Decimal fields, which have no currency marker. Its notification still labels the amount as Toman.
+- The main-branch customer approve/reject routes remain separate sequential writes. Approval changes workflow state; it does not normalize or revalidate proposal money. The customer detail UI renders proposal amounts through the shared `money()` helper, so its unit assumptions must be verified together with the formatter before changing the persisted unit.
+
+**Safe conclusion:** do not add a one-way Toman × 10 conversion only to the proposal writer. First trace and update the full CARE lifecycle (proposal persistence, detail API/UI, approval/rejection, invoice/payment handoff, notifications, and tests) so every consumer agrees that persisted values are IRR. Existing rows must remain untouched until their provenance is classified. Keep PR #72 dependent on #68 and do not merge either as a substitute for the IRR boundary work.
+
 ### API-FLOW-03 — Prepay combines ambiguous technician rates and floating commission arithmetic
 
 File: `src/app/api/prepay/route.ts`
