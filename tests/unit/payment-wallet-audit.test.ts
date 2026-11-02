@@ -568,6 +568,7 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
 // ──────────────────────────────────────────────────────────────────────────
 describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
   beforeEach(() => {
+    vi.stubEnv("MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED", "true");
     mockRequireAuth.mockResolvedValue({
       userId: "user_tech",
       role: "TECHNICIAN",
@@ -647,6 +648,7 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
       id: "pay-1",
       userId: "user-1",
       status: "SUCCEEDED",
+      currency: "IRR",
       amount: 100_000,
     });
     mockUserVipSubscriptionUpdateMany.mockResolvedValue({ count: 0 });
@@ -738,6 +740,7 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
         id: where.id,
         userId: "user-1",
         status: "SUCCEEDED",
+        currency: "IRR",
         amount: 100_000,
       }));
       mockUserVipSubscriptionFindFirst.mockResolvedValue(null);
