@@ -22,6 +22,13 @@ describe("canonical IRR money primitives", () => {
       expect(fmtMoney(125, "USD", "fa")).toContain("$۱۲۵");
     });
 
+    it("shows invalid or fractional IRR values as unavailable instead of rounding them", () => {
+      expect(fmtMoney(1250.5, "IRR", "fa")).toBe("—");
+      expect(fmtMoney(Number.MAX_SAFE_INTEGER + 1, "IRR", "en")).toBe("—");
+      expect(fmtMoney(Number.NaN, "IRR", "en")).toBe("—");
+      expect(fmtMoney(Number.POSITIVE_INFINITY, "USD", "en")).toBe("—");
+    });
+
     it("does not silently label an unknown currency as USD", () => {
       expect(fmtMoney(125, "XYZ", "en")).toBe("XYZ 125");
     });
