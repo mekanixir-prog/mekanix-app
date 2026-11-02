@@ -1,22 +1,16 @@
 // MEKANIX — formatting & utility helpers
 import { CURRENCIES } from "./constants";
 
-// FX is only for explicit USD-to-IRR conversions. It is never applied by fmtMoney.
-let USD_TO_IRR = 60000;
-
-export function setUsdToIrrRate(rate: number) {
-  if (Number.isFinite(rate) && rate > 0) USD_TO_IRR = rate;
-}
-
-export function getUsdToIrrRate(): number {
-  return USD_TO_IRR;
-}
-
-export function convertUsdToIrr(amountUsd: number): number {
+// FX conversion is explicit and requires a caller-supplied, verified rate.
+// Domestic IRR formatting never reads or mutates an exchange-rate value.
+export function convertUsdToIrr(amountUsd: number, rateIrrPerUsd: number): number {
   if (!Number.isFinite(amountUsd) || amountUsd < 0) {
     throw new RangeError("USD amount must be a finite non-negative number");
   }
-  const converted = amountUsd * USD_TO_IRR;
+  if (!Number.isFinite(rateIrrPerUsd) || rateIrrPerUsd <= 0) {
+    throw new RangeError("A positive verified IRR-per-USD rate is required");
+  }
+  const converted = amountUsd * rateIrrPerUsd;
   if (!Number.isSafeInteger(Math.round(converted))) {
     throw new RangeError("Converted IRR amount exceeds the safe integer range");
   }
