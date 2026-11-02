@@ -316,6 +316,35 @@ Files: `src/lib/prepay-atomic.ts`, `src/lib/wallet-release.ts`, `src/lib/withdra
 
 These protections must not be weakened while adding money-unit validation.
 
+## 4A. Open PR dependency and CI review (2026-11-02)
+
+The open financial/security PRs were checked against their exact current head commits. A green CI result proves the branch passed its configured automation; it does not prove the branch is safe to merge under the IRR-only product contract.
+
+| PR | Scope | Head CI | Dependency / disposition |
+|---|---|---|---|
+| #75 | Canonical integer-IRR primitives | 5/5 green | Independent foundation; review and integrate before adopting it in routes |
+| #68 | CARE proposal validation | 5/5 green | Validates Toman inputs; keep as an explicit Toman ingress contract, not as proof of IRR persistence |
+| #72 | CARE proposal atomic creation | 5/5 green | **Stacked on #68** (base branch is #68); review/merge #68 before #72 |
+| #70 | CARE approval/rejection atomic decisions | 5/5 green | Complements #72; coordinate both CARE branches and regression-test the complete lifecycle |
+| #66 | Payment provider verification contract | 5/5 green | Adapter hardening only; does not connect the authoritative persisted payment lifecycle |
+| #67 | VIP payment-purpose binding | 5/5 green | Defense-in-depth; still requires exact integer-IRR amount/currency equality in the full VIP lifecycle |
+| #71 | Withdrawal destination and atomic payout handling | 5/5 green | Bank/Sheba destination safety; do not treat as complete until withdrawal amount contract is integer IRR |
+| #73 | Withdrawal limits based on USD minimum/maximum and decimal precision | 5/5 green | **Do not merge** under the binding IRR-only rule; conflicts with the product currency contract |
+| #74 | Financial unit contract audit | 4/4 green | Documentation only |
+| #76 | Financial data provenance inventory | 4/4 green | Documentation only |
+| #77 | API flow audit | 4/4 green on head `556f98940ffd55936ce2a4074f6d255139a6407f` | Documentation only |
+
+### Safe review order
+
+1. Review and integrate #75 as the policy-neutral integer-IRR foundation.
+2. Review #68, then #72 because #72 is explicitly based on #68. Preserve the Toman ingress contract only at the CARE boundary; do not persist Toman as canonical financial money.
+3. Integrate #70 with the CARE proposal lifecycle and test creation → customer decision → invoice handoff together. No invoice handoff is currently proven by the audited routes.
+4. Review #66 and #67 together with the persisted payment lifecycle. Adapter tests alone are not payment release evidence.
+5. Review #71 for payout destination/atomicity, then replace all USD/decimal withdrawal amount assumptions. Do not merge #73 as written.
+6. Only after data provenance and approved prices are established, adopt the formatter and shared IRR core in actual financial readers/writers.
+
+**No PR was merged as part of this review.** Branch CI status is not an authorization to merge, and the PRs were not rebased against each other except for the explicit #72 → #68 dependency. Re-run all required workflows on the final merge candidates after integration.
+
 ## 5. Implementation order (no commercial assumptions)
 
 1. Introduce the integer-IRR money core at API and shared-writer boundaries; reject ambiguous values rather than coercing.
