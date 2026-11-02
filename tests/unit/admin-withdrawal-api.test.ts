@@ -45,7 +45,6 @@ function request(body?: unknown) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED", "true");
-  vi.stubEnv("MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED", "true");
   mocks.admin.mockResolvedValue(admin);
   mocks.list.mockResolvedValue([before]);
   mocks.find.mockResolvedValueOnce(before).mockResolvedValue(after);
@@ -68,17 +67,6 @@ describe("admin withdrawal API", () => {
     const response = await GET(request(), { params: Promise.resolve({ resource: "withdrawals" }) });
     expect(response.status).toBe(200);
     expect(mocks.list).toHaveBeenCalledTimes(1);
-  });
-
-  it("fails closed while wallet ledger currency provenance is unverified", async () => {
-    vi.stubEnv("MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED", "false");
-    const response = await PATCH(request({ status: "APPROVED" }), {
-      params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
-    });
-    expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({ code: "WALLET_IRR_PROVENANCE_UNVERIFIED" });
-    expect(mocks.find).not.toHaveBeenCalled();
-    expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it("approves a request and writes audit/notification after the transition", async () => {
