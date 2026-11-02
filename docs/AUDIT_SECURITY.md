@@ -1,8 +1,10 @@
 # MEKANIX — Backend Security Audit Report (B-4)
 
-**Date:** 2026-10-14
+**Original audit date:** 2026-10-14
+**Reconciliation date:** 2026-11-02
 **Auditor:** Agent 4 — Backend Security Auditor
-**Branch audited:** `feature/cloudflare-d1-validation @ 1cf59e7` (working tree = main `@ 23b71d2`, code-identical)
+**Current reconciliation branch:** `fix/irr-display-dashboard-withdrawal` (PR #78)
+**Historical snapshot:** `feature/cloudflare-d1-validation @ 1cf59e7`
 **Scope:** All routes under `src/app/api/` + auth helpers (`src/lib/auth.ts`, `src/lib/admin-auth.ts`, `src/lib/care-auth.ts`, `src/lib/permissions.ts`) + rate-limit + OTP/session subsystems
 **Methodology:** Static code review (every route read end-to-end) + 13 negative runtime tests exercising REAL route handlers with REAL authz helpers (only DB + rate-limit mocked at the boundary)
 **Constraints honored:** READ-ONLY on all source; the ONE additive source change is `tests/unit/security-audit-negative.test.ts`. No migrations, no deploys, no pushes. The 29 modified UI files were not touched.
@@ -11,13 +13,27 @@
 
 ## 1. Executive Summary
 
-- **Routes audited:** 71 route files under `src/app/api/` (covering ~140 HTTP handler functions across GET/POST/PATCH/DELETE)
-- **Prior fixes verified present:** 8 / 9 (PAY-01, VIP-01, GW-02, GW-01, RL-01, M-04, M-04b confirmed; M-03 confirmed on `/technicians/[id]` but a **regression/miss** found on `/technicians` public LIST — phone still exposed)
-- **New findings:** 1 CRITICAL, 2 MEDIUM, 3 LOW (6 new findings)
-- **Negative tests added:** 13 tests, **13 PASS / 0 FAIL** — i.e. every BOLA / authz / authn / enumeration gate tested actually REJECTS the cross-tenant / unauthenticated / non-admin attempt as expected
-- **Status:** ⚠️ **CONDITIONAL** — the 1 CRITICAL (SEC-21: admin auth bypass via user JWT in production) is a release blocker; it is not exploitable in dev mode (secrets differ) but IS exploitable in production (same `JWT_SECRET`). All other findings are Medium/Low and consistent with the prior audit's accepted-risk posture.
+> **2026-11-02 reconciliation — supersedes stale status claims below**
+>
+> The detailed findings below originated in the 2026-10-14 audit and were not updated when subsequent fixes landed. The current PR #78 source was re-read. The following historical findings are now **closed in the current branch**:
+> - **SEC-21 (admin JWT confusion):** `src/lib/admin-auth.ts` now requires `ADMIN_JWT_SECRET` in production, validates `adminId` and admin role claims, and falls back to a persisted active ADMIN user session only after dedicated-token verification fails.
+> - **SEC-22 (technician phone exposure):** the public technician list now selects an explicit safe user-field allowlist without `phone`.
+> - **SEC-23 (dashboard information disclosure):** `GET /api/dashboard` now requires ADMIN role because the payload contains technician revenue and customer/technician identities.
+> - **SEC-17 (module-load environment capture):** the admin signing secret is read inside `getAdminSecret()`, not at module evaluation time.
+>
+> The current branch also closes two additional authorization defects found during this reconciliation: unsupported FLEET_MANAGER/PARTNER roles no longer pass `requireJobParticipant` without a verified ownership relation, and customer estimate approval cannot be combined with a job-state transition. New negative tests cover these cases.
+>
+> The wallet GET route was also hardened: unverified legacy ledger rows cannot trigger escrow repair/release, and monetary values are redacted from wallet, transaction, and withdrawal payloads until provenance is verified.
+>
+> **Current disposition:** PR #78 remains Draft. The above fixes are committed, but the 5 CI workflows for the current head must complete successfully before these findings can be marked runtime-verified. Remaining items SEC-14, SEC-15, SEC-18, SEC-19, SEC-20, SEC-24 and accepted-risk items remain open unless separately closed below.
 
-The MEKANIX backend's BOLA / IDOR posture is **strong** — every `[id]` route tested correctly enforces ownership via `requireJobParticipant` / `requireVehicleOwner` / `requireBookingParticipant` / `requireAssignedTechnician`. The CRITICAL is an admin-auth design gap, not a per-route BOLA.
+- **Historical routes audited:** 71 route files under `src/app/api/` (about 140 HTTP handlers).
+- **Prior controls:** the current source now includes the M-03 public-phone fix and the SEC-21 admin-token separation/claim-validation fix; SEC-23 dashboard data is ADMIN-only.
+- **New reconciliation findings:** 2 authorization/state-machine defects and 1 wallet-read financial integrity/disclosure defect were found and fixed in PR #78.
+- **Negative security tests:** 19 cases are now defined in `tests/unit/security-audit-negative.test.ts` (13 original + 6 added in this reconciliation); runtime result is pending the current CI run.
+- **Status:** ⚠️ **CONDITIONAL** — no previously identified CRITICAL finding remains open in the current source, but PR #78 must pass CI, PostgreSQL, Production Readiness, Docker E2E and Cloudflare Build before the fixes are considered verified.
+
+The backend already has broad BOLA controls; this reconciliation specifically tightened the unsupported-role fallthrough and customer job-state approval path.
 
 ---
 
@@ -32,11 +48,11 @@ Each prior fix was verified by reading the current source on the working tree (n
 | **GW-02** | Atomic gateway verify (double-verify prevention) | ✅ YES | ✅ Correct | `src/app/api/gateway/verify/route.ts:48-55` — `updateMany({ where: { id, status: { not: "VERIFIED" } }, data: { status: "VERIFIED", verifiedAt: now } })` → `if (verifyResult.count === 0) return 400 "Already verified"`. Also checks `log.userId === session.userId` (line 44). Production guard (line 22-24). |
 | **GW-01** | Gateway initiate amount validation | ✅ YES | ✅ Correct | `src/app/api/gateway/initiate/route.ts:22-29` — `if (!amount || amount <= 0) return 400` and `if (amount > 100_000_000) return 400 "مبلغ غیرمجاز"`. Production guard (line 11-13). userId from session (line 38). |
 | **RL-01** | Atomic rate-limit increment | ✅ YES | ✅ Correct | `src/lib/rate-limit.ts:81-105` — `updateMany({ where: { key, count: { lt: max }, expiresAt: { gt: now } }, data: { count: { increment: 1 } } })` → if `count===1` allow; else check expiry and `upsert` fresh window (lines 96-101) or deny (line 105). True atomic SQL: `UPDATE ... SET count=count+1 WHERE key=? AND count<max AND expiresAt>now`. |
-| **M-03** | Technician PII removal (phone) from public detail route | ✅ PARTIAL | ⚠️ See SEC-22 | `src/app/api/technicians/[id]/route.ts:7-17` — `PUBLIC_USER_FIELDS` omits `phone` ✅. BUT `src/app/api/technicians/route.ts:13-24` (public LIST, NO auth) still has `phone: true` (line 16). New finding SEC-22. |
-| **M-04** | Admin auth enforced on admin routes | ✅ YES | ✅ Correct | `src/app/api/admin/[resource]/route.ts:68-69`, `src/app/api/admin/[resource]/[id]/route.ts:50-53`, `src/app/api/admin-panel/onboarding/route.ts:8,16`, `src/app/api/admin-panel/onboarding/[id]/route.ts:39,70`, `src/app/api/admin-panel/auth/me/route.ts:7` — all check `getAdminFromRequest(req)` and return 401 if null. **BUT see SEC-21** — `getAdminFromRequest` itself is bypassable in production via a user JWT. |
+| **M-03** | Technician PII removal (phone) from public routes | ✅ YES | ✅ Correct in current branch | Both `src/app/api/technicians/[id]/route.ts` and `src/app/api/technicians/route.ts` use explicit safe user-field allowlists without `phone`; SEC-22 closed in PR #78. |
+| **M-04** | Admin auth enforced on admin routes | ✅ YES | ✅ Correct in current branch | Admin routes use `getAdminFromRequest`; `src/lib/admin-auth.ts` now requires a dedicated production `ADMIN_JWT_SECRET`, validates admin identity/role claims, and checks persisted active ADMIN user sessions on the OTP-session fallback. SEC-21 closed in current branch. |
 | **M-04b** | Admin login hardening (rate limit + unified error + timing) | ✅ YES | ✅ Correct | `src/app/api/admin-panel/auth/login/route.ts` — SEC-13 unified message `UNAUTH_MSG` (line 19, returned on both user-not-found and wrong-password at line 91); DUMMY_HASH bcrypt compare always runs (lines 67-69); SEC-5 rate limit 5/15min (lines 32, 45-57); audit log on both failed (72-88) and successful (97-109) logins. |
 
-**Score: 8/9 fully present and correct. 1/9 (M-03) partially present — the `[id]` route is clean but the public LIST route still leaks phone.**
+**Score: 9/9 prior controls present in the current source.** SEC-21 and SEC-22 are closed; the old audit's open-status labels are historical, not current.
 
 ---
 
@@ -80,7 +96,7 @@ Each prior fix was verified by reading the current source on the working tree (n
 - `getAdminFromRequest` applied to all `/api/admin/*` and `/api/admin-panel/*` routes.
 
 **Findings:**
-- **SEC-21 (CRITICAL)** — see §6 findings table. Admin auth bypassable via user JWT in production.
+- **SEC-21 (CRITICAL, historical)** — **CLOSED in current branch**. See the 2026-11-02 reconciliation addendum and §6. Dedicated production admin secret + strict claim validation + persisted ADMIN-session fallback now prevent user-JWT acceptance.
 - **SEC-19 (LOW, prior)** — no admin role hierarchy; `requireRole(session, "ADMIN")` accepts the literal string "ADMIN" or "SUPER_ADMIN" but doesn't enforce a hierarchy. Latent risk if a lower-privileged admin role is added. Still present.
 
 ### 4.4 Mass assignment
@@ -107,8 +123,8 @@ Each prior fix was verified by reading the current source on the working tree (n
 ### 4.6 Information disclosure
 
 **Findings:**
-- **SEC-22 (MEDIUM)** — `src/app/api/technicians/route.ts:13-24` (public LIST, NO auth) includes `phone: true` in `PUBLIC_USER_FIELDS` (line 16). Anyone can `GET /api/technicians` and harvest every verified technician's phone number. This contradicts the M-03 fix on `/api/technicians/[id]` (which correctly omits phone). **Repro:** `curl http://localhost:3000/api/technicians` → response includes `user.phone` for every technician. **Fix:** remove `phone: true` from the LIST route's `PUBLIC_USER_FIELDS` (match the `[id]` route).
-- **SEC-23 (MEDIUM, prior SEC-12)** — `src/app/api/dashboard/route.ts:77-109` still returns `techPerformance` (every technician's name + revenue + rating) and `recentActivity` (customer + technician names per recent job) to ANY authenticated user. No `requireRole(session, "ADMIN")`. The route comment (line 7) claims "Customer/Technician see aggregate stats (no PII)" but the response DOES contain PII. **Still unfixed.** Severity Medium — business intelligence + cross-tenant name disclosure.
+- **SEC-22 (MEDIUM, historical)** — **CLOSED in current branch**. The public list and detail routes now select explicit safe user fields and omit `phone`; SEC-22's old reproduction no longer applies.
+- **SEC-23 (MEDIUM, historical)** — **CLOSED in current branch**. `GET /api/dashboard` now applies `requireRole(session, "ADMIN")` before any business-intelligence query; technician revenue and recent customer/technician identities are no longer available to ordinary users.
 - **SEC-14 (MEDIUM, prior)** — admin JWT in localStorage, XSS-exfiltratable. Still present (`src/app/api/admin-panel/auth/login/route.ts:111-114` returns token in body; frontend stores in localStorage). Not a backend fix — frontend concern.
 - **SEC-15 (MEDIUM, prior)** — admin JWT irrevocable for 7 days, no AdminSession table. Still present (`src/lib/admin-auth.ts:44-55` `verifyAdminToken` only checks JWT signature + expiry). Latent risk — a compromised admin token cannot be revoked server-side.
 - **SEC-17 (LOW, prior)** — `src/lib/admin-auth.ts:8` reads `JWT_SECRET` at module level (`const JWT_SECRET = process.env.JWT_SECRET;`). The user-side `auth.ts:33-43` was fixed to read inside the function body, but admin-auth.ts was NOT. This is the ROOT CAUSE of SEC-21 (the module-level const captures the value at import time, and in production both user + admin secrets resolve to the same `process.env.JWT_SECRET`).
@@ -142,7 +158,7 @@ Each prior fix was verified by reading the current source on the working tree (n
 
 ## 5. Negative Test Results
 
-Test file: `tests/unit/security-audit-negative.test.ts` (13 tests, all PASS)
+Test file: `tests/unit/security-audit-negative.test.ts` (19 tests defined; 13 original tests previously passed, 6 new tests pending current CI)
 
 | # | Test name | Expected | Actual | Result | Finding ID |
 |---|-----------|----------|--------|--------|------------|
@@ -160,9 +176,9 @@ Test file: `tests/unit/security-audit-negative.test.ts` (13 tests, all PASS)
 | 12 | rejects POST /api/wallets/withdraw with no Authorization header | 401 | 401 | ✅ PASS | — |
 | 13 | rejects POST /api/wallets/withdraw with malformed (Basic) Authorization | 401 | 401 | ✅ PASS | — |
 
-**Interpretation:** All 13 negative tests PASS — meaning every BOLA / authz / authn / enumeration gate tested actually REJECTS the attack as designed. No real BOLA was uncovered by the negative tests. The one CRITICAL (SEC-21) was found by static analysis (not by a runtime test) because it only manifests in production-mode secrets, which vitest's dev-mode environment cannot reproduce without complex `vi.resetModules()` + `vi.stubEnv` choreography around the module-level `const JWT_SECRET` in `admin-auth.ts:8`.
+**Interpretation:** The 13 original negative tests passed in the initial audit. Six additional cases now cover FLEET_MANAGER denial, customer approval/state escalation, strict boolean parsing, invalid status enums, and non-admin dashboard access. Their result must be confirmed by the current CI run; do not infer success from the code change alone.
 
-**Full suite status:** `bun run test` → **415 passed | 1 expected fail (pre-existing) | 0 unexpected failures.** The new test file adds 13 tests; no existing tests were modified or broken.
+**Full suite status:** The 2026-10-14 count above is historical. The current branch adds tests and production code changes; use the latest CI run attached to PR #78 as the authoritative result.
 
 ---
 
@@ -170,12 +186,12 @@ Test file: `tests/unit/security-audit-negative.test.ts` (13 tests, all PASS)
 
 | ID | File:Line | Severity | Description | Repro | Status | Fix |
 |----|-----------|----------|-------------|-------|--------|-----|
-| **SEC-21** | `src/lib/admin-auth.ts:8,44-55` + `src/app/api/admin/[resource]/route.ts:68-69` | **CRITICAL** | Admin auth bypass via user JWT in production. `admin-auth.ts:8` reads `JWT_SECRET` at module level (SEC-17). In production, `getAdminSecret()` and user-side `getSecret()` both return `process.env.JWT_SECRET` — the SAME secret. A user JWT (signed by `/api/auth/otp/verify`) passes `verifyAdminToken`'s `jwtVerify`. `verifyAdminToken` returns `{adminId: undefined, username: undefined, role: "CUSTOMER"}` (from user JWT payload) — truthy, so `if (!adminSession)` passes. Any authenticated CUSTOMER can then call `/api/admin/*` routes. | **Static proof:** `admin-auth.ts:8` `const JWT_SECRET = process.env.JWT_SECRET;` (module-level). `auth.ts:34` `const secret = process.env.JWT_SECRET;` (function-level). In production both resolve to the same value. `verifyAdminToken` (line 44-55) only catches `jwtVerify` errors, not missing-payload-field errors. **Dev-mode test (#6) PASSES** because dev secrets differ (`mekanix-dev-secret-change-in-production` vs `mekanix-admin-dev-secret-change-me`) — so the bypass is NOT reproducible in vitest without production env + module reload. **Production repro:** (1) register via OTP, (2) `curl -H "Authorization: Bearer <user-jwt>" http://app/api/admin/customers` → 200 with full customer list. | **OPEN — release blocker** | (a) Move `JWT_SECRET` read inside `getAdminSecret()` function body (mirror the user-side fix in `auth.ts:33-43`). (b) Validate the decoded payload shape in `verifyAdminToken`: require `adminId` and `username` to be non-empty strings AND `role` to be `"ADMIN"` or `"SUPER_ADMIN"`; return null otherwise. (c) Use a SEPARATE signing secret for admin tokens (`ADMIN_JWT_SECRET`) so user and admin token domains are cryptographically isolated. (d) Add an `AdminSession` table (SEC-15 fix) so admin tokens are revocable. |
-| **SEC-22** | `src/app/api/technicians/route.ts:16` | MEDIUM | Public technician LIST endpoint (no auth) exposes `phone` in `PUBLIC_USER_FIELDS`. Contradicts M-03 fix on `/api/technicians/[id]`. | `curl http://localhost:3000/api/technicians` → each record's `user.phone` is present. An attacker scrapes the directory and harvests every verified technician's phone number. | **OPEN** | Remove `phone: true` from the `PUBLIC_USER_FIELDS` const at `src/app/api/technicians/route.ts:16` (match the `[id]` route's `PUBLIC_USER_FIELDS` at `src/app/api/technicians/[id]/route.ts:7-17` which correctly omits phone). |
-| **SEC-23** | `src/app/api/dashboard/route.ts:8-129` | MEDIUM | Dashboard route requires auth but NO role check. Returns `techPerformance` (every technician's name + revenue + rating) and `recentActivity` (customer + technician names per recent job) to ANY authenticated user. Prior SEC-12 — still unfixed. | (1) Register via OTP. (2) `GET /api/dashboard` with the user cookie. (3) Response contains `techPerformance[]` with `{name, jobs, rating, revenue}` for every technician + `recentActivity[]` with `sub: "TechName → CustomerName"`. | **OPEN (prior SEC-12)** | Add `requireRole(session, "ADMIN")` after `requireAuth` (line 10). OR scope the response by role: ADMIN sees full dashboard; CUSTOMER/TECHNICIAN see only their own KPIs. |
+| **SEC-21** | `src/lib/admin-auth.ts` + admin route guards | **CRITICAL (historical)** | Admin auth bypass via user JWT in production — CLOSED in current branch. `admin-auth.ts:8` reads `JWT_SECRET` at module level (SEC-17). In production, `getAdminSecret()` and user-side `getSecret()` both return `process.env.JWT_SECRET` — the SAME secret. A user JWT (signed by `/api/auth/otp/verify`) passes `verifyAdminToken`'s `jwtVerify`. `verifyAdminToken` returns `{adminId: undefined, username: undefined, role: "CUSTOMER"}` (from user JWT payload) — truthy, so `if (!adminSession)` passes. Any authenticated CUSTOMER can then call `/api/admin/*` routes. | **Static proof:** `admin-auth.ts:8` `const JWT_SECRET = process.env.JWT_SECRET;` (module-level). `auth.ts:34` `const secret = process.env.JWT_SECRET;` (function-level). In production both resolve to the same value. `verifyAdminToken` (line 44-55) only catches `jwtVerify` errors, not missing-payload-field errors. **Dev-mode test (#6) PASSES** because dev secrets differ (`mekanix-dev-secret-change-in-production` vs `mekanix-admin-dev-secret-change-me`) — so the bypass is NOT reproducible in vitest without production env + module reload. **Production repro:** (1) register via OTP, (2) `curl -H "Authorization: Bearer <user-jwt>" http://app/api/admin/customers` → 200 with full customer list. | **RESOLVED IN PR #78 (runtime verification pending)** | (a) Move `JWT_SECRET` read inside `getAdminSecret()` function body (mirror the user-side fix in `auth.ts:33-43`). (b) Validate the decoded payload shape in `verifyAdminToken`: require `adminId` and `username` to be non-empty strings AND `role` to be `"ADMIN"` or `"SUPER_ADMIN"`; return null otherwise. (c) Use a SEPARATE signing secret for admin tokens (`ADMIN_JWT_SECRET`) so user and admin token domains are cryptographically isolated. (d) Add an `AdminSession` table (SEC-15 fix) so admin tokens are revocable. |
+| **SEC-22** | `src/app/api/technicians/route.ts` | MEDIUM (historical) | Public technician LIST endpoint exposed `phone` — CLOSED in current branch. Contradicts M-03 fix on `/api/technicians/[id]`. | `curl http://localhost:3000/api/technicians` → each record's `user.phone` is present. An attacker scrapes the directory and harvests every verified technician's phone number. | **RESOLVED IN PR #78 (runtime verification pending)** | Public list now omits `phone` from the explicit user-field allowlist. |
+| **SEC-23** | `src/app/api/dashboard/route.ts` | MEDIUM (historical) | Dashboard exposed cross-technician revenue and job identities to all authenticated users — CLOSED in current branch. Returns `techPerformance` (every technician's name + revenue + rating) and `recentActivity` (customer + technician names per recent job) to ANY authenticated user. Prior SEC-12 — still unfixed. | (1) Register via OTP. (2) `GET /api/dashboard` with the user cookie. (3) Response contains `techPerformance[]` with `{name, jobs, rating, revenue}` for every technician + `recentActivity[]` with `sub: "TechName → CustomerName"`. | **RESOLVED IN PR #78 (runtime verification pending)** | Added `requireRole(session, "ADMIN")` before any dashboard query. |
 | **SEC-14** | `src/app/api/admin-panel/auth/login/route.ts:111-114` | MEDIUM | Admin JWT returned in JSON body; frontend stores in localStorage (XSS-exfiltratable). Prior SEC-14 — still present. | (1) Login as admin. (2) Inspect response body — `token` field present. (3) Frontend `src/app/admin-panel/page.tsx` stores it in `localStorage.getItem("admin_token")`. Any XSS in admin-editable content (technician bio, category name) can exfiltrate it. | **OPEN (prior SEC-14)** | Use HttpOnly cookie for admin token (mirror user auth). If frontend needs the token in JS, mint a short-lived (5min) nonce. |
 | **SEC-15** | `src/lib/admin-auth.ts:44-55` | MEDIUM | Admin JWT irrevocable for 7 days. `verifyAdminToken` only checks JWT signature + expiry — no DB revocation check. Prior SEC-15 — still present. | (1) Admin logs in → gets 7d token. (2) Admin "logout" (frontend only clears localStorage). (3) Old token still valid for 7 days. Even password change doesn't invalidate it. | **OPEN (prior SEC-15)** | Add `AdminSession` table mirroring `Session`; persist `tokenHash` on login; check revocation in `verifyAdminToken`. Add `POST /api/admin-panel/auth/logout`. |
-| **SEC-17** | `src/lib/admin-auth.ts:8` | LOW | `const JWT_SECRET = process.env.JWT_SECRET;` read at module level. Inconsistent with user-side `auth.ts:33-43` (which reads inside the function body). This is the ROOT CAUSE of SEC-21 — if the secret were read inside the function, the production-mode bypass would still exist (same secret) BUT the module-load-time capture is an additional Workers/OpenNext hazard (env may be undefined at module eval). | Static: `admin-auth.ts:8` vs `auth.ts:34`. | **OPEN (prior SEC-17)** | Move read inside `getAdminSecret()` function body (mirror `auth.ts:33-43`). |
+| **SEC-17** | `src/lib/admin-auth.ts` | LOW (historical) | Admin signing secret read at module scope — CLOSED in current branch. Inconsistent with user-side `auth.ts:33-43` (which reads inside the function body). This is the ROOT CAUSE of SEC-21 — if the secret were read inside the function, the production-mode bypass would still exist (same secret) BUT the module-load-time capture is an additional Workers/OpenNext hazard (env may be undefined at module eval). | Static: `admin-auth.ts:8` vs `auth.ts:34`. | **RESOLVED IN CURRENT SOURCE** | Admin secret is read inside `getAdminSecret()`; production requires `ADMIN_JWT_SECRET`. |
 | **SEC-24** | `src/app/api/admin-panel/auth/login/route.ts:36` | LOW | Admin login route doesn't use `validateBody` / `adminLoginSchema`. `const { emailOrUsername, password } = await req.json();` — throws on non-JSON body (500 instead of 400). The `adminLoginSchema` exists in `src/lib/schemas/auth.ts:70-73` but is unused. | `curl -X POST http://localhost:3000/api/admin-panel/auth/login -H "Content-Type: application/json" -d "not json"` → 500 (not 400). | **OPEN** | Replace inline `await req.json()` with `validateBody(req, adminLoginSchema)`. |
 | **SEC-18** | `src/app/api/admin-panel/auth/login/route.ts:35` | LOW | `ensureDefaultAdmin()` called on every login POST → `db.adminUser.count()` DB round-trip per request. Prior SEC-18 — DoS amplifier. Still present. | Flood `/api/admin-panel/auth/login` with empty bodies → each triggers a `count()` query. | **OPEN (prior SEC-18)** | Cache the result with a long TTL (`adminCheckDone` flag) or move to a startup hook. |
 | **SEC-19** | `src/lib/admin-auth.ts:22-26` | LOW | `AdminSession.role` is a free-form string. No hierarchy enforcement. `requireRole(session, "ADMIN")` accepts the literal string. Latent privilege-escalation if a lower-privileged admin role is added. Prior SEC-19 — still present. | Static: `admin-auth.ts:25` `role: string`. | **OPEN (prior SEC-19)** | Define a strict role union + `requireSuperAdmin` helper. |
@@ -188,15 +204,11 @@ Test file: `tests/unit/security-audit-negative.test.ts` (13 tests, all PASS)
 
 ## 7. Critical / High Blockers for Release
 
-### 🔴 CRITICAL (1 — release blocker)
+### 🔴 CRITICAL (0 currently open)
 
-1. **SEC-21** — Admin auth bypass via user JWT in production.
-   - **Exploit:** Any authenticated user (CUSTOMER / TECHNICIAN / PARTNER) can call `/api/admin/*` and `/api/admin-panel/*` routes by sending their user JWT as a Bearer token. In production, `verifyAdminToken` accepts it because (a) the signing secret is the same `process.env.JWT_SECRET` as user JWTs, and (b) the returned `AdminSession` object has `adminId: undefined` / `username: undefined` / `role: "CUSTOMER"` but is truthy, so the `if (!adminSession)` gate passes.
-   - **Impact:** Full admin API access — read all customers, technicians, payments, jobs; mutate any resource via `/api/admin/[resource]/[id]`; approve mechanic applications (privilege escalation to TECHNICIAN); ban users; refund payments.
-   - **NOT exploitable in dev** (secrets differ) — which is why prior dev-mode testing didn't catch it.
-   - **Required fix before merge:** (a) validate payload shape in `verifyAdminToken` (require `adminId`, `username` non-empty + `role ∈ {ADMIN, SUPER_ADMIN}`); (b) use a separate `ADMIN_JWT_SECRET`; (c) move `JWT_SECRET` read inside `getAdminSecret()` (fixes SEC-17 too); (d) add `AdminSession` table for revocation (fixes SEC-15 too).
+SEC-21 was a historical CRITICAL finding and is closed in the current source by dedicated production secret enforcement, strict token-claim validation, and persisted active-user checks for the OTP-admin fallback. The current PR still requires all five CI workflows to pass before closure is runtime-verified.
 
-### 🟠 HIGH (0)
+### 🟠 HIGH (0 currently open)
 
 No High findings. The prior HIGH findings (SEC-8 wallet doubling, SEC-9 withdraw race, SEC-10 OTP replay, SEC-11 timeline BOLA) are all VERIFIED FIXED in the current code:
 - SEC-8 → `src/app/api/wallets/route.ts:65-77` conditional `updateMany` + count check ✅
