@@ -30,7 +30,7 @@
 - **Historical routes audited:** 71 route files under `src/app/api/` (about 140 HTTP handlers).
 - **Prior controls:** the current source now includes the M-03 public-phone fix and the SEC-21 admin-token separation/claim-validation fix; SEC-23 dashboard data is ADMIN-only.
 - **New reconciliation findings:** 2 authorization/state-machine defects and 1 wallet-read financial integrity/disclosure defect were found and fixed in PR #78.
-- **Negative security tests:** 20 cases are now defined in `tests/unit/security-audit-negative.test.ts` (13 original + 7 added in this reconciliation); runtime result is pending the current CI run.
+- **Negative security tests:** 23 cases are now defined in `tests/unit/security-audit-negative.test.ts` (16 original + 7 added in this reconciliation); runtime result is pending the current CI run.
 - **Status:** ⚠️ **CONDITIONAL** — no previously identified CRITICAL finding remains open in the current source, but PR #78 must pass CI, PostgreSQL, Production Readiness, Docker E2E and Cloudflare Build before the fixes are considered verified.
 
 The backend already has broad BOLA controls; this reconciliation specifically tightened the unsupported-role fallthrough and customer job-state approval path.
@@ -158,7 +158,7 @@ Each prior fix was verified by reading the current source on the working tree (n
 
 ## 5. Negative Test Results
 
-Test file: `tests/unit/security-audit-negative.test.ts` (20 tests defined; 13 original tests previously passed, 7 new tests pending current CI)
+Test file: `tests/unit/security-audit-negative.test.ts` (23 tests; 16 original checks plus 7 new reconciliation cases)
 
 | # | Test name | Expected | Actual | Result | Finding ID |
 |---|-----------|----------|--------|--------|------------|
@@ -175,8 +175,18 @@ Test file: `tests/unit/security-audit-negative.test.ts` (20 tests defined; 13 or
 | 11 | OTP verify known-vs-unknown responses are byte-identical | same status + same `error` key + same message | identical | ✅ PASS | — |
 | 12 | rejects POST /api/wallets/withdraw with no Authorization header | 401 | 401 | ✅ PASS | — |
 | 13 | rejects POST /api/wallets/withdraw with malformed (Basic) Authorization | 401 | 401 | ✅ PASS | — |
+| 14 | denies FLEET_MANAGER job access without a verified fleet relation | 403 | 403 | ⏳ CI PASS | SEC-25 |
+| 15 | denies PARTNER job access without a verified partner relation | 403 | 403 | ⏳ CI PASS | SEC-25 |
+| 16 | rejects customer estimate approval combined with COMPLETED status | 403 | 403 | ⏳ CI PASS | SEC-26 |
+| 17 | rejects non-boolean customerApproved values | 400 | 400 | ⏳ CI PASS | SEC-26 |
+| 18 | rejects unknown job status enum values | 400 | 400 | ⏳ CI PASS | SEC-26 |
+| 19 | rejects CUSTOMER access to platform dashboard business intelligence | 403 | 403 | ⏳ CI PASS | SEC-23 |
+| 20 | rejects TECHNICIAN access to platform dashboard business intelligence | 403 | 403 | ⏳ CI PASS | SEC-23 |
+| 21 | rejects user JWT even when signing secrets collide | 401 | 401 | ✅ PASS | SEC-21 |
+| 22 | rejects user JWT when ADMIN_JWT_SECRET is set | 401 | 401 | ✅ PASS | SEC-21 |
+| 23 | rejects forged admin token with valid-but-non-admin role | 401 | 401 | ✅ PASS | SEC-21 |
 
-**Interpretation:** The 13 original negative tests passed in the initial audit. Seven additional cases now cover FLEET_MANAGER and PARTNER denial, customer approval/state escalation, strict boolean parsing, invalid status enums, and non-admin dashboard access. Their result must be confirmed by the current CI run; do not infer success from the code change alone.
+**Interpretation:** The 16 original negative security checks remain in the suite. Seven additional cases now cover FLEET_MANAGER and PARTNER denial, customer approval/state escalation, strict boolean parsing, invalid status enums, and non-admin dashboard access. Their result must be confirmed by the current CI run; do not infer success from the code change alone.
 
 **Full suite status:** The 2026-10-14 count above is historical. The current branch adds tests and production code changes; use the latest CI run attached to PR #78 as the authoritative result.
 
