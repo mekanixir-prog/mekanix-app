@@ -7,7 +7,6 @@ import {
 } from "lucide-react";
 import type { DemoUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
-import { api, type Job } from "@/lib/api";
 import { StatCard, SectionHeader, EmptyState } from "@/components/mek/shared/primitives";
 import { RevenueAreaChart, MiniSparkline } from "@/components/mek/shared/charts";
 import { fmtDate, toPersianDigits } from "@/lib/format";
@@ -23,6 +22,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 type Wallet = {
   id: string;
+  currency: "IRR";
+  earningsSummary: {
+    currency: "IRR";
+    valid: boolean;
+    todayIrr: number | null;
+    last7DaysIrr: number | null;
+    series14d: { date: string; revenue: number; jobs: number }[];
+  };
   balance: number;
   pendingBalance: number;
   totalEarned: number;
@@ -63,7 +70,6 @@ const MIN_WITHDRAWAL_IRR = 1; // technical minimum: one integer Rial; no USD den
 
 export function TechnicianEarnings({ user }: { user: DemoUser }) {
   const { t, isFa, money, lang } = useT();
-  const [jobs, setJobs] = useState<Job[] | null>(null);
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState("");
@@ -84,30 +90,16 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
 
   useEffect(() => {
     if (!user.technician) return;
-    api.listJobs({ technicianId: user.technician.id }).then(async (list) => {
-      setJobs(list);
-    });
     loadWallet(user.technician.id);
     const poll = setInterval(() => loadWallet(user.technician!.id), 30000); // refresh every 30s for countdown
     return () => clearInterval(poll);
   }, [user]);
 
-  const completed = (jobs ?? []).filter((j) => j.status === "COMPLETED");
-  const payments = completed.filter((j) => !!(j as any).invoice?.payment);
-  const today = payments.filter((p) => Date.now() - new Date((p as any).invoice!.payment!.createdAt).getTime() < 86400000).length;
-  const week = payments.filter((p) => Date.now() - new Date((p as any).invoice!.payment!.createdAt).getTime() < 7 * 86400000).length;
-
-  // build 14-day revenue series
-  const series = Array.from({ length: 14 }).map((_, i) => {
-    const start = Date.now() - (14 - i) * 86400000;
-    const end = start + 86400000;
-    const rev = payments.filter((p) => {
-      const ts = new Date((p as any).invoice!.payment!.createdAt).getTime();
-      return ts >= start && ts < end;
-    }).reduce((s, p) => s + ((p as any).invoice!.payment!.amount ?? 0), 0);
-    return { date: new Date(end).toISOString().slice(5, 10), revenue: Math.round(rev), jobs: completed.filter((j) => { const ts = new Date(j.completedAt ?? 0).getTime(); return ts >= start && ts < end; }).length };
-  });
-  const spark = series.map((s) => s.revenue);
+  // The chart uses positive net amounts from the wallet ledger, not customer invoice gross.
+  const series = wallet?.currency === "IRR" && wallet.earningsSummary?.valid
+    ? wallet.earningsSummary.series14d
+    : [];
+  const spark = series.map((item) => item.revenue);
 
   const balance = wallet?.balance ?? 0;
   const pending = wallet?.pendingBalance ?? 0;
@@ -167,7 +159,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label={t("tech.earnings.availableBalance")} value={money(balance)} icon={Wallet} tone="amber" sub={t("tech.earnings.readyWithdraw")} />
         <StatCard label={t("tech.earnings.pendingBalance")} value={money(pending)} icon={Clock} tone="blue" sub={t("tech.earnings.holdPeriod")} />
-        <StatCard label={t("tech.earnings.totalEarned")} value={money(totalEarned)} icon={TrendingUp} tone="emerald" sub={t("tech.earnings.netEarnings")} />
+        <StatCard label={t("tech.earnings.totalEarned")} value={money(totalEarned)} icon={TrendingUp} tone="emerald"  />
         <StatCard label={t("tech.earnings.commission")} value={money(totalCommission)} icon={AlertCircle} tone="violet" sub={t("tech.earnings.commissionDesc")} />
       </div>
 
