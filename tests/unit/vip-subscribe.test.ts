@@ -80,6 +80,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       id: "pay-1",
       userId: "user-1",
       status: "SUCCEEDED",
+      currency: "IRR",
       amount: 100_000, // exactly covers plan price
     });
     mockUserVipSubscriptionUpdateMany.mockResolvedValue({ count: 0 });
@@ -146,6 +147,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       id: "pay-1",
       userId: "other-user", // different from session.userId = "user-1"
       status: "SUCCEEDED",
+      currency: "IRR",
       amount: 100_000,
     });
     const req = makePostRequest({ planId: "plan-1", paymentId: "pay-1" });
@@ -174,11 +176,36 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       id: "pay-1",
       userId: "user-1",
       status: "SUCCEEDED",
+      currency: "IRR",
       amount: 50_000, // less than plan.priceIrr (100_000)
     });
     const req = makePostRequest({ planId: "plan-1", paymentId: "pay-1" });
     const res = await POST(req);
     expect(res.status).toBe(400);
+  });
+
+  it("rejects payments in a different currency or above the exact plan price", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockPaymentFindUnique.mockResolvedValueOnce({
+      id: "pay-usd",
+      userId: "user-1",
+      status: "SUCCEEDED",
+      currency: "USD",
+      amount: 100_000,
+    });
+    const wrongCurrency = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-usd" }));
+    expect(wrongCurrency.status).toBe(400);
+
+    mockPaymentFindUnique.mockResolvedValueOnce({
+      id: "pay-over",
+      userId: "user-1",
+      status: "SUCCEEDED",
+      currency: "IRR",
+      amount: 120_000,
+    });
+    const overpayment = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-over" }));
+    expect(overpayment.status).toBe(400);
+    expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
   });
 
   // ──────────── 8. Valid payment → 200 + subscription created ────────────
