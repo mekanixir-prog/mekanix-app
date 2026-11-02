@@ -286,6 +286,21 @@ describe("Job status authorization hardening", () => {
     expect(mockJobUpdateMany).not.toHaveBeenCalled();
   });
 
+  it("denies PARTNER job access until a verified partner/job relation exists", async () => {
+    const token = await mintUserToken("partner-user", "PARTNER");
+    mockJobFindUnique.mockReset().mockResolvedValue({
+      id: "job-1",
+      request: { customerId: "customer-1" },
+      technicianId: "tech-1",
+    });
+
+    const req = jsonReq("GET", "http://localhost/api/jobs/job-1", token);
+    const res = await jobsDetailGET(req, { params: Promise.resolve({ id: "job-1" }) });
+
+    expect(res.status).toBe(403);
+    expect(mockJobFindUnique).toHaveBeenCalledTimes(1);
+  });
+
   it("does not let a customer approve an estimate and complete the job in one request", async () => {
     const token = await mintUserToken("customer-user", "CUSTOMER");
     mockCustomerFindUnique.mockReset().mockResolvedValue({ id: "customer-1", userId: "customer-user" });
