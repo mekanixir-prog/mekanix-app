@@ -287,3 +287,43 @@ The exchange-rate endpoint was inspected after tracing the hook:
 
 **Required separation:** keep foreign-exchange rates in a dedicated FX/market-data feature for explicit USD↔IRR conversions only. Remove FX-rate fetching from the general-purpose money display hook only after all consumers have migrated to explicit unit-aware formatters. Do not repurpose or silently change the FX endpoint as part of the formatter fix.
 
+### 8.6 Expanded UI consumer trace: additional currency and estimate defects
+
+A targeted source pass over 19 money-bearing UI/helper files found additional consumers beyond the first customer invoice and CARE detail trace. This is a targeted inventory, not yet a mathematically exhaustive repository-wide callsite census (GitHub code search returned no indexed matches for the formatter names).
+
+| Consumer | Displayed values | Source/provenance result |
+|---|---|---|
+| `src/components/mek/admin/payments.tsx` | Payment amount, total successful volume, average transaction | Uses `money()` on API payment amounts. The screen does not inspect or branch on each payment's `currency`; mixed or non-IRR records would be silently relabelled in Persian. |
+| `src/components/mek/admin/withdrawals.tsx` | Withdrawal amount | Formats raw withdrawal amount with `money()`; no unit metadata is present in the component row type. |
+| `src/components/mek/admin/overview.tsx` | 30-day revenue, category revenue, technician revenue | Dashboard aggregate fields are formatted as if they shared the UI language's currency. Their aggregation/source unit must be traced in the dashboard API before IRR can be asserted. |
+| `src/components/mek/admin/jobs.tsx` | Invoice total | Displays invoice total without checking invoice currency. |
+| `src/components/mek/admin/technicians.tsx` | Technician hourly rate | Displays `hourlyRate` as money. Seed values 52–90 are not unit-labelled at assignment; schema comments and seed fee annotations conflict elsewhere. |
+| `src/components/mek/shared/technician-card.tsx` | Inspection fee, travel fee, hourly rate | Formats optional fee fields and hourlyRate identically. Their source unit is not carried in the component contract. |
+| `src/components/mek/technician/profile.tsx` | Hourly rate, travel fee inputs | Reads/writes technician profile fields but the UI input has no currency/unit label or conversion contract. |
+| `src/components/mek/technician/job-detail.tsx` | Parts, labor estimate, travel fee, estimated total | Recomputes a client-side estimate from hourlyRate, part unitPrice and travelFeeBase, then adds a hard-coded 9%. It does not call the canonical CARE pricing engine; the estimate can diverge from the invoice calculation and inherits the unresolved source-unit conflicts. |
+| `src/components/mek/technician/dashboard.tsx` | Today/week earnings | Sums completed invoice totals and labels them as technician earnings/revenue. Invoice total is customer gross, not proven technician net earnings; this is a semantic mismatch even if the currency is corrected. |
+| `src/components/mek/technician/earnings.tsx` | Wallet balance, pending, total earned, commission, withdrawals, transaction net | Wallet API payload has no currency field in the local UI types. The UI declares `MIN_WITHDRAWAL = 5 // USD` and renders the minimum with a literal `$`, while the app's Persian `money()` formatter relabels displayed balances as IRR. This is a direct USD/IRR contract conflict requiring server + schema + seed reconciliation, not just a display change. |
+| `src/components/mek/shared/payment-gateway.tsx` | Payment amount | Prop contract explicitly says `amount: number; // USD`, while the component is an Iranian gateway simulator and displays it through the Persian formatter as IRR. The gateway initiate/verify APIs must be traced to determine whether amount is USD, IRR, or a stale comment; do not assume. |
+| `src/components/mek/customer/care-booking.tsx` | Package price and estimated service/visit/labor/parts/total | The review panel synthesizes labor as 40% and parts as 50% of package base price, adds a 15,000 visit fee and 9% tax. These figures are a UI-only estimate and are not the canonical `calculatePrice()` result; package basePrice is explicitly informational/unused by that engine. The screen must not present this as an authoritative quote until a single server-calculated snapshot is returned. |
+| `src/components/mek/customer/invoice.tsx`, `invoice-document.tsx` | Labor, parts, travel, subtotal, discount, tax, total | All use `money()` for persisted invoice fields. The invoice currency field is not used to select a formatter. |
+| `src/components/mek/shared/payment-gateway.tsx` | Payment amount | Also uses the same general `money()` function; purpose does not constrain the amount's unit. |
+
+#### Findings that should become explicit release blockers
+
+1. **Hard-coded USD residue in user-facing flows:** `PaymentGatewayDialog.amount` is documented as USD; technician minimum withdrawal is 5 USD and shown with `$`. This conflicts with the product requirement that MEKANIX amounts be Iranian Rial. First establish the actual persisted/API unit; then migrate the contract and tests. Do not simply change the label or multiply by an exchange rate.
+2. **Currency metadata is ignored at display boundaries:** invoice/payment/wallet rows are formatted without checking their persisted currency or an explicit typed unit. A Persian locale currently forces IRR formatting, which is not proof that the source amount is IRR.
+3. **Two independent estimate calculators:** technician job detail and CARE booking review each synthesize estimates in the browser. The canonical `src/lib/pricing.ts` engine has different inputs/rules and returns a persisted snapshot. These UI estimates can mislead users even if the formatter is fixed.
+4. **Revenue is not technician earnings:** technician dashboard sums invoice totals, while earnings page uses wallet net/commission values. Keep gross invoice revenue and technician net earnings as distinct metrics.
+5. **No amount-unit inference by magnitude:** values such as 5, 52, 15,000 or 6,000,000 cannot be classified from size alone. Historical and seed rows require provenance, explicit currency/unit fields, and a reconciliation report.
+
+#### Safe migration order
+
+- Build a source-field matrix from Prisma schema, migrations, seed writers, API writers/readers, and UI consumers for: `hourlyRate`, `travelFeeBase`, `inspectionFee`, `JobPart.unitPrice`, invoice monetary columns, payment amount/currency, wallet ledger amounts, withdrawal amount, CARE package `basePrice`, and extra-proposal amounts.
+- Define a single canonical persisted unit for all MEKANIX domestic monetary values: integer IRR. Keep Toman only at explicitly named input/compatibility boundaries, converting exactly once before persistence. Keep USD only in explicitly typed FX/external-market contexts.
+- Require currency/unit metadata or a typed domain boundary for legacy values until each dataset is reconciled. Do not default unknown legacy values to IRR.
+- Replace client-side quote arithmetic with server-returned, versioned pricing snapshots; display the snapshot's currency and unit, not the locale's preferred currency.
+- Make payment, invoice, wallet, withdrawal, admin aggregates, and technician earnings use the same validated integer-IRR contract while preserving distinct gross/net semantics.
+- Add tests proving: Persian locale never changes the source unit; FX refresh cannot change IRR display; a USD amount cannot enter an IRR-only writer; unknown currency is rejected/quarantined; UI estimate equals the server snapshot; gross invoice revenue is not presented as net technician earnings.
+
+**No runtime code, schema, seed, migration, production configuration, or historical financial record was changed by this expanded trace.**
+
