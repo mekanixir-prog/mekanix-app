@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
+import { calculatePrice } from "@/lib/pricing";
+import { addIrr, assertIrrInteger } from "@/lib/money/irr";
 
 const FULL_INCLUDE = {
   job: {
@@ -71,49 +73,83 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
   }
 
-  // ──────────── Server-authoritative pricing ────────────
-  // Load job + parts + technician rates — IGNORE any client-supplied amounts.
+  // Server-authoritative pricing: the canonical integer-IRR engine is the
+  // only source of invoice totals. Technician profile fee fields are legacy
+  // and have mixed/unknown units, so they are deliberately not used here.
   const job = await db.job.findUnique({
     where: { id: jobId },
-    include: { parts: true, technician: true },
+    include: { parts: true, request: { include: { vehicle: true } } },
   });
   if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
 
-  // laborHours may be overridden by technician (capped 0–100); everything else is server-derived.
-  const laborHoursRaw = typeof body.laborHours === "number" ? body.laborHours : 1.5;
-  const laborHours = Math.max(0, Math.min(100, laborHoursRaw));
+  const laborHours = body.laborHours === undefined ? 1.5 : body.laborHours;
+  if (typeof laborHours !== "number" || !Number.isFinite(laborHours) || laborHours < 0 || laborHours > 100) {
+    return NextResponse.json({ error: "ساعت کار باید عددی بین صفر تا صد باشد" }, { status: 400 });
+  }
 
-  const laborRate = Number(job.technician.hourlyRate); // from technician record
-  const laborTotal = laborHours * laborRate;
-  const partsTotal = job.parts.reduce((s, p) => s + Number(p.unitPrice) * p.quantity, 0);
-  const travelFee = Number(job.technician.travelFeeBase);
-  const discount = 0; // server-controlled
-  const subtotal = laborTotal + partsTotal + travelFee - discount;
+  let partsTotal: number;
+  try {
+    const partAmounts = job.parts.map((part) => {
+      if (!Number.isSafeInteger(part.quantity) || part.quantity < 1) {
+        throw new RangeError("Part quantity must be a positive safe integer");
+      }
+      const unitPrice = Number(part.unitPrice);
+      assertIrrInteger(unitPrice, "Part unit price");
+      const lineTotal = unitPrice * part.quantity;
+      assertIrrInteger(lineTotal, "Part line total");
+      return lineTotal;
+    });
+    partsTotal = addIrr(...partAmounts);
+  } catch {
+    return NextResponse.json(
+      { error: "قیمت یا تعداد یکی از قطعات معتبر نیست؛ مبلغ باید عدد صحیح ریالی باشد" },
+      { status: 400 }
+    );
+  }
+
   const taxSetting = await db.platformSetting.findUnique({ where: { key: "tax_rate" } });
-    const taxRate = taxSetting?.value ? parseFloat(taxSetting.value) : 0.09;
-  const taxTotal = subtotal * taxRate;
-  const total = subtotal + taxTotal;
+  const taxRate = taxSetting?.value ? Number(taxSetting.value) : 0.09;
+  if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 1) {
+    return NextResponse.json({ error: "تنظیم نرخ مالیات نامعتبر است" }, { status: 500 });
+  }
+
+  let price;
+  try {
+    price = await calculatePrice({
+      vehicleType: job.request.vehicle.type,
+      laborHours,
+      partsCost: partsTotal,
+      // Until route-distance pricing is connected, only the canonical base visit fee applies.
+      travelDistanceKm: 0,
+      isEmergency: false,
+      taxRate,
+    });
+  } catch (error) {
+    console.error("[invoices] Canonical pricing failed", error);
+    return NextResponse.json({ error: "محاسبه قیمت فاکتور ناموفق بود" }, { status: 400 });
+  }
 
   const code = `INV-${Math.floor(3000 + Math.random() * 6000)}`;
-
-  const inv = await db.invoice.create({
-    data: {
+  const inv = await db.invoice.upsert({
+    where: { jobId },
+    create: {
       code,
       jobId,
       laborHours,
-      laborRate,
-      laborTotal,
-      partsTotal,
-      travelFee,
-      discount,
-      subtotal,
-      taxRate,
-      taxTotal,
-      total,
+      laborRate: price.breakdown.laborRate,
+      laborTotal: price.labor,
+      partsTotal: price.parts,
+      travelFee: price.travel,
+      discount: price.discount,
+      subtotal: price.subtotal,
+      taxRate: price.taxRate,
+      taxTotal: price.taxTotal,
+      total: price.total,
       currency: "IRR",
       status: "SENT",
       notes: "Parts & labor covered by 6-month MEKANIX warranty.",
     },
+    update: {},
     include: FULL_INCLUDE,
   });
 
