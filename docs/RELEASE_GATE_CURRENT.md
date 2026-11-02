@@ -7,7 +7,7 @@ This file is the current release-status source of truth. It is a readiness recor
 **Release: BLOCKED / NOT PRODUCTION-READY.**
 
 - PR #75 (`feat/irr-money-core`) is Draft and targets `main`. Its five required workflows are green on head `e1246bc4e869233e5c05c8958ce599fce748a9ff`: CI, PostgreSQL CI, Production Readiness, Docker E2E, and Cloudflare Build.
-- PR #78 (`fix/irr-display-dashboard-withdrawal`) is Draft and stacked on PR #75. Current head: `1a9b75cd6afe96aba67c013a0b2f91543918a9a2`. The five workflows for this exact head were queued after the latest code/test changes; no green result is claimed yet.
+- PR #78 (`fix/irr-display-dashboard-withdrawal`) is Draft and stacked on PR #75. Current verified head: `a4952948fb92a7a5e7a3a975eb2b61f7ddf6e4bc`. All five required workflows pass on this exact head: CI, PostgreSQL CI, Production Readiness, Docker E2E, and Cloudflare Build. PostgreSQL CI: 724 tests across 61 files, 0 failures. Security audit: 0 critical/high findings; 3 moderate advisories remain (glob, minimatch, PrismJS) and require explicit risk acceptance or further remediation before Go/No-Go.
 - No merge, deployment, production database change, DNS change, provider activation, or credential change has been performed.
 
 ## PR dependency and conflict map
@@ -65,12 +65,12 @@ This file is the current release-status source of truth. It is a readiness recor
 - Prepay fees must be safe integer IRR; the 10% commission uses the canonical explicit half-up rule.
 - New withdrawals require bank transfer, a bank name, and a valid normalized Iranian Sheba. Unsupported card/wallet/cash destinations are rejected before funds are reserved.
 - Admin approval requires a valid bank destination; PAID additionally requires a real external bank transfer reference.
-- D1 withdrawal and admin settlement batches abort if a required mutation does not change exactly one row; SQLite integration tests exercise rollback paths.
+- D1 withdrawal and admin settlement batches abort if a required mutation does not change exactly one row; SQLite integration tests exercise rollback paths. Repeated escrow release is idempotent: a previously committed release is distinguished from a failed partial write.
 - VIP activation requires a successful IRR payment linked to the exact VERIFIED gateway attempt with purpose `vip`; atomic replacement plus partial unique indexes enforce one ACTIVE subscription per user.
 - Unsupported FLEET_MANAGER/PARTNER job access fails closed until a real ownership relation exists; customer estimate approval cannot also transition the job to COMPLETED.
 - Platform dashboard business intelligence is ADMIN-only.
 
-These are source-level changes; only the latest completed CI runs establish runtime verification.
+These are source-level changes; the exact PR #78 head above has completed all five CI workflows. The PostgreSQL pipeline confirms 724 passing tests across 61 files, including D1-style SQLite atomicity/idempotency cases and PostgreSQL integration.
 
 ## External integration and infrastructure status
 
