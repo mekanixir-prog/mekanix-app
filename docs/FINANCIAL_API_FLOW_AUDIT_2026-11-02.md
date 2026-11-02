@@ -229,3 +229,50 @@ This review does **not**:
 - `src/lib/prepay-atomic.ts`
 - `src/lib/wallet-release.ts`
 - `src/lib/pricing.ts`
+
+## 8. Shared formatter and display-consumer trace (2026-11-02)
+
+This section records source-level findings from `main` at `4e701370d674cdcde40cabba3e360703b249c029`. It does not change runtime behavior.
+
+### 8.1 Root formatter defect
+
+- `src/lib/format.ts::fmtMoney` treats every value passed with currency `IRR` as a USD-base amount and multiplies it by the mutable `USD_TO_IRR` rate (default 60,000).
+- `src/lib/use-t.ts::useT().money` forces the currency argument to `IRR` whenever the UI language is Persian, regardless of the source record's actual unit.
+- The same hook fetches `/api/exchange-rate` on mount and refreshes the rate every five minutes. This means the displayed value of a persisted amount can change as the FX rate changes, even when the underlying record does not.
+- Therefore the current formatter contract is not “format a persisted IRR amount”; it is “multiply an assumed USD-base amount by a live rate, then label it IRR.” That contract conflicts with the product's IRR-only money requirement and is unsafe for any already-IRR or Toman value.
+
+### 8.2 Known display callsites and unit evidence
+
+| Consumer | Fields passed to `money()` | Source evidence | Current disposition |
+|---|---|---|---|
+| `src/components/mek/customer/care-detail.tsx` | CARE pricing snapshot fields; extra proposal part/labor/total | Booking pricing is produced by `src/lib/pricing.ts` and explicitly declares integer IRR. Extra-proposal ingress is explicitly Toman in API validation/notification contract, and PR #68 validates Toman. | **Mixed units on one screen.** Snapshot values are intended IRR; proposal values are Toman. A single `money()` function cannot correctly render both. |
+| `src/components/mek/customer/invoice.tsx` | Invoice totals, labor, parts, travel, payment labels | Invoice API labels persisted records IRR, but technician and part source values are not proven IRR. Seed data writes USD-labelled technician travel/inspection fees into invoice calculations, then labels invoice IRR. | **Unverified persisted unit.** Do not route through `formatIrr` until upstream records and historical invoices are reconciled. |
+| `src/components/mek/customer/invoice-document.tsx` | Invoice line rates, totals, parts and travel | Same Invoice/Part/Technician source as customer invoice. | **Unverified persisted unit.** Same restriction as invoice screen. |
+| `src/components/mek/technician/earnings.tsx` | Wallet balance, pending balance, earned, commission, transactions, withdrawals | Values come from wallet/ledger records. Atomicity and idempotency are present, but no verified integer-IRR source contract was found in the audited paths. | **Unverified persisted unit.** Needs ledger-origin trace before formatter migration. |
+| `src/components/mek/admin/technicians.tsx` | Technician hourlyRate | Technician profile field; schema default/comment says IRR, but seed rate values are 52–90 with no unit declaration and technician travel/inspection seed fields explicitly say USD. | **Ambiguous profile unit.** Do not assume the schema comment proves actual stored values. |
+| `src/components/mek/customer/care-booking.tsx` | Service package basePrice and client-side preview formula | Pricing engine explicitly says package basePrice is informational and unused in the final calculation. Package API/schema does not establish a safe IRR contract in the inspected route. | **Unspecified package unit.** The preview formula is not proof that basePrice is an approved tariff or canonical IRR. |
+
+The above is a confirmed list of reviewed callsites, not a claim that no other `money()` callsites exist. A complete repository-wide callsite inventory remains a required implementation gate.
+
+### 8.3 Seed-data provenance conflict
+
+The reviewed `prisma/seed.ts` has material contradictions:
+
+- Technician `travelFeeBase`, `inspectionFee`, and `inspectionFeeHeavy` are explicitly annotated as USD values, while the Prisma schema comments describe the corresponding fields as IRR.
+- Seeded technician hourly rates use values from the seed technician list (e.g. 52–90) without a declared currency/unit at assignment.
+- Seed-generated invoice calculations consume these technician values and then persist `currency: "IRR"`; the same pattern appears in more than one seed invoice block.
+- VIP seed rows write `priceIrr` values of 9, 19, and 39. Those values are not enough to infer whether the intended unit is IRR, Toman, or an abbreviated display amount; no conversion is justified from magnitude alone.
+
+Consequently, a clean seed run is not evidence of an IRR-correct demo dataset. Seed values and demo invoices need an explicit, internally consistent IRR contract before visual QA or financial acceptance tests can be trusted.
+
+### 8.4 Safe formatter migration gates
+
+1. Keep the existing formatter behavior unchanged until each persisted source field is classified; do not globally remove the FX multiplier while USD-base legacy data may exist.
+2. Use the canonical `formatIrr` primitive only for values proven to be integer IRR at the writer and persistence boundary.
+3. Keep CARE proposal Toman ingress on an explicitly named Toman formatter until a single, tested Toman-to-IRR adapter is implemented for the full proposal-to-invoice lifecycle.
+4. Do not use a live FX rate to render stored IRR, Toman, wallet, invoice, VIP, or package amounts.
+5. Add explicit unit types/adapters and regression tests for every reviewed screen, including tests proving that a rate refresh cannot change the rendering of a persisted IRR amount.
+6. Before calling the inventory complete, search every repository occurrence of `money(`, `fmtMoney(`, and direct currency formatting, and classify each source field—not just each component.
+
+**No runtime formatter, seed, schema, migration, or historical record was changed by this trace.**
+
