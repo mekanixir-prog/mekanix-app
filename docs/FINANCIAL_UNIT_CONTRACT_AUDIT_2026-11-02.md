@@ -100,3 +100,33 @@ Passing CI does not prove monetary correctness. PR #73's current USD-base thresh
 ## Explicitly out of scope
 
 No live SMS, payment credentials, domain, DNS, VPS, or production payout activation is required now. Those remain launch-stage configuration, as planned. The simulator and staging lifecycle must nevertheless exercise the same IRR-only amount and idempotency contract before launch.
+
+
+## Additional confirmed finding — seed data is not IRR
+
+A follow-up inspection of `prisma/seed.ts` shows that the mismatch extends beyond formatting and withdrawals:
+
+- Technician `travelFeeBase` is seeded as `3 + i * 0.5` and explicitly commented as USD, with an approximate IRR equivalent.
+- `inspectionFee` is seeded as 7–11 and explicitly commented as USD.
+- `inspectionFeeHeavy` is seeded as 20–35 and explicitly commented as USD.
+- Wallet balances are seeded as small values (50, 75, 100, ...), without an IRR denomination; these are not realistic IRR wallet balances.
+- VIP `priceIrr` values are seeded as 9, 19, and 39, which are not plausible rial prices and appear to be legacy USD-like values despite the field name.
+- Service category `basePrice` values (70–220), part `unitPrice` values, labor rates, travel fees, and inspection fees feed invoice calculations. The resulting Invoice and Payment rows are nevertheless labelled `IRR`.
+- Seeded payments use `currency: "IRR"` while deriving their amounts from the same small USD-like service/rate values.
+
+This means that simply removing the USD-to-IRR display multiplier would make seeded and potentially existing records display as tiny rial amounts. Conversely, multiplying all such values by an exchange rate would be unsafe because the actual unit and provenance of every existing record is not established.
+
+### Expanded migration blocker
+
+**Do not merge a runtime-only formatter change or the current PR #73 withdrawal implementation.** Before changing production financial interpretation, classify every price source and every persisted financial row:
+
+1. Distinguish seeded/demo data from real user data.
+2. Establish the intended Iranian market price in IRR for hourly labor, inspection, travel, service category, parts, VIP, and withdrawals.
+3. Trace every invoice and payment writer to prove the final amount is integer IRR before persistence.
+4. Reconcile wallet aggregates against ledger entries and withdrawal records.
+5. Add explicit IRR validation at API and database write boundaries.
+6. Only then prepare a migration for records whose original unit can be proven; quarantine unknown records rather than guessing.
+
+### Product pricing decision still needed
+
+The IRR-only unit is settled. Actual business prices are not. The repository's existing small seed numbers must not be treated as approved Iranian market prices. Until the product owner supplies or approves a pricing schedule, use test fixtures clearly labelled as synthetic and do not enable real financial flows.
