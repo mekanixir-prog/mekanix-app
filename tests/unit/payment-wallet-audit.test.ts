@@ -637,6 +637,15 @@ describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
 describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", () => {
   beforeEach(() => {
     vi.stubEnv("MEKANIX_VIP_PLAN_PRICES_IRR_VERIFIED", "true");
+    mockVipTransaction.mockImplementation(async (callback: (tx: any) => Promise<any>) =>
+      callback({
+        userVipSubscription: {
+          findFirst: (...args: any[]) => mockUserVipSubscriptionFindFirst(...args),
+          updateMany: (...args: any[]) => mockUserVipSubscriptionUpdateMany(...args),
+          create: (...args: any[]) => mockUserVipSubscriptionCreate(...args),
+        },
+      })
+    );
     mockRequireAuth.mockResolvedValue({
       userId: "user-1",
       role: "CUSTOMER",
