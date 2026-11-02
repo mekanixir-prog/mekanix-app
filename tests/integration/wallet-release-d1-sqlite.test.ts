@@ -46,12 +46,14 @@ function makeD1() {
     batch(items: Array<{ sql: string; values: unknown[] }>) {
       try {
         sqlite.exec("BEGIN");
+        let previousChanges: number | null = null;
         const results = items.map(({ sql, values }, index) => {
           try {
             const result = sqlite.prepare(sql).run(...(values as never[]));
-            return { meta: { changes: Number(result.changes) } };
+            previousChanges = Number(result.changes);
+            return { meta: { changes: previousChanges } };
           } catch (error) {
-            throw new Error(`D1 batch statement ${index + 1}/${items.length} failed (previous changes=${results[index - 1]?.meta?.changes ?? "n/a"}, sqlite changes()=${Number(sqlite.prepare("SELECT changes() AS n").get()?.n ?? -1)}): ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+            throw new Error(`D1 batch statement ${index + 1}/${items.length} failed (previous changes=${previousChanges ?? "n/a"}, sqlite changes()=${Number(sqlite.prepare("SELECT changes() AS n").get()?.n ?? -1)}): ${error instanceof Error ? error.message : String(error)}`, { cause: error });
           }
         });
         sqlite.exec("COMMIT");
