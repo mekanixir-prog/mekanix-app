@@ -25,5 +25,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const db = await getDbForLib();
   const job = await db.job.findUnique({ where: { id }, include });
   if (!job) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(job);
+  const partsCurrencyVerified = process.env.MEKANIX_JOB_PART_IRR_PROVENANCE_VERIFIED === "true";
+  return NextResponse.json({ ...job, partsCurrencyVerified });
 }
