@@ -19,7 +19,7 @@ type Package = {
 
 export function CareBooking({ customer }: { customer: DemoUser }) {
   const { go, params, back } = useApp();
-  const { t, isFa, money } = useT();
+  const { t, isFa } = useT();
   const [packages, setPackages] = useState<Package[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPkg, setSelectedPkg] = useState<Package | null>(null);
@@ -267,17 +267,12 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
               {currentMileage && <ReviewRow icon={FileText} label={isFa ? "کیلومتر" : "Mileage"} value={`${isFa ? toPersianDigits(parseInt(currentMileage).toLocaleString()) : parseInt(currentMileage).toLocaleString()} km`} />}
             </div>
 
-            <div className="border-t border-border pt-3 space-y-1.5">
-              <PriceRow label={isFa ? "هزینه سرویس" : "Service"} amount={selectedPkg.basePrice} money={money} />
-              <PriceRow label={isFa ? "هزینه مراجعه" : "Visit Fee"} amount={15000} money={money} />
-              <PriceRow label={isFa ? "اجرت" : "Labor"} amount={selectedPkg.basePrice * 0.4} money={money} muted />
-              <PriceRow label={isFa ? "قطعات (تقریبی)" : "Parts (est.)"} amount={selectedPkg.basePrice * 0.5} money={money} muted />
-              <div className="border-t border-border pt-2 flex items-center justify-between">
-                <span className="font-bold">{isFa ? "مبلغ نهایی (تقریبی)" : "Total (estimated)"}</span>
-                <span className="font-display text-xl font-bold text-amber">
-                  {money(selectedPkg.basePrice + 15000 + selectedPkg.basePrice * 0.4 + selectedPkg.basePrice * 0.5 + (selectedPkg.basePrice + 15000 + selectedPkg.basePrice * 0.4 + selectedPkg.basePrice * 0.5) * 0.09)}
-                </span>
-              </div>
+            <div className="border-t border-border pt-3">
+              <p className="rounded-lg border border-dashed border-border p-3 text-xs leading-6 text-muted-foreground">
+                {isFa
+                  ? "مبلغ نهایی پس از ثبت درخواست، بر اساس نوع وسیله، ساعات کار، قطعات و هزینه مراجعه توسط موتور قیمت‌گذاری MEKANIX محاسبه و در جزئیات سفارش ثبت می‌شود."
+                  : "The final amount is calculated by MEKANIX pricing after booking, based on vehicle type, labor hours, parts and visit fees, then saved to the booking."}
+              </p>
             </div>
 
             <div className="flex items-center gap-2 rounded-lg border border-emerald-glow/20 bg-emerald-glow/5 p-3 text-[11px] text-muted-foreground">
@@ -306,11 +301,3 @@ function ReviewRow({ icon: Icon, label, value }: { icon: any; label: string; val
   );
 }
 
-function PriceRow({ label, amount, money, muted }: { label: string; amount: number; money: (n: number) => string; muted?: boolean }) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className={muted ? "text-muted-foreground" : ""}>{label}</span>
-      <span className={`tabular-nums ${muted ? "text-muted-foreground" : "font-medium"}`}>{money(amount)}</span>
-    </div>
-  );
-}
