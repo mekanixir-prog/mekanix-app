@@ -22,6 +22,7 @@ export function PaymentGatewayDialog({
   open,
   onOpenChange,
   amount,
+  currency,
   purpose,
   description,
   userId,
@@ -29,7 +30,8 @@ export function PaymentGatewayDialog({
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  amount: number; // USD
+  amount: number;
+  currency: "IRR";
   purpose: "vip" | "prepay" | "invoice" | "wallet_topup";
   description?: string;
   userId?: string;
@@ -147,7 +149,7 @@ export function PaymentGatewayDialog({
             <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
               {description ?? t(`pay.gateway.title`)}
             </span>
-            <span className="font-display text-lg font-bold text-amber">{money(amount)}</span>
+            <span className="font-display text-lg font-bold text-amber">{money(amount, currency)}</span>
           </div>
         </div>
 
