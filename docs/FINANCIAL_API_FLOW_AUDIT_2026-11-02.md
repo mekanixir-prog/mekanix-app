@@ -422,3 +422,55 @@ A further trace of `src/app/api/jobs/[id]/status/route.ts` resolved the prepay h
 
 **No runtime code, schema, migration, seed row, historical wallet balance, or production configuration was changed by this follow-up.**
 
+
+## 8.11 Follow-up implementation review — canonical invoice writer
+
+The follow-up implementation on PR #78 changes the invoice path as follows:
+
+- `POST /api/invoices` now calls `src/lib/pricing.ts::calculatePrice` instead of using `Technician.hourlyRate` and `travelFeeBase` as though their units were verified IRR.
+- It validates labor hours, configured tax rate, part quantities, unit prices, line totals, and aggregate parts cost before calculation; money totals flow through integer-IRR primitives and the Decimal-backed pricing engine.
+- Invoice persistence uses an upsert keyed by the unique `jobId`, so repeated issuance returns the frozen existing invoice rather than trying to create a second row.
+- The `WAITING_APPROVAL` side effect in `src/app/api/jobs/[id]/status/route.ts` no longer writes a second invoice with independent Number arithmetic. Invoice creation is centralized in `POST /api/invoices`.
+- Technician invoice preview now displays only the server-issued invoice and its declared currency. CARE booking no longer invents a browser-side total by adding arbitrary percentages to package base price.
+
+### Remaining JobPart provenance gate
+
+The JobPart model still has no persisted currency column. New part writes now require `currency: "IRR"` and safe integer amounts, but legacy JobPart rows remain unclassified. The invoice endpoint therefore returns 409 when a job has parts unless `MEKANIX_JOB_PART_IRR_PROVENANCE_VERIFIED=true` is deliberately enabled after a reviewed reconciliation/backfill. Do not set this flag merely to make invoice creation work.
+
+### Release implications
+
+1. The canonical invoice path is consolidated, but legacy part values still require reconciliation.
+2. The canonical pricing engine currently applies its base visit fee with `travelDistanceKm: 0` in the invoice endpoint; actual distance-based travel pricing remains a separate product rule to confirm.
+3. The pricing engine's configured tax rate is validated as a fraction from 0 through 1; the platform setting must be reviewed before production activation.
+
+## 8.12 Follow-up implementation review — wallet currency provenance fail-closed
+
+The existing `Wallet`, `WalletTransaction`, and `WalletLedger` schema still has no currency field. Comments in the schema say IRR, but seed data shows explicit USD annotations for technician travel and inspection fees and leaves wallet seed balances and some rates ambiguous. Those comments do not prove that persisted values are IRR.
+
+PR #78 therefore adds a fail-closed operational gate:
+
+- `GET /api/wallets` reports currency as `UNVERIFIED` by default and marks the earnings summary invalid.
+- Technician earnings UI masks all wallet amounts and disables withdrawal while the currency is unverified.
+- `POST /api/wallets/withdraw` returns 409 with `WALLET_CURRENCY_UNVERIFIED` unless `MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED=true`.
+- If the gate is enabled after an independently reviewed schema migration and historical reconciliation, earnings summaries include only positive net amounts from `AVAILABLE` transactions; PENDING escrow is excluded.
+- The 12-hour hold recovery uses the completed job's immutable `completedAt` to derive the original deadline, and the release helper still performs the balance and transaction-state transition atomically.
+
+**Do not enable `MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED` until the currency columns/backfill, technician price-unit configuration, wallet aggregates, and ledger reconciliation are complete and tested.** No existing balance or transaction is converted by this PR.
+
+## 8.13 Follow-up implementation review — VIP payment exactness
+
+`POST /api/vip/subscribe` now requires:
+
+- payment ownership by the authenticated user;
+- `SUCCEEDED` status;
+- payment currency exactly `IRR`;
+- payment and plan price both valid safe-integer IRR values;
+- exact equality between payment amount and plan price.
+
+An overpayment is no longer silently accepted as a valid plan payment. This endpoint remains a development simulator and is blocked in production.
+
+## 8.14 Validation status at this addendum
+
+PR #78 remains Draft and stacked on PR #75. A CI attempt initially caught a missing closing brace after removal of the duplicate invoice writer; that syntax issue was corrected. A later TypeScript run caught a stale `api.addPart` type that did not include the explicit IRR request field; the branch was updated. CI is being rerun against the latest PR head; no green result is asserted in this addendum.
+
+**No merge, production configuration change, live gateway activation, or historical financial conversion was performed.**
