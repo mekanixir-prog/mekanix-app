@@ -32,7 +32,7 @@ No historical financial row is converted by these flags. They only permit the ap
 ## Cross-system constraints
 
 - Invoice issuance and CARE booking creation require the approved canonical IRR rate card.
-- VIP checkout requires verified VIP plan prices.
+- VIP checkout requires verified VIP plan prices. The subscription handler remains disabled in production; before enabling it on Cloudflare/D1, replace the local callback transaction with a D1-compatible atomic batch and connect a real verified payment-provider flow.
 - Technician fee display/edit and prepay amount calculation require verified technician fee units.
 - Prepay writes require **both** verified technician fee units and verified wallet ledger units.
 - Legacy JobPart prices remain hidden and invoice creation remains blocked until JobPart provenance is verified.
