@@ -120,7 +120,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
     }
     const amt = Number(withdrawAmount);
     if (!Number.isSafeInteger(amt) || amt < MIN_WITHDRAWAL_IRR) {
-      toast.error(t("tech.earnings.withdrawMin").replace("{amount}", money(MIN_WITHDRAWAL_IRR)));
+      toast.error(t("tech.earnings.withdrawMin").replace("{amount}", moneyDisplay(MIN_WITHDRAWAL_IRR)));
       return;
     }
     if (amt > balance) {
@@ -216,7 +216,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
             </Button>
             {balance < MIN_WITHDRAWAL_IRR && (
               <p className="text-center text-[10px] text-muted-foreground">
-                {t("tech.earnings.withdrawMin").replace("{amount}", money(MIN_WITHDRAWAL_IRR))}
+                {t("tech.earnings.withdrawMin").replace("{amount}", moneyDisplay(MIN_WITHDRAWAL_IRR))}
               </p>
             )}
           </div>
@@ -370,7 +370,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
                 value={withdrawAmount}
                 onChange={(e) => { withdrawalIdempotencyKey.current = null; setWithdrawAmount(e.target.value); }}
                 className="mt-1"
-                placeholder={`حداقل ${money(MIN_WITHDRAWAL_IRR)}`}
+                placeholder={`حداقل ${moneyDisplay(MIN_WITHDRAWAL_IRR)}`}
               />
             </div>
             <div>
