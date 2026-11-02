@@ -16,6 +16,25 @@ export type JobStatusScalarUpdates = {
   customerApproved?: boolean;
 };
 
+export type AtomicInvoiceInput = {
+  id: string;
+  code: string;
+  jobId: string;
+  laborHours: number;
+  laborRate: number;
+  laborTotal: number;
+  partsTotal: number;
+  travelFee: number;
+  subtotal: number;
+  taxRate: number;
+  taxTotal: number;
+  discount: number;
+  total: number;
+  currency: string;
+  status: "SENT";
+  notes: string;
+};
+
 export type AtomicJobStatusInput = {
   jobId: string;
   requestId: string;
@@ -25,6 +44,8 @@ export type AtomicJobStatusInput = {
   currentStatus: JobStatus;
   nextStatus: JobStatus;
   updates: JobStatusScalarUpdates;
+  invoice?: AtomicInvoiceInput | null;
+  holdUntil?: Date | null;
 };
 
 function isRequestTerminalTransition(status: string) {
@@ -57,6 +78,16 @@ async function transitionWithPrisma(db: PrismaClient, input: AtomicJobStatusInpu
       data: { status: input.nextStatus, ...input.updates },
     });
     if (jobUpdate.count !== 1) throw new JobStatusConflictError();
+
+    if (input.invoice) {
+      await tx.invoice.create({ data: input.invoice });
+    }
+    if (input.holdUntil) {
+      await tx.walletTransaction.updateMany({
+        where: { jobId: input.jobId, status: "PENDING" },
+        data: { holdUntil: input.holdUntil },
+      });
+    }
 
     if (requestTransition) {
       const requestUpdate = await tx.serviceRequest.updateMany({
@@ -144,6 +175,50 @@ async function transitionWithD1(
     ).bind(...values),
     assertOneChange(),
   ];
+
+  if (input.holdUntil) {
+    statements.push(d1.prepare(
+      'UPDATE "WalletTransaction" SET "holdUntil" = ? WHERE "jobId" = ? AND "status" = \'PENDING\''
+    ).bind(input.holdUntil.toISOString(), input.jobId));
+  }
+
+  if (input.invoice) {
+    const invoice = input.invoice;
+    statements.push(
+      d1.prepare(
+        'INSERT INTO "Invoice"' +
+        ' ("id", "code", "jobId", "laborHours", "laborRate", "laborTotal", "partsTotal",' +
+        ' "travelFee", "subtotal", "taxRate", "taxTotal", "discount", "total", "currency",' +
+        ' "status", "notes", "createdAt", "updatedAt")' +
+        ' SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?' +
+        ' WHERE EXISTS (SELECT 1 FROM "Job" j WHERE j."id" = ? AND j."status" = ?)' +
+        ' AND NOT EXISTS (SELECT 1 FROM "Invoice" i WHERE i."jobId" = ?)'
+      ).bind(
+        invoice.id,
+        invoice.code,
+        invoice.jobId,
+        invoice.laborHours,
+        invoice.laborRate,
+        invoice.laborTotal,
+        invoice.partsTotal,
+        invoice.travelFee,
+        invoice.subtotal,
+        invoice.taxRate,
+        invoice.taxTotal,
+        invoice.discount,
+        invoice.total,
+        invoice.currency,
+        invoice.status,
+        invoice.notes,
+        now,
+        now,
+        input.jobId,
+        input.nextStatus,
+        input.jobId,
+      ),
+      assertOneChange(),
+    );
+  }
 
   if (isRequestTerminalTransition(input.nextStatus)) {
     statements.push(
