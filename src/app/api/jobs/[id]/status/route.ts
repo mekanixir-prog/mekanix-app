@@ -126,12 +126,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     );
   }
 
-  // Additional check: only the ASSIGNED technician can advance a tech-allowed status
-  if (session.role === "TECHNICIAN" && status) {
-    const tech = await getTechnicianFromSession(session);
-    if (!tech || tech.id !== existing.technicianId) {
-      return NextResponse.json({ error: "فقط مکانیک مسئول این کار مجاز است" }, { status: 403 });
-    }
+  // Capture the trusted technician profile ID and pass it into the atomic CAS.
+  // The route-level check is for fast rejection; the database guard below is
+  // what closes the reassignment race between authorization and mutation.
+  const actorTechnician = session.role === "TECHNICIAN"
+    ? await getTechnicianFromSession(session)
+    : null;
+  if (session.role === "TECHNICIAN" &&
+      (!actorTechnician?.id || actorTechnician.id !== existing.technicianId)) {
+    return NextResponse.json({ error: "فقط مکانیک مسئول این کار مجاز است" }, { status: 403 });
   }
 
   const updates: {
@@ -152,6 +155,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       jobId: id,
       requestId: existing.requestId,
       technicianId: existing.technicianId,
+      actorRole: session.role === "ADMIN" ? "ADMIN"
+        : session.role === "TECHNICIAN" ? "TECHNICIAN"
+        : session.role === "FLEET_MANAGER" ? "FLEET_MANAGER" : "CUSTOMER",
+      actorTechnicianId: actorTechnician?.id ?? null,
       currentStatus: existing.status as PrismaJobStatus,
       nextStatus: (status ?? existing.status) as PrismaJobStatus,
       updates,
