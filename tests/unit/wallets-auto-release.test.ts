@@ -13,6 +13,11 @@ vi.mock("@/lib/db-access", () => ({
       findUnique: (...args: any[]) => mockWalletFindUnique(...args),
       create: (...args: any[]) => mockWalletCreate(...args),
     },
+    walletTransaction: {
+      findMany: vi.fn(async () => []),
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    },
+    job: { findMany: vi.fn(async () => []) },
   })),
 }));
 vi.mock("@/lib/wallet-release", () => ({
