@@ -82,7 +82,7 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
     ? (job.request.vehicle.type !== "CAR" ? (job.technician as any).inspectionFeeHeavy : (job.technician as any).inspectionFee)
     : null;
   const rawTravelFee = job.technician ? (job.technician as any).travelFeeBase : null;
-  const prepayAmountValid = job.technicianFeesCurrencyVerified === true &&
+  const prepayAmountValid = job.technicianFeesCurrencyVerified === true && job.walletCurrencyVerified === true &&
     rawInspectionFee != null && rawTravelFee != null &&
     Number.isSafeInteger(Number(rawInspectionFee)) && Number(rawInspectionFee) >= 0 &&
     Number.isSafeInteger(Number(rawTravelFee)) && Number(rawTravelFee) >= 0 &&
@@ -196,7 +196,7 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
                 </Button>
               ) : (
                 <div className="col-span-2 rounded-lg border border-amber/30 bg-amber/5 p-3 text-xs text-muted-foreground">
-                  {isFa ? "پرداخت پیش‌خدمت تا تأیید واحد و مبلغ تعرفه‌های تعمیرکار غیرفعال است." : "Pre-service payment is disabled until technician fee units and amounts are verified."}
+                  {isFa ? "پرداخت پیش‌خدمت تا تأیید واحد تعرفه تعمیرکار و تطبیق دفترکل کیف پول غیرفعال است." : "Pre-service payment is disabled until technician fees and wallet ledger currency are verified."}
                 </div>
               )}
             </div>
