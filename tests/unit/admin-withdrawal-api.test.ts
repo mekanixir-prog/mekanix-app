@@ -55,6 +55,15 @@ beforeEach(() => {
 });
 
 describe("admin withdrawal API", () => {
+  it("blocks settlement transitions until wallet currency provenance is verified", async () => {
+    vi.stubEnv("MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED", "false");
+    const response = await PATCH(request({ status: "APPROVED" }), {
+      params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
+    });
+    expect(response.status).toBe(409);
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
   it("lists withdrawal requests with technician identity", async () => {
     const response = await GET(request(), { params: Promise.resolve({ resource: "withdrawals" }) });
     expect(response.status).toBe(200);
