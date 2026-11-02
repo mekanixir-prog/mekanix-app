@@ -223,3 +223,39 @@ A second pass through the financial writers found additional enforcement gaps:
 ### Pricing-engine constants are implementation defaults, not approved tariffs
 
 The current `src/lib/pricing.ts` hardcodes a base labor rate of 50,000 IRR/hour, a base visit fee of 15,000 IRR, a distance rate of 2,000 IRR/km, a 1.5× emergency multiplier, and a 9% tax default. It fetches `ServicePackage.basePrice` but deliberately does not apply it to the calculation. These values demonstrate an IRR-shaped calculation path; they are **not evidence of an owner-approved MEKANIX price schedule**. They must be reviewed and approved before becoming live tariffs, and any configured tax rule must be reconciled with the applicable business/legal policy.
+
+
+## Follow-up source trace — currency formatting, client checkout, and admin pricing
+
+### Currency formatter and exchange-rate polling conflict with IRR-only storage
+
+- `src/lib/constants.ts` exposes USD, EUR, and IRR as supported currencies, although the product requirement is IRR-only.
+- `src/lib/format.ts` defaults unknown currencies to USD and multiplies values passed as `IRR` by a mutable USD→IRR rate. Its default fallback rate is 60,000.
+- `src/lib/use-t.ts` fetches `/api/exchange-rate` on mount and every five minutes, then injects that rate into the formatter. For Persian users it forces the currency argument to IRR, which currently means an already-IRR amount is multiplied by an FX rate.
+- Required fix: replace this with a pure integer-IRR formatter (no FX request, no rate state, no USD/EUR fallback). If Toman display is retained, calculate it only as a labelled presentation value from integer IRR; never change the stored/API amount.
+
+### Technician withdrawal UI still asks for dollars
+
+- `src/components/mek/technician/earnings.tsx` declares `MIN_WITHDRAWAL = 5 // USD`, validates the client input against it, inserts a dollar sign in the error text, and uses a `Min $5` input placeholder.
+- The server route `src/app/api/wallets/withdraw/route.ts` has a different rule: any positive finite number up to 10,000 is accepted. It does not enforce the UI minimum and does not require an integer/safe integer.
+- `src/lib/schemas/wallet.ts` repeats the 10,000 cap and positive-only validation, also without an integer or safe-integer constraint.
+- Required fix: delete the USD-based UI threshold and dollar labels; set a single owner-approved IRR minimum/maximum policy shared by UI, Zod schema, and server route. Until those limits are approved, do not invent a replacement threshold. Regardless of threshold, require positive safe-integer IRR.
+
+### Shared payment component carries a USD contract comment
+
+- `src/components/mek/shared/payment-gateway.tsx` types its `amount` prop as a number with the comment `USD`, then renders the value using the shared money formatter.
+- Required fix: make the component contract explicitly integer IRR and ensure the checkout request, provider adapter, verification response, and UI all refer to the same stored IRR amount. Keep it disabled until provider integration and amount verification are real.
+
+### Admin CARE package price accepts unchecked values
+
+- `src/app/api/care/admin/packages/route.ts` writes `body.basePrice` directly (or defaults it to zero) without visible validation for integer-IRR semantics.
+- CARE booking creation uses the shared pricing engine, which reads package base price, so this admin input is a source of future customer-facing prices.
+- Required fix: validate admin-entered package prices as non-negative safe integer IRR, and require a separately approved tariff before exposing the package as purchasable.
+
+### Release blockers now explicitly include the presentation layer
+
+1. Remove all USD/EUR currency options from MEKANIX product transaction paths and all USD-based labels/comments/limits.
+2. Remove exchange-rate polling and the USD→IRR conversion from the shared formatter.
+3. Enforce safe-integer IRR at every amount entry point, including technician withdrawal, admin package pricing, parts, prepay, invoice, and gateway.
+4. Do not set a replacement withdrawal minimum/maximum until MEKANIX approves the actual IRR policy.
+5. Add UI regression checks for no dollar symbol, no foreign-exchange dependency, and consistent IRR display across customer, technician, and admin surfaces.
