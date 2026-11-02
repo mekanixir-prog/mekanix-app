@@ -26,7 +26,7 @@ export type Job = Prisma.JobGetPayload<{
     parts: true; diagnosisRecords: true; invoice: true; reviews: true;
     messages: { include: { fromUser: true } }; tracking: true;
   };
-}>;
+}> & { partsCurrencyVerified?: boolean };
 export type Invoice = Prisma.InvoiceGetPayload<{ include: { job: true; payment: true } }>;
 export type Payment = PaymentModel;
 export type Review = Prisma.ReviewGetPayload<{ include: { fromUser: true } }>;
