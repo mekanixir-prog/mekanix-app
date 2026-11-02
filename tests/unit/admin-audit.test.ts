@@ -100,6 +100,7 @@ function makePatchRequest(resource: string, id: string, body: Record<string, any
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED", "true");
+  vi.stubEnv("MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED", "true");
   mockWriteAuditLog.mockResolvedValue(undefined);
   mockAuditLogCreate.mockResolvedValue({});
 });
