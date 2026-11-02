@@ -46,7 +46,6 @@ function request(url: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED", "true");
-  vi.stubEnv("MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED", "true");
   mocks.auth.mockResolvedValue(technicianSession);
   mocks.technician.mockResolvedValue({ id: "tech-1" });
   mocks.participant.mockResolvedValue(null);
