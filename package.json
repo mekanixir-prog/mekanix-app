@@ -2,6 +2,9 @@
   "name": "nextjs_tailwind_shadcn_ts",
   "version": "1.0.0",
   "private": true,
+  "overrides": {
+    "deepmerge-ts": "^8.0.0"
+  },
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
     "build": "next build && node -e \"const fs=require('fs'); fs.mkdirSync('.next/standalone/.next',{recursive:true}); fs.cpSync('.next/static','.next/standalone/.next/static',{recursive:true}); if(fs.existsSync('public')) fs.cpSync('public','.next/standalone/public',{recursive:true});\"",
