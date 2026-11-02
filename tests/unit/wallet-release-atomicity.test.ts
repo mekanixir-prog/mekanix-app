@@ -132,6 +132,9 @@ describe("wallet escrow release atomicity", () => {
         { meta: { changes: 0 } },
         { meta: { changes: 0 } },
         { meta: { changes: 0 } },
+        { meta: { changes: 0 } },
+        { meta: { changes: 0 } },
+        { meta: { changes: 0 } },
       ]),
     };
     await expect(releaseWalletTransactionWithD1(d1 as any, "wallet-1", "txn-1", new Date()))
