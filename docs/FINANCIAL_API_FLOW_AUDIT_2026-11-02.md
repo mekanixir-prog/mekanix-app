@@ -474,3 +474,20 @@ An overpayment is no longer silently accepted as a valid plan payment. This endp
 PR #78 remains Draft and stacked on PR #75. A CI attempt initially caught a missing closing brace after removal of the duplicate invoice writer; that syntax issue was corrected. A later TypeScript run caught a stale `api.addPart` type that did not include the explicit IRR request field; the branch was updated. CI is being rerun against the latest PR head; no green result is asserted in this addendum.
 
 **No merge, production configuration change, live gateway activation, or historical financial conversion was performed.**
+
+## 8.15 Follow-up UI aggregation and payment-gateway currency contract
+
+- Fleet dashboard's 30-day spending KPI now excludes invoices whose persisted currency is not IRR; it no longer adds mixed-currency invoice totals into one domestic-money number.
+- Technician lifetime `totalEarned` is a gross aggregate (per Wallet schema and prepay writer). The UI label now explicitly says gross earned, while the 14-day chart remains based on released net ledger amounts when the wallet provenance gate is enabled.
+- The payment gateway dialog now requires an explicit `currency: "IRR"` prop and formats the amount using that declared unit. The VIP caller passes IRR explicitly. The dialog remains a simulator and is not a production payment integration.
+
+## 8.16 Latest verified CI checkpoint
+
+At commit `89ffc8674c8e788b1c1a9fc177476d51c67bdc6c`, all five PR #78 workflow groups completed successfully:
+- CI (ESLint, TypeScript, unit/integration tests)
+- Production readiness (quality, security audit, build)
+- PostgreSQL migration/build
+- Docker Compose build and health checks
+- Cloudflare Worker build
+
+Subsequent small UI/unit-contract commits were pushed after that checkpoint and have a new workflow run pending; do not carry forward the green status until that latest run completes.
