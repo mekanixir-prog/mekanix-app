@@ -1,29 +1,39 @@
 # Financial Unit Contract Audit
 
-**Status:** Audit only — no monetary values, schema fields, or historical records are changed by this document.  
+**Status:** Product-owner decision recorded — IRR is the only permitted monetary unit. Implementation and historical-data reconciliation remain pending.  
 **Reviewed:** 2026-11-02  
-**Scope:** Wallet, withdrawals, display formatting, invoices, payments, VIP pricing, and gateway adapter boundary.
+**Scope:** Wallet, withdrawals, display formatting, invoices, payments, VIP pricing, CARE pricing, and gateway adapter boundary.
+
+## Binding product decision
+
+MEKANIX uses **Iranian rial (IRR) exclusively** as its monetary unit throughout the product.
+
+- USD and other foreign currencies must not be used as wallet units, accounting units, invoice currencies, payment currencies, withdrawal units, gateway amounts, plan prices, service prices, or internal calculation units.
+- Persist all monetary amounts as integer IRR. Do not store fractional rial and do not use floating-point arithmetic for financial calculations.
+- Bank payouts and gateway requests must be denominated in IRR and match the persisted IRR amount exactly.
+- Persian UI may optionally show a clearly labelled Toman equivalent, calculated only as `IRR / 10`. Toman is a display convention only; it is never the persistence or API unit.
+- No exchange-rate endpoint, live FX rate, fallback USD/IRR rate, or hidden currency conversion may affect MEKANIX monetary values.
+- Foreign-currency amounts received from an external source are not valid MEKANIX transaction amounts. They must not enter the payment, wallet, invoice, pricing, or payout flow.
+
+This is a binding product requirement, not a proposal awaiting approval.
 
 ## Executive finding
 
-MEKANIX does not currently have one consistently enforced monetary unit across persistence, business logic, display formatting, and payout/provider boundaries.
+The repository currently violates this requirement in multiple places. The conflicts are not cosmetic: the code contains a USD-base withdrawal threshold, a USD-to-IRR display multiplier, and an exchange-rate fetch used by the Persian money helper.
 
-The repository contains explicit, conflicting declarations:
-
-| Area | Current declaration or behavior | Evidence |
+| Area | Current declaration or behavior | Required state |
 |---|---|---|
-| Wallet aggregates | `balance`, `pendingBalance`, `totalEarned`, `totalCommission`, and `totalWithdrawn` are documented as IRR | `prisma/schema.prisma`, `model Wallet` |
-| Wallet transactions | `grossAmount`, `commissionAmount`, and `netAmount` are documented as IRR | `prisma/schema.prisma`, `model WalletTransaction` |
-| Withdrawals | `WithdrawalRequest.amount` is documented as IRR | `prisma/schema.prisma`, `model WithdrawalRequest` |
-| Withdrawal API (PR #73) | Amount is explicitly treated as USD-base units; minimum is 5 and maximum is 10,000, with cent precision | `src/app/api/wallets/withdraw/route.ts` on `fix/withdrawal-bank-validation` |
-| Technician earnings UI | Minimum withdrawal is `5 USD`; it passes the same numeric amount to the API and displays wallet aggregates through `money()` | `src/components/mek/technician/earnings.tsx` |
-| Display formatting | `fmtMoney(amount, "IRR")` multiplies the input by `USD_TO_IRR`; default fallback rate is 60,000 | `src/lib/format.ts` |
-| Persian money helper | `useT().money(amount)` forces the IRR formatting path for Persian users | `src/lib/use-t.ts` |
-| Invoice and payment | Currency defaults to IRR | `prisma/schema.prisma`, `model Invoice`, `model Payment` |
-| VIP plan | `VipPlan.priceIrr` is documented as IRR; activation checks payment currency is IRR and compares payment amount to plan price | `prisma/schema.prisma`, `src/app/api/vip/subscribe/route.ts` on PR #67 |
-| Payment gateway adapter | Provider adapter contract says amounts passed to providers are IRR | `src/lib/payment-provider.ts` on PR #66 |
-
-These declarations cannot all describe the same stored number. For example, the withdrawal API treats `5` as five USD-base units, while the wallet schema describes the stored amount as five IRR. The display helper then multiplies a value formatted as IRR by the USD→IRR rate.
+| Wallet aggregates | `balance`, `pendingBalance`, `totalEarned`, `totalCommission`, and `totalWithdrawn` documented as IRR | Integer IRR only |
+| Wallet transactions | `grossAmount`, `commissionAmount`, and `netAmount` documented as IRR | Integer IRR only |
+| Withdrawals | `WithdrawalRequest.amount` documented as IRR | Integer IRR only; limits explicitly defined in IRR |
+| Withdrawal API (PR #73) | Amount treated as USD-base units; minimum 5, maximum 10,000, cent precision | Remove USD semantics and decimal precision; validate integer IRR |
+| Technician earnings UI | Minimum withdrawal is `5 USD`; amount passed unchanged to API | Show and submit integer IRR; no dollar labels |
+| Display formatting | `fmtMoney(amount, "IRR")` multiplies input by `USD_TO_IRR`; fallback rate 60,000 | Format an already-IRR amount without FX multiplication |
+| Persian money helper | `useT().money(amount)` forces IRR formatting, while `useT()` fetches a live USD→IRR rate | No FX fetch; money helper treats input as IRR |
+| Invoice and payment | Currency defaults to IRR | Enforce IRR on every write and provider boundary |
+| VIP plan | `VipPlan.priceIrr` documented as IRR; activation compares IRR payment and plan price | Preserve integer-IRR equality |
+| CARE extra proposal | Prices currently described as integer Toman | Convert once at the CARE-to-invoice boundary using `Toman × 10 = IRR`; API/storage contract must be explicit |
+| Payment gateway adapter | Provider contract says amounts passed to providers are IRR | Enforce integer IRR from persisted payment attempt through verification |
 
 ## Why this blocks a safe merge
 
@@ -35,57 +45,58 @@ A unit mismatch can cause:
 - a gateway request whose amount differs from the amount stored in the payment record;
 - historical records becoming ambiguous after a schema or formatter change.
 
-Passing CI does not prove monetary correctness. PR #73's current tests validate the chosen USD-base threshold and input precision, but they do not prove that the persisted wallet balance and the actual bank transfer use the same unit.
+Passing CI does not prove monetary correctness. PR #73's current USD-base threshold and cent precision conflict with the product's IRR-only requirement. The current formatter also multiplies amounts already labelled IRR by a live or fallback USD→IRR rate.
 
-## Proposed target contract (requires product-owner approval)
+## Required target contract
 
-For an Iran-first product, the recommended target is:
-
-1. **Canonical persisted unit:** integer IRR for all wallet balances, wallet ledger entries, withdrawals, invoices, payments, and gateway attempts.
-2. **UI display:** show Toman in Persian UI by explicit IRR-to-Toman conversion (10 IRR = 1 Toman); do not use an exchange-rate multiplier to format an amount already stored in IRR.
-3. **Foreign-currency inputs:** if a price source or product plan is expressed in USD, convert it to IRR once at quote/checkout time using a recorded rate and timestamp. Persist the resulting IRR amount and the rate metadata used for the quote.
-4. **Gateway boundary:** pass the exact IRR amount persisted on the payment attempt to the provider adapter; never recompute the amount during callback verification.
-5. **Precision:** use integer minor units (IRR) or a rigorously defined Decimal policy; do not use floating-point arithmetic for persisted financial calculations.
-6. **Withdrawal minimum/maximum:** define these limits in IRR or Toman explicitly in server validation and UI copy. Do not use a USD threshold against an IRR wallet balance.
-7. **Auditability:** record original quote amount, canonical amount, source currency, conversion rate, rate timestamp, and gateway amount where conversion occurs.
-
-This proposal is not an instruction to reinterpret existing data. Before migration, trace every wallet credit/debit and invoice creation path, inspect production/staging values and their origin, and write a reversible backfill plan with reconciliation totals. No historical amount should be multiplied or divided based only on the current schema comment.
+1. **Canonical persisted unit:** integer IRR for all wallet balances, wallet ledger entries, withdrawals, invoices, payments, service prices, CARE prices after boundary conversion, VIP prices, taxes, commissions, and gateway attempts.
+2. **API contract:** all monetary request and response fields are integer IRR. Document field units in schemas and API types; reject non-integer, negative, unsafe, or out-of-range values where inappropriate.
+3. **UI display:** format canonical IRR directly. If the product chooses to display Toman, derive it explicitly by dividing by 10 and label it Toman. Never use an exchange-rate multiplier.
+4. **No FX dependency:** remove the exchange-rate polling and USD/foreign-currency conversion path from monetary formatting and transaction flows.
+5. **Gateway boundary:** pass the exact integer IRR amount persisted on the payment attempt to the provider adapter; callback verification must compare against that same persisted IRR amount.
+6. **Precision:** use integer IRR arithmetic or a rigorously defined integer-safe calculation policy. Do not use JavaScript floating-point arithmetic for persisted financial calculations. Tax, percentage commission, and proportional allocations must define deterministic rounding in IRR.
+7. **Withdrawal limits:** define minimum and maximum as explicit integer IRR constants in the server contract and mirror the same values in UI copy. Do not use a USD threshold or fractional precision.
+8. **Auditability:** record the source and calculation breakdown for an amount where useful, but every resulting payable/receivable amount remains IRR. Foreign-currency conversion is not part of MEKANIX's internal financial contract.
 
 ## Required implementation sequence
 
 ### Phase A — Trace and classify all writers/readers
-- Find every write to Wallet, WalletTransaction, WalletLedger, WithdrawalRequest, Invoice, Payment, and PaymentGatewayLog.
-- For each write path, identify the source unit and whether conversion has already occurred.
+- Find every write to Wallet, WalletTransaction, WalletLedger, WithdrawalRequest, Invoice, Payment, PaymentGatewayLog, VipPlan, and service/Care pricing.
+- For each write path, identify the source unit and any Toman-to-IRR conversion.
 - Find every UI/API read and label its expected unit.
-- Reconcile default technician rates, service prices, VIP prices, taxes, commission, and withdrawal limits.
-- Add tests with known IRR/Toman examples and boundary values.
+- Reconcile technician rates, service prices, VIP prices, taxes, commission, and withdrawal limits.
+- Add tests with known IRR/Toman examples and integer boundary values.
+- Search for USD, dollar symbols, exchange-rate helpers, and foreign currency defaults in all app code, tests, seed data, docs, and environment configuration.
 
-### Phase B — Adopt the contract
-- Approve the canonical unit and Toman display convention.
-- Add explicit currency/unit metadata where necessary.
-- Add conversion-rate provenance to quote/payment records.
-- Update the gateway adapter request contract to accept only canonical IRR amounts.
-- Update PR #73 to validate withdrawal limits in the canonical unit.
+### Phase B — Enforce the IRR-only contract
+- Remove `USD_TO_IRR`, `setUsdToIrrRate`, `getUsdToIrrRate`, and the exchange-rate fetch from money formatting and Persian UI initialization.
+- Make `fmtMoney` format canonical IRR directly; remove USD as the fallback currency.
+- Update PR #73 withdrawal validation and UI to integer IRR with explicit IRR minimum/maximum.
+- Ensure the payment lifecycle, invoice, VIP, CARE and provider adapter use integer IRR.
+- Convert Toman-originated CARE inputs only at one explicit, tested boundary (`Toman × 10`).
+- Remove dollar symbols, USD minimum labels, cent precision, and any live FX dependency from MEKANIX transaction flows.
 
 ### Phase C — Migrate safely
 - Snapshot and reconcile balances and ledger totals.
-- Determine the unit of each existing record from its creation path; quarantine ambiguous records for manual review.
-- Backfill in a transaction or controlled migration with before/after totals.
+- Determine the actual unit of each existing record from its creation path; quarantine ambiguous records for manual review.
+- Backfill only records whose unit is proven. Use a reversible migration with before/after totals.
 - Never perform a blind global multiplier/divider migration.
 - Run SQLite and PostgreSQL migration tests, then staging reconciliation before production.
 
 ### Phase D — Release gates
 - Add integration tests for: customer payment → verified gateway attempt → Payment → invoice/VIP fulfillment; wallet credit → escrow release → withdrawal request → admin payout.
-- Assert amount and unit equality at every boundary.
+- Assert integer IRR amount equality at every boundary.
 - Block release if any record has an unknown unit or if wallet/ledger reconciliation differs.
+- Verify no USD currency or FX conversion remains in production transaction paths.
 
 ## Current PR implications
 
-- **PR #73:** do not merge until its USD-base withdrawal amount is reconciled with the wallet's persisted unit and the actual payout workflow.
-- **PR #66:** adapter hardening is useful, but the provider's IRR contract must be enforced by the authoritative payment lifecycle, not just documented in the adapter.
-- **PR #67:** VIP validation compares IRR payment and IRR plan price; preserve that equality when payment lifecycle is connected.
-- **PR #68:** CARE extra proposal currently validates integer Toman amounts. Convert those to the canonical unit at a single documented boundary before adding them to an IRR invoice.
+- **PR #73:** do not merge until the USD-base withdrawal amount, USD threshold, and decimal precision are replaced with integer IRR semantics and the actual bank payout contract is verified.
+- **PR #66:** enforce the provider's IRR contract end-to-end from persisted payment attempt through verification.
+- **PR #67:** preserve integer-IRR equality between VIP plan price and successful payment.
+- **PR #68:** CARE proposal amounts currently described as Toman must be converted once to IRR before they enter an IRR invoice; document and test that boundary.
+- **PR #74:** records the product decision and audit gates; it does not itself change runtime behavior.
 
 ## Explicitly out of scope
 
-No live SMS, payment credentials, domain, DNS, VPS, or production payout activation is required for this audit. Those remain launch-stage configuration, as planned. The simulator and staging lifecycle must nevertheless exercise the same amount and idempotency contract before launch.
+No live SMS, payment credentials, domain, DNS, VPS, or production payout activation is required now. Those remain launch-stage configuration, as planned. The simulator and staging lifecycle must nevertheless exercise the same IRR-only amount and idempotency contract before launch.
