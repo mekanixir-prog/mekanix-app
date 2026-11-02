@@ -21,6 +21,10 @@ describe("canonical IRR money primitives", () => {
     it("keeps USD display in USD regardless of Persian locale", () => {
       expect(fmtMoney(125, "USD", "fa")).toContain("$۱۲۵");
     });
+
+    it("does not silently label an unknown currency as USD", () => {
+      expect(fmtMoney(125, "XYZ", "en")).toBe("XYZ 125");
+    });
   });
 
   describe("assertIrrInteger / parseIrrInput", () => {
