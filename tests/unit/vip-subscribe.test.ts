@@ -23,6 +23,7 @@ const mockPaymentFindUnique = vi.fn();
 const mockUserVipSubscriptionUpdateMany = vi.fn();
 const mockUserVipSubscriptionCreate = vi.fn();
 const mockUserVipSubscriptionFindFirst = vi.fn();
+const mockVipTransaction = vi.fn();
 const mockNotificationCreate = vi.fn();
 
 vi.mock("@/lib/db-access", () => ({
@@ -34,6 +35,7 @@ vi.mock("@/lib/db-access", () => ({
       updateMany: (...args: any[]) => mockUserVipSubscriptionUpdateMany(...args),
       create: (...args: any[]) => mockUserVipSubscriptionCreate(...args),
     },
+    $transaction: (...args: any[]) => mockVipTransaction(...args),
     notification: { create: (...args: any[]) => mockNotificationCreate(...args) },
   })),
 }));
@@ -93,6 +95,15 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       status: "ACTIVE",
       plan: { id: "plan-1", name: "Gold" },
     });
+    mockVipTransaction.mockImplementation(async (callback: (tx: any) => Promise<any>) =>
+      callback({
+        userVipSubscription: {
+          findFirst: (...args: any[]) => mockUserVipSubscriptionFindFirst(...args),
+          updateMany: (...args: any[]) => mockUserVipSubscriptionUpdateMany(...args),
+          create: (...args: any[]) => mockUserVipSubscriptionCreate(...args),
+        },
+      })
+    );
     mockNotificationCreate.mockResolvedValue({});
   });
 
@@ -226,6 +237,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     expect(res.status).toBe(200);
 
     // Subscription was created with the session.userId (NOT from body)
+    expect(mockVipTransaction).toHaveBeenCalledTimes(1);
     expect(mockUserVipSubscriptionCreate).toHaveBeenCalledTimes(1);
     const createArgs = mockUserVipSubscriptionCreate.mock.calls[0][0];
     expect(createArgs.data.userId).toBe("user-1"); // from session, not body
@@ -245,6 +257,32 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     const body = await res.json();
     expect(body.ok).toBe(true);
     expect(body.subscription.id).toBe("sub-1");
+  });
+
+  it("does not cancel the active subscription when the payment was already consumed", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockUserVipSubscriptionFindFirst.mockResolvedValueOnce({
+      id: "existing-sub",
+      status: "ACTIVE",
+    });
+    const response = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(response.status).toBe(409);
+    expect(mockUserVipSubscriptionUpdateMany).not.toHaveBeenCalled();
+    expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 when a unique constraint wins a concurrent replacement race", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockUserVipSubscriptionCreate.mockRejectedValueOnce({ code: "P2002" });
+    const response = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(response.status).toBe(409);
+    expect(mockVipTransaction).toHaveBeenCalledTimes(1);
+    expect(mockUserVipSubscriptionUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: "user-1", status: "ACTIVE" },
+        data: { status: "CANCELLED" },
+      })
+    );
   });
 
   // ──────────── Extra: planId required ────────────
