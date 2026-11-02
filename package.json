@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "overrides": {
-    "deepmerge-ts": "^8.0.0"
+    "deepmerge-ts": "^8.0.0",
+    "js-yaml": "^4.3.2"
   },
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
