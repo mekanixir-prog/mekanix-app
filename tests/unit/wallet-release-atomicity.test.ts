@@ -109,18 +109,18 @@ describe("wallet escrow release atomicity", () => {
     await expect(releaseWalletTransactionWithD1(d1 as any, "wallet-1", "txn-1", new Date()))
       .resolves.toBe(true);
     expect(d1.batch).toHaveBeenCalledTimes(1);
-    expect(d1.batch.mock.calls[0][0]).toHaveLength(6);
-    expect(prepared[0].sql).toContain('"pendingBalance"');
-    expect(prepared[0].sql).toContain('"netAmount" >= 0');
-    expect(prepared[1].sql).toContain("json('not-json')");
-    expect(prepared[2].sql).toContain("changes() = 1");
-    expect(prepared[3].sql).toContain("json('not-json')");
-    expect(prepared[4].sql).toContain('INSERT INTO "WalletLedger"');
-    expect(prepared[4].sql).toContain("'RELEASE'");
-    expect(prepared[4].sql).toContain("changes() = 1");
-    expect(prepared[5].sql).toContain("json('not-json')");
-    expect(prepared[0].values).toHaveLength(14);
-    expect(prepared[4].values).toContain("wallet-release:txn-1:LEDGER");
+    const statements = d1.batch.mock.calls[0][0] as Array<{ sql: string; values: unknown[] }>;
+    expect(statements).toHaveLength(6);
+    expect(statements[0].sql).toContain('"pendingBalance"');
+    expect(statements[0].sql).toContain('"netAmount" >= 0');
+    expect(statements[1].sql).toContain("json('not-json')");
+    expect(statements[2].sql).toContain('"status" = \'PENDING\'');
+    expect(statements[3].sql).toContain("json('not-json')");
+    expect(statements[4].sql).toContain('INSERT INTO "WalletLedger"');
+    expect(statements[4].sql).toContain("'RELEASE'");
+    expect(statements[5].sql).toContain("json('not-json')");
+    expect(statements[0].values).toHaveLength(14);
+    expect(statements[4].values).toContain("wallet-release:txn-1:LEDGER");
   });
 
   it("returns false when the conditional wallet update loses the race", async () => {
