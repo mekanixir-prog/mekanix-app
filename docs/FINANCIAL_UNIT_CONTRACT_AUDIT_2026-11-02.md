@@ -351,3 +351,12 @@ The following remain owner/business decisions and must not be encoded as guessed
 ### Current status
 
 This section is an implementation plan only. No shared module, tests, schema constraint, migration, route change, formatter change, or financial-data conversion has been committed by PR #74. The latest PR #74 head commit has four successful checks (CI, PostgreSQL CI, Production readiness, and Docker E2E); those checks validate the documentation branch and do not certify financial behavior.
+
+
+## Owner decision update — 2026-11-03
+
+The product owner has approved **canonical integer IRR (Rial) for persisted accounting values and Toman-only presentation conversion (10 IRR = 1 Toman)**. This supersedes the earlier “pending owner approval” status of the proposed target above.
+
+Approval does not certify existing rows, seed values, prices, or ledger balances as IRR. The source-level conflicts documented in this audit remain unresolved until each writer and historical record cohort has traceable provenance. Do not bulk-convert, relabel, or expose ambiguous legacy values as trusted withdrawable funds. USD/IRR reference-rate endpoints remain display/reference-only and must not be used as a settlement source. Any genuine foreign-currency conversion requires a validated immutable rate snapshot and explicit rounding policy.
+
+Next work is implementation and reconciliation: integer-safe IRR validation at every write boundary; a single tested Toman-to-IRR adapter only where a Toman API is intentionally retained (currently CARE proposal); exact amount/currency equality through invoice, payment attempt, provider verification, ledger and payout; and a migration preflight that classifies records, quarantines unknown units, and reports before/after reconciliation. Live payment, wallet credit, withdrawal and payout remain disabled until the relevant end-to-end and remote-staging gates pass.
