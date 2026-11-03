@@ -14,6 +14,16 @@
 import { getDbForLib } from "./db-access";
 import { execSync } from "node:child_process";
 
+export const AUTO_SEED_SCHEMA_PUSH_COMMAND = "bunx prisma db push";
+
+export function runAutoSeedSchemaPush(execute: typeof execSync = execSync): void {
+  execute(AUTO_SEED_SCHEMA_PUSH_COMMAND, {
+    stdio: "inherit",
+    cwd: process.cwd(),
+    env: { ...process.env },
+  });
+}
+
 let seeding = false;
 let seeded = false;
 
@@ -36,11 +46,7 @@ export async function ensureSeedData(): Promise<void> {
       // destructive changes; if Prisma requires data loss, fail closed and skip seeding.
       console.log("📦 Database schema missing — running non-destructive prisma db push...");
       try {
-        execSync("bunx prisma db push", {
-          stdio: "inherit",
-          cwd: process.cwd(),
-          env: { ...process.env },
-        });
+        runAutoSeedSchemaPush();
       } catch {
         console.warn("[seed] prisma db push failed — trying to continue anyway");
       }
