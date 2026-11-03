@@ -52,7 +52,9 @@ export async function GET(req: Request) {
     });
   }
 
-  if (wallet && walletCurrencyVerified) {
+  // Preserve the scheduled-worker boundary: GET may only run the legacy fallback
+  // while the dedicated scheduled release worker is not enabled.
+  if (wallet && walletCurrencyVerified && process.env.WALLET_RELEASE_SCHEDULED !== "true") {
   // Repair the crash window where the Job reached COMPLETED but the separate
   // holdUntil write failed. Only PREPAY rows are eligible; use the immutable
   // completedAt timestamp so retries never restart the 12-hour hold.
