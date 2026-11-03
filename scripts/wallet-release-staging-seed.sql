@@ -1,5 +1,6 @@
 -- STAGING ONLY. Run only against the isolated mekanix-wallet-escrow-staging D1 database.
 -- Recreates one synthetic matured escrow row and resets the worker cursor.
+DELETE FROM "WalletReleaseGuard" WHERE "id" LIKE 'wallet-release-assert:%';
 
 DELETE FROM "WalletLedger" WHERE "idempotencyKey" LIKE 'wallet-release-staging:%';
 DELETE FROM "WalletLedger" WHERE "idempotencyKey" = 'wallet-release:wallet-release-staging-txn:LEDGER';
