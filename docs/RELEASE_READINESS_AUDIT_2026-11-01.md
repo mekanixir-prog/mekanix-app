@@ -1,7 +1,7 @@
 # MEKANIX — Release Readiness Audit
 
 **Audit date:** 2026-11-03  
-**Audited mainline baseline:** `28d13e32c2046ed2743d549a8ab3c24bdd972054`  
+**Audited code baseline:** `28d13e32c2046ed2743d549a8ab3c24bdd972054`  
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Decision:** **NOT READY FOR PRODUCTION**
 
