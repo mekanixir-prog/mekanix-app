@@ -4,7 +4,7 @@ import { requireAuth, validateBody } from "@/lib/api-helpers";
 import { getCustomerFromSession } from "@/lib/auth";
 import { careBookingSchema } from "@/lib/schemas";
 import { requestFingerprint } from "@/lib/idempotency";
-import { calculatePrice } from "@/lib/pricing";
+import { calculatePrice, isProductionPricingApproved } from "@/lib/pricing";
 import { checkVipStatus } from "@/lib/vip";
 import { wantsLite, liteResponse } from "@/lib/lite-response";
 import {
@@ -73,6 +73,13 @@ export async function POST(req: Request) {
       );
     }
     return NextResponse.json(existing);
+  }
+
+  if (!isProductionPricingApproved()) {
+    return NextResponse.json(
+      { error: "تعرفه‌های ریالی هنوز به تأیید مالک کسب‌وکار نرسیده‌اند؛ ثبت سرویس در محیط تولید موقتاً غیرفعال است", code: "IRR_RATE_CARD_NOT_APPROVED" },
+      { status: 409 }
+    );
   }
 
   const vipStatus = await checkVipStatus(session.userId);

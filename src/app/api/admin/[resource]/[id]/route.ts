@@ -72,6 +72,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
   const requestedWithdrawalStatus = body.status;
   const requestedWithdrawalAdminNotes = body.adminNotes;
   const requestedWithdrawalReference = body.transactionReference;
+
+  if (resource === "payments" && body.status === "REFUNDED") {
+    return NextResponse.json(
+      { error: "ثبت بازپرداخت بدون گردش بازپرداخت و تطبیق فاکتور مجاز نیست", code: "REFUND_FLOW_NOT_IMPLEMENTED" },
+      { status: 409 }
+    );
+  }
+  const requestedPaymentStatus = body.status;
   if (resource === "customers" && requestedUserStatus !== undefined) {
     if (
       typeof requestedUserStatus !== "string" ||
@@ -97,6 +105,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
   if (resource === "technicians") {
     const allowed = RESOURCE_ALLOWED_FIELDS.technicians ?? ALLOWED_FIELDS.technician;
     const safe = sanitizeInput(body, allowed);
+    const feeFields = ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"];
+    if (feeFields.some((field) => field in safe) && process.env.MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED !== "true") {
+      return NextResponse.json({ error: "واحد تعرفه‌های تعمیرکار هنوز تأیید نشده است", code: "TECHNICIAN_FEE_CURRENCY_UNVERIFIED" }, { status: 409 });
+    }
     // SEC-4: snapshot BEFORE the update for audit log.
     const before = await db.technician.findUnique({ where: { id } });
     result = await db.technician.update({ where: { id }, data: safe as any, include: { user: true } });
@@ -153,6 +165,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     result = await db.review.update({ where: { id }, data: safe as any });
     await safeAudit({ session: adminSession, action: "UPDATE_REVIEW", entity: "review", entityId: id, before, after: result, req });
   } else if (resource === "withdrawals") {
+    if (process.env.MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED !== "true") {
+      return NextResponse.json({ error: "واحد دفترکل کیف پول هنوز تأیید نشده است؛ تغییر وضعیت برداشت تا زمان تطبیق متوقف است", code: "WALLET_IRR_PROVENANCE_UNVERIFIED" }, { status: 409 });
+    }
     const action = requestedWithdrawalStatus;
     if (!["APPROVED", "REJECTED", "PAID"].includes(action)) {
       return NextResponse.json({ error: "وضعیت عملیات برداشت نامعتبر است" }, { status: 400 });
@@ -167,13 +182,24 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
       select: {
         id: true, code: true, walletId: true, amount: true, method: true,
         status: true, requestedAt: true, processedAt: true, reviewerId: true,
-        adminNotes: true, txnId: true, shebaNumber: true,
+        adminNotes: true, txnId: true, shebaNumber: true, bankName: true,
         wallet: { select: { technician: { select: { userId: true } } } },
       },
     });
     if (!before) return NextResponse.json({ error: "درخواست برداشت پیدا نشد" }, { status: 404 });
 
     let payoutReference: string | null = null;
+    if (action === "APPROVED" && (
+      before.method !== "bank" ||
+      !before.bankName?.trim() ||
+      !isValidIranianSheba(before.shebaNumber)
+    )) {
+      return NextResponse.json(
+        { error: "فقط درخواست برداشت بانکی با نام بانک و شبای معتبر قابل تأیید است" },
+        { status: 409 }
+      );
+    }
+
     if (action === "PAID") {
       payoutReference = typeof requestedWithdrawalReference === "string"
         ? requestedWithdrawalReference.trim()
@@ -249,10 +275,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
       // Notifications are best-effort and cannot undo a committed financial action.
     }
   } else if (resource === "payments") {
+    if (requestedPaymentStatus === "REFUNDED") {
+      return NextResponse.json(
+        { error: "ثبت بازپرداخت بدون گردش بازپرداخت و تطبیق فاکتور مجاز نیست", code: "REFUND_FLOW_NOT_IMPLEMENTED" },
+        { status: 409 }
+      );
+    }
     const allowed = RESOURCE_ALLOWED_FIELDS.payments ?? ALLOWED_FIELDS.review;
-    const safe = sanitizeInput(body, allowed);
-    // Validate payment status if provided
-    if (typeof body.status === "string" && !(VALID_PAYMENT_STATUSES as readonly string[]).includes(body.status)) {
+    const safe = sanitizeInput({ ...body, status: requestedPaymentStatus }, allowed);
+    // Validate the original requested status: the global mass-assignment filter
+    // removes status from body before this resource-specific admin policy runs.
+    if (typeof requestedPaymentStatus === "string" && !(VALID_PAYMENT_STATUSES as readonly string[]).includes(requestedPaymentStatus)) {
       return NextResponse.json(
         { error: `status باید یکی از ${VALID_PAYMENT_STATUSES.join("، ")} باشد` },
         { status: 400 }

@@ -130,7 +130,7 @@ function RequestCard({ job, userLat, userLng, acting, onAccept, onReject, onOpen
           <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{job.request.description}</p>
         </button>
         <div className="shrink-0 text-right">
-          <p className="font-display text-lg font-bold text-amber">{money(Number(job.technician.hourlyRate) * 1.5)}</p>
+          <p className="font-display text-lg font-bold text-amber">{job.technicianFeesCurrencyVerified === true ? money(Number(job.technician.hourlyRate) * 1.5, "IRR") : "—"}</p>
           <p className="text-[10px] text-muted-foreground">{t("tech.requests.estPayout")}</p>
         </div>
       </div>
@@ -168,7 +168,7 @@ function ActiveRow({ job, onClick }: { job: Job; onClick: () => void }) {
         <p className="mt-0.5 truncate text-sm font-medium">{job.request.title}</p>
         <p className="text-[11px] text-muted-foreground">{job.request.customer.user.name} · {fmtRelative(job.updatedAt, isFa ? "fa" : "en")}</p>
       </div>
-      {job.invoice && <span className="font-mono text-xs text-amber">{money(Number(job.invoice.total))}</span>}
+      {job.invoice && <span className="font-mono text-xs text-amber">{money(Number(job.invoice.total), job.invoice.currency ?? "?")}</span>}
       <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
     </button>
   );

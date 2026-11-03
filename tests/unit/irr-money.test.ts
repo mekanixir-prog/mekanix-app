@@ -1,13 +1,55 @@
 import { describe, expect, it } from "vitest";
+import { convertUsdToIrr, fmtMoney } from "@/lib/format";
 import {
   addIrr,
   assertIrrInteger,
   formatIrr,
   multiplyRatioIrr,
   parseIrrInput,
+  tomanToIrr,
 } from "@/lib/money/irr";
 
 describe("canonical IRR money primitives", () => {
+  describe("money display and explicit FX conversion", () => {
+    it("formats IRR as stored and does not apply an exchange rate", () => {
+      expect(fmtMoney(125_000, "IRR", "en")).toBe("﷼125,000");
+      expect(fmtMoney(125_000, "IRR", "fa")).toContain("۱۲،۵۰۰ تومان");
+      expect(fmtMoney(1, "IRR", "fa")).toContain("۰٫۱ تومان");
+      expect(fmtMoney(-1_000, "IRR", "fa")).toContain("-۱۰۰ تومان");
+      expect(convertUsdToIrr(1, 99_999)).toBe(99_999);
+      expect(() => convertUsdToIrr(1, 0)).toThrow("positive verified");
+    });
+
+    it("keeps USD display in USD regardless of Persian locale", () => {
+      expect(fmtMoney(125, "USD", "fa")).toContain("$۱۲۵");
+    });
+
+    it("shows invalid or fractional IRR values as unavailable instead of rounding them", () => {
+      expect(fmtMoney(1250.5, "IRR", "fa")).toBe("—");
+      expect(fmtMoney(Number.MAX_SAFE_INTEGER + 1, "IRR", "en")).toBe("—");
+      expect(fmtMoney(Number.NaN, "IRR", "en")).toBe("—");
+      expect(fmtMoney(Number.POSITIVE_INFINITY, "USD", "en")).toBe("—");
+    });
+
+    it("does not silently label an unknown currency as USD", () => {
+      expect(fmtMoney(125, "XYZ", "en")).toBe("XYZ 125");
+    });
+  });
+
+  describe("Toman compatibility adapter", () => {
+    it("converts explicitly Toman-denominated values to IRR exactly once", () => {
+      expect(tomanToIrr(100)).toBe(1_000);
+      expect(tomanToIrr(100, 2)).toBe(2_000);
+    });
+
+    it("rejects fractional, negative, and unsafe Toman conversions", () => {
+      expect(() => tomanToIrr(1.5)).toThrow();
+      expect(() => tomanToIrr(-1)).toThrow();
+      expect(() => tomanToIrr(Number.MAX_SAFE_INTEGER)).toThrow();
+      expect(() => tomanToIrr(1, 0)).toThrow();
+    });
+  });
+
   describe("assertIrrInteger / parseIrrInput", () => {
     it("accepts zero and positive safe integer IRR values", () => {
       expect(parseIrrInput(0)).toBe(0);

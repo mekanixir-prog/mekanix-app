@@ -99,6 +99,7 @@ function makePatchRequest(resource: string, id: string, body: Record<string, any
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED", "true");
   mockWriteAuditLog.mockResolvedValue(undefined);
   mockAuditLogCreate.mockResolvedValue({});
 });
@@ -229,13 +230,13 @@ describe("SEC-4 — admin PATCH audit logging", () => {
   });
 
   // ──────────── 6. payments → UPDATE_PAYMENT ────────────
-  it("PATCH /api/admin/payments/:id creates AuditLog with action UPDATE_PAYMENT", async () => {
+  it("PATCH /api/admin/payments/:id creates AuditLog for an allowed status transition", async () => {
     const before = { id: "pay-1", status: "PENDING" };
-    const after = { id: "pay-1", status: "REFUNDED" };
+    const after = { id: "pay-1", status: "SUCCEEDED" };
     mockPaymentFindUnique.mockResolvedValue(before);
     mockPaymentUpdate.mockResolvedValue(after);
 
-    const req = makePatchRequest("payments", "pay-1", { status: "REFUNDED" });
+    const req = makePatchRequest("payments", "pay-1", { status: "SUCCEEDED" });
     const res = await PATCH(req, { params: Promise.resolve({ resource: "payments", id: "pay-1" }) });
 
     expect(res.status).toBe(200);
@@ -272,5 +273,24 @@ describe("SEC-4 — admin PATCH audit logging", () => {
     // Verify CHANGE_USER_STATUS was NOT called
     const callArgs = mockWriteAuditLog.mock.calls.map((c) => c[0]);
     expect(callArgs.find((a) => a.action === "CHANGE_USER_STATUS")).toBeUndefined();
+  });
+});
+
+describe("financial provenance gates", () => {
+  it("blocks technician fee edits until their unit is verified", async () => {
+    vi.stubEnv("MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED", "false");
+    const req = makePatchRequest("technicians", "tech-1", { hourlyRate: 100 });
+    const res = await PATCH(req, { params: Promise.resolve({ resource: "technicians", id: "tech-1" }) });
+    expect(res.status).toBe(409);
+    expect(mockTechnicianUpdate).not.toHaveBeenCalled();
+  });
+
+  it("blocks manual payment refund status without an audited refund flow", async () => {
+    const req = makePatchRequest("payments", "pay-1", { status: "REFUNDED" });
+    const res = await PATCH(req, { params: Promise.resolve({ resource: "payments", id: "pay-1" }) });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: "REFUND_FLOW_NOT_IMPLEMENTED" });
+    expect(mockPaymentFindUnique).not.toHaveBeenCalled();
+    expect(mockPaymentUpdate).not.toHaveBeenCalled();
   });
 });

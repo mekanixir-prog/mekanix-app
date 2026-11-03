@@ -74,12 +74,14 @@ export async function GET(req: Request) {
     }, { status: 409 });
   }
 
+  const currencyVerified = process.env.MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED === "true";
   return NextResponse.json({
     state: "COMMITTED",
+    currency: currencyVerified ? "IRR" : "UNVERIFIED",
     withdrawal: {
       id: request!.id,
       code: request!.code,
-      amount: String(request!.amount),
+      amount: currencyVerified ? String(request!.amount) : null,
       status: request!.status,
       requestedAt: request!.requestedAt,
       processedAt: request!.processedAt,

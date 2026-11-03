@@ -9,6 +9,15 @@ const TECHNICIAN_INCLUDE = {
 } as const;
 
 // Safe user select — NEVER expose password
+const feesCurrencyVerified = process.env.MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED === "true";
+
+function withFeeCurrencyVerification(user: any) {
+  return {
+    ...user,
+    technician: user.technician ? { ...user.technician, feesCurrencyVerified } : null,
+  };
+}
+
 const SAFE_USER_SELECT = {
   id: true,
   email: true,
@@ -59,11 +68,11 @@ export async function POST(req: Request) {
           technician: { include: TECHNICIAN_INCLUDE },
         },
       });
-      if (fresh) return NextResponse.json({ user: fresh });
+      if (fresh) return NextResponse.json({ user: withFeeCurrencyVerification(fresh) });
     } catch {}
   }
 
-  return NextResponse.json({ user });
+  return NextResponse.json({ user: withFeeCurrencyVerification(user) });
 }
 
 // GET also requires JWT

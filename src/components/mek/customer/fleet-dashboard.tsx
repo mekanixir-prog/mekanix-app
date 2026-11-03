@@ -93,7 +93,7 @@ export function CustomerFleetDashboard({ customer }: { customer: DemoUser }) {
   // KPI: total spent (30d) — sum of invoices for completed jobs in last 30 days
   const totalSpent30d = (jobs ?? [])
     .filter((j) => {
-      if (!j.completedAt || !j.invoice) return false;
+      if (!j.completedAt || !j.invoice || j.invoice.currency !== "IRR" || j.invoice.status !== "PAID") return false;
       const diff = Date.now() - new Date(j.completedAt).getTime();
       return diff <= 30 * 24 * 60 * 60 * 1000;
     })

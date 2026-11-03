@@ -40,6 +40,7 @@ import { createSession } from "@/lib/auth";
 // pass for whatever JWT we mint via `createSession()`.
 
 const mockJobFindUnique = vi.fn();
+const mockJobUpdateMany = vi.fn();
 const mockCustomerFindUnique = vi.fn();
 const mockCustomerCreate = vi.fn();
 const mockTechnicianFindUnique = vi.fn();
@@ -60,7 +61,10 @@ const mockAdminUserFindFirst = vi.fn();
 
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: vi.fn(async () => ({
-    job: { findUnique: (...args: any[]) => mockJobFindUnique(...args) },
+    job: {
+      findUnique: (...args: any[]) => mockJobFindUnique(...args),
+      updateMany: (...args: any[]) => mockJobUpdateMany(...args),
+    },
     customer: {
       findUnique: (...args: any[]) => mockCustomerFindUnique(...args),
       create: (...args: any[]) => mockCustomerCreate(...args),
@@ -113,6 +117,7 @@ import { GET as jobsDetailGET } from "@/app/api/jobs/[id]/route";
 import { PATCH as vehiclesPATCH } from "@/app/api/vehicles/[id]/route";
 import { PATCH as jobStatusPATCH } from "@/app/api/jobs/[id]/status/route";
 import { GET as adminResourceGET } from "@/app/api/admin/[resource]/route";
+import { GET as dashboardGET } from "@/app/api/dashboard/route";
 import { GET as careAdminPackagesGET } from "@/app/api/care/admin/packages/route";
 import { POST as mechanicApprovePOST } from "@/app/api/mechanic-applications/[id]/approve/route";
 import { POST as otpVerifyPOST } from "@/app/api/auth/otp/verify/route";
@@ -253,6 +258,125 @@ describe("B-4 [BOLA] — Technician A cannot mutate Technician B's job status", 
 
     expect(res.status).toBe(403);
     // requireJobParticipant returned 403 — body parse + db.job.updateMany never run.
+  });
+});
+
+// ============================================================================
+// Job status authorization and state-machine hardening
+// ============================================================================
+describe("Job status authorization hardening", () => {
+  it("denies FLEET_MANAGER until a verified fleet/job ownership relation exists", async () => {
+    const token = await mintUserToken("fleet-user", "FLEET_MANAGER");
+    mockJobFindUnique.mockReset().mockResolvedValue({
+      id: "job-1",
+      request: { customerId: "customer-1" },
+      technicianId: "tech-1",
+    });
+
+    const req = jsonReq(
+      "PATCH",
+      "http://localhost/api/jobs/job-1/status",
+      token,
+      { status: "CANCELLED" },
+    );
+    const res = await jobStatusPATCH(req, { params: Promise.resolve({ id: "job-1" }) });
+
+    expect(res.status).toBe(403);
+    expect(mockJobFindUnique).toHaveBeenCalledTimes(1);
+    expect(mockJobUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("denies PARTNER job access until a verified partner/job relation exists", async () => {
+    const token = await mintUserToken("partner-user", "PARTNER");
+    mockJobFindUnique.mockReset().mockResolvedValue({
+      id: "job-1",
+      request: { customerId: "customer-1" },
+      technicianId: "tech-1",
+    });
+
+    const req = jsonReq("GET", "http://localhost/api/jobs/job-1", token);
+    const res = await jobsDetailGET(req, { params: Promise.resolve({ id: "job-1" }) });
+
+    expect(res.status).toBe(403);
+    expect(mockJobFindUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not let a customer approve an estimate and complete the job in one request", async () => {
+    const token = await mintUserToken("customer-user", "CUSTOMER");
+    mockCustomerFindUnique.mockReset().mockResolvedValue({ id: "customer-1", userId: "customer-user" });
+    mockJobFindUnique.mockReset()
+      .mockResolvedValueOnce({
+        id: "job-1",
+        request: { customerId: "customer-1" },
+        technicianId: "tech-1",
+      })
+      .mockResolvedValueOnce({ status: "WAITING_APPROVAL", technicianId: "tech-1" });
+
+    const req = jsonReq(
+      "PATCH",
+      "http://localhost/api/jobs/job-1/status",
+      token,
+      { status: "COMPLETED", customerApproved: true },
+    );
+    const res = await jobStatusPATCH(req, { params: Promise.resolve({ id: "job-1" }) });
+
+    expect(res.status).toBe(403);
+    expect(mockJobUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-boolean customerApproved values instead of coercing strings to true", async () => {
+    const token = await mintUserToken("customer-user", "CUSTOMER");
+    mockCustomerFindUnique.mockReset().mockResolvedValue({ id: "customer-1", userId: "customer-user" });
+    mockJobFindUnique.mockReset().mockResolvedValue({
+      id: "job-1",
+      request: { customerId: "customer-1" },
+      technicianId: "tech-1",
+    });
+
+    const req = jsonReq(
+      "PATCH",
+      "http://localhost/api/jobs/job-1/status",
+      token,
+      { customerApproved: "false" },
+    );
+    const res = await jobStatusPATCH(req, { params: Promise.resolve({ id: "job-1" }) });
+
+    expect(res.status).toBe(400);
+    expect(mockJobUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects unknown status values before attempting a database mutation", async () => {
+    const token = await mintUserToken("admin-user", "ADMIN");
+    const req = jsonReq(
+      "PATCH",
+      "http://localhost/api/jobs/job-1/status",
+      token,
+      { status: "NOT_A_JOB_STATUS" },
+    );
+    const res = await jobStatusPATCH(req, { params: Promise.resolve({ id: "job-1" }) });
+
+    expect(res.status).toBe(400);
+    expect(mockJobUpdateMany).not.toHaveBeenCalled();
+  });
+});
+
+// ============================================================================
+ // Dashboard business intelligence is admin-only
+ // ============================================================================
+describe("Dashboard authorization", () => {
+  it("rejects a CUSTOMER before returning technician revenue or recent job identities", async () => {
+    const token = await mintUserToken("customer-user", "CUSTOMER", "+989120000003");
+    const req = jsonReq("GET", "http://localhost/api/dashboard", token);
+    const res = await dashboardGET(req);
+    expect(res.status).toBe(403);
+    expect(mockJobFindUnique).not.toHaveBeenCalled();
+  });
+
+  it("rejects a TECHNICIAN before returning platform-wide business intelligence", async () => {
+    const token = await mintUserToken("tech-user", "TECHNICIAN", "+989120000004");
+    const req = jsonReq("GET", "http://localhost/api/dashboard", token);
+    const res = await dashboardGET(req);
+    expect(res.status).toBe(403);
   });
 });
 

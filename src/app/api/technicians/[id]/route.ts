@@ -38,7 +38,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     },
   });
   if (!tech) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(tech);
+  const feesCurrencyVerified = process.env.MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED === "true";
+  return NextResponse.json({ ...tech, feesCurrencyVerified });
 }
 
 // PATCH /api/technicians/[id]
@@ -90,6 +91,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const safe = sanitizeInput(body, ALLOWED_FIELDS.technician);
+  const feeFields = ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"];
+  if (feeFields.some((field) => field in safe) && process.env.MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED !== "true") {
+    return NextResponse.json({ error: "واحد تعرفه‌های تعمیرکار هنوز تأیید نشده است", code: "TECHNICIAN_FEE_CURRENCY_UNVERIFIED" }, { status: 409 });
+  }
   if (Object.keys(safe).length === 0) {
     return NextResponse.json({ error: "هیچ فیلد قابل ویرایشی ارسال نشده" }, { status: 400 });
   }
@@ -102,5 +107,5 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       specialties: true,
     },
   });
-  return NextResponse.json(updated);
+  return NextResponse.json({ ...updated, feesCurrencyVerified: process.env.MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED === "true" });
 }

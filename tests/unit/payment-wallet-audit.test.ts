@@ -12,17 +12,15 @@
 //      one Payment.create (atomic updateMany guards the race)
 //   6. /api/wallets/withdraw — withdraw exceeds balance → 400, balance
 //      unchanged (no wallet.updateMany call)
-//   7. VIP-01 — /api/vip/subscribe: documented race condition where two
-//      concurrent subscribe calls with the same paymentId both pass the
-//      findFirst check and both call create (TOCTOU on paymentId reuse).
-//      Uses it.fails() to assert the bug exists without breaking CI.
+//   7. VIP-01 — /api/vip/subscribe: exact payment ownership, gateway purpose,
+//      sequential idempotency, and atomic uniqueness across concurrent requests.
 //
 // Pattern: mocks @/lib/db-access, @/lib/api-helpers, @/lib/rate-limit,
 // @/lib/auth at the module level (hoisted by vitest) so the route handler
 // imports the mocked versions. NODE_ENV is stubbed per-test via vi.stubEnv.
 //
 // Constraints honored:
-//   - READ-ONLY on source — this is the ONLY new file added by Agent B-5.
+//   - No real payment, no real gateway call, no real wallet mutation.
 //   - No real payment, no real gateway call, no real wallet mutation.
 //   - All DB calls are mocked — no D1/Prisma connection required.
 // ============================================================================
@@ -61,6 +59,8 @@ const mockVipPlanFindUnique = vi.fn();
 const mockUserVipSubscriptionFindFirst = vi.fn();
 const mockUserVipSubscriptionUpdateMany = vi.fn();
 const mockUserVipSubscriptionCreate = vi.fn();
+const mockUserVipSubscriptionFindUnique = vi.fn();
+const mockCreateVipSubscriptionAtomically = vi.fn();
 
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: vi.fn(async () => ({
@@ -103,6 +103,7 @@ vi.mock("@/lib/db-access", () => ({
     vipPlan: { findUnique: (...args: any[]) => mockVipPlanFindUnique(...args) },
     userVipSubscription: {
       findFirst: (...args: any[]) => mockUserVipSubscriptionFindFirst(...args),
+      findUnique: (...args: any[]) => mockUserVipSubscriptionFindUnique(...args),
       updateMany: (...args: any[]) => mockUserVipSubscriptionUpdateMany(...args),
       create: (...args: any[]) => mockUserVipSubscriptionCreate(...args),
     },
@@ -117,6 +118,9 @@ vi.mock("@/lib/api-helpers", () => ({
 
 vi.mock("@/lib/withdrawal-atomic", () => ({
   createWithdrawalAtomically: (...args: any[]) => mockCreateWithdrawalAtomically(...args),
+}));
+vi.mock("@/lib/vip-subscription-atomic", () => ({
+  createVipSubscriptionAtomically: (...args: any[]) => mockCreateVipSubscriptionAtomically(...args),
 }));
 
 // rate-limit mock — always succeeds (route rate-limit checks bypassed)
@@ -568,6 +572,7 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
 // ──────────────────────────────────────────────────────────────────────────
 describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
   beforeEach(() => {
+    vi.stubEnv("MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED", "true");
     mockRequireAuth.mockResolvedValue({
       userId: "user_tech",
       role: "TECHNICIAN",
@@ -583,7 +588,7 @@ describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
     mockCreateWithdrawalAtomically.mockResolvedValue(false);
 
     const res = await withdrawPOST(makeWithdrawalRequest(
-      { amount: 500, method: "card" }, "test-withdrawal-key-001"
+      { amount: 500, currency: "IRR", method: "bank", bankName: "بانک ملت", shebaNumber: "IR062960000000100324200001" }, "test-withdrawal-key-001"
     ));
 
     expect(res.status).toBe(400);
@@ -595,7 +600,7 @@ describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
 
   it("returns the committed request after an atomic withdrawal", async () => {
     const withdrawal = {
-      id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, method: "card", cardNumber: null, bankName: null, shebaNumber: null, status: "REQUESTED",
+      id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, method: "bank", cardNumber: null, bankName: "بانک ملت", shebaNumber: "IR062960000000100324200001", status: "REQUESTED",
     };
     mockWalletFindUnique
       .mockResolvedValueOnce({ id: "wallet_1", balance: 1000, technicianId: "tech_1" })
@@ -604,7 +609,7 @@ describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
     mockCreateWithdrawalAtomically.mockResolvedValue(true);
 
     const res = await withdrawPOST(makeWithdrawalRequest(
-      { amount: 500, method: "card" }, "test-withdrawal-key-002"
+      { amount: 500, currency: "IRR", method: "bank", bankName: "بانک ملت", shebaNumber: "IR062960000000100324200001" }, "test-withdrawal-key-002"
     ));
 
     expect(res.status).toBe(200);
@@ -614,22 +619,14 @@ describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
   });
 });
 
-// 7. VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId reuse)
-//
-// This test documents a KNOWN race condition in the VIP-01 fix: the
-// `findFirst` + check + `create` sequence is NON-ATOMIC. Two concurrent
-// subscribe requests with the same paymentId can both pass the findFirst
-// check (both see null) and both call create — resulting in two ACTIVE VIP
-// subscriptions linked to the same one-time-use Payment row.
-//
-// The test uses `it.fails()` to assert that the bug STILL EXISTS. If a
-// future fix makes the check atomic (e.g., a `@@unique` constraint on
-// UserVipSubscription.paymentId, or a conditional `updateMany` pattern),
-// this test will start to PASS — and `it.fails()` will flip the suite red,
-// alerting the team to remove the `.fails` marker.
-// ──────────────────────────────────────────────────────────────────────────
+// 7. VIP-01 — /api/vip/subscribe atomic replacement and uniqueness behavior.
+// The handler wraps the prior-subscription check, cancellation and insert in a
+// Prisma transaction. Unique constraints on paymentId and the single-ACTIVE
+// invariant remain the final concurrency defense; these mocks simulate P2002
+// from the database when a competing insert wins.
 describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", () => {
   beforeEach(() => {
+    vi.stubEnv("MEKANIX_VIP_PLAN_PRICES_IRR_VERIFIED", "true");
     mockRequireAuth.mockResolvedValue({
       userId: "user-1",
       role: "CUSTOMER",
@@ -648,8 +645,24 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
       userId: "user-1",
       status: "SUCCEEDED",
       amount: 100_000,
+      currency: "IRR",
+      gatewayLogId: "gateway-pay-1",
+    });
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "gateway-pay-1",
+      userId: "user-1",
+      status: "VERIFIED",
+      purpose: "vip",
+      paymentId: "pay-1",
+      amount: 100_000,
+      currency: "IRR",
     });
     mockUserVipSubscriptionUpdateMany.mockResolvedValue({ count: 0 });
+    mockUserVipSubscriptionFindUnique.mockResolvedValue({
+      id: "sub-1", userId: "user-1", planId: "plan-1", status: "ACTIVE",
+      plan: { id: "plan-1", name: "Gold" },
+    });
+    mockCreateVipSubscriptionAtomically.mockResolvedValue("sub-1");
     mockUserVipSubscriptionCreate.mockResolvedValue({
       id: "sub-1",
       userId: "user-1",
@@ -669,7 +682,7 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
     const res = await vipSubscribePOST(req);
 
     expect(res.status).toBe(200);
-    expect(mockUserVipSubscriptionCreate).toHaveBeenCalledTimes(1);
+    expect(mockCreateVipSubscriptionAtomically).toHaveBeenCalledTimes(1);
   });
 
   // Sanity: second subscribe after the first committed returns 409 (control)
@@ -696,8 +709,8 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
     });
     const res2 = await vipSubscribePOST(req2);
     expect(res2.status).toBe(409);
-    // Still only ONE create — the second was blocked.
-    expect(mockUserVipSubscriptionCreate).toHaveBeenCalledTimes(1);
+    // The atomic helper is called only for the first successful payment use.
+    expect(mockCreateVipSubscriptionAtomically).toHaveBeenCalledTimes(1);
   });
 
   // VIP-01 FIX VERIFICATION: with @@unique([paymentId]) in the schema, the DB
@@ -708,8 +721,8 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
     "VIP-01 FIXED: two concurrent subscribes with same paymentId — exactly one succeeds, one 409",
     async () => {
       mockUserVipSubscriptionFindFirst.mockResolvedValue(null);
-      mockUserVipSubscriptionCreate
-        .mockResolvedValueOnce({ id: "sub-1", userId: "user-1", planId: "plan-1", status: "ACTIVE", paymentId: "pay-1" })
+      mockCreateVipSubscriptionAtomically
+        .mockResolvedValueOnce("sub-1")
         .mockRejectedValueOnce({ code: "P2002", message: "Unique constraint failed on the fields: (paymentId)" });
 
       const req1 = makePostRequest("http://localhost/api/vip/subscribe", {
@@ -726,7 +739,7 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
         vipSubscribePOST(req2),
       ]);
 
-      expect(mockUserVipSubscriptionCreate).toHaveBeenCalledTimes(2);
+      expect(mockCreateVipSubscriptionAtomically).toHaveBeenCalledTimes(2);
       const statuses = [res1.status, res2.status].sort();
       expect(statuses).toEqual([200, 409]);
     }
@@ -739,10 +752,21 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
         userId: "user-1",
         status: "SUCCEEDED",
         amount: 100_000,
+        currency: "IRR",
+        gatewayLogId: `gateway-${where.id}`,
+      }));
+      mockPaymentGatewayLogFindUnique.mockImplementation(async ({ where }: any) => ({
+        id: where.id,
+        userId: "user-1",
+        status: "VERIFIED",
+        purpose: "vip",
+        paymentId: where.id.replace("gateway-", ""),
+        amount: 100_000,
+        currency: "IRR",
       }));
       mockUserVipSubscriptionFindFirst.mockResolvedValue(null);
-      mockUserVipSubscriptionCreate
-        .mockResolvedValueOnce({ id: "sub-1", userId: "user-1", planId: "plan-1", status: "ACTIVE", paymentId: "pay-1" })
+      mockCreateVipSubscriptionAtomically
+        .mockResolvedValueOnce("sub-1")
         .mockRejectedValueOnce({ code: "P2002", message: "Unique constraint failed on the fields: (userId) WHERE status = ACTIVE" });
 
       const req1 = makePostRequest("http://localhost/api/vip/subscribe", {
@@ -759,7 +783,7 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
         vipSubscribePOST(req2),
       ]);
 
-      expect(mockUserVipSubscriptionCreate).toHaveBeenCalledTimes(2);
+      expect(mockCreateVipSubscriptionAtomically).toHaveBeenCalledTimes(2);
       expect([res1.status, res2.status].sort()).toEqual([200, 409]);
     }
   );

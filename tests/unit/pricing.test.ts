@@ -17,19 +17,15 @@
 //   - Decimal-safe arithmetic (v2.1): exact money math via decimal.js
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import Decimal from "decimal.js";
-import { calculatePrice, type PricingInput } from "@/lib/pricing";
+import { calculatePrice, isProductionPricingApproved, type PricingInput } from "@/lib/pricing";
 
-// Mock the db module — calculatePrice only calls db.servicePackage.findUnique
-// when packageId is provided. The pricing math itself is pure.
-vi.mock("@/lib/db", () => ({
-  db: {
+// calculatePrice resolves the shared DB adapter even when no packageId is supplied.
+vi.mock("@/lib/db-access", () => ({
+  getDbForLib: vi.fn(async () => ({
     servicePackage: {
       findUnique: vi.fn().mockResolvedValue(null),
     },
-    pricingSnapshot: {
-      create: vi.fn(),
-    },
-  },
+  })),
 }));
 
 // Base input that produces a known-good calculation for a CAR.
@@ -92,6 +88,29 @@ describe("pricing — calculatePrice base breakdown (CAR, no emergency)", () => 
     expect(result.breakdown.travelDistanceKm).toBe(10);
     expect(result.breakdown.emergencyMultiplier).toBe(1);
     expect(result.breakdown.vipDiscountPercent).toBe(0);
+  });
+});
+
+describe("pricing — monetary input validation", () => {
+  it("rejects fractional or negative parts costs", async () => {
+    await expect(calculatePrice({ ...baseInput, partsCost: 100_000.5 })).rejects.toThrow();
+    await expect(calculatePrice({ ...baseInput, partsCost: -1 })).rejects.toThrow();
+  });
+
+  it("rejects invalid labor hours and travel distances", async () => {
+    await expect(calculatePrice({ ...baseInput, laborHours: Number.NaN })).rejects.toThrow();
+    await expect(calculatePrice({ ...baseInput, laborHours: -1 })).rejects.toThrow();
+    await expect(calculatePrice({ ...baseInput, travelDistanceKm: Number.POSITIVE_INFINITY })).rejects.toThrow();
+    await expect(calculatePrice({ ...baseInput, travelDistanceKm: -1 })).rejects.toThrow();
+  });
+
+  it("rejects discounts outside the supported percentage range", async () => {
+    await expect(calculatePrice({ ...baseInput, vipDiscountPercent: 101 })).rejects.toThrow();
+    await expect(calculatePrice({ ...baseInput, vipDiscountPercent: -1 })).rejects.toThrow();
+  });
+
+  it("rejects outputs outside the safe integer IRR range", async () => {
+    await expect(calculatePrice({ ...baseInput, laborHours: Number.MAX_VALUE })).rejects.toThrow();
   });
 });
 
@@ -212,6 +231,18 @@ describe("pricing — heavy machinery (TRUCK) has higher labor rate", () => {
 });
 
 describe("pricing — tax is 9% of after-discount subtotal", () => {
+  it("uses an explicitly configured validated tax rate", async () => {
+    const result = await calculatePrice({ ...baseInput, taxRate: 0.06 });
+    expect(result.taxRate).toBe(0.06);
+    expect(result.taxTotal).toBe(Math.round(result.subtotal * 0.06));
+  });
+
+  it("rejects an invalid configured tax rate", async () => {
+    await expect(calculatePrice({ ...baseInput, taxRate: -0.01 })).rejects.toThrow();
+    await expect(calculatePrice({ ...baseInput, taxRate: 1.01 })).rejects.toThrow();
+    await expect(calculatePrice({ ...baseInput, taxRate: Number.NaN })).rejects.toThrow();
+  });
+
   it("taxRate is 0.09", async () => {
     const result = await calculatePrice(baseInput);
     expect(result.taxRate).toBe(0.09);
@@ -395,5 +426,18 @@ describe("pricing — Decimal-safe arithmetic (v2.1)", () => {
     expect(result.subtotal).toBe(203_345);
     expect(result.taxTotal).toBe(18_301);
     expect(result.total).toBe(203_345 + 18_301);
+  });
+});
+
+describe("pricing — production rate-card approval gate", () => {
+  it("blocks production pricing until the owner explicitly approves the IRR rate card", () => {
+    expect(isProductionPricingApproved("production", undefined)).toBe(false);
+    expect(isProductionPricingApproved("production", "false")).toBe(false);
+    expect(isProductionPricingApproved("production", "true")).toBe(true);
+  });
+
+  it("keeps demo pricing available outside production", () => {
+    expect(isProductionPricingApproved("development", undefined)).toBe(true);
+    expect(isProductionPricingApproved("test", "false")).toBe(true);
   });
 });

@@ -1,20 +1,20 @@
 // MEKANIX — formatting & utility helpers
 import { CURRENCIES } from "./constants";
 
-// USD → IRR conversion rate. Default fallback is 60,000 (realistic 2024 rate).
-// On the client, `useT()` triggers a fetch from /api/exchange-rate which updates
-// this live. In production, that endpoint scrapes Telegram rate channels or
-// calls a free FX API.
-let USD_TO_IRR = 60000;
-
-export function setUsdToIrrRate(rate: number) {
-  if (typeof rate === "number" && rate > 0) {
-    USD_TO_IRR = rate;
+// FX conversion is explicit and requires a caller-supplied, verified rate.
+// Domestic IRR formatting never reads or mutates an exchange-rate value.
+export function convertUsdToIrr(amountUsd: number, rateIrrPerUsd: number): number {
+  if (!Number.isFinite(amountUsd) || amountUsd < 0) {
+    throw new RangeError("USD amount must be a finite non-negative number");
   }
-}
-
-export function getUsdToIrrRate(): number {
-  return USD_TO_IRR;
+  if (!Number.isFinite(rateIrrPerUsd) || rateIrrPerUsd <= 0) {
+    throw new RangeError("A positive verified IRR-per-USD rate is required");
+  }
+  const converted = amountUsd * rateIrrPerUsd;
+  if (!Number.isSafeInteger(Math.round(converted))) {
+    throw new RangeError("Converted IRR amount exceeds the safe integer range");
+  }
+  return Math.round(converted);
 }
 
 // Convert digits to Persian
@@ -24,26 +24,31 @@ function toPersianDigits(s: string | number): string {
 }
 
 export function fmtMoney(amount: number, currency = "IRR", lang: "en" | "fa" = "en"): string {
-  const c = CURRENCIES[currency] ?? CURRENCIES.USD;
-  let converted = amount || 0;
-  let symbol = c.symbol;
+  if (!Number.isFinite(amount)) return "—";
+  // IRR has no fractional unit. Never round an invalid/unsafe IRR amount into
+  // a plausible-looking financial figure at the presentation boundary.
+  if (currency === "IRR" && !Number.isSafeInteger(amount)) return "—";
 
-  // Convert USD base to IRR
-  if (currency === "IRR") {
-    converted = converted * USD_TO_IRR;
-    symbol = "﷼";
+  // Persian product UI displays canonical IRR as Toman (10 IRR = 1 Toman).
+  // Preserve one decimal when the Rial amount is not divisible by ten; never
+  // round away a non-zero Rial remainder.
+  if (currency === "IRR" && lang === "fa") {
+    const toman = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 1,
+    }).format(amount / 10);
+    return `${toPersianDigits(toman.replace(/,/g, "،").replace(/\./g, "٫"))} تومان`;
   }
 
-  // Format with proper grouping
+  const c = CURRENCIES[currency];
+  const symbol = c?.symbol ?? (currency || "?") + " ";
   const formatted = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 0,
     maximumFractionDigits: currency === "IRR" ? 0 : 2,
-  }).format(converted);
+  }).format(amount);
 
-  // For Persian: convert digits to Persian + use ، (Persian comma) as thousands separator
   if (lang === "fa") {
-    const persianFormatted = toPersianDigits(formatted.replace(/,/g, "،"));
-    return `${symbol}${persianFormatted}`;
+    return `${symbol}${toPersianDigits(formatted.replace(/,/g, "،"))}`;
   }
 
   return `${symbol}${formatted}`;

@@ -40,6 +40,10 @@ const TECH_TRANSITIONS: { to: Status; from: Status[] }[] = [
 //  - CANCEL only before technician arrives (REQUESTED, ACCEPTED, EN_ROUTE)
 //  - APPROVE_REPAIR (customerApproved=true) only when WAITING_APPROVAL
 const CUSTOMER_CANCEL_FROM: Status[] = ["REQUESTED", "ACCEPTED", "EN_ROUTE"];
+const VALID_JOB_STATUSES = new Set<Status>([
+  "REQUESTED", "ACCEPTED", "EN_ROUTE", "ARRIVED", "DIAGNOSING",
+  "REPAIRING", "WAITING_APPROVAL", "COMPLETED", "CANCELLED", "REJECTED",
+]);
 
 function isAllowedTransition(
   role: "CUSTOMER" | "TECHNICIAN" | "ADMIN" | "FLEET_MANAGER" | "PARTNER",
@@ -49,16 +53,17 @@ function isAllowedTransition(
 ): boolean {
   if (role === "ADMIN") return true;
 
-  // FLEET_MANAGER behaves like a customer for the job-status state machine
-  // (can cancel pre-service and approve repair estimates for fleet vehicles).
-  // PARTNER is read-only and cannot transition anything.
-  const actsAsCustomer = role === "CUSTOMER" || role === "FLEET_MANAGER";
-  if (role === "PARTNER") return false;
+  // Fleet-manager and partner access is denied by requireJobParticipant until
+  // the schema has a verified fleet/job ownership relation.
+  const actsAsCustomer = role === "CUSTOMER";
+  if (role === "FLEET_MANAGER" || role === "PARTNER") return false;
 
   // Special: customer setting customerApproved=true (approve repair)
   if (actsAsCustomer) {
     if (customerApproved === true) {
-      return currentStatus === "WAITING_APPROVAL";
+      // Approval changes only the approval flag; it must never smuggle a
+      // separate job-state transition (e.g. WAITING_APPROVAL → COMPLETED).
+      return currentStatus === "WAITING_APPROVAL" && nextStatus === currentStatus;
     }
     if (nextStatus === "CANCELLED") {
       return CUSTOMER_CANCEL_FROM.includes(currentStatus as Status);
@@ -93,6 +98,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const { status, ...extra } = body;
 
+  if (status !== undefined && (typeof status !== "string" || !VALID_JOB_STATUSES.has(status as Status))) {
+    return NextResponse.json({ error: "وضعیت کار نامعتبر است" }, { status: 400 });
+  }
+  if (extra.customerApproved !== undefined && typeof extra.customerApproved !== "boolean") {
+    return NextResponse.json({ error: "customerApproved باید مقدار بولی داشته باشد" }, { status: 400 });
+  }
+
   // Load the current job so we can validate the transition
   const db = await getDbForLib();
   const existing = await db.job.findUnique({ where: { id }, select: { status: true, technicianId: true } });
@@ -101,7 +113,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // For technicians, ensure they are the ASSIGNED technician (requireJobParticipant already checked)
   // For customers, ensure they own the request (requireJobParticipant already checked)
 
-  const customerApproved = extra.customerApproved != null ? Boolean(extra.customerApproved) : undefined;
+  const customerApproved = typeof extra.customerApproved === "boolean" ? extra.customerApproved : undefined;
 
   // If neither status nor customerApproved is provided, nothing to do
   if (!status && customerApproved === undefined) {
@@ -172,10 +184,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (status === "COMPLETED") {
     // Start 12-hour hold countdown on PENDING prepay transactions
     const holdUntil = new Date(Date.now() + HOLD_HOURS * 60 * 60 * 1000);
-    await db.walletTransaction.updateMany({
-      where: { jobId: job.id, status: "PENDING" },
-      data: { holdUntil },
-    });
+    try {
+      await db.walletTransaction.updateMany({
+        where: { jobId: job.id, status: "PENDING" },
+        data: { holdUntil },
+      });
+    } catch (error) {
+      // The wallet GET reconciliation path repairs PREPAY rows from completedAt.
+      // Do not report the already-committed job completion as failed because this
+      // separate hold scheduling write can be retried safely.
+      console.error("Failed to schedule wallet hold after job completion", {
+        jobId: job.id,
+        error,
+      });
+    }
 
     // Create completion notification
     await db.notification.create({
@@ -231,8 +253,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     },
     WAITING_APPROVAL: {
       type: "estimate_ready",
-      title: "Estimate ready for approval",
-      body: `Review and approve your repair estimate for ${job.code}`,
+      title: "Repair requires customer approval",
+      body: `Repair approval requested for ${job.code}. The final amount will appear after the invoice is issued.`,
       category: "job",
       link: "customer/invoice",
     },
@@ -273,40 +295,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       },
     });
   }
+  }
 
-  // Auto-create invoice on WAITING_APPROVAL if none exists
-  if (status === "WAITING_APPROVAL" && !job.invoice) {
-    const laborHours = extra.laborHours ?? 1.5;
-    const laborRate = Number(job.technician.hourlyRate);
-    const laborTotal = laborHours * laborRate;
-    const partsTotal = job.parts.reduce((s, p) => s + Number(p.unitPrice) * p.quantity, 0);
-    const travelFee = Number(job.technician.travelFeeBase);
-    const subtotal = laborTotal + partsTotal + travelFee;
-    const taxTotal = subtotal * 0.09;
-    const total = subtotal + taxTotal;
-    await db.invoice.create({
-      data: {
-        code: `INV-${Math.floor(3000 + Math.random() * 6000)}`,
-        jobId: job.id,
-        laborHours,
-        laborRate,
-        laborTotal,
-        partsTotal,
-        travelFee,
-        subtotal,
-        taxRate: 0.09,
-        taxTotal,
-        discount: 0,
-        total,
-        currency: "IRR",
-        status: "SENT",
-        notes: "Parts covered by 6-month warranty.",
-      },
-    });
-    const fresh = await db.job.findUnique({ where: { id }, include });
-    return NextResponse.json(fresh);
-  }
-  }
+  // Invoice creation is centralized in POST /api/invoices. This status
+  // endpoint only changes workflow state and must never calculate money itself.
 
   return NextResponse.json(job);
 }

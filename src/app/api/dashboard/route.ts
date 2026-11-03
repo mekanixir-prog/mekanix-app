@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
+import { requireRole } from "@/lib/auth";
 
 // GET /api/dashboard — platform-wide stats.
-// Authenticated users only. Customer/Technician see aggregate stats (no PII).
-// Admin sees the same stats (the data is already aggregate).
+// Admin only: response includes business intelligence and names tied to jobs.
 export async function GET(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
+  // This response includes cross-technician revenue and recent customer /
+  // technician identities. It is an admin-only business intelligence endpoint.
+  const forbidden = requireRole(session, "ADMIN");
+  if (forbidden) return forbidden;
 
   const now = Date.now();
   const day = 86400000;
@@ -25,7 +29,7 @@ export async function GET(req: Request) {
         },
       }),
       db.job.count({ where: { status: "COMPLETED", completedAt: { gte: since } } }),
-      db.payment.findMany({ where: { status: "SUCCEEDED", createdAt: { gte: since } } }),
+      db.payment.findMany({ where: { status: "SUCCEEDED", currency: "IRR", createdAt: { gte: since } } }),
     ]);
 
   const revenue30d = payments30d.reduce((s, p) => s + Number(p.amount), 0);
@@ -44,7 +48,7 @@ export async function GET(req: Request) {
   for (let i = 13; i >= 0; i--) {
     const start = new Date(now - (i + 1) * day);
     const end = new Date(now - i * day);
-    const pays = await db.payment.findMany({ where: { status: "SUCCEEDED", createdAt: { gte: start, lt: end } } });
+    const pays = await db.payment.findMany({ where: { status: "SUCCEEDED", currency: "IRR", createdAt: { gte: start, lt: end } } });
     const jobs = await db.job.count({ where: { status: "COMPLETED", completedAt: { gte: start, lt: end } } });
     revenueSeries.push({
       date: end.toISOString().slice(5, 10),
@@ -61,13 +65,13 @@ export async function GET(req: Request) {
     cats.map(async (c) => {
       const reqs = await db.serviceRequest.findMany({
         where: { category: c.category },
-        select: { job: { select: { invoice: { select: { total: true } } } } },
+        select: { job: { select: { invoice: { select: { total: true, currency: true, status: true } } } } },
       });
-      const revenue = reqs.reduce(
-        (s, r) => s + (r.job?.invoice?.total != null ? Number(r.job.invoice.total) : 0),
+      const invoicedAmount = reqs.reduce(
+        (s, r) => s + (r.job?.invoice?.currency === "IRR" && r.job.invoice.status !== "DRAFT" && r.job.invoice.status !== "REFUNDED" && r.job.invoice.total != null ? Number(r.job.invoice.total) : 0),
         0
       );
-      return { category: c.category, count: c._count, revenue: Math.round(revenue) };
+      return { category: c.category, count: c._count, invoicedAmount: Math.round(invoicedAmount), currency: "IRR" as const };
     })
   );
 
@@ -78,19 +82,20 @@ export async function GET(req: Request) {
     allTechs.map(async (t) => {
       const jobCount = await db.job.count({ where: { technicianId: t.id, status: "COMPLETED" } });
       const pays = await db.payment.findMany({
-        where: { status: "SUCCEEDED", invoice: { job: { technicianId: t.id } } },
+        where: { status: "SUCCEEDED", currency: "IRR", invoice: { job: { technicianId: t.id } } },
         select: { amount: true },
       });
-      const revenue = Math.round(pays.reduce((s, p) => s + Number(p.amount), 0));
+      const collectedGrossIrr = Math.round(pays.reduce((s, p) => s + Number(p.amount), 0));
       return {
         name: t.user.name,
         jobs: jobCount,
         rating: Math.round(Number(t.rating) * 10) / 10,
-        revenue,
+        collectedGrossIrr,
+        currency: "IRR" as const,
       };
     })
   );
-  techPerformance.sort((a, b) => b.revenue - a.revenue);
+  techPerformance.sort((a, b) => b.collectedGrossIrr - a.collectedGrossIrr);
 
   const recentJobs = await db.job.findMany({
     take: 8,
@@ -110,12 +115,13 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     data: {
+      currency: "IRR",
       kpis: {
         activeRequests,
         techniciansOnline,
         jobsInProgress,
         completedJobs30d,
-        revenue30d: Math.round(revenue30d),
+        collectedGrossIrr30d: Math.round(revenue30d),
         avgResponseMins,
         customerSatisfaction: Math.round(customerSatisfaction * 10) / 10,
       },

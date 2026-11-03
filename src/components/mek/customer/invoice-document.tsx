@@ -39,6 +39,7 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
   const tech = job?.technician;
   const cust = job?.request?.customer;
   const fmtHours = (n: number) => (isFa ? toPersianDigits(n) : String(n));
+  const invoiceMoney = (amount: number) => money(amount, inv.currency ?? "?");
 
   return (
     <div className="mx-auto max-w-3xl space-y-4" dir={isFa ? "rtl" : "ltr"}>
@@ -125,11 +126,11 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
               <tr className="border-t border-border">
                 <td className="px-4 py-2.5">
                   <span className="font-medium">{t("invoice.document.laborRow")}</span>
-                  <span className="ml-2 text-[11px] text-muted-foreground">{t("invoice.document.laborLine").replace("{hours}", fmtHours(inv.laborHours)).replace("{rate}", money(Number(inv.laborRate)))}</span>
+                  <span className="ml-2 text-[11px] text-muted-foreground">{t("invoice.document.laborLine").replace("{hours}", fmtHours(inv.laborHours)).replace("{rate}", invoiceMoney(Number(inv.laborRate)))}</span>
                 </td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{fmtHours(inv.laborHours)}{t("common.hourShort")}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.laborRate))}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.laborTotal))}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{invoiceMoney(Number(inv.laborRate))}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{invoiceMoney(Number(inv.laborTotal))}</td>
               </tr>
               {parts.map((p: any) => (
                 <tr key={p.id} className="border-t border-border">
@@ -138,15 +139,15 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
                     {p.sku && <span className="ml-2 font-mono text-[10px] text-muted-foreground">{p.sku}</span>}
                   </td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{isFa ? toPersianDigits(p.quantity) : p.quantity}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(p.unitPrice))}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(p.unitPrice) * p.quantity)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{invoiceMoney(Number(p.unitPrice))}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{invoiceMoney(Number(p.unitPrice) * p.quantity)}</td>
                 </tr>
               ))}
               <tr className="border-t border-border">
                 <td className="px-4 py-2.5"><span className="font-medium">{t("invoice.document.travelRow")}</span></td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{isFa ? toPersianDigits(1) : "1"}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.travelFee))}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.travelFee))}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{invoiceMoney(Number(inv.travelFee))}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{invoiceMoney(Number(inv.travelFee))}</td>
               </tr>
             </tbody>
           </table>
@@ -155,12 +156,12 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
         {/* Totals */}
         <div className="mt-4 flex justify-end">
           <div className="w-full max-w-xs space-y-1.5 text-sm">
-            <Row label={t("invoice.document.subtotalLabel")} amount={Number(inv.subtotal)} muted moneyFn={money} />
-            {Number(inv.discount) > 0 && <Row label={t("invoice.document.discountLabel")} amount={-Number(inv.discount)} muted tone="emerald" moneyFn={money} />}
-            <Row label={t("invoice.document.taxLabel").replace("{rate}", isFa ? toPersianDigits(Math.round(Number(inv.taxRate) * 100)) : String(Math.round(Number(inv.taxRate) * 100)))} amount={Number(inv.taxTotal)} muted moneyFn={money} />
+            <Row label={t("invoice.document.subtotalLabel")} amount={Number(inv.subtotal)} muted moneyFn={invoiceMoney} />
+            {Number(inv.discount) > 0 && <Row label={t("invoice.document.discountLabel")} amount={-Number(inv.discount)} muted tone="emerald" moneyFn={invoiceMoney} />}
+            <Row label={t("invoice.document.taxLabel").replace("{rate}", isFa ? toPersianDigits(Math.round(Number(inv.taxRate) * 100)) : String(Math.round(Number(inv.taxRate) * 100)))} amount={Number(inv.taxTotal)} muted moneyFn={invoiceMoney} />
             <div className="flex items-center justify-between border-t border-border pt-2">
               <span className="font-display text-base font-semibold">{t("invoice.document.totalDueLabel")}</span>
-              <span className="font-display text-xl font-bold text-amber">{money(Number(inv.total))}</span>
+              <span className="font-display text-xl font-bold text-amber">{invoiceMoney(Number(inv.total))}</span>
             </div>
             {inv.payment && inv.payment.status === "SUCCEEDED" && (
               <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-emerald-glow/30 bg-emerald-glow/5 px-3 py-1.5 text-[11px] text-emerald-glow">

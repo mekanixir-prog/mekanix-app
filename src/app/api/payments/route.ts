@@ -71,6 +71,10 @@ export async function POST(req: Request) {
   });
   if (!inv) return NextResponse.json({ error: "فاکتور یافت نشد" }, { status: 404 });
 
+  const amountLabel = inv.currency === "IRR"
+    ? `${new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 0 }).format(Number(inv.total))} ریال`
+    : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(Number(inv.total))} ${inv.currency}`;
+
   // Resolve payer from SESSION — server-authoritative
   if (session.role === "ADMIN") {
     // Admins can pay on behalf (rare); fall through with admin's userId
@@ -139,7 +143,7 @@ export async function POST(req: Request) {
               userId: inv.job.technician.userId,
               type: "job_completed",
               title: "Payment received",
-              body: `Invoice ${inv.code} paid — $${inv.total}`,
+              body: `Invoice ${inv.code} paid — ${amountLabel}`,
               category: "payment",
               link: "technician/earnings",
             },
@@ -185,7 +189,7 @@ export async function POST(req: Request) {
             userId: inv.job.technician.userId,
             type: "job_completed",
             title: "Payment received",
-            body: `Invoice ${inv.code} paid — $${inv.total}`,
+            body: `Invoice ${inv.code} paid — ${amountLabel}`,
             category: "payment",
             link: "technician/earnings",
           },

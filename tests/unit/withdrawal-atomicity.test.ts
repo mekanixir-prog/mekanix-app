@@ -103,26 +103,27 @@ describe("atomic withdrawal creation", () => {
           return { sql, values };
         },
       }),
-      batch: vi.fn().mockResolvedValue(
-        Array.from({ length: 3 }, () => ({ meta: { changes: 1 } }))
-      ),
+      batch: vi.fn().mockResolvedValue([
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+      ]),
     };
     await expect(createWithdrawalWithD1(d1 as any, input)).resolves.toBe(true);
     expect(d1.batch).toHaveBeenCalledTimes(1);
-    expect(d1.batch.mock.calls[0][0]).toHaveLength(3);
+    expect(d1.batch.mock.calls[0][0]).toHaveLength(6);
     expect(statements[0].sql).toContain('ON CONFLICT("idempotencyKey") DO NOTHING');
-    expect(statements[1].sql).toContain("changes() = 1");
+    expect(statements[1].sql).toContain("json_extract('not-json'");
     expect(statements[2].sql).toContain("changes() = 1");
+    expect(statements[3].sql).toContain("json_extract('not-json'");
+    expect(statements[4].sql).toContain("changes() = 1");
+    expect(statements[5].sql).toContain("json_extract('not-json'");
   });
 
   it("returns false without partial success when the D1 idempotency gate loses", async () => {
     const d1 = {
       prepare: (sql: string) => ({ bind: (...values: unknown[]) => ({ sql, values }) }),
-      batch: vi.fn().mockResolvedValue([
-        { meta: { changes: 0 } },
-        { meta: { changes: 0 } },
-        { meta: { changes: 0 } },
-      ]),
+      batch: vi.fn().mockRejectedValue(new Error("malformed JSON")),
     };
     await expect(createWithdrawalWithD1(d1 as any, input)).resolves.toBe(false);
   });

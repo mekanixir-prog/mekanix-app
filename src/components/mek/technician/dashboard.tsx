@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import type { DemoUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
-import { api, type Job, type Payment } from "@/lib/api";
+import { api, type Job } from "@/lib/api";
 import { StatCard, SectionHeader, EmptyState } from "@/components/mek/shared/primitives";
 import { StatusBadge, UrgencyBadge } from "@/components/mek/shared/status-badge";
 import { MekIcon, iconForMachineType } from "@/components/mek/shared/icons";
@@ -21,21 +21,34 @@ export function TechnicianDashboard({ user }: { user: DemoUser }) {
   const { t, isFa, money } = useT();
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [online, setOnline] = useState(user.technician?.status === "ONLINE");
-  const [todayEarnings, setTodayEarnings] = useState(0);
-  const [weekEarnings, setWeekEarnings] = useState(0);
+  const [todayEarnings, setTodayEarnings] = useState<number | null>(null);
+  const [weekEarnings, setWeekEarnings] = useState<number | null>(null);
 
   useEffect(() => {
     if (!user.technician) return;
-    api.listJobs({ technicianId: user.technician.id }).then((list) => {
-      setJobs(list);
-      const active = list.filter((j) => ["ACCEPTED", "EN_ROUTE", "ARRIVED", "DIAGNOSING", "REPAIRING", "WAITING_APPROVAL"].includes(j.status));
-      // mock today/week earnings from completed jobs
-      const completed = list.filter((j) => j.status === "COMPLETED");
-      const today = completed.slice(0, 2).reduce((s, j) => s + (j.invoice?.total != null ? Number(j.invoice.total) : 0), 0);
-      const week = completed.reduce((s, j) => s + (j.invoice?.total != null ? Number(j.invoice.total) : 0), 0);
-      setTodayEarnings(today);
-      setWeekEarnings(week);
-    }).catch(() => setJobs([]));
+    api.listJobs({ technicianId: user.technician.id })
+      .then(setJobs)
+      .catch(() => setJobs([]));
+
+    fetch("/api/wallets")
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Wallet summary unavailable");
+        return response.json();
+      })
+      .then((wallet) => {
+        const summary = wallet?.earningsSummary;
+        if (wallet?.currency !== "IRR" || summary?.currency !== "IRR" || summary?.valid !== true) {
+          setTodayEarnings(null);
+          setWeekEarnings(null);
+          return;
+        }
+        setTodayEarnings(summary.todayIrr);
+        setWeekEarnings(summary.last7DaysIrr);
+      })
+      .catch(() => {
+        setTodayEarnings(null);
+        setWeekEarnings(null);
+      });
   }, [user]);
 
   const toggleOnline = async () => {
@@ -84,8 +97,8 @@ export function TechnicianDashboard({ user }: { user: DemoUser }) {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label={t("tech.dashboard.today")} value={money(todayEarnings)} icon={Wallet} tone="amber" sub={t("tech.dashboard.earnings")} />
-        <StatCard label={t("tech.dashboard.thisWeek")} value={money(weekEarnings)} icon={TrendingUp} tone="emerald" sub={t("tech.dashboard.revenue")} />
+        <StatCard label={t("tech.dashboard.today")} value={todayEarnings === null ? "—" : money(todayEarnings, "IRR")} icon={Wallet} tone="amber" sub={t("tech.dashboard.earnings")} />
+        <StatCard label={t("tech.dashboard.thisWeek")} value={weekEarnings === null ? "—" : money(weekEarnings, "IRR")} icon={TrendingUp} tone="emerald" sub={t("tech.dashboard.revenue")} />
         <StatCard label={t("tech.dashboard.rating")} value={isFa ? toPersianDigits((user.technician?.rating ?? 0).toFixed(1)) : (user.technician?.rating ?? 0).toFixed(1)} icon={Star} tone="violet" sub={`${isFa ? toPersianDigits(user.technician?.reviewCount ?? 0) : user.technician?.reviewCount ?? 0} ${t("common.reviews")}`} />
         <StatCard label={t("tech.dashboard.completed")} value={isFa ? toPersianDigits(user.technician?.completedJobs ?? 0) : user.technician?.completedJobs ?? 0} icon={Zap} tone="blue" sub={t("tech.dashboard.lifetimeJobs")} />
       </div>

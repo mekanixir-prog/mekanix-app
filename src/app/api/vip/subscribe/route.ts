@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
+import { assertIrrInteger } from "@/lib/money/irr";
+import { createVipSubscriptionAtomically } from "@/lib/vip-subscription-atomic";
 
 // Subscribe the authenticated user to a VIP plan.
 // userId is derived from the session — NEVER from the request body (BOLA fix).
@@ -43,73 +45,112 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
   }
 
+  if (process.env.MEKANIX_VIP_PLAN_PRICES_IRR_VERIFIED !== "true") {
+    return NextResponse.json(
+      { error: "واحد قیمت طرح‌های VIP هنوز تأیید نشده است", code: "VIP_PRICE_CURRENCY_UNVERIFIED" },
+      { status: 409 }
+    );
+  }
+
   // 3. Validate paymentId — must be a real SUCCEEDED payment by this user
   //    that covers the plan price. This closes the free-VIP bypass.
   //    Note: VipPlan stores price as `priceIrr` (Decimal, Iranian Rial).
   if (typeof paymentId !== "string" || !paymentId) {
     return NextResponse.json({ error: "paymentId is required" }, { status: 400 });
   }
+  const planAmount = Number(plan.priceIrr);
+  try {
+    assertIrrInteger(planAmount, "VIP plan price");
+  } catch {
+    return NextResponse.json({ error: "مبلغ طرح VIP باید ریال صحیح و معتبر باشد" }, { status: 400 });
+  }
+
   const payment = await db.payment.findUnique({ where: { id: paymentId } });
   if (
     !payment ||
     payment.userId !== userId ||
     payment.status !== "SUCCEEDED" ||
-    Number(payment.amount) < Number(plan.priceIrr)
+    payment.currency !== "IRR" ||
+    !payment.gatewayLogId
   ) {
     return NextResponse.json({ error: "Invalid or insufficient payment" }, { status: 400 });
   }
 
-  // Check if this payment has already been used for a VIP subscription
+  const paymentAmount = Number(payment.amount);
+  try {
+    assertIrrInteger(paymentAmount, "VIP payment amount");
+  } catch {
+    return NextResponse.json({ error: "مبلغ اشتراک یا پرداخت، ریال صحیح و معتبر نیست" }, { status: 400 });
+  }
+  if (paymentAmount !== planAmount) {
+    return NextResponse.json({ error: "پرداخت باید دقیقاً با مبلغ طرح و با واحد IRR برابر باشد" }, { status: 400 });
+  }
+
+  // A SUCCEEDED Payment row alone does not prove this charge was intended for
+  // VIP. Bind it to the exact verified gateway attempt and purpose.
+  const gatewayLog = await db.paymentGatewayLog.findUnique({
+    where: { id: payment.gatewayLogId },
+  });
+  if (!gatewayLog) {
+    return NextResponse.json({ error: "Payment is not a verified VIP payment" }, { status: 400 });
+  }
+  let gatewayAmount: number;
+  try {
+    gatewayAmount = Number(gatewayLog.amount);
+    assertIrrInteger(gatewayAmount, "VIP gateway amount");
+  } catch {
+    return NextResponse.json({ error: "مبلغ تلاش درگاه، ریال صحیح و معتبر نیست" }, { status: 400 });
+  }
+  if (
+    gatewayLog.userId !== userId ||
+    gatewayLog.status !== "VERIFIED" ||
+    gatewayLog.purpose !== "vip" ||
+    gatewayLog.paymentId !== payment.id ||
+    gatewayLog.currency !== payment.currency ||
+    gatewayAmount !== paymentAmount
+  ) {
+    return NextResponse.json({ error: "Payment is not a verified VIP payment" }, { status: 400 });
+  }
+
+  // Fast sequential-reuse check. Concurrent requests can both pass this
+  // read, so the unique paymentId index and atomic writer remain authoritative.
   const existingSub = await db.userVipSubscription.findFirst({
     where: { paymentId, status: { in: ["ACTIVE", "CANCELLED", "EXPIRED"] } },
   });
   if (existingSub) {
-    return NextResponse.json({ error: "این پرداخت قبلاً برای اشتراک VIP استفاده شده است" }, { status: 409 });
+    return NextResponse.json(
+      { error: "این پرداخت قبلاً برای اشتراک VIP استفاده شده است" },
+      { status: 409 }
+    );
   }
 
-  // Cancel any existing ACTIVE subscription for this user. This alone is NOT
-  // a concurrency guard: two requests can both observe zero rows before either
-  // creates. The provider-specific partial unique index in the migration is the
-  // final atomic guard against two ACTIVE subscriptions for one user.
-  await db.userVipSubscription.updateMany({
-    where: { userId, status: "ACTIVE" },
-    data: { status: "CANCELLED" },
-  });
-
-  // A partial unique index (userId WHERE status='ACTIVE') is created by the
-  // provider-specific migrations because Prisma schema cannot express it.
-  // The database—not this read/update sequence—must enforce the invariant.
-
+  // Replacing the previous ACTIVE subscription is atomic for both Prisma and
+  // D1. A partial unique index enforces one ACTIVE subscription per user and
+  // a unique paymentId index prevents reuse of a single payment.
   const startedAt = new Date();
   const expiresAt = new Date(startedAt.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
-
-  // Create the subscription. With @@unique([paymentId]) in the schema, the DB
-  // itself rejects duplicate paymentId inserts (P2002). This is the real
-  // race guard — even if two concurrent requests both pass the findFirst
-  // check above, only one create succeeds.
   let sub;
   try {
-    sub = await db.userVipSubscription.create({
-      data: {
-        userId,
-        planId,
-        status: "ACTIVE",
-        startedAt,
-        expiresAt,
-        paymentId: paymentId ?? null,
-      },
+    const subscriptionId = await createVipSubscriptionAtomically(db, {
+      userId,
+      planId,
+      paymentId,
+      startedAt,
+      expiresAt,
+    });
+    sub = await db.userVipSubscription.findUnique({
+      where: { id: subscriptionId },
       include: { plan: true },
     });
+    if (!sub) throw new Error("VIP subscription could not be loaded after atomic creation");
   } catch (e: any) {
-    // P2002 may mean either this payment was already consumed or another
-    // request won the one-ACTIVE-subscription-per-user race.
-    if (e?.code === "P2002" || e?.message?.includes("Unique constraint")) {
+    if (e?.code === "P2002" || /unique constraint/i.test(String(e?.message ?? ""))) {
       return NextResponse.json(
         { error: "پرداخت قبلاً استفاده شده یا اشتراک فعال دیگری ثبت شده است" },
         { status: 409 }
       );
     }
-    throw e; // re-throw unexpected errors
+    throw e;
   }
 
   // Notify user — best-effort, never fail a subscription over a notification.
@@ -119,7 +160,7 @@ export async function POST(req: Request) {
         userId,
         type: "vip_activated",
         title: "VIP activated",
-        body: `Your ${plan.name} plan is active until ${expiresAt.toLocaleDateString()}`,
+        body: `Your ${plan.name} plan is active until ${sub.expiresAt?.toLocaleDateString() ?? "further notice"}`,
         category: "system",
         link: "customer/settings",
       },

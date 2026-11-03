@@ -78,6 +78,16 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
     ...(techLoc ? [{ id: "tech", lat: techLoc.lat, lng: techLoc.lng, kind: "technician" as const, label: job.technician.user.name }] : []),
   ];
   const info = techLoc ? routeInfo({ lat: techLoc.lat, lng: techLoc.lng }, custLoc, isFa ? "fa" : "en") : null;
+  const rawInspectionFee = job.technician
+    ? (job.request.vehicle.type !== "CAR" ? (job.technician as any).inspectionFeeHeavy : (job.technician as any).inspectionFee)
+    : null;
+  const rawTravelFee = job.technician ? (job.technician as any).travelFeeBase : null;
+  const prepayAmountValid = job.technicianFeesCurrencyVerified === true && job.walletCurrencyVerified === true &&
+    rawInspectionFee != null && rawTravelFee != null &&
+    Number.isSafeInteger(Number(rawInspectionFee)) && Number(rawInspectionFee) >= 0 &&
+    Number.isSafeInteger(Number(rawTravelFee)) && Number(rawTravelFee) >= 0 &&
+    Number.isSafeInteger(Number(rawInspectionFee) + Number(rawTravelFee));
+  const prepayTotal = prepayAmountValid ? Number(rawInspectionFee) + Number(rawTravelFee) : 0;
   const isComplete = job.status === "COMPLETED";
   const isCancelled = job.status === "CANCELLED";
 
@@ -177,13 +187,17 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
                   <Button variant="outline" onClick={() => go("chat", { jobId: job.id })}><MessageSquare className="mr-1.5 size-4" /> {t("track.chat")}</Button>
                   <Button variant="outline" onClick={() => toast.success(t("track.connectingCall"))}><Phone className="mr-1.5 size-4" /> {t("track.call")}</Button>
                 </>
-              ) : (
+              ) : prepayAmountValid ? (
                 <Button
                   className="col-span-2 bg-amber text-black hover:bg-amber/90"
                   onClick={() => setPrepayOpen(true)}
                 >
                   <Lock className="mr-2 size-4" /> {t("fees.unlockCommunication")}
                 </Button>
+              ) : (
+                <div className="col-span-2 rounded-lg border border-amber/30 bg-amber/5 p-3 text-xs text-muted-foreground">
+                  {isFa ? "پرداخت پیش‌خدمت تا تأیید واحد تعرفه تعمیرکار و تطبیق دفترکل کیف پول غیرفعال است." : "Pre-service payment is disabled until technician fees and wallet ledger currency are verified."}
+                </div>
               )}
             </div>
 
@@ -193,7 +207,7 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
                 <p className="flex items-center gap-1.5 font-medium text-amber">
                   <Lock className="size-3" /> {t("fees.prepayTitle")}
                 </p>
-                <p className="mt-1">{t("fees.prepayDesc")}</p>
+                <p className="mt-1">{prepayAmountValid ? t("fees.prepayDesc") : (isFa ? "مبلغ قابل پرداخت پس از تأیید تعرفه ریالی نمایش داده می‌شود." : "The payable amount will appear after the IRR rate is verified.")}</p>
               </div>
             )}
           </div>
@@ -272,41 +286,35 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
       </Dialog>
 
       {/* Pre-service payment gateway */}
-      {job && (() => {
-        const machineType = job.request.vehicle.type;
-        const heavy = machineType !== "CAR";
-        const inspectionFee = heavy ? (job.technician as any).inspectionFeeHeavy ?? 20 : (job.technician as any).inspectionFee ?? 7;
-        const travelFee = (job.technician as any).travelFeeBase ?? 3;
-        const total = inspectionFee + travelFee;
-        return (
-          <PaymentGatewayDialog
-            open={prepayOpen}
-            onOpenChange={(v) => { setPrepayOpen(v); if (!v) load(); }}
-            amount={total}
-            purpose="prepay"
-            description={t("fees.prepayTitle")}
-            onSuccess={async (_paymentId) => {
-              setPrepayBusy(true);
-              try {
-                const res = await authFetch("/api/prepay", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ jobId: job.id, method: "card" }),
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error);
-                setJob(data.job);
-                toast.success(t("fees.prepayPaid"));
-                setPrepayOpen(false);
-              } catch (e: any) {
-                toast.error(e.message ?? t("pay.gateway.failed"));
-              } finally {
-                setPrepayBusy(false);
-              }
-            }}
-          />
-        );
-      })()}
+      {prepayAmountValid && (
+        <PaymentGatewayDialog
+          open={prepayOpen}
+          onOpenChange={(v) => { setPrepayOpen(v); if (!v) load(); }}
+          amount={prepayTotal}
+          currency="IRR"
+          purpose="prepay"
+          description={t("fees.prepayTitle")}
+          onSuccess={async (_paymentId) => {
+            setPrepayBusy(true);
+            try {
+              const res = await authFetch("/api/prepay", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ jobId: job.id, method: "card" }),
+              });
+              const data = await res.json();
+              if (!res.ok) throw new Error(data.error);
+              setJob(data.job);
+              toast.success(t("fees.prepayPaid"));
+              setPrepayOpen(false);
+            } catch (e: any) {
+              toast.error(e.message ?? t("pay.gateway.failed"));
+            } finally {
+              setPrepayBusy(false);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

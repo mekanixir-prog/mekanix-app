@@ -9,7 +9,7 @@ export type User = UserModel;
 export type Customer = Prisma.CustomerGetPayload<{ include: { user: true } }>;
 export type Technician = Prisma.TechnicianGetPayload<{
   include: { user: true; specialties: true; certifications: true; serviceAreas: true; };
-}>;
+}> & { feesCurrencyVerified?: boolean };
 export type Vehicle = VehicleModel;
 export type ServiceRequest = Prisma.ServiceRequestGetPayload<{
   include: {
@@ -26,7 +26,7 @@ export type Job = Prisma.JobGetPayload<{
     parts: true; diagnosisRecords: true; invoice: true; reviews: true;
     messages: { include: { fromUser: true } }; tracking: true;
   };
-}>;
+}> & { partsCurrencyVerified?: boolean; technicianFeesCurrencyVerified?: boolean; walletCurrencyVerified?: boolean };
 export type Invoice = Prisma.InvoiceGetPayload<{ include: { job: true; payment: true } }>;
 export type Payment = PaymentModel;
 export type Review = Prisma.ReviewGetPayload<{ include: { fromUser: true } }>;
@@ -100,7 +100,7 @@ export const api = {
     req<Job>(`/api/jobs/${id}/status`, { method: "PATCH", body: JSON.stringify({ status, ...extra }) }),
   setJobDiagnosis: (id: string, diagnosis: string, severity?: string, faultCode?: string) =>
     req<Job>(`/api/jobs/${id}/diagnosis`, { method: "PATCH", body: JSON.stringify({ diagnosis, severity, faultCode }) }),
-  addPart: (jobId: string, part: { name: string; sku?: string; quantity: number; unitPrice: number }) =>
+  addPart: (jobId: string, part: { name: string; sku?: string; quantity: number; unitPrice: number; currency: "IRR" }) =>
     req<Job>(`/api/jobs/${jobId}/parts`, { method: "POST", body: JSON.stringify(part) }),
   removePart: (jobId: string, partId: string) =>
     req<Job>(`/api/jobs/${jobId}/parts`, { method: "DELETE", body: JSON.stringify({ partId }) }),
@@ -131,10 +131,11 @@ export const api = {
 };
 
 export interface DashboardStats {
-  kpis: { activeRequests: number; techniciansOnline: number; jobsInProgress: number; completedJobs30d: number; revenue30d: number; avgResponseMins: number; customerSatisfaction: number; };
+  currency: "IRR";
+  kpis: { activeRequests: number; techniciansOnline: number; jobsInProgress: number; completedJobs30d: number; collectedGrossIrr30d: number; avgResponseMins: number; customerSatisfaction: number; };
   revenueSeries: { date: string; revenue: number; jobs: number }[];
   statusBreakdown: { status: string; count: number }[];
-  categoryBreakdown: { category: string; count: number; revenue: number }[];
-  techPerformance: { name: string; jobs: number; rating: number; revenue: number }[];
+  categoryBreakdown: { category: string; count: number; invoicedAmount: number; currency: "IRR" }[];
+  techPerformance: { name: string; jobs: number; rating: number; collectedGrossIrr: number; currency: "IRR" }[];
   recentActivity: { id: string; label: string; sub: string; tone: string; ts: string }[];
 }

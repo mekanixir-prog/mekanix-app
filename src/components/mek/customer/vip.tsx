@@ -17,7 +17,8 @@ type VipPlan = {
   id: string;
   slug: string;
   name: string;
-  priceIrr: number;
+  priceIrr: number | null;
+  priceCurrencyVerified?: boolean;
   durationDays: number;
   discountPct: number;
   priorityBoost: number;
@@ -63,6 +64,10 @@ export function CustomerVip({ userId }: { userId: string }) {
   }, [userId]);
 
   const subscribe = (plan: VipPlan) => {
+    if (!plan.priceCurrencyVerified || plan.priceIrr === null) {
+      toast.error(isFa ? "قیمت این طرح هنوز به ریال تأیید نشده است" : "This plan price is not yet verified in IRR");
+      return;
+    }
     setSelectedPlan(plan);
     setGatewayOpen(true);
   };
@@ -155,7 +160,7 @@ export function CustomerVip({ userId }: { userId: string }) {
                   <p className="mt-1 text-[11px] text-muted-foreground">{t(`vip.plan.${plan.slug}Desc`)}</p>
 
                   <div className="mt-4 flex items-baseline gap-1">
-                    <span className="font-display text-2xl font-bold text-foreground">{money(plan.priceIrr)}</span>
+                    <span className="font-display text-2xl font-bold text-foreground">{plan.priceCurrencyVerified && plan.priceIrr !== null ? money(plan.priceIrr, "IRR") : (isFa ? "قیمت نیازمند تأیید" : "Price pending approval")}</span>
                     <span className="text-[11px] text-muted-foreground">
                       / {t("vip.plan.duration").replace("{days}", isFa ? toPersianDigits(plan.durationDays) : String(plan.durationDays))}
                     </span>
@@ -177,11 +182,11 @@ export function CustomerVip({ userId }: { userId: string }) {
 
                   <Button
                     onClick={() => subscribe(plan)}
-                    disabled={isCurrent || subscribing}
+                    disabled={isCurrent || subscribing || !plan.priceCurrencyVerified || plan.priceIrr === null}
                     className={`mt-5 w-full ${isCurrent ? "bg-muted text-muted-foreground" : "bg-amber text-black hover:bg-amber/90"}`}
                   >
                     {isCurrent ? <Check className="mr-2 size-4" /> : <Crown className="mr-2 size-4" />}
-                    {isCurrent ? t("vip.currentPlan") : t("vip.checkout")}
+                    {isCurrent ? t("vip.currentPlan") : !plan.priceCurrencyVerified || plan.priceIrr === null ? (isFa ? "به‌زودی" : "Coming soon") : t("vip.checkout")}
                   </Button>
                 </CardContent>
               </Card>
@@ -194,11 +199,12 @@ export function CustomerVip({ userId }: { userId: string }) {
         <EmptyState icon={Crown} title={t("vip.active.none")} description={t("vip.subtitle")} />
       )}
 
-      {selectedPlan && (
+      {selectedPlan && selectedPlan.priceCurrencyVerified && selectedPlan.priceIrr !== null && (
         <PaymentGatewayDialog
           open={gatewayOpen}
           onOpenChange={setGatewayOpen}
           amount={selectedPlan.priceIrr}
+          currency="IRR"
           purpose="vip"
           userId={userId}
           description={t(`vip.plan.${selectedPlan.slug}`)}

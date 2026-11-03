@@ -31,6 +31,10 @@ export async function GET(req: Request) {
 
   // Find or create wallet
   const db = await getDbForLib();
+  // Legacy wallet rows have no persisted currency provenance. A read request
+  // must not repair escrow or release funds until the ledger has been verified.
+  const walletCurrencyVerified =
+    process.env.MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED === "true";
   let wallet = await db.wallet.findUnique({
     where: { technicianId },
     include: {
@@ -48,16 +52,84 @@ export async function GET(req: Request) {
     });
   }
 
+  // Preserve the scheduled-worker boundary: GET may only run the legacy fallback
+  // while the dedicated scheduled release worker is not enabled.
+  if (wallet && walletCurrencyVerified && process.env.WALLET_RELEASE_SCHEDULED !== "true") {
+  // Repair the crash window where the Job reached COMPLETED but the separate
+  // holdUntil write failed. Only PREPAY rows are eligible; use the immutable
+  // completedAt timestamp so retries never restart the 12-hour hold.
+  // Query the complete pending set, not the 50-row display window. Otherwise
+  // older escrow rows can remain stranded forever behind newer transactions.
+  const strandedPrepay = await db.walletTransaction.findMany({
+    where: {
+      walletId: wallet.id,
+      kind: "PREPAY",
+      status: "PENDING",
+      holdUntil: null,
+      jobId: { not: null },
+    },
+    select: { id: true, jobId: true },
+  });
+  if (strandedPrepay.length > 0) {
+    const completedJobs = await db.job.findMany({
+      where: {
+        id: { in: strandedPrepay.map((transaction) => transaction.jobId as string) },
+        status: "COMPLETED",
+        completedAt: { not: null },
+      },
+      select: { id: true, completedAt: true },
+    });
+    const completedAtByJob = new Map(
+      completedJobs
+        .filter((job) => job.completedAt !== null)
+        .map((job) => [job.id, job.completedAt as Date] as const)
+    );
+
+    for (const transaction of strandedPrepay) {
+      const completedAt = completedAtByJob.get(transaction.jobId as string);
+      if (!completedAt) continue;
+      const holdUntil = new Date(completedAt.getTime() + 12 * 60 * 60 * 1000);
+      await db.walletTransaction.updateMany({
+        where: {
+          id: transaction.id,
+          walletId: wallet.id,
+          kind: "PREPAY",
+          status: "PENDING",
+          holdUntil: null,
+        },
+        data: { holdUntil },
+      });
+    }
+
+    wallet = await db.wallet.findUnique({
+      where: { technicianId },
+      include: {
+        transactions: { orderBy: { createdAt: "desc" }, take: 50 },
+        withdrawals: { orderBy: { requestedAt: "desc" }, take: 20 },
+      },
+    }) ?? wallet;
+  }
+
   // Auto-release matured escrow entries. The helper commits the transaction
   // state transition and both wallet balance changes atomically for D1 and
   // transactional Node databases. A failed balance update cannot strand an
   // AVAILABLE transaction without its matching wallet credit.
   const now = new Date();
-  const releasable = wallet.transactions.filter(
-    (t) => t.status === "PENDING" && t.holdUntil && t.holdUntil.getTime() <= now.getTime()
-  );
+  // Release every matured row, independently of the recent-transactions
+  // pagination returned to the UI.
+  const releasable = await db.walletTransaction.findMany({
+    where: {
+      walletId: wallet.id,
+      status: "PENDING",
+      holdUntil: { not: null, lte: now },
+    },
+    select: { id: true },
+    orderBy: [{ holdUntil: "asc" }, { id: "asc" }],
+  });
   for (const transaction of releasable) {
     await releaseWalletTransaction(db, wallet.id, transaction.id, now);
+  }
+
   }
 
   const fresh = await db.wallet.findUnique({
@@ -68,5 +140,98 @@ export async function GET(req: Request) {
     },
   });
 
-  return NextResponse.json(fresh);
+  const nowForSummary = new Date();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const tehranDateParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Tehran",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(nowForSummary);
+  const part = (type: string) => Number(tehranDateParts.find((item) => item.type === type)?.value);
+  const todayStart = new Date(Date.UTC(part("year"), part("month") - 1, part("day")) - 210 * 60 * 1000);
+  const fourteenDaysStart = new Date(todayStart.getTime() - 13 * dayMs);
+  const earningRows = fresh && walletCurrencyVerified
+    ? await db.walletTransaction.findMany({
+        where: {
+          walletId: fresh.id,
+          status: "AVAILABLE",
+          createdAt: { gte: fourteenDaysStart, lte: nowForSummary },
+          netAmount: { gt: 0 },
+        },
+        select: { createdAt: true, netAmount: true },
+      })
+    : [];
+
+  const normalizedEarnings = earningRows.map((row) => ({
+    createdAt: row.createdAt,
+    amount: Number(row.netAmount),
+  }));
+  const rowsValid = normalizedEarnings.every(
+    (row) => Number.isSafeInteger(row.amount) && row.amount > 0
+  );
+  const safeSum = (rows: typeof normalizedEarnings): number | null => {
+    let total = 0;
+    for (const row of rows) {
+      const next = total + row.amount;
+      if (!Number.isSafeInteger(next)) return null;
+      total = next;
+    }
+    return total;
+  };
+  const sumSince = (startDate: Date) =>
+    safeSum(normalizedEarnings.filter((row) => row.createdAt >= startDate));
+  const dateKey = (date: Date) =>
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Tehran",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(date);
+  const dailyTotals = Array.from({ length: 14 }, (_, index) => {
+    const start = new Date(todayStart.getTime() + (index - 13) * dayMs);
+    const end = new Date(start.getTime() + dayMs);
+    const total = safeSum(normalizedEarnings.filter((row) => row.createdAt >= start && row.createdAt < end));
+    return { date: dateKey(start), revenue: total, jobs: 0 };
+  });
+  const todayIrr = sumSince(todayStart);
+  const last7DaysIrr = sumSince(new Date(todayStart.getTime() - 6 * dayMs));
+  // Legacy Wallet / WalletTransaction rows have no persisted currency marker.
+  // Fail closed until a reviewed schema migration and data reconciliation are complete.
+  const walletCurrency = walletCurrencyVerified ? "IRR" as const : "UNVERIFIED" as const;
+  const earningsValid = walletCurrencyVerified && rowsValid &&
+    todayIrr !== null && last7DaysIrr !== null &&
+    dailyTotals.every((day) => day.revenue !== null);
+  const earningsSeries14d = earningsValid
+    ? dailyTotals.map((day) => ({ ...day, revenue: day.revenue as number }))
+    : [];
+
+  return NextResponse.json(fresh ? {
+    ...fresh,
+    // Do not serialize legacy monetary values as IRR until their provenance
+    // has been verified. Redact every wallet, transaction and withdrawal amount.
+    balance: walletCurrencyVerified ? fresh.balance : null,
+    pendingBalance: walletCurrencyVerified ? fresh.pendingBalance : null,
+    totalEarned: walletCurrencyVerified ? fresh.totalEarned : null,
+    totalCommission: walletCurrencyVerified ? fresh.totalCommission : null,
+    totalWithdrawn: walletCurrencyVerified ? fresh.totalWithdrawn : null,
+    transactions: fresh.transactions.map((transaction) => ({
+      ...transaction,
+      grossAmount: walletCurrencyVerified ? transaction.grossAmount : null,
+      commissionAmount: walletCurrencyVerified ? transaction.commissionAmount : null,
+      netAmount: walletCurrencyVerified ? transaction.netAmount : null,
+    })),
+    withdrawals: fresh.withdrawals.map((withdrawal) => ({
+      ...withdrawal,
+      amount: walletCurrencyVerified ? withdrawal.amount : null,
+    })),
+    currency: walletCurrency,
+    earningsSummary: {
+      currency: walletCurrency,
+      valid: earningsValid,
+      todayIrr: earningsValid ? todayIrr : null,
+      last7DaysIrr: earningsValid ? last7DaysIrr : null,
+      series14d: earningsValid ? earningsSeries14d : [],
+    },
+  } : fresh);
 }

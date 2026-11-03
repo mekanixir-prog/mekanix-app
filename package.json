@@ -2,6 +2,10 @@
   "name": "nextjs_tailwind_shadcn_ts",
   "version": "1.0.0",
   "private": true,
+  "overrides": {
+    "deepmerge-ts": "^8.0.0",
+    "js-yaml": "^4.3.2"
+  },
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
     "build": "next build && node -e \"const fs=require('fs'); fs.mkdirSync('.next/standalone/.next',{recursive:true}); fs.cpSync('.next/static','.next/standalone/.next/static',{recursive:true}); if(fs.existsSync('public')) fs.cpSync('public','.next/standalone/public',{recursive:true});\"",
@@ -93,7 +97,7 @@
     "react-resizable-panels": "^3.0.3",
     "react-syntax-highlighter": "^15.6.1",
     "recharts": "^2.15.4",
-    "sharp": "^0.34.3",
+    "sharp": "^0.35.5",
     "sonner": "^2.0.6",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
@@ -101,7 +105,7 @@
     "uuid": "^11.1.0",
     "vaul": "^1.1.2",
     "z-ai-web-dev-sdk": "^0.0.18",
-    "zod": "^4.0.2",
+    "zod": "^4.6.7",
     "zustand": "^5.0.6"
   },
   "devDependencies": {

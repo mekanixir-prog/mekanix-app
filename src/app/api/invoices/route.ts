@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
+import { calculatePrice, isProductionPricingApproved, type PricingBreakdown } from "@/lib/pricing";
+import { addIrr, assertIrrInteger } from "@/lib/money/irr";
 
 const FULL_INCLUDE = {
   job: {
@@ -71,49 +73,99 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
   }
 
-  // ──────────── Server-authoritative pricing ────────────
-  // Load job + parts + technician rates — IGNORE any client-supplied amounts.
+  // Server-authoritative pricing: the canonical integer-IRR engine is the
+  // only source of invoice totals. Technician profile fee fields are legacy
+  // and have mixed/unknown units, so they are deliberately not used here.
   const job = await db.job.findUnique({
     where: { id: jobId },
-    include: { parts: true, technician: true },
+    include: { parts: true, request: { include: { vehicle: true } } },
   });
   if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
 
-  // laborHours may be overridden by technician (capped 0–100); everything else is server-derived.
-  const laborHoursRaw = typeof body.laborHours === "number" ? body.laborHours : 1.5;
-  const laborHours = Math.max(0, Math.min(100, laborHoursRaw));
+  // Existing JobPart rows predate the IRR-only writer and have no stored currency.
+  // Do not invoice them until a reviewed backfill verifies their unit.
+  if (job.parts.length > 0 && process.env.MEKANIX_JOB_PART_IRR_PROVENANCE_VERIFIED !== "true") {
+    return NextResponse.json(
+      { error: "واحد قیمت قطعات قدیمی هنوز تطبیق داده نشده است؛ صدور فاکتور پس از تأیید مالی فعال می‌شود", code: "JOB_PART_CURRENCY_UNVERIFIED" },
+      { status: 409 }
+    );
+  }
 
-  const laborRate = Number(job.technician.hourlyRate); // from technician record
-  const laborTotal = laborHours * laborRate;
-  const partsTotal = job.parts.reduce((s, p) => s + Number(p.unitPrice) * p.quantity, 0);
-  const travelFee = Number(job.technician.travelFeeBase);
-  const discount = 0; // server-controlled
-  const subtotal = laborTotal + partsTotal + travelFee - discount;
+  const laborHours = body.laborHours === undefined ? 1.5 : body.laborHours;
+  if (typeof laborHours !== "number" || !Number.isFinite(laborHours) || laborHours < 0 || laborHours > 100) {
+    return NextResponse.json({ error: "ساعت کار باید عددی بین صفر تا صد باشد" }, { status: 400 });
+  }
+
+  let partsTotal: number;
+  try {
+    const partAmounts = job.parts.map((part) => {
+      if (!Number.isSafeInteger(part.quantity) || part.quantity < 1) {
+        throw new RangeError("Part quantity must be a positive safe integer");
+      }
+      const unitPrice = Number(part.unitPrice);
+      assertIrrInteger(unitPrice, "Part unit price");
+      const lineTotal = unitPrice * part.quantity;
+      assertIrrInteger(lineTotal, "Part line total");
+      return lineTotal;
+    });
+    partsTotal = addIrr(...partAmounts);
+  } catch {
+    return NextResponse.json(
+      { error: "قیمت یا تعداد یکی از قطعات معتبر نیست؛ مبلغ باید عدد صحیح ریالی باشد" },
+      { status: 400 }
+    );
+  }
+
+  if (!isProductionPricingApproved()) {
+    return NextResponse.json(
+      { error: "تعرفه‌های ریالی هنوز به تأیید مالک کسب‌وکار نرسیده‌اند؛ صدور فاکتور در محیط تولید موقتاً غیرفعال است", code: "IRR_RATE_CARD_NOT_APPROVED" },
+      { status: 409 }
+    );
+  }
+
   const taxSetting = await db.platformSetting.findUnique({ where: { key: "tax_rate" } });
-    const taxRate = taxSetting?.value ? parseFloat(taxSetting.value) : 0.09;
-  const taxTotal = subtotal * taxRate;
-  const total = subtotal + taxTotal;
+  const taxRate = taxSetting?.value ? Number(taxSetting.value) : 0.09;
+  if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 1) {
+    return NextResponse.json({ error: "تنظیم نرخ مالیات نامعتبر است" }, { status: 500 });
+  }
+
+  let price: PricingBreakdown;
+  try {
+    price = await calculatePrice({
+      vehicleType: job.request.vehicle.type,
+      laborHours,
+      partsCost: partsTotal,
+      // Until route-distance pricing is connected, only the canonical base visit fee applies.
+      travelDistanceKm: 0,
+      isEmergency: false,
+      taxRate,
+    });
+  } catch (error) {
+    console.error("[invoices] Canonical pricing failed", error);
+    return NextResponse.json({ error: "محاسبه قیمت فاکتور ناموفق بود" }, { status: 400 });
+  }
 
   const code = `INV-${Math.floor(3000 + Math.random() * 6000)}`;
-
-  const inv = await db.invoice.create({
-    data: {
+  const inv = await db.invoice.upsert({
+    where: { jobId },
+    create: {
       code,
       jobId,
       laborHours,
-      laborRate,
-      laborTotal,
-      partsTotal,
-      travelFee,
-      discount,
-      subtotal,
-      taxRate,
-      taxTotal,
-      total,
+      laborRate: price.breakdown.laborRate,
+      laborTotal: price.labor,
+      partsTotal: price.parts,
+      travelFee: price.travel,
+      discount: price.discount,
+      subtotal: price.subtotal,
+      taxRate: price.taxRate,
+      taxTotal: price.taxTotal,
+      total: price.total,
       currency: "IRR",
       status: "SENT",
       notes: "Parts & labor covered by 6-month MEKANIX warranty.",
     },
+    update: {},
     include: FULL_INCLUDE,
   });
 
@@ -133,7 +185,7 @@ export async function POST(req: Request) {
         userId: cust.id,
         type: "invoice_issued",
         title: `Invoice ${inv.code} issued`,
-        body: `${tech?.name ?? "Mechanic"} issued invoice for ${Number(inv.total)}. Review and pay to complete the job.`,
+        body: `${tech?.name ?? "Mechanic"} issued invoice for ${Number(inv.total)} ${inv.currency}. Review and pay to complete the job.`,
         category: "payment",
         link: "customer/invoice",
       },
@@ -144,7 +196,7 @@ export async function POST(req: Request) {
           userId: tech.id,
           type: "invoice_issued",
           title: `Invoice ${inv.code} sent to customer`,
-          body: `${inv.code} for ${Number(inv.total)} was sent to ${cust.name} for review & payment.`,
+          body: `${inv.code} for ${Number(inv.total)} ${inv.currency} was sent to ${cust.name} for review & payment.`,
           category: "payment",
           link: "technician/earnings",
         },

@@ -7,7 +7,6 @@ import {
 } from "lucide-react";
 import type { DemoUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
-import { api, type Job } from "@/lib/api";
 import { StatCard, SectionHeader, EmptyState } from "@/components/mek/shared/primitives";
 import { RevenueAreaChart, MiniSparkline } from "@/components/mek/shared/charts";
 import { fmtDate, toPersianDigits } from "@/lib/format";
@@ -19,10 +18,18 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { isValidIranianSheba } from "@/lib/iranian-iban";
 
 type Wallet = {
   id: string;
+  currency: "IRR" | "UNVERIFIED";
+  earningsSummary: {
+    currency: "IRR" | "UNVERIFIED";
+    valid: boolean;
+    todayIrr: number | null;
+    last7DaysIrr: number | null;
+    series14d: { date: string; revenue: number; jobs: number }[];
+  };
   balance: number;
   pendingBalance: number;
   totalEarned: number;
@@ -59,16 +66,13 @@ type WithdrawalReq = {
   processedAt: string | null;
 };
 
-const MIN_WITHDRAWAL = 5; // USD
+const MIN_WITHDRAWAL_IRR = 1; // technical minimum: one integer Rial; no USD denomination
 
 export function TechnicianEarnings({ user }: { user: DemoUser }) {
   const { t, isFa, money, lang } = useT();
-  const [jobs, setJobs] = useState<Job[] | null>(null);
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState("");
-  const [withdrawMethod, setWithdrawMethod] = useState("card");
-  const [withdrawCard, setWithdrawCard] = useState("");
   const [withdrawSheba, setWithdrawSheba] = useState("");
   const [withdrawBank, setWithdrawBank] = useState("");
   const [withdrawing, setWithdrawing] = useState(false);
@@ -77,37 +81,29 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
   const loadWallet = async (techId: string) => {
     try {
       const res = await fetch(`/api/wallets?technicianId=${techId}`);
+      if (!res.ok) throw new Error("Wallet request failed");
       const w = await res.json();
+      if (!["IRR", "UNVERIFIED"].includes(w?.currency) || w?.earningsSummary?.currency !== w?.currency) {
+        setWallet(null);
+        return;
+      }
       setWallet(w);
     } catch {}
   };
 
   useEffect(() => {
     if (!user.technician) return;
-    api.listJobs({ technicianId: user.technician.id }).then(async (list) => {
-      setJobs(list);
-    });
     loadWallet(user.technician.id);
     const poll = setInterval(() => loadWallet(user.technician!.id), 30000); // refresh every 30s for countdown
     return () => clearInterval(poll);
   }, [user]);
 
-  const completed = (jobs ?? []).filter((j) => j.status === "COMPLETED");
-  const payments = completed.filter((j) => !!(j as any).invoice?.payment);
-  const today = payments.filter((p) => Date.now() - new Date((p as any).invoice!.payment!.createdAt).getTime() < 86400000).length;
-  const week = payments.filter((p) => Date.now() - new Date((p as any).invoice!.payment!.createdAt).getTime() < 7 * 86400000).length;
-
-  // build 14-day revenue series
-  const series = Array.from({ length: 14 }).map((_, i) => {
-    const start = Date.now() - (14 - i) * 86400000;
-    const end = start + 86400000;
-    const rev = payments.filter((p) => {
-      const ts = new Date((p as any).invoice!.payment!.createdAt).getTime();
-      return ts >= start && ts < end;
-    }).reduce((s, p) => s + ((p as any).invoice!.payment!.amount ?? 0), 0);
-    return { date: new Date(end).toISOString().slice(5, 10), revenue: Math.round(rev), jobs: completed.filter((j) => { const ts = new Date(j.completedAt ?? 0).getTime(); return ts >= start && ts < end; }).length };
-  });
-  const spark = series.map((s) => s.revenue);
+  // The chart uses positive net amounts from the wallet ledger, not customer invoice gross.
+  const series = wallet?.currency === "IRR" && wallet.earningsSummary?.valid
+    ? wallet.earningsSummary.series14d
+    : [];
+  const spark = series.map((item) => item.revenue);
+  const moneyDisplay = (amount: number) => wallet?.currency === "IRR" ? money(amount, "IRR") : "—";
 
   const balance = wallet?.balance ?? 0;
   const pending = wallet?.pendingBalance ?? 0;
@@ -116,13 +112,22 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
   const totalWithdrawn = wallet?.totalWithdrawn ?? 0;
 
   const submitWithdraw = async () => {
-    const amt = parseFloat(withdrawAmount);
-    if (!amt || amt < MIN_WITHDRAWAL) {
-      toast.error(t("tech.earnings.withdrawMin").replace("{amount}", `$${MIN_WITHDRAWAL}`));
+    if (wallet?.currency !== "IRR") {
+      toast.error("واحد موجودی کیف پول هنوز تأیید نشده است؛ برداشت پس از تطبیق مالی فعال می‌شود");
+      return;
+    }
+    const amt = Number(withdrawAmount);
+    if (!Number.isSafeInteger(amt) || amt < MIN_WITHDRAWAL_IRR) {
+      toast.error(t("tech.earnings.withdrawMin").replace("{amount}", moneyDisplay(MIN_WITHDRAWAL_IRR)));
       return;
     }
     if (amt > balance) {
       toast.error(t("tech.earnings.withdrawInsufficient"));
+      return;
+    }
+    const normalizedSheba = withdrawSheba.replace(/\s+/g, "").toUpperCase();
+    if (!withdrawBank.trim() || !isValidIranianSheba(normalizedSheba)) {
+      toast.error("برای برداشت، نام بانک و شبای معتبر لازم است");
       return;
     }
     setWithdrawing(true);
@@ -133,12 +138,11 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
         method: "POST",
         headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
         body: JSON.stringify({
-          technicianId: user.technician!.id,
           amount: amt,
-          method: withdrawMethod,
-          cardNumber: withdrawCard,
-          shebaNumber: withdrawSheba,
-          bankName: withdrawBank,
+          currency: "IRR",
+          method: "bank",
+          shebaNumber: normalizedSheba,
+          bankName: withdrawBank.trim(),
         }),
       });
       const data = await res.json();
@@ -146,7 +150,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
       toast.success(t("tech.earnings.withdrawSubmitted"));
       setWithdrawOpen(false);
       withdrawalIdempotencyKey.current = null;
-      setWithdrawAmount(""); setWithdrawCard(""); setWithdrawSheba(""); setWithdrawBank("");
+      setWithdrawAmount(""); setWithdrawSheba(""); setWithdrawBank("");
       await loadWallet(user.technician!.id);
     } catch (e: any) {
       toast.error(e.message ?? "Withdrawal failed");
@@ -161,13 +165,18 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
   return (
     <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
       <SectionHeader title={t("tech.earnings.title")} subtitle={t("tech.earnings.subtitle")} />
+      {wallet?.currency === "UNVERIFIED" && (
+        <div className="rounded-lg border border-amber/30 bg-amber/5 p-3 text-xs leading-6 text-muted-foreground">
+          واحد پول موجودی‌های قدیمی هنوز با داده‌های منبع تطبیق داده نشده است. برای جلوگیری از نمایش یا برداشت مبلغ اشتباه، ارقام مالی و برداشت تا تکمیل تطبیق موقتاً غیرفعال‌اند.
+        </div>
+      )}
 
       {/* Wallet KPIs */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label={t("tech.earnings.availableBalance")} value={money(balance)} icon={Wallet} tone="amber" sub={t("tech.earnings.readyWithdraw")} />
-        <StatCard label={t("tech.earnings.pendingBalance")} value={money(pending)} icon={Clock} tone="blue" sub={t("tech.earnings.holdPeriod")} />
-        <StatCard label={t("tech.earnings.totalEarned")} value={money(totalEarned)} icon={TrendingUp} tone="emerald" sub={t("tech.earnings.netEarnings")} />
-        <StatCard label={t("tech.earnings.commission")} value={money(totalCommission)} icon={AlertCircle} tone="violet" sub={t("tech.earnings.commissionDesc")} />
+        <StatCard label={t("tech.earnings.availableBalance")} value={moneyDisplay(balance)} icon={Wallet} tone="amber" sub={t("tech.earnings.readyWithdraw")} />
+        <StatCard label={t("tech.earnings.pendingBalance")} value={moneyDisplay(pending)} icon={Clock} tone="blue" sub={t("tech.earnings.holdPeriod")} />
+        <StatCard label={t("tech.earnings.totalGross")} value={moneyDisplay(totalEarned)} icon={TrendingUp} tone="emerald"  />
+        <StatCard label={t("tech.earnings.commission")} value={moneyDisplay(totalCommission)} icon={AlertCircle} tone="violet" sub={t("tech.earnings.commissionDesc")} />
       </div>
 
       {/* Hold policy banner */}
@@ -196,19 +205,19 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
           <div className="mt-3 space-y-2">
             <div className="rounded-lg border border-emerald-glow/30 bg-emerald-glow/5 p-3">
               <p className="text-[11px] uppercase tracking-wide text-emerald-glow">{t("tech.earnings.availableBalance")}</p>
-              <p className="mt-0.5 font-display text-lg font-bold text-amber">{money(balance)}</p>
+              <p className="mt-0.5 font-display text-lg font-bold text-amber">{moneyDisplay(balance)}</p>
               <p className="text-[11px] text-muted-foreground">{t("tech.earnings.released")}</p>
             </div>
             <Button
               className="w-full bg-amber text-black hover:bg-amber/90"
               onClick={() => setWithdrawOpen(true)}
-              disabled={balance < MIN_WITHDRAWAL}
+              disabled={wallet?.currency !== "IRR" || balance < MIN_WITHDRAWAL_IRR}
             >
               <Banknote className="mr-2 size-4" /> {t("tech.earnings.withdrawNow")}
             </Button>
-            {balance < MIN_WITHDRAWAL && (
+            {balance < MIN_WITHDRAWAL_IRR && (
               <p className="text-center text-[10px] text-muted-foreground">
-                {t("tech.earnings.withdrawMin").replace("{amount}", `$${MIN_WITHDRAWAL}`)}
+                {t("tech.earnings.withdrawMin").replace("{amount}", moneyDisplay(MIN_WITHDRAWAL_IRR))}
               </p>
             )}
           </div>
@@ -239,7 +248,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
                     <p className="text-[11px] text-muted-foreground">{fmtDate(txn.createdAt, undefined, lang)}</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-display text-sm font-semibold text-amber">{money(txn.netAmount)}</p>
+                    <p className="font-display text-sm font-semibold text-amber">{moneyDisplay(txn.netAmount)}</p>
                     <p className={`text-[10px] ${released ? "text-emerald-glow" : "text-muted-foreground"}`}>
                       {released ? t("tech.earnings.released") : t("tech.earnings.countdown").replace("{time}", countdown)}
                     </p>
@@ -288,7 +297,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
                         </span>
                       </td>
                       <td className={`px-4 py-2.5 text-right font-medium ${txn.netAmount >= 0 ? "text-amber" : "text-destructive"}`}>
-                        {money(Math.abs(txn.netAmount))} {txn.netAmount >= 0 ? "+" : "−"}
+                        {moneyDisplay(Math.abs(txn.netAmount))} {txn.netAmount >= 0 ? "+" : "−"}
                       </td>
                     </tr>
                   ))}
@@ -331,7 +340,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
                           {t(`tech.earnings.wdStatus.${w.status}` as any) ?? w.status}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 text-right font-medium text-amber">{money(w.amount)}</td>
+                      <td className="px-4 py-2.5 text-right font-medium text-amber">{moneyDisplay(w.amount)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -349,7 +358,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
               <Banknote className="size-5 text-amber" /> {t("tech.earnings.withdrawDialog")}
             </DialogTitle>
             <DialogDescription>
-              {t("tech.earnings.availableBalance")}: <span className="font-medium text-amber">{money(balance)}</span>
+              {t("tech.earnings.availableBalance")}: <span className="font-medium text-amber">{moneyDisplay(balance)}</span>
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -357,53 +366,33 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
               <Label className="text-xs">{t("tech.earnings.withdrawAmount")}</Label>
               <Input
                 type="number"
-                min={MIN_WITHDRAWAL}
+                min={MIN_WITHDRAWAL_IRR}
                 max={balance}
                 value={withdrawAmount}
                 onChange={(e) => { withdrawalIdempotencyKey.current = null; setWithdrawAmount(e.target.value); }}
                 className="mt-1"
-                placeholder={`Min $${MIN_WITHDRAWAL}`}
+                placeholder={`حداقل ${moneyDisplay(MIN_WITHDRAWAL_IRR)}`}
               />
             </div>
             <div>
               <Label className="text-xs">{t("tech.earnings.withdrawMethod")}</Label>
-              <Select value={withdrawMethod} onValueChange={(value) => { withdrawalIdempotencyKey.current = null; setWithdrawMethod(value); }}>
-                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="card">{t("pay.card")}</SelectItem>
-                  <SelectItem value="bank">{t("pay.gateway.bank")}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {withdrawMethod === "card" && (
-              <div>
-                <Label className="text-xs">{t("tech.earnings.withdrawCard")}</Label>
-                <Input
-                  value={withdrawCard}
-                  onChange={(e) => { withdrawalIdempotencyKey.current = null; setWithdrawCard(e.target.value.replace(/\D/g, "").slice(0, 16)); }}
-                  className="mt-1 font-mono"
-                  placeholder="6037 9911 2233 4455"
-                  inputMode="numeric"
-                />
+              <div className="mt-1 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">
+                {t("pay.gateway.bank")}
               </div>
-            )}
-            {withdrawMethod === "bank" && (
-              <>
-                <div>
-                  <Label className="text-xs">{t("tech.earnings.withdrawSheba")}</Label>
-                  <Input
-                    value={withdrawSheba}
-                    onChange={(e) => { withdrawalIdempotencyKey.current = null; setWithdrawSheba(e.target.value.slice(0, 26)); }}
-                    className="mt-1 font-mono"
-                    placeholder="IR000000000000000000000000"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">{t("tech.earnings.withdrawBank")}</Label>
-                  <Input value={withdrawBank} onChange={(e) => { withdrawalIdempotencyKey.current = null; setWithdrawBank(e.target.value); }} className="mt-1" placeholder="بانک ملت" />
-                </div>
-              </>
-            )}
+            </div>
+            <div>
+              <Label className="text-xs">{t("tech.earnings.withdrawSheba")}</Label>
+              <Input
+                value={withdrawSheba}
+                onChange={(e) => { withdrawalIdempotencyKey.current = null; setWithdrawSheba(e.target.value.replace(/\s+/g, "").toUpperCase().slice(0, 26)); }}
+                className="mt-1 font-mono"
+                placeholder="IR000000000000000000000000"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">{t("tech.earnings.withdrawBank")}</Label>
+              <Input value={withdrawBank} onChange={(e) => { withdrawalIdempotencyKey.current = null; setWithdrawBank(e.target.value); }} className="mt-1" placeholder="بانک ملت" />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setWithdrawOpen(false)}>{t("common.cancel")}</Button>
