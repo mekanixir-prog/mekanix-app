@@ -1,6 +1,7 @@
 # MEKANIX — Financial Data Provenance Inventory
 **Date:** 2026-11-02  
-**Scope:** Read-only review of `main` at `4e701370d674cdcde40cabba3e360703b249c029`.  
+**Original scope:** Read-only review of `main` at `4e701370d674cdcde40cabba3e360703b249c029`.  
+**Follow-up:** Seed-safety status refreshed on 2026-11-03 after PR #101.  
 **Purpose:** Identify monetary fields, declared units, seed provenance, and unresolved ambiguity before any IRR-only runtime or data migration work.
 
 > This document records what the checked-in source says. It does not certify the currency of existing database rows, approve tariffs, or authorize conversion of stored values.
@@ -11,7 +12,7 @@
 2. Several schema comments declare IRR, but the seed script writes values with explicit USD comments into some of those same fields. Invoices and payments are then labelled `IRR` even though they are derived from the mixed-unit seed values.
 3. Several other seed amounts have no currency annotation at all. Their units cannot be established from the seed alone.
 4. CARE proposal fields and package prices are monetary but have no currency field in their models. The CARE proposal API has previously been identified as Toman-based; that API contract must not be generalized to other money inputs.
-5. The seed script deletes many tables before repopulating them. `ensureSeedData()` only checks whether the User table is empty; it does not independently prove that every other table is empty. Direct seed/setup execution must therefore be treated as destructive, not as a harmless fixture refresh.
+5. The original review found destructive seed behavior and an insufficient User-only guard. **Mitigated on 2026-11-03 by PR #101:** direct demo seed now rejects production and checks every Prisma model before any delete; auto-seed is disabled in production, and automatic schema push no longer accepts data loss. This prevents seed execution against a populated database when the current Prisma client can inspect every model. It does not make historical money data trustworthy or authorize running setup against production.
 6. No production/historical record can be safely converted from this source review alone. A record-level provenance and ledger reconciliation is still required.
 
 ## 2. Monetary field inventory
@@ -61,15 +62,15 @@ Therefore, seed-generated invoices/payments cannot be used to infer a valid prod
 
 The seed script begins by calling `deleteMany()` for notifications, payments, invoices, warranties, reviews, messages, tracking events, parts, diagnoses, jobs, service requests, service areas, certifications, technician specialties, technicians, vehicles, customers, service categories, and users.
 
-The `ensureSeedData()` helper:
-- checks only `db.user.count()`;
-- runs the seed when the User count is zero;
-- attempts `prisma db push --accept-data-loss` when the User table cannot be read;
-- does not independently verify that every table is empty before calling the destructive seed.
+The original review found that `ensureSeedData()` checked only `db.user.count()` and could invoke `prisma db push --accept-data-loss` if the User table could not be read. The original direct seed also lacked a production refusal and did not prove all tables were empty.
 
-The `setup` package script also runs `prisma db push` followed by the seed script. The direct seed script has no environment guard or explicit production refusal in the reviewed source.
+**PR #101 mitigation merged 2026-11-03** (`5c191f7efdea278611a9a65f39d481072ed37189`):
+- `assertDatabaseEmptyForDemoSeed()` checks all 63 Prisma model delegates before any destructive delete and fails closed if a delegate/client cannot be inspected.
+- `prisma/seed.ts` rejects `NODE_ENV === "production"` and runs the all-model emptiness guard before deleting records.
+- `src/lib/auto-seed.ts` exits in production and removes `--accept-data-loss` from automatic `prisma db push`.
+- Unit tests cover populated financial/operational models, unavailable delegates, production startup, and safe schema-push behavior.
 
-**Operational rule:** Do not run `bun run setup`, `bun run prisma/seed.ts`, or an auto-seed path against any database containing data that must be retained. Before changing this behavior, add explicit environment gating and a non-destructive fixture strategy. This inventory PR does not modify those paths.
+**Operational rule:** Do not run demo seeding or setup against a database with data that must be retained. The guard is a safety net, not a substitute for isolated development/staging databases, backups, or an explicit fixture workflow. This mitigation does not classify or reconcile any financial record.
 
 ## 4. Required record classification before migration
 
@@ -106,21 +107,22 @@ Do not convert unknown/mixed records. Do not infer a record's unit solely from i
 
 - `prisma/schema.prisma` — monetary models, fields, comments, defaults, and CARE entities.
 - `prisma/seed.ts` — demo technician, wallet, VIP, category, job, invoice, and payment values; destructive deletes.
-- `src/lib/auto-seed.ts` — empty-User check, schema push, and auto-seed behavior.
+- `src/lib/auto-seed.ts` — production-disabled auto-seed and schema push without `--accept-data-loss` (PR #101).
 - `package.json` — `setup` script invokes schema push and seed.
 - `src/lib/pricing.ts` — IRR comments, Decimal calculations, hardcoded defaults, package price currently unused, and output conversion.
 - `src/lib/constants.ts` — unitless service-category base values and USD/EUR/IRR currency list.
-- `src/app/api/wallets/withdraw/route.ts` — main-branch amount validation and missing safe-integer/unit validation.
+- `src/app/api/wallets/withdraw/route.ts` — amount validation and unresolved safe-integer/unit policy at the time of review.
+- `src/lib/seed-safety.ts` and `tests/unit/seed-safety.test.ts` — all-model empty-database guard and regression tests (PR #101).
 
 ## 7. Explicit non-actions
 
-This review does **not**:
-- change schema, runtime code, seeds, database rows, currencies, exchange rates, or production configuration;
+This inventory does **not**:
+- certify the currency of any existing database row;
 - approve or set labor, parts, travel, inspection, VIP, tax, commission, or withdrawal amounts;
 - convert any existing value or assume every record is IRR;
-- authorize merging PRs #66, #67, #69, #72, #73, #74, or #75.
+- authorize live payment, wallet credit, withdrawal, payout, or a production migration.
 
 
 ## Owner decision update — 2026-11-03
 
-The canonical target is now owner-approved: integer IRR for persisted accounting amounts; Toman is presentation-only at 10 IRR per Toman. This decision does not change the classifications above. In particular, USD-labelled seed fees, unlabelled demo wallet balances, ambiguous service/parts prices, and invoices/payments derived from them remain untrusted until their provenance is proven. No magnitude-based inference or blanket conversion is permitted. Keep unknown cohorts quarantined and non-withdrawable. The destructive seed behavior remains a separate operational risk and must be guarded before any database setup/seed command is run against retained data.
+The canonical target is now owner-approved: integer IRR for persisted accounting amounts; Toman is presentation-only at 10 IRR per Toman. This decision does not change the classifications above. In particular, USD-labelled seed fees, unlabelled demo wallet balances, ambiguous service/parts prices, and invoices/payments derived from them remain untrusted until their provenance is proven. No magnitude-based inference or blanket conversion is permitted. Keep unknown cohorts quarantined and non-withdrawable. The destructive seed risk is mitigated by PR #101's all-model guard and production refusal. Keep this guard covered by CI and continue to use isolated databases; no database rows were changed by the PR.
