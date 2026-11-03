@@ -1,6 +1,6 @@
 # MEKANIX Engineering Documentation
 
-> **Current audited mainline:** `1380597c7a0616a18896c2a7f295a92629c337b4` (2026-11-03). The dated release audit is the source of truth for code and release status.
+> **Current audited mainline:** `2f3b5b750377f07657cc7db853b12338a8cfaa4a` (2026-11-03). The dated release audit is the source of truth for code and release status.
 
 ## Start here
 
