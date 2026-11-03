@@ -1374,3 +1374,11 @@ model WalletReleaseWorkerState {
   cursorId        String?
   updatedAt       DateTime @updatedAt
 }
+
+// Transaction-scoped assertion row used only inside atomic D1 escrow-release batches.
+// The row is inserted and deleted in the same batch; NOT NULL enforces rollback.
+model WalletReleaseGuard {
+  id        String   @id
+  passed    Boolean
+  createdAt DateTime @default(now())
+}
