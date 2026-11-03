@@ -296,9 +296,17 @@ export async function requireVehicleOwner(session: Session, vehicleId: string): 
   return null;
 }
 
-// Check if user is participant in a job (customer or assigned technician)
+// Check if user is an authorized participant in a job (customer or assigned technician).
+// Unknown and not-yet-scoped roles are denied by default. In particular,
+// FLEET_MANAGER has no persisted fleet-to-job ownership relation yet, and
+// PARTNER is read-only analytics; neither may access individual job records.
 export async function requireJobParticipant(session: Session, jobId: string): Promise<NextResponse | null> {
   if (session.role === "ADMIN") return null;
+
+  if (session.role !== "CUSTOMER" && session.role !== "TECHNICIAN") {
+    return NextResponse.json({ error: "دسترسی به این کار مجاز نیست" }, { status: 403 });
+  }
+
   const db = await getDbForLib();
   const job = await db.job.findUnique({
     where: { id: jobId },
@@ -311,11 +319,12 @@ export async function requireJobParticipant(session: Session, jobId: string): Pr
     if (!customer || job.request.customerId !== customer.id) {
       return NextResponse.json({ error: "دسترسی به این کار مجاز نیست" }, { status: 403 });
     }
-  } else if (session.role === "TECHNICIAN") {
-    const technician = await getTechnicianFromSession(session);
-    if (!technician || job.technicianId !== technician.id) {
-      return NextResponse.json({ error: "دسترسی به این کار مجاز نیست" }, { status: 403 });
-    }
+    return null;
+  }
+
+  const technician = await getTechnicianFromSession(session);
+  if (!technician || job.technicianId !== technician.id) {
+    return NextResponse.json({ error: "دسترسی به این کار مجاز نیست" }, { status: 403 });
   }
   return null;
 }
