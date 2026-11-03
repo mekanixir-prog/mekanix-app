@@ -98,11 +98,9 @@ describe("wallet escrow release atomicity", () => {
       }),
       batch: vi.fn().mockResolvedValue([
         { meta: { changes: 1 } },
-        { meta: { changes: 0 } },
         { meta: { changes: 1 } },
-        { meta: { changes: 0 } },
         { meta: { changes: 1 } },
-        { meta: { changes: 0 } },
+        { meta: { changes: 1 } },
       ]),
     };
 
@@ -110,19 +108,18 @@ describe("wallet escrow release atomicity", () => {
       .resolves.toBe(true);
     expect(d1.batch).toHaveBeenCalledTimes(1);
     const statements = d1.batch.mock.calls[0][0] as Array<{ sql: string; values: unknown[] }>;
-    expect(statements).toHaveLength(6);
-    expect(statements[0].sql).toContain('"pendingBalance"');
-    expect(statements[0].sql).toContain('"netAmount" >= 0');
-    expect(statements[1].sql).toContain('SET "balance" = CASE WHEN changes() = 1 THEN "balance" ELSE NULL END');
+    expect(statements).toHaveLength(4);
+    expect(statements[0].sql).toContain('INSERT INTO "WalletLedger"');
+    expect(statements[0].sql).toContain("'RELEASE'");
+    expect(statements[0].sql).toContain('"balanceBefore"');
+    expect(statements[0].sql).toContain('"balanceAfter"');
+    expect(statements[1].sql).toContain('"pendingBalance"');
+    expect(statements[1].sql).toContain('"balanceBefore" = w."balance"');
     expect(statements[2].sql).toContain('"status" = \'PENDING\'');
-    expect(statements[2].sql).toContain("changes() = 1");
-    expect(statements[3].sql).toContain('SET "status" = CASE WHEN changes() = 1 THEN "status" ELSE NULL END');
-    expect(statements[4].sql).toContain('INSERT INTO "WalletLedger"');
-    expect(statements[4].sql).toContain("'RELEASE'");
-    expect(statements[4].sql).toContain("changes() = 1");
-    expect(statements[5].sql).toContain('SET "balance" = CASE WHEN changes() = 1 THEN "balance" ELSE NULL END');
-    expect(statements[0].values).toHaveLength(14);
-    expect(statements[4].values).toContain("wallet-release:txn-1:LEDGER");
+    expect(statements[2].sql).toContain('"balance" = ledger."balanceAfter"');
+    expect(statements[3].sql).toContain('ELSE NULL');
+    expect(statements.every((statement) => !statement.sql.includes("changes()"))).toBe(true);
+    expect(statements[0].values).toContain("wallet-release:txn-1:LEDGER");
   });
 
   it("returns false when the conditional wallet update loses the race", async () => {
@@ -132,9 +129,7 @@ describe("wallet escrow release atomicity", () => {
         { meta: { changes: 0 } },
         { meta: { changes: 0 } },
         { meta: { changes: 0 } },
-        { meta: { changes: 0 } },
-        { meta: { changes: 0 } },
-        { meta: { changes: 0 } },
+        { meta: { changes: 1 } },
       ]),
     };
     await expect(releaseWalletTransactionWithD1(d1 as any, "wallet-1", "txn-1", new Date()))
