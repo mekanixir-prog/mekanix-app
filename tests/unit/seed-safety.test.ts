@@ -27,7 +27,7 @@ describe("demo seed safety guard", () => {
     const db = makeDb({ walletLedger: 2, payment: 1, job: 4 });
 
     await expect(assertDatabaseEmptyForDemoSeed(db)).rejects.toThrow(
-      /database is not empty.*payment=1.*job=4.*walletLedger=2/,
+      /database is not empty.*job=4.*payment=1.*walletLedger=2/,
     );
   });
 
