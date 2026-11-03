@@ -94,10 +94,10 @@ export async function POST(req: Request) {
   if (
     typeof laborHoursRaw !== "number" ||
     !Number.isFinite(laborHoursRaw) ||
-    laborHoursRaw < 0 ||
+    laborHoursRaw <= 0 ||
     laborHoursRaw > 24
   ) {
-    return NextResponse.json({ error: "مدت کار باید عددی بین ۰ تا ۲۴ ساعت باشد" }, { status: 400 });
+    return NextResponse.json({ error: "مدت کار باید عددی بزرگ‌تر از ۰ و حداکثر ۲۴ ساعت باشد" }, { status: 400 });
   }
   const laborHours = laborHoursRaw;
   const laborRate = Number(job.technician.hourlyRate);
