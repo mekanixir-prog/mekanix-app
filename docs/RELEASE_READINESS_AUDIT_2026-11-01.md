@@ -1,7 +1,7 @@
 # MEKANIX — Release Readiness Audit
 
 **Audit date:** 2026-11-03  
-**Audited mainline baseline:** `49e602b5f0413f1e0cc8949708c03dab3709cddd`  
+**Audited mainline baseline:** `54c9466bac054e8163c8a5859d28227af4fb1983`  
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Decision:** **NOT READY FOR PRODUCTION**
 
@@ -18,7 +18,7 @@ This audit separates verified code/CI evidence from staging and provider operati
 | Insurance claim recovery | PR #63 | Claim + policy transition are atomic; eligibility guard and status lookup added |
 | Offline reconciliation | PR #50, extended by PR #63 | Persian reconciliation center checks route-specific server status; unsupported/ambiguous actions remain behind manual review |
 | Rate-limit atomicity | PR #35, #38, #40 | Atomic initialization and fail-closed outage handling; PostgreSQL concurrency tests merged |
-| Wallet escrow release | PR #12, #13 | Atomic D1/Prisma release logic exists; refreshed scheduled Worker is PR #65 (draft) and requires isolated Cloudflare staging |\n| VIP payment-purpose binding | PR #67 | VIP activation now requires the exact verified VIP gateway log, owner, payment link, amount, and IRR currency; production payment remains disabled |\n| CARE extra-cost validation | PR #68 | Server validates integer prices/quantity/total and binds a supplied Finding to the same booking; atomic proposal creation remains PR #72 |
+| Wallet escrow release | PR #12, #13 | Atomic D1/Prisma release logic exists; refreshed scheduled Worker is PR #65 (draft) and requires isolated Cloudflare staging |\n| VIP payment-purpose binding | PR #67 | VIP activation now requires the exact verified VIP gateway log, owner, payment link, amount, and IRR currency; production payment remains disabled |\n| CARE extra-cost validation | PR #68 | Server validates integer prices/quantity/total and binds a supplied Finding to the same booking; atomic proposal creation is re-opened on current main in PR #79 |\n| Service-request assignment | PR #69 | Ownership, technician verification/availability/specialty, request claim, technician capacity, and Job creation are enforced atomically |\n| CARE extra approval decisions | PR #70 | Approval/rejection, booking, Finding, and timeline changes use compare-and-set and one transaction/batch |
 
 ## 2. Verified CI evidence
 
@@ -26,7 +26,7 @@ This audit separates verified code/CI evidence from staging and provider operati
 - PR #57 merged after all five applicable workflows passed on its exact head.
 - PR #59 merged with route-specific CARE idempotency, atomic writes, and reconciliation tests.
 - PR #63 merged as `5ca2651923af888547946ad5308e507dd4519266` after all five applicable workflows passed on its exact head: CI, Cloudflare Build, Production readiness, PostgreSQL CI, and Docker E2E.
-- PR #63 includes 100-concurrent-same-key D1/SQLite integration simulations and 80-concurrent PostgreSQL integration tests for service requests and claims, payload mismatch/replay behavior, and injected rollback failures.\n- PR #67 merged as `e6c03dcb6ff7316e98fec73092cd9307855fb3c1`; all five workflows passed on its exact head before merge.\n- PR #68 merged as `49e602b5f0413f1e0cc8949708c03dab3709cddd`; all five workflows passed on its exact head before merge. PR #72 was retargeted to `main` after this merge and needs conflict reconciliation plus fresh CI.
+- PR #63 includes 100-concurrent-same-key D1/SQLite integration simulations and 80-concurrent PostgreSQL integration tests for service requests and claims, payload mismatch/replay behavior, and injected rollback failures.\n- PR #67 merged as `e6c03dcb6ff7316e98fec73092cd9307855fb3c1`; all five workflows passed on its exact head before merge.\n- PR #68 merged as `49e602b5f0413f1e0cc8949708c03dab3709cddd`; all five workflows passed on its exact head before merge.\n- PR #69 merged as `2662e4c671e3f0a07958d941954744ef4fd8d2d3`; all five workflows passed on its exact head before merge.\n- PR #70 merged as `54c9466bac054e8163c8a5859d28227af4fb1983`; all five workflows passed on its exact head before merge.\n- The old PR #72 was based on the pre-squash PR #68 branch and became divergent after retargeting. Its implementation was transplanted onto current main in draft PR #79; require fresh CI there.
 - Issue #52 is closed as completed for code-level remediation. Issue #29 is closed as not planned for a generic callback helper because the repository audit found no production call sites; route-specific contracts are used instead.
 - Issue #28 is closed as completed for code-level rate-limit atomicity; real Cloudflare D1 runtime validation remains a separate operational gate.
 
