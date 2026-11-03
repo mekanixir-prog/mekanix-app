@@ -1,3 +1,4 @@
+import { ADMIN_USER_SELECT } from "@/lib/user-select";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { verifySession, requireRole } from "@/lib/auth";
@@ -85,7 +86,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           create: app.city ? [{ name: app.city, lat: 35.6892, lng: 51.3890, radiusKm: 25 }] : [{ name: "Tehran", lat: 35.6892, lng: 51.3890, radiusKm: 25 }],
         },
       },
-      include: { user: true, specialties: true },
+      include: { user: { select: ADMIN_USER_SELECT }, specialties: true },
     });
   }
 
@@ -94,7 +95,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // reviewerId is server-authoritative: the admin who approved it (from session),
     // NEVER from the client body (prevents spoofing the reviewer identity).
     data: { status: "APPROVED", userId: user.id, reviewerId: session.userId, reviewedAt: new Date(), adminNotes: body.notes || null },
-    include: { user: { include: { technician: true } } },
+    include: { user: { select: { ...ADMIN_USER_SELECT, technician: true } } },
   });
 
   // Notification — best-effort, never fail an approval over a notification side-effect.

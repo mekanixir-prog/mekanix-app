@@ -1,3 +1,4 @@
+import { ADMIN_USER_SELECT } from "@/lib/user-select";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { getAdminFromRequest } from "@/lib/admin-auth";
@@ -99,7 +100,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     const safe = sanitizeInput(body, allowed);
     // SEC-4: snapshot BEFORE the update for audit log.
     const before = await db.technician.findUnique({ where: { id } });
-    result = await db.technician.update({ where: { id }, data: safe as any, include: { user: true } });
+    result = await db.technician.update({ where: { id }, data: safe as any, include: { user: { select: ADMIN_USER_SELECT } } });
     await safeAudit({ session: adminSession, action: "UPDATE_TECHNICIAN", entity: "technician", entityId: id, before, after: result, req });
   } else if (resource === "customers") {
     // Allow direct updates to customer record (company, taxId) — but block userId
@@ -136,7 +137,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     }
     // SEC-4: snapshot the customer BEFORE the profile update.
     const before = await db.customer.findUnique({ where: { id } });
-    result = await db.customer.update({ where: { id }, data: safe as any, include: { user: true } });
+    result = await db.customer.update({ where: { id }, data: safe as any, include: { user: { select: ADMIN_USER_SELECT } } });
     await safeAudit({ session: adminSession, action: "UPDATE_CUSTOMER", entity: "customer", entityId: id, before, after: result, req });
   } else if (resource === "categories") {
     const allowed = RESOURCE_ALLOWED_FIELDS.categories ?? ALLOWED_FIELDS.profile;

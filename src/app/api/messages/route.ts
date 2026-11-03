@@ -1,3 +1,4 @@
+import { PARTICIPANT_USER_SELECT } from "@/lib/user-select";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
@@ -18,7 +19,7 @@ export async function GET(req: Request) {
   const db = await getDbForLib();
   const list = await db.message.findMany({
     where: { jobId },
-    include: { fromUser: true },
+    include: { fromUser: { select: PARTICIPANT_USER_SELECT } },
     orderBy: { createdAt: "asc" },
   });
   return NextResponse.json(list);
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
       kind: typeof kind === "string" && ["text", "image", "voice"].includes(kind) ? kind : "text",
       body: text.slice(0, 5000),
     },
-    include: { fromUser: true },
+    include: { fromUser: { select: PARTICIPANT_USER_SELECT } },
   });
 
   // Notify the other party — best-effort. A notification failure must not
@@ -67,8 +68,8 @@ export async function POST(req: Request) {
     const job = await db.job.findUnique({
       where: { id: jobId },
       include: {
-        technician: { include: { user: true } },
-        request: { include: { customer: { include: { user: true } } } },
+        technician: { include: { user: { select: PARTICIPANT_USER_SELECT } } },
+        request: { include: { customer: { include: { user: { select: PARTICIPANT_USER_SELECT } } } } },
       },
     });
     if (job) {

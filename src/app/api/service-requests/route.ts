@@ -1,3 +1,4 @@
+import { PARTICIPANT_USER_SELECT } from "@/lib/user-select";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
@@ -6,12 +7,12 @@ import { IdempotencyConflictError, readIdempotencyKey, requestFingerprint } from
 import { createServiceRequestAtomically } from "@/lib/service-request-atomic";
 
 const include = {
-  customer: { include: { user: true } },
+  customer: { include: { user: { select: PARTICIPANT_USER_SELECT } } },
   vehicle: true,
-  matchedTech: { include: { user: true } },
+  matchedTech: { include: { user: { select: PARTICIPANT_USER_SELECT } } },
   job: {
     include: {
-      technician: { include: { user: true } },
+      technician: { include: { user: { select: PARTICIPANT_USER_SELECT } } },
       invoice: true,
       reviews: true,
     },
