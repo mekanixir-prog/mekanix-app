@@ -238,6 +238,7 @@ describe("Failure Scenarios", () => {
         amount: 100_000,
         description: "Test payment",
         callbackUrl: "https://example.com/callback",
+        orderId: "test-order-failure-scenarios",
       });
       expect(result.success).toBe(true);
       expect(result.paymentUrl).toBeDefined();
