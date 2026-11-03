@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
-import { getAdminFromRequest } from "@/lib/admin-auth";
+import { getAdminFromRequest, hasValidAdminCookieCsrf } from "@/lib/admin-auth";
 import { writeAuditLog } from "@/lib/admin-api";
 
 // Allowed fields for PATCH (mass-assignment protection — S1 fix).
@@ -35,6 +35,7 @@ function sanitizeOnboardingUpdate(body: Record<string, any>): Record<string, any
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  if (!hasValidAdminCookieCsrf(req)) return NextResponse.json({ error: "درخواست از مبدأ نامعتبر است" }, { status: 403 });
   const session = await getAdminFromRequest(req);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await ctx.params;
@@ -66,6 +67,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 }
 
 export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  if (!hasValidAdminCookieCsrf(req)) return NextResponse.json({ error: "درخواست از مبدأ نامعتبر است" }, { status: 403 });
   const session = await getAdminFromRequest(req);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await ctx.params;
