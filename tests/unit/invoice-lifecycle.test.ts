@@ -128,6 +128,9 @@ describe("POST /api/invoices lifecycle", () => {
     mocks.taxFindUnique.mockResolvedValueOnce({ value: "0.09garbage" });
 
     const response = await createInvoice(postRequest({ jobId: "job-1" }));
+    expect(mocks.jobFindUnique).toHaveBeenCalledTimes(1);
+    expect(mocks.taxFindUnique).toHaveBeenCalledTimes(1);
+    expect(await response.json()).toMatchObject({ error: "تنظیمات مالیات نامعتبر است" });
     expect(response.status).toBe(503);
     expect(mocks.invoiceCreate).not.toHaveBeenCalled();
   });
