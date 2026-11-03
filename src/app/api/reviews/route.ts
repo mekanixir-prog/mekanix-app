@@ -1,3 +1,4 @@
+import { PARTICIPANT_USER_SELECT } from "@/lib/user-select";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
@@ -80,7 +81,7 @@ export async function POST(req: Request) {
       comment: typeof comment === "string" ? comment.slice(0, 2000) : null,
       tags: tags ? JSON.stringify(tags).slice(0, 200) : null,
     },
-    include: { fromUser: true },
+    include: { fromUser: { select: PARTICIPANT_USER_SELECT } },
   });
 
   // Recompute technician rating + count
