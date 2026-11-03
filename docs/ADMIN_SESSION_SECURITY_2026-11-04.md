@@ -15,7 +15,7 @@ Cookie attributes:
 - `Path=/api/admin-panel`
 - Seven-day maximum age
 
-The login JSON response contains admin profile data only; it does not return the signed JWT. The browser no longer reads, stores, or adds a dedicated admin JWT to Authorization headers.
+The login JSON response contains admin profile data only; it does not return the signed JWT. The browser no longer reads, stores, or adds a dedicated admin JWT to Authorization headers. Production must have a dedicated `ADMIN_JWT_SECRET` of at least 32 bytes; there is no production fallback to `JWT_SECRET`.
 
 ## Revocation
 
