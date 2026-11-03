@@ -24,6 +24,13 @@ export const SEED_PROTECTED_MODEL_DELEGATES = [
   "walletReleaseGuard",
 ] as const;
 
+/** Refuse the complete schema-push + demo-seed setup before it touches a database. */
+export function assertDemoSetupAllowed(nodeEnv: string | undefined): void {
+  if (nodeEnv === "production") {
+    throw new Error("Demo database setup is disabled in production. No schema push or seed was run.");
+  }
+}
+
 type CountDelegate = { count: () => Promise<number> };
 
 export async function assertDatabaseEmptyForDemoSeed(db: unknown): Promise<void> {
