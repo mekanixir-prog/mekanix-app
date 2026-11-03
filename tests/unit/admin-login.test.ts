@@ -6,7 +6,7 @@
 //   2. Wrong password → 401 with SAME unified message
 //   3. Both cases return identical status (401) + message
 //   4. verifyPassword is always called (even when admin not found) — timing
-//   5. Valid credentials → 200 + token
+//   5. Valid credentials → 200 + HttpOnly session cookie
 //
 // Verifies the SEC-5 fix (rate limit + audit log):
 //   6. After 5 failed attempts, returns 429
@@ -181,7 +181,7 @@ describe("SEC-13 — admin login user enumeration mitigation", () => {
     expect(mockVerifyPassword).toHaveBeenCalledTimes(1);
   });
 
-  it("returns 200 + token for valid credentials", async () => {
+  it("returns 200 with an HttpOnly session cookie and no token in JSON", async () => {
     mockAdminUserFindFirst.mockResolvedValue({
       id: "admin-1",
       username: "admin",
