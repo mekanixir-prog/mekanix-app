@@ -51,6 +51,11 @@ vi.mock("@/lib/admin-auth", () => ({
   verifyPassword: (...args: any[]) => mockVerifyPassword(...args),
   createAdminToken: (...args: any[]) => mockCreateAdminToken(...args),
   ensureDefaultAdmin: (...args: any[]) => mockEnsureDefaultAdmin(...args),
+  isSameOriginRequest: (req: Request) => req.headers.get("origin") === new URL(req.url).origin,
+  setAdminSessionCookie: (response: Response, token: string, req: Request) => {
+    const secure = new URL(req.url).protocol === "https:";
+    response.headers.append("Set-Cookie", `mekanix_admin_session=${token}; Path=/api/admin-panel; HttpOnly; SameSite=Strict; Max-Age=604800${secure ? "; Secure" : ""}`);
+  },
   hashPassword: vi.fn().mockResolvedValue("$2b$12$hashed"),
 }));
 
