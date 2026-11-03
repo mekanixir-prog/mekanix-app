@@ -18,6 +18,8 @@ let seeding = false;
 let seeded = false;
 
 export async function ensureSeedData(): Promise<void> {
+  // Never run schema push or demo seed from a production app startup.
+  if (process.env.NODE_ENV === "production") return;
   if (seeded || seeding) return;
   seeding = true;
 
