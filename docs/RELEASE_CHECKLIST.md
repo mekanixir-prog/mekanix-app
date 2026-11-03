@@ -23,6 +23,7 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - [x] Owner approved canonical integer IRR storage and Toman-only display conversion (10 IRR = 1 Toman); decision recorded in issue #81.
 - [x] PR #75 — merged integer-IRR validation, safe arithmetic, explicit ratio rounding, and signed ledger-delta helpers as `38cd3db63bc5c0389f608a3541146c5bdc43ec9b`. These primitives are not yet wired through legacy records or the complete payment/settlement lifecycle.
 - [x] PR #101 — merged non-destructive demo-seed protections as `5c191f7efdea278611a9a65f39d481072ed37189`; all five required PR workflows passed on the exact reviewed head. Subsequent full main-branch CI passed on `abf7f849c70d90580f08aa84a74fc7f93d1b9acf`.
+- [x] PR #103 — merged `formatTomanFromIrr` as `406f72b9c726e4d305ccfffc11ca9f6f01c5d50d`; exact 10:1 IRR→Toman presentation, signed values, locale-aware digits/separators, and validation tests. Helper-only; no legacy data conversion or UI call-site rollout.
 - [ ] Reconcile historical money-unit provenance, approve integer/rounding bounds and commercial pricing, and implement the safe migration plan in issue #81.
 - [ ] Complete invoice, wallet, withdrawal, payout, and callback replay/concurrency tests across SQLite/D1 and PostgreSQL.
 - [ ] Complete end-to-end customer, technician, admin, CARE, warranty, refund/recovery, and notification scenarios.
@@ -40,6 +41,7 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - PR #95: `7eb870bb6e494c6973d17a64b55f28d11c7eba0e`.
 - PR #98: `5c3f2789ababbde68543d86934996636f5726fe7`.
 - PR #101: `5c191f7efdea278611a9a65f39d481072ed37189` — demo seed and auto-seed safety.
+- PR #103: `406f72b9c726e4d305ccfffc11ca9f6f01c5d50d` — verified-IRR Toman presentation helper.
 
 ### Current financial blockers
 - [ ] Issue #24 — real provider lifecycle is not wired; current invoice/gateway/prepay routes are simulator-only and production-disabled.
