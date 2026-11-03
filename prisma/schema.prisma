@@ -869,6 +869,7 @@ model AdminUser {
   passwordHash  String
   name          String
   role          String   @default("ADMIN")
+  sessionVersion Int     @default(0)
   avatar        String?
   lastLoginAt   DateTime?
   createdAt     DateTime @default(now())

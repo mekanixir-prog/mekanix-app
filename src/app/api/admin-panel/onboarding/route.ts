@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
-import { getAdminFromRequest } from "@/lib/admin-auth";
+import { getAdminFromRequest, hasValidAdminCookieCsrf } from "@/lib/admin-auth";
 import { writeAuditLog } from "@/lib/admin-api";
 
 export async function GET(req: Request) {
@@ -12,6 +12,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  if (!hasValidAdminCookieCsrf(req)) return NextResponse.json({ error: "درخواست از مبدأ نامعتبر است" }, { status: 403 });
   const session = await getAdminFromRequest(req);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json();

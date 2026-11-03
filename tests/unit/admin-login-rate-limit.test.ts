@@ -20,6 +20,10 @@ vi.mock("@/lib/admin-auth", () => ({
   ensureDefaultAdmin: mocks.ensureDefaultAdmin,
   verifyPassword: mocks.verifyPassword,
   createAdminToken: mocks.createAdminToken,
+  isSameOriginRequest: (req: Request) => req.headers.get("origin") === new URL(req.url).origin,
+  setAdminSessionCookie: (response: Response, token: string, req: Request) => {
+    response.headers.append("Set-Cookie", `mekanix_admin_session=${token}; Path=/api/admin-panel; HttpOnly; SameSite=Strict; Max-Age=604800`);
+  },
 }));
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: async () => ({
@@ -33,7 +37,7 @@ import { POST } from "@/app/api/admin-panel/auth/login/route";
 function request(body: unknown) {
   return new Request("https://mekanix.test/api/admin-panel/auth/login", {
     method: "POST",
-    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.10" },
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.10", "origin": "https://mekanix.test" },
     body: JSON.stringify(body),
   });
 }
@@ -96,7 +100,7 @@ describe("admin login distributed rate limiting", () => {
   it("rejects malformed payloads before bootstrap or credential lookup", async () => {
     const response = await POST(new Request("https://mekanix.test/api/admin-panel/auth/login", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "origin": "https://mekanix.test" },
       body: "null",
     }));
     expect(response.status).toBe(400);

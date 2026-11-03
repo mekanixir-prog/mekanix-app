@@ -6,7 +6,7 @@
 //   2. Wrong password → 401 with SAME unified message
 //   3. Both cases return identical status (401) + message
 //   4. verifyPassword is always called (even when admin not found) — timing
-//   5. Valid credentials → 200 + token
+//   5. Valid credentials → 200 + HttpOnly session cookie
 //
 // Verifies the SEC-5 fix (rate limit + audit log):
 //   6. After 5 failed attempts, returns 429
@@ -51,6 +51,11 @@ vi.mock("@/lib/admin-auth", () => ({
   verifyPassword: (...args: any[]) => mockVerifyPassword(...args),
   createAdminToken: (...args: any[]) => mockCreateAdminToken(...args),
   ensureDefaultAdmin: (...args: any[]) => mockEnsureDefaultAdmin(...args),
+  isSameOriginRequest: (req: Request) => req.headers.get("origin") === new URL(req.url).origin,
+  setAdminSessionCookie: (response: Response, token: string, req: Request) => {
+    const secure = new URL(req.url).protocol === "https:";
+    response.headers.append("Set-Cookie", `mekanix_admin_session=${token}; Path=/api/admin-panel; HttpOnly; SameSite=Strict; Max-Age=604800${secure ? "; Secure" : ""}`);
+  },
   hashPassword: vi.fn().mockResolvedValue("$2b$12$hashed"),
 }));
 
@@ -77,11 +82,12 @@ import { POST } from "@/app/api/admin-panel/auth/login/route";
 
 // ──────────── Helpers ────────────
 function makeLoginRequest(emailOrUsername: string, password: string): Request {
-  return new Request("http://localhost/api/admin-panel/auth/login", {
+  return new Request("https://localhost/api/admin-panel/auth/login", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "x-forwarded-for": "1.2.3.4",
+      "origin": "https://localhost",
     },
     body: JSON.stringify({ emailOrUsername, password }),
   });
@@ -175,7 +181,7 @@ describe("SEC-13 — admin login user enumeration mitigation", () => {
     expect(mockVerifyPassword).toHaveBeenCalledTimes(1);
   });
 
-  it("returns 200 + token for valid credentials", async () => {
+  it("returns 200 with an HttpOnly session cookie and no token in JSON", async () => {
     mockAdminUserFindFirst.mockResolvedValue({
       id: "admin-1",
       username: "admin",
@@ -191,9 +197,28 @@ describe("SEC-13 — admin login user enumeration mitigation", () => {
     const res = await POST(req);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.token).toBe("jwt-token-123");
+    expect(body.token).toBeUndefined();
+    expect(res.headers.get("set-cookie")).toContain("mekanix_admin_session=");
+    expect(res.headers.get("set-cookie")).toContain("HttpOnly");
+    expect(res.headers.get("set-cookie")).toContain("Secure");
+    expect(res.headers.get("set-cookie")).toContain("SameSite=Strict");
+    expect(res.headers.get("set-cookie")).toContain("Path=/api/admin-panel");
+    expect(res.headers.get("set-cookie")).toContain("Max-Age=604800");
     expect(body.admin.id).toBe("admin-1");
     expect(body.admin.username).toBe("admin");
+  });
+
+
+  it("rejects login CSRF from a foreign Origin before checking credentials", async () => {
+    const req = new Request("https://localhost/api/admin-panel/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Origin": "https://attacker.example" },
+      body: JSON.stringify({ emailOrUsername: "admin", password: "secret" }),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(403);
+    expect(mockAdminUserFindFirst).not.toHaveBeenCalled();
+    expect(mockVerifyPassword).not.toHaveBeenCalled();
   });
 
   it("returns 400 when emailOrUsername or password is missing", async () => {
@@ -324,7 +349,8 @@ describe("SEC-5 — admin login rate limit + audit log", () => {
     // CRITICAL: login succeeds even though audit log failed
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.token).toBe("jwt-123");
+    expect(body.token).toBeUndefined();
+    expect(res.headers.get("set-cookie")).toContain("HttpOnly");
     // writeAuditLog was attempted (even though it failed)
     expect(mockWriteAuditLog).toHaveBeenCalledTimes(1);
   });

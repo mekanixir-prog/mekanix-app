@@ -36,6 +36,14 @@ This replaces the historical checklist snapshots from October. Do not use old â€
 - [ ] Technician invoice earnings are not yet credited to the wallet through a complete idempotent escrow/commission flow.
 - [ ] Do not activate live payment, wallet top-up, withdrawal, or bank payout until these are resolved.
 
+### Standalone admin authentication hardening
+
+- [ ] Merge and verify the revocable HttpOnly admin-session remediation (SEC-89) after all required workflows pass on the exact PR head.
+- [ ] Apply the SQLite/D1 and PostgreSQL `AdminUser.sessionVersion` migrations before deploying the updated admin panel.
+- [ ] Confirm the standalone admin panel no longer stores or transmits dedicated admin JWTs through browser JavaScript.
+- [ ] Verify same-origin protections on login, logout, onboarding create/update/delete, and confirm the OTP-based in-app AdminApp path remains functional.
+- [ ] Confirm existing standalone admin users are required to sign in again after deployment; old LocalStorage bearer tokens are intentionally not accepted.
+
 ## 2. Activate shortly before launch â€” deliberately deferred
 
 - [ ] Provision production VPS/hosting and configure deployment access.
