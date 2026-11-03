@@ -87,7 +87,7 @@ describe("wallet escrow release atomicity", () => {
     expect(tx.walletLedger.create).not.toHaveBeenCalled();
   });
 
-  it("executes wallet, transaction, ledger, and transient assertion guard writes in one D1 batch", async () => {
+  it("executes the current-main wallet, transaction, ledger, and rollback guard writes in one D1 batch", async () => {
     const prepared: Array<{ sql: string; values: unknown[] }> = [];
     const d1 = {
       prepare: (sql: string) => ({
