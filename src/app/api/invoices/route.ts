@@ -83,6 +83,9 @@ export async function POST(req: Request) {
     include: { parts: true, technician: true },
   });
   if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
+  if (job.status !== "WAITING_APPROVAL" && job.status !== "COMPLETED") {
+    return NextResponse.json({ error: "فاکتور فقط پس از پایان عملیات تعمیر قابل صدور است" }, { status: 409 });
+  }
   if (!job.technician || !Array.isArray(job.parts)) {
     return NextResponse.json({ error: "اطلاعات مکانیک یا قطعات کار کامل نیست" }, { status: 409 });
   }
@@ -92,9 +95,9 @@ export async function POST(req: Request) {
     typeof laborHoursRaw !== "number" ||
     !Number.isFinite(laborHoursRaw) ||
     laborHoursRaw < 0 ||
-    laborHoursRaw > 100
+    laborHoursRaw > 24
   ) {
-    return NextResponse.json({ error: "مدت کار باید عددی بین ۰ تا ۱۰۰ ساعت باشد" }, { status: 400 });
+    return NextResponse.json({ error: "مدت کار باید عددی بین ۰ تا ۲۴ ساعت باشد" }, { status: 400 });
   }
   const laborHours = laborHoursRaw;
   const laborRate = Number(job.technician.hourlyRate);
