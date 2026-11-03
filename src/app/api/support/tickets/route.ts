@@ -1,3 +1,4 @@
+import { ADMIN_USER_SELECT, PARTICIPANT_USER_SELECT } from "@/lib/user-select";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
@@ -22,7 +23,7 @@ export async function GET(req: Request) {
   const tickets = await db.supportTicket.findMany({
     where,
     orderBy: { createdAt: "desc" },
-    include: session.role === "ADMIN" ? { user: true } : undefined,
+    include: session.role === "ADMIN" ? { user: { select: ADMIN_USER_SELECT } } : undefined,
   });
   return NextResponse.json(tickets);
 }
@@ -73,7 +74,7 @@ export async function POST(req: Request) {
       message: String(safe.message).slice(0, 5000).trim(),
       status: "open",
     },
-    include: { user: true },
+    include: { user: { select: PARTICIPANT_USER_SELECT } },
   });
 
   // Notify admins — best-effort. If one notification fails, continue to the
