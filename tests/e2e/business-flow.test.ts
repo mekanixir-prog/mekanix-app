@@ -708,6 +708,7 @@ describe("MEKANIX Business E2E Flow", () => {
         amount: 100_000,
         description: "Test payment",
         callbackUrl: "https://example.com/callback",
+        orderId: "test-order-business-flow",
       });
       expect(result.success).toBe(true);
       expect(result.paymentUrl).toBeDefined();
