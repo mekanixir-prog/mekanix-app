@@ -144,10 +144,12 @@ export function formatTomanFromIrr(amount: number, locale = "fa-IR"): string {
   assertIrrSignedInteger(amount, "IRR amount");
 
   const signed = BigInt(amount);
-  const negative = signed < 0n;
+  const ten = BigInt(10);
+  const zero = BigInt(0);
+  const negative = signed < zero;
   const absolute = negative ? -signed : signed;
-  const wholeToman = absolute / 10n;
-  const tenthToman = absolute % 10n;
+  const wholeToman = absolute / ten;
+  const tenthToman = absolute % ten;
 
   const integerFormatter = new Intl.NumberFormat(locale, {
     maximumFractionDigits: 0,
@@ -156,7 +158,7 @@ export function formatTomanFromIrr(amount: number, locale = "fa-IR"): string {
   const integerText = integerFormatter.format(wholeToman);
   if (tenthToman === 0n) {
     if (!negative) return integerText;
-    const minus = integerFormatter.formatToParts(-1n).find((part) => part.type === "minusSign")?.value ?? "-";
+    const minus = integerFormatter.formatToParts(BigInt(-1)).find((part) => part.type === "minusSign")?.value ?? "-";
     return minus + integerText;
   }
 
