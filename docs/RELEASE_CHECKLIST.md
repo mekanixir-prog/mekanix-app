@@ -1,7 +1,7 @@
 # MEKANIX — Release Checklist
 
 **Status date:** 2026-11-03  
-**Main baseline before this checklist refresh:** `5c3f2789ababbde68543d86934996636f5726fe7`  
+**Main baseline before this checklist refresh:** `36b05650d011b60ace35f0751921c941de3f24a1`  
 **Release decision:** <strong>NO-GO</strong> — code hardening and release evidence remain incomplete.
 
 This replaces the historical checklist snapshots from October. Do not use old “Release Candidate — all checks passed” or old staging/load-test claims as current release evidence.
@@ -16,7 +16,7 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - [x] Merge PR #79 — atomically create CARE extra proposals on current main.
 - [x] PR #65 — escrow release worker validation merged as `97d50eb000e39e087eaea6403b23f9fe262b9d76`. The CI/local D1 scheduled-event test passed on its reviewed head. Remote Cloudflare D1 staging and Cron observation remain pre-launch gates before enabling the production schedule.
 - [x] PR #80 — merged after all five workflows passed; invoice issuance is idempotent, tax/pricing inputs are validated, and DRAFT→SENT is compare-and-set.
-- [ ] PR #66 — provider adapter hardening is under current-main revalidation; all five workflows are running on head `f320fd726fcbcc12add6ae8d2cbca14dccf4dbad`. Keep live providers disabled until the authoritative payment lifecycle is wired.
+- [x] PR #66 — provider adapter hardening merged as `36b05650d011b60ace35f0751921c941de3f24a1`. All five required workflows passed on exact PR head `f320fd726fcbcc12add6ae8d2cbca14dccf4dbad`; post-merge CI on the merge commit is being revalidated. Adapters remain sandbox-only and disconnected from production payment routes.
 - [ ] Consolidate PRs #71/#73 only after resolving the monetary-unit contract in issue #81.
 - [ ] Complete the authoritative payment attempt → provider verification → invoice/VIP/prepay fulfillment lifecycle in issue #24.
 - [ ] Add the missing invoice-settlement → commission → technician pending-wallet credit → RELEASE ledger flow; invoice payment currently does not create technician earnings.\n- [ ] Add the missing invoice-settlement → commission → technician pending-wallet credit → RELEASE ledger flow; invoice payment currently does not create technician earnings.
