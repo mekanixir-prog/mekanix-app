@@ -159,8 +159,44 @@ vi.mock("@/lib/auth", async () => {
 // ──────────────────────────────────────────────────────────────────────────
 import { POST as paymentsPOST } from "@/app/api/payments/route";
 import { POST as verifyPOST } from "@/app/api/gateway/verify/route";
+import { POST as initiatePOST } from "@/app/api/gateway/initiate/route";
 import { POST as withdrawPOST } from "@/app/api/wallets/withdraw/route";
 import { POST as vipSubscribePOST } from "@/app/api/vip/subscribe/route";
+
+// ──────────────────────────────────────────────────────────────────────────
+// GATEWAY — simulator initiation and verification are unreachable in production
+// ──────────────────────────────────────────────────────────────────────────
+describe("gateway simulator production guards", () => {
+  it("blocks /api/gateway/initiate before auth or database access", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const req = makePostRequest("http://localhost/api/gateway/initiate", {
+      amount: 100_000,
+      purpose: "vip",
+    });
+
+    const res = await initiatePOST(req);
+
+    expect(res.status).toBe(404);
+    expect(mockRequireAuth).not.toHaveBeenCalled();
+    expect(mockPaymentGatewayLogFindUnique).not.toHaveBeenCalled();
+    expect(mockPaymentGatewayLogUpdate).not.toHaveBeenCalled();
+  });
+
+  it("blocks /api/gateway/verify before auth or database access", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const req = makePostRequest("http://localhost/api/gateway/verify", {
+      code: "PG-7001",
+      otp: "1234",
+    });
+
+    const res = await verifyPOST(req);
+
+    expect(res.status).toBe(404);
+    expect(mockRequireAuth).not.toHaveBeenCalled();
+    expect(mockPaymentGatewayLogFindUnique).not.toHaveBeenCalled();
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
+  });
+});
 
 // ──────────────────────────────────────────────────────────────────────────
 // Helpers
