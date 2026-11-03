@@ -119,3 +119,8 @@ This review does **not**:
 - approve or set labor, parts, travel, inspection, VIP, tax, commission, or withdrawal amounts;
 - convert any existing value or assume every record is IRR;
 - authorize merging PRs #66, #67, #69, #72, #73, #74, or #75.
+
+
+## Owner decision update — 2026-11-03
+
+The canonical target is now owner-approved: integer IRR for persisted accounting amounts; Toman is presentation-only at 10 IRR per Toman. This decision does not change the classifications above. In particular, USD-labelled seed fees, unlabelled demo wallet balances, ambiguous service/parts prices, and invoices/payments derived from them remain untrusted until their provenance is proven. No magnitude-based inference or blanket conversion is permitted. Keep unknown cohorts quarantined and non-withdrawable. The destructive seed behavior remains a separate operational risk and must be guarded before any database setup/seed command is run against retained data.
