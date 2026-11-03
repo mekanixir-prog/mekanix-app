@@ -41,7 +41,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (app.status === "APPROVED") return NextResponse.json({ error: "Already approved" }, { status: 400 });
 
   // Create or link the user
-  let user = await db.user.findUnique({ where: { phone: app.phone } });
+  let user = await db.user.findUnique({ where: { phone: app.phone }, select: AUTH_USER_SELECT });
   if (!user) {
     user = await db.user.create({
       data: {
