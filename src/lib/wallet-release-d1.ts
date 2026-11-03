@@ -102,32 +102,46 @@ export async function releaseWalletTransactionWithD1(
       )
   `).bind(timestamp, transactionId, walletId, timestamp, idempotencyKey);
 
-  // If this transaction is still PENDING, every required write above must
-  // have completed. Already-released rows are accepted only when their
-  // matching ledger proof and wallet after-balance are present.
+  // A dedicated guard row is used because SQLite may ignore an UPDATE
+  // assertion when a trigger suppresses writes to WalletTransaction itself.
+  // Its NOT NULL passed field aborts the batch if any required state is
+  // missing. The row is deleted before commit and is never durable state.
+  const guardId = `wallet-release-assert:${crypto.randomUUID()}`;
   const finalAssertion = d1.prepare(`
-    UPDATE "WalletTransaction"
-    SET "status" = CASE
-      WHEN "status" = 'AVAILABLE' AND EXISTS (
-        SELECT 1
-        FROM "Wallet" w
-        JOIN "WalletLedger" ledger
-          ON ledger."walletId" = w."id"
-         AND ledger."referenceId" = "WalletTransaction"."id"
-         AND ledger."idempotencyKey" = ?
-        WHERE w."id" = "WalletTransaction"."walletId"
-          AND w."balance" = ledger."balanceAfter"
-      ) THEN "status"
-      ELSE NULL
-    END
-    WHERE "id" = ? AND "status" IN ('PENDING', 'AVAILABLE')
-  `).bind(idempotencyKey, transactionId);
+    INSERT INTO "WalletReleaseGuard" ("id", "passed", "createdAt")
+    VALUES (
+      ?,
+      CASE
+        WHEN NOT EXISTS (
+          SELECT 1 FROM "WalletTransaction"
+          WHERE "id" = ? AND "status" IN ('PENDING', 'AVAILABLE')
+        ) OR EXISTS (
+          SELECT 1
+          FROM "WalletTransaction" wt
+          JOIN "Wallet" w ON w."id" = wt."walletId"
+          JOIN "WalletLedger" ledger
+            ON ledger."walletId" = w."id"
+           AND ledger."referenceId" = wt."id"
+           AND ledger."idempotencyKey" = ?
+          WHERE wt."id" = ? AND wt."status" = 'AVAILABLE'
+            AND w."balance" = ledger."balanceAfter"
+        ) THEN 1
+        ELSE NULL
+      END,
+      ?
+    )
+  `).bind(guardId, transactionId, idempotencyKey, transactionId, timestamp);
+
+  const guardCleanup = d1.prepare(`
+    DELETE FROM "WalletReleaseGuard" WHERE "id" = ?
+  `).bind(guardId);
 
   const results = await d1.batch([
     ledgerInsert,
     walletUpdate,
     transactionUpdate,
     finalAssertion,
+    guardCleanup,
   ]);
 
   return results[0]?.meta?.changes === 1 &&
