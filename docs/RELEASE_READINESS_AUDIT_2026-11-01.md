@@ -18,7 +18,11 @@ This audit separates verified code/CI evidence from staging and provider operati
 | Insurance claim recovery | PR #63 | Claim + policy transition are atomic; eligibility guard and status lookup added |
 | Offline reconciliation | PR #50, extended by PR #63 | Persian reconciliation center checks route-specific server status; unsupported/ambiguous actions remain behind manual review |
 | Rate-limit atomicity | PR #35, #38, #40 | Atomic initialization and fail-closed outage handling; PostgreSQL concurrency tests merged |
-| Wallet escrow release | PR #12, #13, #65 | Scheduled Worker, durable cursor, guarded D1 release helper, PostgreSQL coverage, and actual local D1 scheduled-event test are merged; remote Cloudflare D1/Cron verification remains a pre-launch gate |\n| VIP payment-purpose binding | PR #67 | VIP activation now requires the exact verified VIP gateway log, owner, payment link, amount, and IRR currency; production payment remains disabled |\n| CARE extra-cost validation | PR #68 | Server validates integer prices/quantity/total and binds a supplied Finding to the same booking; atomic proposal creation is re-opened on current main in PR #79 |\n| Service-request assignment | PR #69 | Ownership, technician verification/availability/specialty, request claim, technician capacity, and Job creation are enforced atomically |\n| CARE extra approval decisions | PR #70 | Approval/rejection, booking, Finding, and timeline changes use compare-and-set and one transaction/batch |
+| Wallet escrow release | PR #12, #13, #65 | Scheduled Worker, durable cursor, guarded D1 release helper, PostgreSQL coverage, and actual local D1 scheduled-event test are merged; remote Cloudflare D1/Cron verification remains a pre-launch gate |
+| VIP payment-purpose binding | PR #67 | VIP activation now requires the exact verified VIP gateway log, owner, payment link, amount, and IRR currency; production payment remains disabled |
+| CARE extra-cost validation | PR #68 | Server validates integer prices/quantity/total and binds a supplied Finding to the same booking; atomic proposal creation is re-opened on current main in PR #79 |
+| Service-request assignment | PR #69 | Ownership, technician verification/availability/specialty, request claim, technician capacity, and Job creation are enforced atomically |
+| CARE extra approval decisions | PR #70 | Approval/rejection, booking, Finding, and timeline changes use compare-and-set and one transaction/batch |
 | Financial unit audit | PR #74 | Documentation-only audit is merged; integer IRR is a recommendation, not a confirmed product-owner decision. Issue #81 remains open; no financial runtime behavior changed |
 
 ## 2. Verified CI evidence
@@ -27,11 +31,17 @@ This audit separates verified code/CI evidence from staging and provider operati
 - PR #57 merged after all five applicable workflows passed on its exact head.
 - PR #59 merged with route-specific CARE idempotency, atomic writes, and reconciliation tests.
 - PR #63 merged as `5ca2651923af888547946ad5308e507dd4519266` after all five applicable workflows passed on its exact head: CI, Cloudflare Build, Production readiness, PostgreSQL CI, and Docker E2E.
-- PR #63 includes 100-concurrent-same-key D1/SQLite integration simulations and 80-concurrent PostgreSQL integration tests for service requests and claims, payload mismatch/replay behavior, and injected rollback failures.\n- PR #67 merged as `e6c03dcb6ff7316e98fec73092cd9307855fb3c1`; all five workflows passed on its exact head before merge.\n- PR #68 merged as `49e602b5f0413f1e0cc8949708c03dab3709cddd`; all five workflows passed on its exact head before merge.\n- PR #69 merged as `2662e4c671e3f0a07958d941954744ef4fd8d2d3`; all five workflows passed on its exact head before merge.\n- PR #70 merged as `54c9466bac054e8163c8a5859d28227af4fb1983`; all five workflows passed on its exact head before merge.\n- PR #79 merged as `1380597c7a0616a18896c2a7f295a92629c337b4` after all five workflows passed on its current-mainline head. It supersedes the divergent pre-squash PR #72, which is now closed.
+- PR #63 includes 100-concurrent-same-key D1/SQLite integration simulations and 80-concurrent PostgreSQL integration tests for service requests and claims, payload mismatch/replay behavior, and injected rollback failures.
+- PR #67 merged as `e6c03dcb6ff7316e98fec73092cd9307855fb3c1`; all five workflows passed on its exact head before merge.
+- PR #68 merged as `49e602b5f0413f1e0cc8949708c03dab3709cddd`; all five workflows passed on its exact head before merge.
+- PR #69 merged as `2662e4c671e3f0a07958d941954744ef4fd8d2d3`; all five workflows passed on its exact head before merge.
+- PR #70 merged as `54c9466bac054e8163c8a5859d28227af4fb1983`; all five workflows passed on its exact head before merge.
+- PR #79 merged as `1380597c7a0616a18896c2a7f295a92629c337b4` after all five workflows passed on its current-mainline head. It supersedes the divergent pre-squash PR #72, which is now closed.
 - PR #80 merged as `2f3b5b750377f07657cc7db853b12338a8cfaa4a` after all five required workflows passed on a branch containing current main.
 - PR #65 merged as `97d50eb000e39e087eaea6403b23f9fe262b9d76` after all five required workflows passed on its current-main head; Cloudflare Build also ran the actual scheduled Worker twice against local D1 and verified exactly one RELEASE ledger row, correct balances/status, and guard cleanup. No remote Cloudflare resources were provisioned.
 - PR #74 merged as `28d13e32c2046ed2743d549a8ab3c24bdd972054` after all four documentation-branch workflows passed. It records the financial-unit audit and recommended target only; it does not approve IRR or change runtime behavior.
-- PRs #76 and #77 contain additional documentation-only financial audits and remain open pending checks on their latest main-synced heads.\n- Issue #81 is open as a release blocker for the monetary-unit mismatch across schema, wallet accounting, UI formatting, invoice/payment metadata, and Iranian gateway amounts. PRs #71/#73 remain unmerged pending a canonical currency contract and consolidation.
+- PRs #76 and #77 contain additional documentation-only financial audits and remain open pending checks on their latest main-synced heads.
+- Issue #81 is open as a release blocker for the monetary-unit mismatch across schema, wallet accounting, UI formatting, invoice/payment metadata, and Iranian gateway amounts. PRs #71/#73 remain unmerged pending a canonical currency contract and consolidation.
 - Issue #52 is closed as completed for code-level remediation. Issue #29 is closed as not planned for a generic callback helper because the repository audit found no production call sites; route-specific contracts are used instead.
 - Issue #28 is closed as completed for code-level rate-limit atomicity; real Cloudflare D1 runtime validation remains a separate operational gate.
 
@@ -50,7 +60,9 @@ This audit separates verified code/CI evidence from staging and provider operati
 
 - Zarinpal/IDPay adapter scaffolding exists, but the authoritative initiation → persisted attempt → provider verification → business settlement lifecycle is not wired.
 - `/api/payments`, `/api/gateway/initiate`, `/api/gateway/verify`, and VIP/prepay simulator paths remain unavailable in production.
-- Provider selection, server-side callback verification, amount/currency/order ownership checks, duplicate/replay handling, refund behavior, and sandbox evidence remain open.\n- The cross-layer monetary-unit mismatch is tracked separately in issue #81; no provider or payout work may be activated until its accounting and conversion boundary is resolved.\n- The invoice simulator currently marks an invoice PAID and completes the Job but does not create the technician's commission/net escrow WalletTransaction or matching ledger entries. Invoice-to-wallet settlement remains a blocker under issue #24.
+- Provider selection, server-side callback verification, amount/currency/order ownership checks, duplicate/replay handling, refund behavior, and sandbox evidence remain open.
+- The cross-layer monetary-unit mismatch is tracked separately in issue #81; no provider or payout work may be activated until its accounting and conversion boundary is resolved.
+- The invoice simulator currently marks an invoice PAID and completes the Job but does not create the technician's commission/net escrow WalletTransaction or matching ledger entries. Invoice-to-wallet settlement remains a blocker under issue #24.
 - No live payment, refund, bank transfer, or provider credential activation has occurred.
 
 ### 3.3 SMS / OTP
