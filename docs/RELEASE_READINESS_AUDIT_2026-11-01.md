@@ -44,7 +44,7 @@ This audit separates verified code/CI evidence from staging and provider operati
 
 - Zarinpal/IDPay adapter scaffolding exists, but the authoritative initiation → persisted attempt → provider verification → business settlement lifecycle is not wired.
 - `/api/payments`, `/api/gateway/initiate`, `/api/gateway/verify`, and VIP/prepay simulator paths remain unavailable in production.
-- Provider selection, server-side callback verification, amount/currency/order ownership checks, duplicate/replay handling, refund behavior, and sandbox evidence remain open.\n- The cross-layer monetary-unit mismatch is tracked separately in issue #81; no provider or payout work may be activated until its accounting and conversion boundary is resolved.
+- Provider selection, server-side callback verification, amount/currency/order ownership checks, duplicate/replay handling, refund behavior, and sandbox evidence remain open.\n- The cross-layer monetary-unit mismatch is tracked separately in issue #81; no provider or payout work may be activated until its accounting and conversion boundary is resolved.\n- The invoice simulator currently marks an invoice PAID and completes the Job but does not create the technician's commission/net escrow WalletTransaction or matching ledger entries. Invoice-to-wallet settlement remains a blocker under issue #24.
 - No live payment, refund, bank transfer, or provider credential activation has occurred.
 
 ### 3.3 SMS / OTP
