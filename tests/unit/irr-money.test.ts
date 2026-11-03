@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   addIrr,
+  addIrrSigned,
   assertIrrInteger,
+  assertIrrSignedInteger,
   formatIrr,
   multiplyRatioIrr,
   parseIrrInput,
@@ -31,6 +33,20 @@ describe("canonical IRR money primitives", () => {
 
     it("does not coerce string input", () => {
       expect(() => parseIrrInput("1250")).toThrow("safe integer number of IRR");
+    });
+  });
+
+  describe("signed ledger values", () => {
+    it("accepts signed safe-integer ledger deltas", () => {
+      expect(() => assertIrrSignedInteger(-125_000)).not.toThrow();
+      expect(addIrrSigned(1_000, -250, -750)).toBe(0);
+      expect(formatIrr(-1_250, "en-US")).toBe("-1,250");
+    });
+
+    it("rejects unsafe signed values and overflow in either direction", () => {
+      expect(() => assertIrrSignedInteger(Number.MAX_SAFE_INTEGER + 1)).toThrow();
+      expect(() => addIrrSigned(Number.MAX_SAFE_INTEGER, 1)).toThrow();
+      expect(() => addIrrSigned(Number.MIN_SAFE_INTEGER, -1)).toThrow();
     });
   });
 
