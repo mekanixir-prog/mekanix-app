@@ -14,7 +14,7 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - [x] Merge PR #69 — secure and atomically assign service requests.
 - [x] Merge PR #70 — make CARE approval/rejection transitions atomic.
 - [x] Merge PR #79 — atomically create CARE extra proposals on current main.
-- [ ] PR #65 — complete escrow release worker validation; all five CI workflows must pass on the latest head and isolated D1 staging evidence must be recorded before merge.
+- [ ] PR #65 — complete escrow release worker validation; all five workflows must pass on the latest head, including the actual scheduled Worker test against isolated local D1. Remote Cloudflare D1 staging and Cron observation are pre-launch gates before enabling the production schedule.
 - [x] PR #80 — merged after all five workflows passed; invoice issuance is idempotent, tax/pricing inputs are validated, and DRAFT→SENT is compare-and-set.
 - [ ] PR #66 — finish provider adapter review; keep live providers disabled until the authoritative payment lifecycle is wired.
 - [ ] Consolidate PRs #71/#73 only after resolving the monetary-unit contract in issue #81.
@@ -45,6 +45,7 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - [ ] Configure live SMS provider credentials and delivery templates.
 - [ ] Configure Zarinpal/IDPay merchant credentials only after sandbox certification and payment lifecycle approval.
 - [ ] Configure maps/geocoding credentials and validate quota/security restrictions.
+- [ ] Deploy the escrow Worker to isolated remote D1 staging; verify its binding and Cron Trigger, observe scheduled release/replay behavior, and reconcile wallet/ledger state while keeping the production schedule disabled.
 - [ ] Configure production monitoring, error alerts, log retention, backup schedule, and restore ownership.
 - [ ] Apply reviewed production migrations only after a fresh backup and verified rollback plan.
 - [ ] Run production smoke tests with test accounts and zero-value/non-settling checks where supported.
@@ -57,7 +58,7 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - [ ] All five required workflows pass on the exact Release Candidate commit.
 - [ ] No open critical/high security or financial-integrity blocker.
 - [ ] SQLite/D1 and PostgreSQL migration/build/integration checks pass.
-- [ ] D1 escrow worker has isolated staging evidence, safe retry proof, and no duplicate RELEASE ledger rows.
+- [ ] D1 escrow worker passes the local D1 scheduled-event integration test, and remote staging/Cron evidence is recorded before production enablement.
 - [ ] Payment and currency contract is approved, sandbox-certified, and replay/concurrency tested.
 - [ ] Invoice-to-technician-wallet settlement and payout reconciliation are proven end-to-end.
 - [ ] Backup restore and rollback are rehearsed and documented.

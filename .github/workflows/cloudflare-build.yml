@@ -24,6 +24,19 @@ on:
       - 'src/lib/db.worker.ts'
       - 'src/lib/db-worker.ts'
       - 'src/lib/db-access.ts'
+      - 'workers/wallet-release/**'
+      - 'wrangler.wallet-release.toml'
+      - 'docs/WALLET_ESCROW_SCHEDULED_WORKER.md'
+      - '.dockerignore'
+      - 'tests/unit/wallet-escrow-scheduled-worker.test.ts'
+      - 'tests/unit/wallet-release-atomicity.test.ts'
+      - 'tests/integration/wallet-release-postgres.test.ts'
+      - 'tests/integration/wallet-release-d1-sqlite.test.ts'
+      - 'tests/integration/wallet-release-worker-cursor.test.ts'
+      - 'tests/types/node-sqlite.d.ts'
+      - 'scripts/wallet-release-staging-fixture.sh'
+      - 'scripts/test-wallet-release-local-d1.sh'
+      - 'scripts/wallet-release-staging-*.sql'
       - 'src/**'
       - 'tests/integration/idempotent-create-flows-d1-sqlite.test.ts'
       - 'tests/integration/care-booking-d1-sqlite.test.ts'
@@ -61,6 +74,11 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Exercise scheduled escrow release against isolated local D1
+        run: |
+          bash -n scripts/test-wallet-release-local-d1.sh
+          bash scripts/test-wallet-release-local-d1.sh
 
       - name: Build Cloudflare Worker
         env:
