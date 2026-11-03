@@ -29,13 +29,23 @@ export function fmtMoney(amount: number, currency = "IRR", lang: "en" | "fa" = "
   // a plausible-looking financial figure at the presentation boundary.
   if (currency === "IRR" && !Number.isSafeInteger(amount)) return "—";
 
+  // Persian product UI displays canonical IRR as Toman (10 IRR = 1 Toman).
+  // Preserve one decimal when the Rial amount is not divisible by ten; never
+  // round away a non-zero Rial remainder.
+  if (currency === "IRR" && lang === "fa") {
+    const toman = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 1,
+    }).format(amount / 10);
+    return `${toPersianDigits(toman.replace(/,/g, "،").replace(/\./g, "٫"))} تومان`;
+  }
+
   const c = CURRENCIES[currency];
   const symbol = c?.symbol ?? (currency || "?") + " ";
-  const safeAmount = amount;
   const formatted = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 0,
     maximumFractionDigits: currency === "IRR" ? 0 : 2,
-  }).format(safeAmount);
+  }).format(amount);
 
   if (lang === "fa") {
     return `${symbol}${toPersianDigits(formatted.replace(/,/g, "،"))}`;
