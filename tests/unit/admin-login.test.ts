@@ -77,11 +77,12 @@ import { POST } from "@/app/api/admin-panel/auth/login/route";
 
 // ──────────── Helpers ────────────
 function makeLoginRequest(emailOrUsername: string, password: string): Request {
-  return new Request("http://localhost/api/admin-panel/auth/login", {
+  return new Request("https://localhost/api/admin-panel/auth/login", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "x-forwarded-for": "1.2.3.4",
+      "origin": "https://localhost",
     },
     body: JSON.stringify({ emailOrUsername, password }),
   });
@@ -191,9 +192,28 @@ describe("SEC-13 — admin login user enumeration mitigation", () => {
     const res = await POST(req);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.token).toBe("jwt-token-123");
+    expect(body.token).toBeUndefined();
+    expect(res.headers.get("set-cookie")).toContain("mekanix_admin_session=");
+    expect(res.headers.get("set-cookie")).toContain("HttpOnly");
+    expect(res.headers.get("set-cookie")).toContain("Secure");
+    expect(res.headers.get("set-cookie")).toContain("SameSite=Strict");
+    expect(res.headers.get("set-cookie")).toContain("Path=/api/admin-panel");
+    expect(res.headers.get("set-cookie")).toContain("Max-Age=604800");
     expect(body.admin.id).toBe("admin-1");
     expect(body.admin.username).toBe("admin");
+  });
+
+
+  it("rejects login CSRF from a foreign Origin before checking credentials", async () => {
+    const req = new Request("https://localhost/api/admin-panel/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Origin": "https://attacker.example" },
+      body: JSON.stringify({ emailOrUsername: "admin", password: "secret" }),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(403);
+    expect(mockAdminUserFindFirst).not.toHaveBeenCalled();
+    expect(mockVerifyPassword).not.toHaveBeenCalled();
   });
 
   it("returns 400 when emailOrUsername or password is missing", async () => {
@@ -324,7 +344,8 @@ describe("SEC-5 — admin login rate limit + audit log", () => {
     // CRITICAL: login succeeds even though audit log failed
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.token).toBe("jwt-123");
+    expect(body.token).toBeUndefined();
+    expect(res.headers.get("set-cookie")).toContain("HttpOnly");
     // writeAuditLog was attempted (even though it failed)
     expect(mockWriteAuditLog).toHaveBeenCalledTimes(1);
   });
