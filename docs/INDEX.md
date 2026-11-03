@@ -9,11 +9,13 @@
 3. [Production Deployment Runbook](PRODUCTION_DEPLOYMENT_RUNBOOK.md) — staging, configuration, deployment, smoke tests, and rollback sequence.
 4. [Payment & Wallet Audit](AUDIT_PAYMENT_WALLET.md) — provider, invoice, wallet, payout, and idempotency findings.
 5. [Financial Unit Contract Audit](FINANCIAL_UNIT_CONTRACT_AUDIT_2026-11-02.md) — current currency-unit inconsistencies, proposed IRR target, and owner-approval/migration gates.
-6. [D1 / Prisma Audit](AUDIT_D1_PRISMA.md) — adapter, migrations, transaction, and concurrency constraints.
-7. [Security Audit](AUDIT_SECURITY.md) and [Phase 3 Security Audit v2](PHASE3_SECURITY_AUDIT_V2.md) — security review history.
-8. [Cloudflare Build Audit](AUDIT_CLOUDFLARE_BUILD.md) and [CI/CD Audit](AUDIT_CICD.md) — build and workflow details.
-9. [Idempotency Call-Site Inventory](IDEMPOTENCY_CALLSITE_INVENTORY.md) — endpoint-level deduplication contracts.
-10. [Architecture Blueprint](ARCHITECTURE.md), [SEO Implementation Notes](SEO_IMPLEMENTATION.md), [Project Status](PROJECT_STATUS.md), and [Roadmap](ROADMAP.md).
+6. [Financial Data Provenance Inventory](FINANCIAL_DATA_PROVENANCE_INVENTORY_2026-11-02.md) — source units, seed assignments, historical-value provenance, and migration risks.
+7. [Financial API Flow Audit](FINANCIAL_API_FLOW_AUDIT_2026-11-02.md) — money sources, validation boundaries, and payment/wallet/withdrawal flow risks.
+8. [D1 / Prisma Audit](AUDIT_D1_PRISMA.md) — adapter, migrations, transaction, and concurrency constraints.
+9. [Security Audit](AUDIT_SECURITY.md) and [Phase 3 Security Audit v2](PHASE3_SECURITY_AUDIT_V2.md) — security review history.
+10. [Cloudflare Build Audit](AUDIT_CLOUDFLARE_BUILD.md) and [CI/CD Audit](AUDIT_CICD.md) — build and workflow details.
+11. [Idempotency Call-Site Inventory](IDEMPOTENCY_CALLSITE_INVENTORY.md) — endpoint-level deduplication contracts.
+12. [Architecture Blueprint](ARCHITECTURE.md), [SEO Implementation Notes](SEO_IMPLEMENTATION.md), [Project Status](PROJECT_STATUS.md), and [Roadmap](ROADMAP.md).
 
 ## How to interpret evidence
 
