@@ -20,6 +20,10 @@ vi.mock("@/lib/admin-auth", () => ({
   ensureDefaultAdmin: mocks.ensureDefaultAdmin,
   verifyPassword: mocks.verifyPassword,
   createAdminToken: mocks.createAdminToken,
+  isSameOriginRequest: (req: Request) => req.headers.get("origin") === new URL(req.url).origin,
+  setAdminSessionCookie: (response: Response, token: string, req: Request) => {
+    response.headers.append("Set-Cookie", `mekanix_admin_session=${token}; Path=/api/admin-panel; HttpOnly; SameSite=Strict; Max-Age=604800`);
+  },
 }));
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: async () => ({
