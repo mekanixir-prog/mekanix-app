@@ -1,3 +1,4 @@
+import { ADMIN_USER_SELECT } from "@/lib/user-select";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { getAdminFromRequest } from "@/lib/admin-auth";
@@ -8,14 +9,14 @@ import type { PrismaClient } from "@prisma/client";
 const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
   customers: async (db) => {
     const list = await db.customer.findMany({
-      include: { user: true, _count: { select: { vehicles: true, serviceRequests: true } } },
+      include: { user: { select: ADMIN_USER_SELECT }, _count: { select: { vehicles: true, serviceRequests: true } } },
       orderBy: { createdAt: "desc" },
     });
     return list;
   },
   technicians: async (db) => {
     const list = await db.technician.findMany({
-      include: { user: true, specialties: true, certifications: true },
+      include: { user: { select: ADMIN_USER_SELECT }, specialties: true, certifications: true },
       orderBy: { rating: "desc" },
     });
     return list;
@@ -23,8 +24,8 @@ const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
   jobs: async (db) => {
     const list = await db.job.findMany({
       include: {
-        request: { include: { customer: { include: { user: true } }, vehicle: true } },
-        technician: { include: { user: true } },
+        request: { include: { customer: { include: { user: { select: ADMIN_USER_SELECT } } }, vehicle: true } },
+        technician: { include: { user: { select: ADMIN_USER_SELECT } } },
         invoice: true,
       },
       orderBy: { createdAt: "desc" },
@@ -33,7 +34,7 @@ const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
   },
   payments: async (db) => {
     const list = await db.payment.findMany({
-      include: { invoice: { include: { job: true } }, user: true },
+      include: { invoice: { include: { job: true } }, user: { select: ADMIN_USER_SELECT } },
       orderBy: { createdAt: "desc" },
     });
     return list;
@@ -66,14 +67,14 @@ const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
   },
   reviews: async (db) => {
     const list = await db.review.findMany({
-      include: { fromUser: true, technician: { include: { user: true } }, job: true },
+      include: { fromUser: { select: ADMIN_USER_SELECT }, technician: { include: { user: { select: ADMIN_USER_SELECT } } }, job: true },
       orderBy: { createdAt: "desc" },
     });
     return list;
   },
   vehicles: async (db) => {
     const list = await db.vehicle.findMany({
-      include: { customer: { include: { user: true } } },
+      include: { customer: { include: { user: { select: ADMIN_USER_SELECT } } } },
       orderBy: { createdAt: "desc" },
     });
     return list;
@@ -84,7 +85,7 @@ const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
   applications: async (db) => {
     const list = await db.mechanicApplication.findMany({
       orderBy: { createdAt: "desc" },
-      include: { user: { include: { technician: true } } },
+      include: { user: { select: { ...ADMIN_USER_SELECT, technician: true } } },
     });
     return list;
   },
