@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
+import { AUTH_USER_SELECT } from "@/lib/user-select";
 
 // GET /api/auth/demo
 // DEV-ONLY endpoint that returns demo users for one-click sign-in.
@@ -29,14 +30,14 @@ export async function GET() {
   const db = await getDbForLib();
   const customer = await db.user.findFirst({
     where: { role: "CUSTOMER" },
-    include: { customer: true },
+    select: { ...AUTH_USER_SELECT, customer: true },
     orderBy: { createdAt: "asc" },
   });
   const technician = await db.user.findFirst({
     where: { role: "TECHNICIAN" },
-    include: { technician: { include: TECHNICIAN_INCLUDE } },
+    select: { ...AUTH_USER_SELECT, technician: { include: TECHNICIAN_INCLUDE } },
     orderBy: { createdAt: "asc" },
   });
-  const admin = await db.user.findFirst({ where: { role: "ADMIN" } });
+  const admin = await db.user.findFirst({ where: { role: "ADMIN" }, select: AUTH_USER_SELECT });
   return NextResponse.json({ CUSTOMER: customer, TECHNICIAN: technician, ADMIN: admin });
 }

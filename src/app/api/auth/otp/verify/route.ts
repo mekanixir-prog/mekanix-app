@@ -5,6 +5,7 @@ import { validateBody } from "@/lib/api-helpers";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { otpVerifySchema } from "@/lib/schemas";
 import { hashOtpCode } from "@/lib/otp-crypto";
+import { AUTH_USER_SELECT } from "@/lib/user-select";
 
 const TECHNICIAN_INCLUDE = {
   specialties: true,
@@ -95,7 +96,7 @@ export async function POST(req: Request) {
   const phoneDigits = phone.replace(/\D/g, "");
   let user = await db.user.findUnique({
     where: { phone },
-    include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
+    select: { ...AUTH_USER_SELECT, customer: true, technician: { include: TECHNICIAN_INCLUDE } },
   });
 
   if (!user && phoneDigits) {
@@ -154,7 +155,7 @@ export async function POST(req: Request) {
     for (const variant of phoneVariants) {
       user = await db.user.findUnique({
         where: { phone: variant },
-        include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
+        select: { ...AUTH_USER_SELECT, customer: true, technician: { include: TECHNICIAN_INCLUDE } },
       });
       if (user) {
         // Normalize the stored phone so future lookups match directly
@@ -162,7 +163,7 @@ export async function POST(req: Request) {
           user = await db.user.update({
             where: { id: user.id },
             data: { phone },
-            include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
+            select: { ...AUTH_USER_SELECT, customer: true, technician: { include: TECHNICIAN_INCLUDE } },
           });
         }
         break;
@@ -178,7 +179,7 @@ export async function POST(req: Request) {
         email: `+${phone.replace(/\D/g, "")}@mekanix.guest`,
         name: derivedName, role: "CUSTOMER",
       },
-      include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
+      select: { ...AUTH_USER_SELECT, customer: true, technician: { include: TECHNICIAN_INCLUDE } },
     });
     created = true;
     await db.customer.create({ data: { userId: user.id } });
@@ -186,13 +187,13 @@ export async function POST(req: Request) {
     // in case the re-fetch returns null (e.g. in tests or edge cases).
     const refetched = await db.user.findUnique({
       where: { id: user.id },
-      include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
+      select: { ...AUTH_USER_SELECT, customer: true, technician: { include: TECHNICIAN_INCLUDE } },
     });
     if (refetched) user = refetched;
   } else if (!user.phoneVerified) {
     user = await db.user.update({
       where: { id: user.id }, data: { phoneVerified: true },
-      include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
+      select: { ...AUTH_USER_SELECT, customer: true, technician: { include: TECHNICIAN_INCLUDE } },
     });
   }
 
@@ -202,7 +203,7 @@ export async function POST(req: Request) {
     } catch {}
     user = await db.user.findUnique({
       where: { id: user!.id },
-      include: { customer: true, technician: { include: TECHNICIAN_INCLUDE } },
+      select: { ...AUTH_USER_SELECT, customer: true, technician: { include: TECHNICIAN_INCLUDE } },
     });
   }
 
