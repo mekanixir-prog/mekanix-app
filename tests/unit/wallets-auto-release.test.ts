@@ -59,6 +59,7 @@ beforeEach(() => {
   mockWalletTransactionFindMany.mockReset();
   mockWalletTransactionFindMany.mockResolvedValue([]);
   vi.stubEnv("MEKANIX_WALLET_IRR_PROVENANCE_VERIFIED", "true");
+  vi.stubEnv("WALLET_RELEASE_SCHEDULED", "false");
   mockRequireAuth.mockResolvedValue({
     userId: "user-1", role: "TECHNICIAN", phone: "+989120000000", isGuest: false,
   });
@@ -104,6 +105,19 @@ describe("GET /api/wallets — atomic escrow release orchestration", () => {
     expect(mockReleaseWalletTransaction).toHaveBeenCalledTimes(60);
     const maturedQuery = mockWalletTransactionFindMany.mock.calls[1][0];
     expect(maturedQuery.take).toBeUndefined();
+  });
+
+  it("keeps GET read-only for escrow when the scheduled release worker is enabled", async () => {
+    vi.stubEnv("WALLET_RELEASE_SCHEDULED", "true");
+
+    const response = await GET(makeRequest());
+
+    expect(response.status).toBe(200);
+    expect(mockJobFindMany).not.toHaveBeenCalled();
+    expect(mockWalletTransactionUpdateMany).not.toHaveBeenCalled();
+    expect(mockReleaseWalletTransaction).not.toHaveBeenCalled();
+    // The only wallet-transaction query is the read-only earnings summary.
+    expect(mockWalletTransactionFindMany).toHaveBeenCalledTimes(1);
   });
 
   it("does not attempt release for future holds or non-pending transactions", async () => {
