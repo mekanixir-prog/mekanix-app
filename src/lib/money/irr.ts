@@ -156,7 +156,7 @@ export function formatTomanFromIrr(amount: number, locale = "fa-IR"): string {
     minimumFractionDigits: 0,
   });
   const integerText = integerFormatter.format(wholeToman);
-  if (tenthToman === 0n) {
+  if (tenthToman === BigInt(0)) {
     if (!negative) return integerText;
     const minus = integerFormatter.formatToParts(BigInt(-1)).find((part) => part.type === "minusSign")?.value ?? "-";
     return minus + integerText;
@@ -170,7 +170,7 @@ export function formatTomanFromIrr(amount: number, locale = "fa-IR"): string {
     maximumFractionDigits: 0,
   }).format(Number(tenthToman));
   const minus = negative
-    ? integerFormatter.formatToParts(-1n).find((part) => part.type === "minusSign")?.value ?? "-"
+    ? integerFormatter.formatToParts(BigInt(-1)).find((part) => part.type === "minusSign")?.value ?? "-"
     : "";
 
   return minus + integerText + decimal + fraction;
