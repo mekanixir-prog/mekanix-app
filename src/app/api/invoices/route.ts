@@ -24,7 +24,6 @@ export async function GET(req: Request) {
   const jobId = url.searchParams.get("jobId");
   if (!jobId) return NextResponse.json(null);
 
-  // Verify participation
   const access = await requireJobParticipant(session, jobId);
   if (access) return access;
 
@@ -33,29 +32,30 @@ export async function GET(req: Request) {
   return NextResponse.json(inv);
 }
 
-// POST: creates an invoice. Only the technician assigned to the job (or admin) may issue it.
-// Server-authoritative: prices are computed from technician's rates + parts, NOT from client.
+// POST: only the assigned technician or an admin may issue an invoice.
+// Amounts are calculated exclusively from persisted job/technician/parts data.
 export async function POST(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
-  let body: any;
+  let rawBody: unknown;
   try {
-    body = await req.json();
+    rawBody = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-
-  const { jobId } = body;
-  if (typeof jobId !== "string" || !jobId) {
+  if (!rawBody || typeof rawBody !== "object" || Array.isArray(rawBody)) {
+    return NextResponse.json({ error: "بدنه درخواست نامعتبر است" }, { status: 400 });
+  }
+  const body = rawBody as Record<string, unknown>;
+  const jobId = body.jobId;
+  if (typeof jobId !== "string" || !jobId.trim()) {
     return NextResponse.json({ error: "jobId الزامی است" }, { status: 400 });
   }
 
-  // BOLA: must be participant (customer OR assigned tech) OR admin to even read this job
   const access = await requireJobParticipant(session, jobId);
   if (access) return access;
 
-  // Only the assigned technician (or admin) can issue an invoice
   const db = await getDbForLib();
   if (session.role === "TECHNICIAN") {
     const tech = await getTechnicianFromSession(session);
@@ -64,60 +64,110 @@ export async function POST(req: Request) {
     if (!tech || tech.id !== job.technicianId) {
       return NextResponse.json(
         { error: "فقط مکانیک مسئول کار می‌تواند فاکتور صادر کند" },
-        { status: 403 }
+        { status: 403 },
       );
     }
   } else if (session.role !== "ADMIN") {
     return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
   }
 
-  // ──────────── Server-authoritative pricing ────────────
-  // Load job + parts + technician rates — IGNORE any client-supplied amounts.
+  // Idempotent retry: the job-status flow may already have created this invoice.
+  const existingInvoice = await db.invoice.findUnique({
+    where: { jobId },
+    include: FULL_INCLUDE,
+  });
+  if (existingInvoice) return NextResponse.json(existingInvoice);
+
   const job = await db.job.findUnique({
     where: { id: jobId },
     include: { parts: true, technician: true },
   });
   if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
+  if (job.status !== "WAITING_APPROVAL" && job.status !== "COMPLETED") {
+    return NextResponse.json({ error: "فاکتور فقط پس از پایان عملیات تعمیر قابل صدور است" }, { status: 409 });
+  }
+  if (!job.technician || !Array.isArray(job.parts)) {
+    return NextResponse.json({ error: "اطلاعات مکانیک یا قطعات کار کامل نیست" }, { status: 409 });
+  }
 
-  // laborHours may be overridden by technician (capped 0–100); everything else is server-derived.
-  const laborHoursRaw = typeof body.laborHours === "number" ? body.laborHours : 1.5;
-  const laborHours = Math.max(0, Math.min(100, laborHoursRaw));
-
-  const laborRate = Number(job.technician.hourlyRate); // from technician record
-  const laborTotal = laborHours * laborRate;
-  const partsTotal = job.parts.reduce((s, p) => s + Number(p.unitPrice) * p.quantity, 0);
+  const laborHoursRaw = body.laborHours === undefined ? 1.5 : body.laborHours;
+  if (
+    typeof laborHoursRaw !== "number" ||
+    !Number.isFinite(laborHoursRaw) ||
+    laborHoursRaw <= 0 ||
+    laborHoursRaw > 24
+  ) {
+    return NextResponse.json({ error: "مدت کار باید عددی بزرگ‌تر از ۰ و حداکثر ۲۴ ساعت باشد" }, { status: 400 });
+  }
+  const laborHours = laborHoursRaw;
+  const laborRate = Number(job.technician.hourlyRate);
   const travelFee = Number(job.technician.travelFeeBase);
-  const discount = 0; // server-controlled
+  const partsTotal = job.parts.reduce((sum, part) => {
+    const unitPrice = Number(part.unitPrice);
+    const quantity = Number(part.quantity);
+    if (!Number.isFinite(unitPrice) || unitPrice < 0 ||
+        !Number.isSafeInteger(quantity) || quantity < 0) {
+      return Number.NaN;
+    }
+    return sum + unitPrice * quantity;
+  }, 0);
+
+  if (!Number.isFinite(laborRate) || laborRate < 0 ||
+      !Number.isFinite(travelFee) || travelFee < 0 ||
+      !Number.isFinite(partsTotal) || partsTotal < 0) {
+    return NextResponse.json({ error: "اطلاعات قیمت‌گذاری کار نامعتبر است" }, { status: 409 });
+  }
+
+  const laborTotal = laborHours * laborRate;
+  const discount = 0;
   const subtotal = laborTotal + partsTotal + travelFee - discount;
   const taxSetting = await db.platformSetting.findUnique({ where: { key: "tax_rate" } });
-    const taxRate = taxSetting?.value ? parseFloat(taxSetting.value) : 0.09;
+  const taxRate = taxSetting?.value == null ? 0.09 : (taxSetting.value.trim() ? Number(taxSetting.value) : Number.NaN);
+  if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 1) {
+    return NextResponse.json({ error: "تنظیمات مالیات نامعتبر است" }, { status: 503 });
+  }
   const taxTotal = subtotal * taxRate;
   const total = subtotal + taxTotal;
+  if (![laborTotal, subtotal, taxTotal, total].every(Number.isFinite)) {
+    return NextResponse.json({ error: "محاسبه مبلغ فاکتور نامعتبر است" }, { status: 409 });
+  }
 
-  const code = `INV-${Math.floor(3000 + Math.random() * 6000)}`;
+  const code = `INV-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`;
+  let invoice: any;
+  try {
+    invoice = await db.invoice.create({
+      data: {
+        code,
+        jobId,
+        laborHours,
+        laborRate,
+        laborTotal,
+        partsTotal,
+        travelFee,
+        discount,
+        subtotal,
+        taxRate,
+        taxTotal,
+        total,
+        currency: "IRR",
+        status: "SENT",
+        notes: "Parts & labor covered by 6-month MEKANIX warranty.",
+      },
+      include: FULL_INCLUDE,
+    });
+  } catch (error) {
+    // A concurrent request or the job-status transition may win the unique
+    // Invoice.jobId constraint. Return that committed invoice instead of 500.
+    const racedInvoice = await db.invoice.findUnique({
+      where: { jobId },
+      include: FULL_INCLUDE,
+    }).catch(() => null);
+    if (racedInvoice) return NextResponse.json(racedInvoice);
+    throw error;
+  }
 
-  const inv = await db.invoice.create({
-    data: {
-      code,
-      jobId,
-      laborHours,
-      laborRate,
-      laborTotal,
-      partsTotal,
-      travelFee,
-      discount,
-      subtotal,
-      taxRate,
-      taxTotal,
-      total,
-      currency: "IRR",
-      status: "SENT",
-      notes: "Parts & labor covered by 6-month MEKANIX warranty.",
-    },
-    include: FULL_INCLUDE,
-  });
-
-  // Notify BOTH the customer and the mechanic that the invoice was issued.
+  // Notifications are post-commit and best-effort; a delivery failure must not
+  // turn a successfully issued invoice into an apparent failed request.
   const refreshed = await db.job.findUnique({
     where: { id: jobId },
     include: {
@@ -128,36 +178,40 @@ export async function POST(req: Request) {
   if (refreshed) {
     const cust = refreshed.request.customer.user;
     const tech = refreshed.technician?.user;
-    await db.notification.create({
-      data: {
-        userId: cust.id,
-        type: "invoice_issued",
-        title: `Invoice ${inv.code} issued`,
-        body: `${tech?.name ?? "Mechanic"} issued invoice for ${Number(inv.total)}. Review and pay to complete the job.`,
-        category: "payment",
-        link: "customer/invoice",
-      },
-    });
-    if (tech) {
+    try {
       await db.notification.create({
         data: {
-          userId: tech.id,
+          userId: cust.id,
           type: "invoice_issued",
-          title: `Invoice ${inv.code} sent to customer`,
-          body: `${inv.code} for ${Number(inv.total)} was sent to ${cust.name} for review & payment.`,
+          title: `Invoice ${invoice.code} issued`,
+          body: `${tech?.name ?? "Mechanic"} issued invoice for ${Number(invoice.total)}. Review and pay to complete the job.`,
           category: "payment",
-          link: "technician/earnings",
+          link: "customer/invoice",
         },
       });
+      if (tech) {
+        await db.notification.create({
+          data: {
+            userId: tech.id,
+            type: "invoice_issued",
+            title: `Invoice ${invoice.code} sent to customer`,
+            body: `${invoice.code} for ${Number(invoice.total)} was sent to ${cust.name} for review & payment.`,
+            category: "payment",
+            link: "technician/earnings",
+          },
+        });
+      }
+      await db.message.create({
+        data: {
+          jobId: refreshed.id,
+          fromUserId: tech?.id ?? cust.id,
+          kind: "system",
+          body: `Invoice ${invoice.code} issued — total ${Number(invoice.total)} ${invoice.currency}.`,
+        },
+      });
+    } catch (error) {
+      console.error("[invoices] invoice notification failed:", error);
     }
-    await db.message.create({
-      data: {
-        jobId: refreshed.id,
-        fromUserId: tech?.id ?? cust.id,
-        kind: "system",
-        body: `Invoice ${inv.code} issued — total ${Number(inv.total)} ${inv.currency}.`,
-      },
-    });
   }
-  return NextResponse.json(inv);
+  return NextResponse.json(invoice);
 }
