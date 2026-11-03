@@ -1,3 +1,4 @@
+import { PARTICIPANT_USER_SELECT } from "@/lib/user-select";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
@@ -6,8 +7,8 @@ import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
 const FULL_INCLUDE = {
   job: {
     include: {
-      request: { include: { customer: { include: { user: true } }, vehicle: true } },
-      technician: { include: { user: true } },
+      request: { include: { customer: { include: { user: { select: PARTICIPANT_USER_SELECT } } }, vehicle: true } },
+      technician: { include: { user: { select: PARTICIPANT_USER_SELECT } } },
       parts: true,
       diagnosisRecords: true,
     },
@@ -171,8 +172,8 @@ export async function POST(req: Request) {
   const refreshed = await db.job.findUnique({
     where: { id: jobId },
     include: {
-      request: { include: { customer: { include: { user: true } } } },
-      technician: { include: { user: true } },
+      request: { include: { customer: { include: { user: { select: PARTICIPANT_USER_SELECT } } } } },
+      technician: { include: { user: { select: PARTICIPANT_USER_SELECT } } },
     },
   });
   if (refreshed) {
