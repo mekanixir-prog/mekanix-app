@@ -1,12 +1,12 @@
 # Financial Unit Contract Audit
 
-**Status:** Product-owner decision recorded — IRR is the only permitted monetary unit. Implementation and historical-data reconciliation remain pending.  
+**Status:** Proposed target contract — integer IRR is recommended for this Iran-first product, but explicit product-owner approval has not been recorded. Runtime changes and historical-data reconciliation remain pending.  
 **Reviewed:** 2026-11-02  
 **Scope:** Wallet, withdrawals, display formatting, invoices, payments, VIP pricing, CARE pricing, and gateway adapter boundary.
 
-## Binding product decision
+## Proposed target contract (pending product-owner approval)
 
-MEKANIX uses **Iranian rial (IRR) exclusively** as its monetary unit throughout the product.
+**Recommendation for approval:** MEKANIX would use **Iranian rial (IRR) exclusively** as its monetary unit throughout the product.
 
 - USD and other foreign currencies must not be used as wallet units, accounting units, invoice currencies, payment currencies, withdrawal units, gateway amounts, plan prices, service prices, or internal calculation units.
 - Persist all monetary amounts as integer IRR. Do not store fractional rial and do not use floating-point arithmetic for financial calculations.
@@ -15,11 +15,11 @@ MEKANIX uses **Iranian rial (IRR) exclusively** as its monetary unit throughout 
 - No exchange-rate endpoint, live FX rate, fallback USD/IRR rate, or hidden currency conversion may affect MEKANIX monetary values.
 - Foreign-currency amounts received from an external source are not valid MEKANIX transaction amounts. They must not enter the payment, wallet, invoice, pricing, or payout flow.
 
-This is a binding product requirement, not a proposal awaiting approval.
+This is an engineering recommendation, not a binding product requirement. The product owner must explicitly approve or amend it before runtime financial flows adopt it.
 
 ## Executive finding
 
-The repository currently violates this requirement in multiple places. The conflicts are not cosmetic: the code contains a USD-base withdrawal threshold, a USD-to-IRR display multiplier, and an exchange-rate fetch used by the Persian money helper.
+The repository currently has inconsistent monetary-unit behavior relative to this proposed target in multiple places. The conflicts are not cosmetic: the code contains a USD-base withdrawal threshold, a USD-to-IRR display multiplier, and an exchange-rate fetch used by the Persian money helper.
 
 | Area | Current declaration or behavior | Required state |
 |---|---|---|
@@ -45,7 +45,7 @@ A unit mismatch can cause:
 - a gateway request whose amount differs from the amount stored in the payment record;
 - historical records becoming ambiguous after a schema or formatter change.
 
-Passing CI does not prove monetary correctness. PR #73's current USD-base threshold and cent precision conflict with the product's IRR-only requirement. The current formatter also multiplies amounts already labelled IRR by a live or fallback USD→IRR rate.
+Passing CI does not prove monetary correctness. PR #73's current USD-base threshold and cent precision conflict with the proposed IRR-only target. The current formatter also multiplies amounts already labelled IRR by a live or fallback USD→IRR rate.
 
 ## Required target contract
 
@@ -68,7 +68,7 @@ Passing CI does not prove monetary correctness. PR #73's current USD-base thresh
 - Add tests with known IRR/Toman examples and integer boundary values.
 - Search for USD, dollar symbols, exchange-rate helpers, and foreign currency defaults in all app code, tests, seed data, docs, and environment configuration.
 
-### Phase B — Enforce the IRR-only contract
+### Phase B — Enforce the IRR-only contract (only after explicit owner approval)
 - Remove `USD_TO_IRR`, `setUsdToIrrRate`, `getUsdToIrrRate`, and the exchange-rate fetch from money formatting and Persian UI initialization.
 - Make `fmtMoney` format canonical IRR directly; remove USD as the fallback currency.
 - Update PR #73 withdrawal validation and UI to integer IRR with explicit IRR minimum/maximum.
@@ -95,11 +95,11 @@ Passing CI does not prove monetary correctness. PR #73's current USD-base thresh
 - **PR #66:** enforce the provider's IRR contract end-to-end from persisted payment attempt through verification.
 - **PR #67:** preserve integer-IRR equality between VIP plan price and successful payment.
 - **PR #68:** CARE proposal amounts currently described as Toman must be converted once to IRR before they enter an IRR invoice; document and test that boundary.
-- **PR #74:** records the product decision and audit gates; it does not itself change runtime behavior.
+- **PR #74:** records the audit findings and a recommended target contract; it does not record a product-owner decision or change runtime behavior.
 
 ## Explicitly out of scope
 
-No live SMS, payment credentials, domain, DNS, VPS, or production payout activation is required now. Those remain launch-stage configuration, as planned. The simulator and staging lifecycle must nevertheless exercise the same IRR-only amount and idempotency contract before launch.
+No live SMS, payment credentials, domain, DNS, VPS, or production payout activation is required now. Those remain launch-stage configuration, as planned. The simulator and staging lifecycle must nevertheless exercise the same proposed integer-IRR amount and idempotency contract before launch, if that target is approved.
 
 
 ## Additional confirmed finding — seed data is not IRR
@@ -129,7 +129,7 @@ This means that simply removing the USD-to-IRR display multiplier would make see
 
 ### Product pricing decision still needed
 
-The IRR-only unit is settled. Actual business prices are not. The repository's existing small seed numbers must not be treated as approved Iranian market prices. Until the product owner supplies or approves a pricing schedule, use test fixtures clearly labelled as synthetic and do not enable real financial flows.
+The canonical monetary unit is not yet confirmed by the product owner. IRR is the recommendation in this audit; actual business prices are also unapproved. The repository's existing small seed numbers must not be treated as approved Iranian market prices. Until the product owner supplies or approves a pricing schedule, use test fixtures clearly labelled as synthetic and do not enable real financial flows.
 
 
 ## Follow-up source trace — invoice, payment, VIP, CARE, and wallet
@@ -229,7 +229,7 @@ The current `src/lib/pricing.ts` hardcodes a base labor rate of 50,000 IRR/hour,
 
 ### Currency formatter and exchange-rate polling conflict with IRR-only storage
 
-- `src/lib/constants.ts` exposes USD, EUR, and IRR as supported currencies, although the product requirement is IRR-only.
+- `src/lib/constants.ts` exposes USD, EUR, and IRR as supported currencies, although this differs from the proposed IRR-only target.
 - `src/lib/format.ts` defaults unknown currencies to USD and multiplies values passed as `IRR` by a mutable USD→IRR rate. Its default fallback rate is 60,000.
 - `src/lib/use-t.ts` fetches `/api/exchange-rate` on mount and every five minutes, then injects that rate into the formatter. For Persian users it forces the currency argument to IRR, which currently means an already-IRR amount is multiplied by an FX rate.
 - Required fix: replace this with a pure integer-IRR formatter (no FX request, no rate state, no USD/EUR fallback). If Toman display is retained, calculate it only as a labelled presentation value from integer IRR; never change the stored/API amount.
@@ -268,7 +268,7 @@ This section records the state of the open branches reviewed on 2026-11-02. Pass
 - **PR #66 — payment provider adapters:** adds provider adapter tests and IDPay verification that compares the returned integer amount and order ID with the persisted request. The adapter module itself explicitly remains disabled from the live payment lifecycle; the real route/persistence/callback/fulfillment integration is still a separate blocker. The shared payment UI still documents its amount as USD on `main`.
 - **PR #67 — VIP payment purpose:** improves the route by requiring `currency === "IRR"`, a verified gateway log, the VIP purpose, matching payment identity, and a matching gateway-log amount. However, the route still accepts `payment.amount >= plan.priceIrr` rather than exact plan-price equality, and it does not explicitly require the payment and plan amounts to be safe integer IRR. It remains production-disabled until the gateway lifecycle is wired.
 - **PR #72 — CARE extra proposal atomicity:** adds safe-integer validation for part and labor prices, but explicitly defines those values as Toman. The proposal total remains in Toman; this PR does not convert the amount to IRR or establish a single invoice/payment boundary. Its Zod schema also permits fractional prices even though the custom validator rejects them, so the route must consistently use the strict validator.
-- **PR #73 — bank withdrawal validation:** improves bank destination validation and atomic payout handling, but explicitly preserves USD-base amounts, a $5 minimum, a $10,000 maximum, and cent precision. It is incompatible with IRR-only money and remains release-blocked.
+- **PR #73 — bank withdrawal validation:** improves bank destination validation and atomic payout handling, but explicitly preserves USD-base amounts, a $5 minimum, a $10,000 maximum, and cent precision. It is incompatible with the proposed IRR-only target and remains release-blocked pending the owner's currency decision.
 - **PR #74 — financial audit:** documentation only; its CI, PostgreSQL CI, Docker E2E, and Production Readiness workflows passed on the preceding documented commit. The latest documentation commit has a new workflow run in progress at the time of this update.
 
 ### Additional required gates from PR review
@@ -304,7 +304,7 @@ This section records the state of the open branches reviewed on 2026-11-02. Pass
 ### Database-level hardening required
 
 1. Decide whether the persisted monetary type should remain Decimal with strict safe-integer validation at every write boundary, or move to a database representation that enforces integer IRR. The migration must account for both PostgreSQL and Cloudflare D1.
-2. Add a constrained currency enum/check or eliminate per-row currency where the domain is strictly IRR-only; do not rely on a default string.
+2. Add a constrained currency enum/check or eliminate per-row currency if the owner approves a strictly IRR-only domain; do not rely on a default string.
 3. Add regression tests that attempt to write fractional IRR and non-IRR currency values through every supported adapter.
 4. Classify existing demo rows separately from production/real records before any migration. Seed reset is not a substitute for production reconciliation.
 
