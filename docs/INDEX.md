@@ -1,6 +1,6 @@
 # MEKANIX Engineering Documentation
 
-> **Current audited mainline:** `0ebba5716396499e537efd1e7cca037c64604533` (2026-11-03). The dated release audit is the source of truth for code and release status.
+> **Current audited code baseline:** `28d13e32c2046ed2743d549a8ab3c24bdd972054` (2026-11-03). The dated release audit is the source of truth for code and release status.
 
 ## Start here
 
@@ -10,11 +10,11 @@
 4. [Payment & Wallet Audit](AUDIT_PAYMENT_WALLET.md) — provider, invoice, wallet, payout, and idempotency findings.
 5. [Financial Unit Contract Audit](FINANCIAL_UNIT_CONTRACT_AUDIT_2026-11-02.md) — current currency-unit inconsistencies, proposed IRR target, and owner-approval/migration gates.
 6. [Financial Data Provenance Inventory](FINANCIAL_DATA_PROVENANCE_INVENTORY_2026-11-02.md) and [Financial API Flow Audit](FINANCIAL_API_FLOW_AUDIT_2026-11-02.md) — source units, seed risks, and money-flow validation boundaries.
-5. [D1 / Prisma Audit](AUDIT_D1_PRISMA.md) — adapter, migrations, transaction, and concurrency constraints.
-6. [Security Audit](AUDIT_SECURITY.md) and [Phase 3 Security Audit v2](PHASE3_SECURITY_AUDIT_V2.md) — security review history.
-7. [Cloudflare Build Audit](AUDIT_CLOUDFLARE_BUILD.md) and [CI/CD Audit](AUDIT_CICD.md) — build and workflow details.
-8. [Idempotency Call-Site Inventory](IDEMPOTENCY_CALLSITE_INVENTORY.md) — endpoint-level deduplication contracts.
-9. [Architecture Blueprint](ARCHITECTURE.md), [SEO Implementation Notes](SEO_IMPLEMENTATION.md), [Project Status](PROJECT_STATUS.md), and [Roadmap](ROADMAP.md).
+7. [D1 / Prisma Audit](AUDIT_D1_PRISMA.md) — adapter, migrations, transaction, and concurrency constraints.
+8. [Security Audit](AUDIT_SECURITY.md) and [Phase 3 Security Audit v2](PHASE3_SECURITY_AUDIT_V2.md) — security review history.
+9. [Cloudflare Build Audit](AUDIT_CLOUDFLARE_BUILD.md) and [CI/CD Audit](AUDIT_CICD.md) — build and workflow details.
+10. [Idempotency Call-Site Inventory](IDEMPOTENCY_CALLSITE_INVENTORY.md) — endpoint-level deduplication contracts.
+11. [Architecture Blueprint](ARCHITECTURE.md), [SEO Implementation Notes](SEO_IMPLEMENTATION.md), [Project Status](PROJECT_STATUS.md), and [Roadmap](ROADMAP.md).
 
 ## How to interpret evidence
 
