@@ -69,6 +69,7 @@ const existingInvoice = {
 
 const pricingJob = {
   id: "job-1",
+  status: "WAITING_APPROVAL",
   parts: [{ unitPrice: 100, quantity: 2 }],
   technician: { hourlyRate: 200, travelFeeBase: 50 },
 };
@@ -132,6 +133,15 @@ describe("POST /api/invoices lifecycle", () => {
     expect(mocks.taxFindUnique).toHaveBeenCalledTimes(1);
     expect(await response.json()).toMatchObject({ error: "تنظیمات مالیات نامعتبر است" });
     expect(response.status).toBe(503);
+    expect(mocks.invoiceCreate).not.toHaveBeenCalled();
+  });
+
+  it("does not issue an invoice before the job reaches post-repair approval", async () => {
+    mocks.invoiceFindUnique.mockResolvedValueOnce(null);
+    mocks.jobFindUnique.mockResolvedValueOnce({ ...pricingJob, status: "IN_SERVICE" });
+
+    const response = await createInvoice(postRequest({ jobId: "job-1" }));
+    expect(response.status).toBe(409);
     expect(mocks.invoiceCreate).not.toHaveBeenCalled();
   });
 
