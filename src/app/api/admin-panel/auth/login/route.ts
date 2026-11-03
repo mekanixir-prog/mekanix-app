@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
-import { verifyPassword, createAdminToken, ensureDefaultAdmin } from "@/lib/admin-auth";
+import { verifyPassword, createAdminToken, ensureDefaultAdmin, isSameOriginRequest, setAdminSessionCookie } from "@/lib/admin-auth";
 import { rateLimitAsync, getClientId } from "@/lib/rate-limit";
 import { writeAuditLog } from "@/lib/admin-api";
 import { createHash } from "node:crypto";
@@ -31,6 +31,11 @@ const UNAUTH_MSG = "ایمیل/یوزرنیم یا پسورد اشتباه اس�
 const LOGIN_RATE_LIMIT = { max: 5, windowMs: 15 * 60_000 };
 
 export async function POST(req: Request) {
+  // Prevent login CSRF before consuming rate-limit capacity or touching credentials.
+  if (!isSameOriginRequest(req)) {
+    return NextResponse.json({ error: "درخواست از مبدأ نامعتبر است" }, { status: 403 });
+  }
+
   // Rate-limit before any DB-backed bootstrap or credential lookup.
   const clientId = getClientId(req);
   const ipLimit = await rateLimitAsync(`admin-login:ip:${clientId}`, LOGIN_RATE_LIMIT.max, LOGIN_RATE_LIMIT.windowMs);
@@ -118,7 +123,12 @@ export async function POST(req: Request) {
   }
 
   await db.adminUser.update({ where: { id: admin.id }, data: { lastLoginAt: new Date() } });
-  const token = await createAdminToken({ adminId: admin.id, username: admin.username, role: admin.role });
+  const token = await createAdminToken({
+    adminId: admin.id,
+    username: admin.username,
+    role: admin.role,
+    sessionVersion: admin.sessionVersion ?? 0,
+  });
 
   // SEC-5: audit log successful login (best-effort).
   try {
@@ -134,8 +144,9 @@ export async function POST(req: Request) {
     console.error("[audit log error] ADMIN_LOGIN_SUCCESS", e);
   }
 
-  return NextResponse.json({
-    token,
+  const response = NextResponse.json({
     admin: { id: admin.id, username: admin.username, name: admin.name, email: admin.email, role: admin.role },
   });
+  setAdminSessionCookie(response, token, req);
+  return response;
 }
