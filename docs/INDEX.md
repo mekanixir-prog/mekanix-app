@@ -1,6 +1,6 @@
 # MEKANIX Engineering Documentation
 
-> **Current audited code baseline:** `63095f5daffbe950ef707e2a0521b8ffd28a22c1` (2026-11-03). The dated release audit is the source of truth for code and release status.
+> **Current audited code baseline:** `f18c8acb667e073a0bda99799177f3f4f0d6fae9` (2026-11-03). The dated release audit is the source of truth for code and release status.
 
 ## Start here
 
