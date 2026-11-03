@@ -35,6 +35,7 @@ assert_sql() {
   echo "$output"
   if ! grep -q "$label" <<< "$output"; then
     echo "❌ D1 assertion failed: $label"
+    cat "$LOG_FILE" || true
     exit 1
   fi
 }
@@ -83,6 +84,7 @@ trigger_scheduled() {
 
 echo "Triggering scheduled event..."
 trigger_scheduled
+sleep 1
 
 assert_sql "SELECT CASE WHEN balance=10000 AND pendingBalance=0 THEN 'PASS' ELSE 'FAIL' END AS assertion FROM Wallet WHERE id='wallet-release-staging-wallet';" "PASS"
 assert_sql "SELECT CASE WHEN status='AVAILABLE' THEN 'PASS' ELSE 'FAIL' END AS assertion FROM WalletTransaction WHERE id='wallet-release-staging-txn';" "PASS"
@@ -91,6 +93,7 @@ assert_sql "SELECT CASE WHEN COUNT(*)=0 THEN 'PASS' ELSE 'FAIL' END AS assertion
 
 echo "Triggering a second scheduled event to prove no duplicate RELEASE row..."
 trigger_scheduled
+sleep 1
 assert_sql "SELECT CASE WHEN balance=10000 AND pendingBalance=0 THEN 'PASS' ELSE 'FAIL' END AS assertion FROM Wallet WHERE id='wallet-release-staging-wallet';" "PASS"
 assert_sql "SELECT CASE WHEN COUNT(*)=1 THEN 'PASS' ELSE 'FAIL' END AS assertion FROM WalletLedger WHERE idempotencyKey='wallet-release:wallet-release-staging-txn:LEDGER';" "PASS"
 assert_sql "SELECT CASE WHEN COUNT(*)=0 THEN 'PASS' ELSE 'FAIL' END AS assertion FROM WalletReleaseGuard;" "PASS"
