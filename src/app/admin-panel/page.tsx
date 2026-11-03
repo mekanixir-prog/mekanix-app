@@ -27,9 +27,11 @@ export default function AdminPanelPage() {
   if (!authenticated) return <LoginScreen onLogin={() => setAuthenticated(true)} />;
   return <AdminDashboard onLogout={async () => {
     try {
-      await fetch("/api/admin-panel/auth/logout", { method: "POST", credentials: "same-origin" });
-    } finally {
+      const res = await fetch("/api/admin-panel/auth/logout", { method: "POST", credentials: "same-origin" });
+      if (!res.ok) throw new Error("خروج از پنل تأیید نشد");
       setAuthenticated(false);
+    } catch {
+      window.alert("ارتباط با سرور برقرار نشد؛ خروج انجام نشده است. دوباره تلاش کنید.");
     }
   }} />;
 }
@@ -92,7 +94,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
   );
 }
 
-function AdminDashboard({ onLogout }: { onLogout: () => void }) {
+function AdminDashboard({ onLogout }: { onLogout: () => void | Promise<void> }) {
   const [section, setSection] = useState("onboarding");
   const [slides, setSlides] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
