@@ -4,25 +4,14 @@ import { getDbForLib } from "./db-access";
 import { verifySession } from "./auth";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SEC-21 fix: Admin JWT isolation + payload-shape validation.
-//
-// Previously `verifyAdminToken` accepted ANY token signed with `JWT_SECRET`,
-// which in production collides with the user-OTP secret (`src/lib/auth.ts`).
-// A user JWT therefore passed the admin gate (adminId/username were `undefined`
-// but truthy enough to bypass `if (!adminSession)`).
-//
-// Two layers of defense now:
-//   (1) Secret separation — admin tokens prefer `ADMIN_JWT_SECRET`. If unset,
-//       admin falls back to `JWT_SECRET` (backward compat) but a prod warning
-//       is emitted recommending explicit separation. A user token signed with
-//       `JWT_SECRET` can no longer verify when `ADMIN_JWT_SECRET` is set.
-//   (2) Payload-shape validation — even if secrets still collide, a token is
-//       only accepted as an admin session if it carries a non-empty `adminId`
-//       and a role in {ADMIN, SUPER_ADMIN}. A user token has role "CUSTOMER"
-//       and is rejected.
-//
-// The secret is read INSIDE the function (not module-level) so test harnesses
-// can stub env per-test (fixes SEC-17).
+// Standalone admin authentication security contract:
+// - Dedicated admin tokens require ADMIN_JWT_SECRET (>=32 bytes in production);
+//   production never falls back to the general OTP/user-session secret.
+// - Dedicated tokens must contain an admin identity, an allowed role, and a
+//   persisted sessionVersion. The database version is checked on every request.
+// - The standalone panel transports the token only in an HttpOnly cookie.
+// - The in-app AdminApp remains on its separate OTP session + database-role path.
+// Secrets are read inside functions so tests can safely stub environment values.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const encoder = new TextEncoder();
