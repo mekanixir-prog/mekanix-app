@@ -1,65 +1,8 @@
 import type { PrismaClient } from "@prisma/client";
+import { releaseWalletTransactionWithD1, type D1Binding } from "./wallet-release-d1";
+export { releaseWalletTransactionWithD1 } from "./wallet-release-d1";
 
-type D1Result = { meta?: { changes?: number } };
-type D1PreparedStatement = { bind: (...values: unknown[]) => D1PreparedStatement };
-type D1Binding = {
-  prepare: (query: string) => D1PreparedStatement;
-  batch: (statements: D1PreparedStatement[]) => Promise<D1Result[]>;
-};
-
-/**
- * D1's batch API runs all statements in one SQLite transaction.
- * The wallet aggregate is changed first; the transaction transition is
- * conditioned on SQLite changes() from that exact wallet UPDATE. Both
- * statements use the same eligibility predicate and the batch is atomic.
- */
-export async function releaseWalletTransactionWithD1(
-  d1: D1Binding,
-  walletId: string,
-  transactionId: string,
-  now: Date
-): Promise<boolean> {
-  const timestamp = now.toISOString();
-  const eligibleAmount = `(
-    SELECT "netAmount" FROM "WalletTransaction"
-    WHERE "id" = ? AND "walletId" = ? AND "status" = 'PENDING'
-      AND "holdUntil" IS NOT NULL AND "holdUntil" <= ?
-  )`;
-
-  const walletUpdate = d1.prepare(`
-    UPDATE "Wallet"
-    SET
-      "pendingBalance" = "pendingBalance" - ${eligibleAmount},
-      "balance" = "balance" + ${eligibleAmount},
-      "updatedAt" = ?
-    WHERE "id" = ?
-      AND "pendingBalance" >= ${eligibleAmount}
-      AND EXISTS (
-        SELECT 1 FROM "WalletTransaction"
-        WHERE "id" = ? AND "walletId" = ? AND "status" = 'PENDING'
-          AND "holdUntil" IS NOT NULL AND "holdUntil" <= ?
-      )
-  `).bind(
-    transactionId, walletId, timestamp,
-    transactionId, walletId, timestamp,
-    timestamp, walletId,
-    transactionId, walletId, timestamp,
-    transactionId, walletId, timestamp
-  );
-
-  const transactionUpdate = d1.prepare(`
-    UPDATE "WalletTransaction"
-    SET "status" = 'AVAILABLE', "releasedAt" = ?
-    WHERE "id" = ? AND "walletId" = ? AND "status" = 'PENDING'
-      AND "holdUntil" IS NOT NULL AND "holdUntil" <= ?
-      AND changes() = 1
-  `).bind(timestamp, transactionId, walletId, timestamp);
-
-  const results = await d1.batch([walletUpdate, transactionUpdate]);
-  return results[0]?.meta?.changes === 1 && results[1]?.meta?.changes === 1;
-}
-
-/** Node/SQLite and PostgreSQL implementation using a real Prisma transaction. */
+/** Node/SQLite and PostgreSQL: state, aggregates, and immutable ledger proof commit together. */
 export async function releaseWalletTransactionWithPrisma(
   db: PrismaClient,
   walletId: string,
@@ -72,6 +15,7 @@ export async function releaseWalletTransactionWithPrisma(
         id: transactionId,
         walletId,
         status: "PENDING",
+        netAmount: { gte: 0 },
         holdUntil: { not: null, lte: now },
       },
       select: { netAmount: true },
@@ -83,6 +27,7 @@ export async function releaseWalletTransactionWithPrisma(
         id: transactionId,
         walletId,
         status: "PENDING",
+        netAmount: { gte: 0 },
         holdUntil: { not: null, lte: now },
       },
       data: { status: "AVAILABLE", releasedAt: now },
@@ -101,6 +46,28 @@ export async function releaseWalletTransactionWithPrisma(
       // Throwing rolls back the preceding PENDING -> AVAILABLE transition.
       throw new Error("Wallet pending balance is inconsistent; escrow release rolled back");
     }
+
+    const updatedWallet = await tx.wallet.findUnique({
+      where: { id: walletId },
+      select: { balance: true },
+    });
+    if (!updatedWallet) throw new Error("Wallet disappeared during escrow release");
+
+    const amount = transaction.netAmount;
+    const balanceAfter = updatedWallet.balance;
+    await tx.walletLedger.create({
+      data: {
+        walletId,
+        type: "RELEASE",
+        amount,
+        balanceBefore: balanceAfter.minus(amount),
+        balanceAfter,
+        referenceType: "WalletTransaction",
+        referenceId: transactionId,
+        description: `Escrow released — transaction ${transactionId}`,
+        idempotencyKey: `wallet-release:${transactionId}:LEDGER`,
+      },
+    });
     return true;
   });
 }
