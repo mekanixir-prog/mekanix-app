@@ -2,6 +2,7 @@
 // Run with: bun run prisma/seed.ts
 // Or auto-seeds on first dev server start via src/lib/auto-seed.ts
 import { PrismaClient } from "@prisma/client";
+import { assertDatabaseEmptyForDemoSeed } from "../src/lib/seed-safety";
 
 // Use the global seed db if set (by auto-seed), otherwise create our own.
 function getDb(): PrismaClient {
@@ -15,9 +16,17 @@ const day = 86400000;
 const iso = (offsetMs: number) => new Date(now + offsetMs);
 
 async function main() {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Demo seed is disabled in production. Refusing to delete application data.");
+  }
+
+  // Check every Prisma model, not only User: orphaned financial rows or
+  // operational data must never be erased by a demo seed retry.
+  await assertDatabaseEmptyForDemoSeed(db);
+
   console.log("🌱 Seeding MEKANIX database...");
 
-  // Wipe (order matters for FK)
+  // Wipe (order matters for FK). This block is reachable only on a verified-empty DB.
   await db.notification.deleteMany();
   await db.payment.deleteMany();
   await db.invoice.deleteMany();
