@@ -16,6 +16,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
+import { validateExtraProposalInput } from "@/lib/care-extra-pricing";
 import {
   requireAssignedTechnician,
   isValidTransition,
@@ -38,7 +39,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (authz) return authz;
 
   // Parse request body early so we can fail fast on malformed input.
-  const body = await req.json();
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "بدنه JSON نامعتبر است" }, { status: 400 });
+  }
+  const validated = validateExtraProposalInput(body);
+  if (!validated.ok) {
+    return NextResponse.json({ error: validated.error }, { status: 400 });
+  }
+  const proposal = validated.value;
 
   // Fetch booking (we need its status + customer userId for the notification).
   const booking = await db.serviceBooking.findUnique({
@@ -77,7 +88,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   // All side effects run sequentially (D1 has no $transaction).
   // 1. Optionally create (or reuse) a Finding for this proposal.
-  let findingId = body.findingId;
+  let findingId = proposal.findingId;
+  if (findingId) {
+    const linkedFinding = await db.finding.findFirst({
+      where: { id: findingId, bookingId: id },
+      select: { id: true },
+    });
+    if (!linkedFinding) {
+      return NextResponse.json({ error: "عیب انتخاب‌شده متعلق به این سفارش نیست" }, { status: 400 });
+    }
+  }
   if (!findingId && body.finding) {
     const f = await db.finding.create({
       data: {
@@ -96,17 +116,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     data: {
       bookingId: id,
       findingId: findingId || null,
-      proposedItem: body.proposedItem,
+      proposedItem: proposal.proposedItem,
       description: body.description || null,
       partName: body.partName || null,
       partBrand: body.partBrand || null,
       partNumber: body.partNumber || null,
       partType: body.partType || "OEM",
-      quantity: body.quantity || 1,
-      partPrice: body.partPrice || 0,
-      laborPrice: body.laborPrice || 0,
-      totalPrice:
-        (body.partPrice || 0) * (body.quantity || 1) + (body.laborPrice || 0),
+      quantity: proposal.quantity,
+      partPrice: proposal.partPrice,
+      laborPrice: proposal.laborPrice,
+      totalPrice: proposal.partPrice * proposal.quantity + proposal.laborPrice,
       imageUrl: body.imageUrl || null,
       technicianNote: body.technicianNote || null,
       status: "PROPOSED",
@@ -135,8 +154,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       userId: booking.userId,
       type: "extra_proposal",
       title: "پیشنهاد هزینه اضافه",
-      body: `${body.proposedItem} — ${
-        (body.partPrice || 0) * (body.quantity || 1) + (body.laborPrice || 0)
+      body: `${proposal.proposedItem} — ${
+        proposal.partPrice * proposal.quantity + proposal.laborPrice
       } تومان`,
       category: "job",
       link: "care-detail",
