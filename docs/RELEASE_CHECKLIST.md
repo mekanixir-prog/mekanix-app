@@ -19,9 +19,10 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - [x] PR #66 — provider adapter hardening merged as `36b05650d011b60ace35f0751921c941de3f24a1`. All five required workflows passed on exact PR head `f320fd726fcbcc12add6ae8d2cbca14dccf4dbad`; post-merge CI on the merge commit is being revalidated. Adapters remain sandbox-only and disconnected from production payment routes.
 - [ ] Consolidate PRs #71/#73 only after resolving the monetary-unit contract in issue #81.
 - [ ] Complete the authoritative payment attempt → provider verification → invoice/VIP/prepay fulfillment lifecycle in issue #24.
-- [ ] Add the missing invoice-settlement → commission → technician pending-wallet credit → RELEASE ledger flow; invoice payment currently does not create technician earnings.\n- [ ] Add the missing invoice-settlement → commission → technician pending-wallet credit → RELEASE ledger flow; invoice payment currently does not create technician earnings.
 - [ ] Add invoice settlement → commission → technician pending-wallet credit → RELEASE ledger flow. Current invoice simulator does not create technician earnings.
 - [x] Owner approved canonical integer IRR storage and Toman-only display conversion (10 IRR = 1 Toman); decision recorded in issue #81.
+- [x] PR #75 — merged integer-IRR validation, safe arithmetic, explicit ratio rounding, and signed ledger-delta helpers as `38cd3db63bc5c0389f608a3541146c5bdc43ec9b`. These primitives are not yet wired through legacy records or the complete payment/settlement lifecycle.
+- [x] PR #101 — merged non-destructive demo-seed protections as `5c191f7efdea278611a9a65f39d481072ed37189`; all five required PR workflows passed on the exact reviewed head. Post-merge CI is being revalidated.
 - [ ] Reconcile historical money-unit provenance, approve integer/rounding bounds and commercial pricing, and implement the safe migration plan in issue #81.
 - [ ] Complete invoice, wallet, withdrawal, payout, and callback replay/concurrency tests across SQLite/D1 and PostgreSQL.
 - [ ] Complete end-to-end customer, technician, admin, CARE, warranty, refund/recovery, and notification scenarios.
@@ -38,10 +39,12 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - PR #94: `8bab4c9e3dfc99cb07323d432c6b9ce0076130a3`.
 - PR #95: `7eb870bb6e494c6973d17a64b55f28d11c7eba0e`.
 - PR #98: `5c3f2789ababbde68543d86934996636f5726fe7`.
+- PR #101: `5c191f7efdea278611a9a65f39d481072ed37189` — demo seed and auto-seed safety.
 
 ### Current financial blockers
 - [ ] Issue #24 — real provider lifecycle is not wired; current invoice/gateway/prepay routes are simulator-only and production-disabled.
-- [ ] Issue #81 — canonical unit is approved (integer IRR; Toman display only), but legacy row provenance, mixed-unit seed values, pricing inputs, integer validation, formatting and payout reconciliation remain unresolved.
+- [ ] Issue #81 — canonical unit is approved (integer IRR; Toman display only), but legacy row provenance, mixed-unit seed values, formatting by record provenance, and payout reconciliation remain unresolved.
+- [ ] Issue #99 — commercial pricing/settlement schedule is not owner-approved: labor/visit/travel rates, emergency multiplier, tax, vehicle multipliers, commission, VIP prices, and withdrawal minimums must be explicitly decided before activation. Existing code/seed values are not approved business policy.
 - [ ] Technician invoice earnings are not yet credited to the wallet through a complete idempotent escrow/commission flow.
 - [ ] Do not activate live payment, wallet top-up, withdrawal, or bank payout until these are resolved.
 
