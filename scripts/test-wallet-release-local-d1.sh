@@ -49,7 +49,8 @@ bunx wrangler d1 execute "$DB_NAME" --local --config "$CONFIG" \
   --file scripts/wallet-release-staging-seed.sql --yes
 
 echo "Starting the real scheduled Worker against local D1..."
-CI=1 bunx wrangler dev --local --test-scheduled --config "$CONFIG" \
+# Pin a Wrangler build whose bundled workerd supports compatibility_date 2026-10-30.
+CI=1 bunx wrangler@4.156.2 dev --local --test-scheduled --config "$CONFIG" \
   --port "$PORT" --ip 127.0.0.1 --log-level warn >"$LOG_FILE" 2>&1 &
 WORKER_PID=$!
 
