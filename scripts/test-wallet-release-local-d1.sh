@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Runs the actual scheduled escrow Worker against Wrangler's isolated local D1.
 # Never uses a remote database or production credentials.
+# This is the merge-time D1 runtime proof; remote Cron observation remains pre-launch.
 
 set -euo pipefail
 
