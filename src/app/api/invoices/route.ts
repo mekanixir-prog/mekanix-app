@@ -130,7 +130,7 @@ export async function POST(req: Request) {
   }
 
   const code = `INV-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`;
-  let invoice;
+  let invoice: any;
   try {
     invoice = await db.invoice.create({
       data: {
