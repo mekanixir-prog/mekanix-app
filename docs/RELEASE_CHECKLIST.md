@@ -1,7 +1,7 @@
 # MEKANIX — Release Checklist
 
 **Status date:** 2026-11-03  
-**Main baseline before this checklist refresh:** `36b05650d011b60ace35f0751921c941de3f24a1`  
+**Main baseline before this checklist refresh:** `5c191f7efdea278611a9a65f39d481072ed37189`  
 **Release decision:** <strong>NO-GO</strong> — code hardening and release evidence remain incomplete.
 
 This replaces the historical checklist snapshots from October. Do not use old “Release Candidate — all checks passed” or old staging/load-test claims as current release evidence.
