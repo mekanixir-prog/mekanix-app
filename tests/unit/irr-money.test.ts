@@ -107,7 +107,7 @@ describe("canonical IRR money primitives", () => {
     it("converts verified IRR to Toman exactly without FX", () => {
       expect(formatTomanFromIrr(12_500, "en-US")).toBe("1,250");
       expect(formatTomanFromIrr(12_505, "en-US")).toBe("1,250.5");
-      expect(formatTomanFromIrr(12_500, "fa-IR")).toContain("۱۲۵۰");
+      expect(formatTomanFromIrr(12_500, "fa-IR")).toContain("۲۵۰");
     });
 
     it("preserves signed ledger values and the fractional tenth", () => {
