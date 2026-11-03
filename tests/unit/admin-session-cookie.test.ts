@@ -18,7 +18,7 @@ vi.mock("@/lib/db-access", () => ({
 vi.mock("@/lib/admin-api", () => ({ writeAuditLog: mocks.audit }));
 
 import { POST } from "@/app/api/admin-panel/auth/logout/route";
-import { ADMIN_SESSION_COOKIE, createAdminToken } from "@/lib/admin-auth";
+import { ADMIN_SESSION_COOKIE, createAdminToken, isSameOriginRequest, setAdminSessionCookie } from "@/lib/admin-auth";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -37,6 +37,33 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("admin cookie logout and CSRF protection", () => {
+  it("sets the real production cookie attributes without exposing the token to JavaScript", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const response = new Response(null);
+    const req = new Request("http://mekanix.test/api/admin-panel/auth/login");
+    setAdminSessionCookie(response, "signed.jwt.value", req);
+    const cookie = response.headers.get("set-cookie") || "";
+
+    expect(cookie).toContain("mekanix_admin_session=signed.jwt.value");
+    expect(cookie).toContain("HttpOnly");
+    expect(cookie).toContain("Secure");
+    expect(cookie).toContain("SameSite=Strict");
+    expect(cookie).toContain("Path=/api/admin-panel");
+    expect(cookie).toContain("Max-Age=604800");
+  });
+
+  it("requires an exact same-origin signal and rejects cross-origin or same-site sibling requests", () => {
+    expect(isSameOriginRequest(new Request("https://mekanix.test/api/admin-panel", {
+      headers: { origin: "https://mekanix.test", "sec-fetch-site": "same-origin" },
+    }))).toBe(true);
+    expect(isSameOriginRequest(new Request("https://mekanix.test/api/admin-panel", {
+      headers: { origin: "https://attacker.example", "sec-fetch-site": "cross-site" },
+    }))).toBe(false);
+    expect(isSameOriginRequest(new Request("https://mekanix.test/api/admin-panel", {
+      headers: { origin: "https://sub.mekanix.test", "sec-fetch-site": "same-site" },
+    }))).toBe(false);
+  });
+
   it("revokes the persisted session version and clears the HttpOnly cookie", async () => {
     const token = await createAdminToken({
       adminId: "admin-1",
