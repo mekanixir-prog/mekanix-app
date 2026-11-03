@@ -30,10 +30,11 @@ export async function ensureSeedData(): Promise<void> {
     try {
       userCount = await db.user.count();
     } catch {
-      // Table doesn't exist — run prisma db push to create schema
-      console.log("📦 Database schema missing — running prisma db push...");
+      // The User table is unavailable. Create missing schema without accepting
+      // destructive changes; if Prisma requires data loss, fail closed and skip seeding.
+      console.log("📦 Database schema missing — running non-destructive prisma db push...");
       try {
-        execSync("bunx prisma db push --accept-data-loss", {
+        execSync("bunx prisma db push", {
           stdio: "inherit",
           cwd: process.cwd(),
           env: { ...process.env },
