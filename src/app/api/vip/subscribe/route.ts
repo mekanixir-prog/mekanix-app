@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
+import { createVipSubscriptionAtomically } from "@/lib/vip-subscription-atomic";
 
 // Subscribe the authenticated user to a VIP plan.
 // userId is derived from the session — NEVER from the request body (BOLA fix).
@@ -54,9 +55,29 @@ export async function POST(req: Request) {
     !payment ||
     payment.userId !== userId ||
     payment.status !== "SUCCEEDED" ||
+    payment.currency !== "IRR" ||
+    !payment.gatewayLogId ||
     Number(payment.amount) < Number(plan.priceIrr)
   ) {
     return NextResponse.json({ error: "Invalid or insufficient payment" }, { status: 400 });
+  }
+
+  // A successful Payment row alone is not proof that it was intended for VIP.
+  // Require the exact verified gateway attempt to belong to this user, to be
+  // marked for the VIP purpose, and to be the attempt that created this Payment.
+  const gatewayLog = await db.paymentGatewayLog.findUnique({
+    where: { id: payment.gatewayLogId },
+  });
+  if (
+    !gatewayLog ||
+    gatewayLog.userId !== userId ||
+    gatewayLog.status !== "VERIFIED" ||
+    gatewayLog.purpose !== "vip" ||
+    gatewayLog.paymentId !== payment.id ||
+    gatewayLog.currency !== payment.currency ||
+    Number(gatewayLog.amount) !== Number(payment.amount)
+  ) {
+    return NextResponse.json({ error: "Payment is not a verified VIP payment" }, { status: 400 });
   }
 
   // Check if this payment has already been used for a VIP subscription
@@ -67,49 +88,34 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "این پرداخت قبلاً برای اشتراک VIP استفاده شده است" }, { status: 409 });
   }
 
-  // Cancel any existing ACTIVE subscription for this user. This alone is NOT
-  // a concurrency guard: two requests can both observe zero rows before either
-  // creates. The provider-specific partial unique index in the migration is the
-  // final atomic guard against two ACTIVE subscriptions for one user.
-  await db.userVipSubscription.updateMany({
-    where: { userId, status: "ACTIVE" },
-    data: { status: "CANCELLED" },
-  });
-
-  // A partial unique index (userId WHERE status='ACTIVE') is created by the
-  // provider-specific migrations because Prisma schema cannot express it.
-  // The database—not this read/update sequence—must enforce the invariant.
-
   const startedAt = new Date();
   const expiresAt = new Date(startedAt.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
 
-  // Create the subscription. With @@unique([paymentId]) in the schema, the DB
-  // itself rejects duplicate paymentId inserts (P2002). This is the real
-  // race guard — even if two concurrent requests both pass the findFirst
-  // check above, only one create succeeds.
+  // Replace the previous active subscription and consume this payment in one
+  // database transaction (Prisma) or one transactional D1 batch. If creation
+  // fails, the prior ACTIVE subscription remains intact.
   let sub;
   try {
-    sub = await db.userVipSubscription.create({
-      data: {
-        userId,
-        planId,
-        status: "ACTIVE",
-        startedAt,
-        expiresAt,
-        paymentId: paymentId ?? null,
-      },
+    const subscriptionId = await createVipSubscriptionAtomically(db, {
+      userId,
+      planId,
+      paymentId,
+      startedAt,
+      expiresAt,
+    });
+    sub = await db.userVipSubscription.findUnique({
+      where: { id: subscriptionId },
       include: { plan: true },
     });
+    if (!sub) throw new Error("VIP subscription could not be loaded after atomic creation");
   } catch (e: any) {
-    // P2002 may mean either this payment was already consumed or another
-    // request won the one-ACTIVE-subscription-per-user race.
-    if (e?.code === "P2002" || e?.message?.includes("Unique constraint")) {
+    if (e?.code === "P2002" || /unique constraint/i.test(String(e?.message ?? ""))) {
       return NextResponse.json(
         { error: "پرداخت قبلاً استفاده شده یا اشتراک فعال دیگری ثبت شده است" },
         { status: 409 }
       );
     }
-    throw e; // re-throw unexpected errors
+    throw e;
   }
 
   // Notify user — best-effort, never fail a subscription over a notification.
