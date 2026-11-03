@@ -5,6 +5,7 @@ import {
   assertIrrInteger,
   assertIrrSignedInteger,
   formatIrr,
+  formatTomanFromIrr,
   multiplyRatioIrr,
   parseIrrInput,
 } from "@/lib/money/irr";
@@ -102,4 +103,22 @@ describe("canonical IRR money primitives", () => {
       expect(() => formatIrr(1250.5)).toThrow();
     });
   });
+  describe("formatTomanFromIrr", () => {
+    it("converts verified IRR to Toman exactly without FX", () => {
+      expect(formatTomanFromIrr(12_500, "en-US")).toBe("1,250");
+      expect(formatTomanFromIrr(12_505, "en-US")).toBe("1,250.5");
+      expect(formatTomanFromIrr(12_500, "fa-IR")).toContain("۱۲۵۰");
+    });
+
+    it("preserves signed ledger values and the fractional tenth", () => {
+      expect(formatTomanFromIrr(-5, "en-US")).toBe("-0.5");
+      expect(formatTomanFromIrr(-10, "en-US")).toBe("-1");
+    });
+
+    it("rejects non-integer and unsafe IRR values", () => {
+      expect(() => formatTomanFromIrr(1.5)).toThrow();
+      expect(() => formatTomanFromIrr(Number.MAX_SAFE_INTEGER + 1)).toThrow();
+    });
+  });
+
 });
