@@ -1,3 +1,4 @@
+import { PARTICIPANT_USER_SELECT } from "@/lib/user-select";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth, validateBody } from "@/lib/api-helpers";
@@ -14,7 +15,7 @@ export async function GET(req: Request) {
     // Admins can list all vehicles (used by admin portal)
     const vehicles = await db.vehicle.findMany({
       orderBy: { createdAt: "desc" },
-      include: { customer: { include: { user: true } } },
+      include: { customer: { include: { user: { select: PARTICIPANT_USER_SELECT } } } },
     });
     return NextResponse.json(vehicles);
   }
