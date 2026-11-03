@@ -1,7 +1,7 @@
 # MEKANIX — Release Checklist
 
 **Status date:** 2026-11-03  
-**Current main:** `2f3b5b750377f07657cc7db853b12338a8cfaa4a`  
+**Current main:** `5c3f2789ababbde68543d86934996636f5726fe7`  
 **Release decision:** <strong>NO-GO</strong> — code hardening and release evidence remain incomplete.
 
 This replaces the historical checklist snapshots from October. Do not use old “Release Candidate — all checks passed” or old staging/load-test claims as current release evidence.
@@ -14,9 +14,9 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - [x] Merge PR #69 — secure and atomically assign service requests.
 - [x] Merge PR #70 — make CARE approval/rejection transitions atomic.
 - [x] Merge PR #79 — atomically create CARE extra proposals on current main.
-- [ ] PR #65 — complete escrow release worker validation; all five workflows must pass on the latest head, including the actual scheduled Worker test against isolated local D1. Remote Cloudflare D1 staging and Cron observation are pre-launch gates before enabling the production schedule.
+- [x] PR #65 — escrow release worker validation merged as `97d50eb000e39e087eaea6403b23f9fe262b9d76`. The CI/local D1 scheduled-event test passed on its reviewed head. Remote Cloudflare D1 staging and Cron observation remain pre-launch gates before enabling the production schedule.
 - [x] PR #80 — merged after all five workflows passed; invoice issuance is idempotent, tax/pricing inputs are validated, and DRAFT→SENT is compare-and-set.
-- [ ] PR #66 — finish provider adapter review; keep live providers disabled until the authoritative payment lifecycle is wired.
+- [ ] PR #66 — provider adapter hardening is under current-main revalidation; all five workflows are running on head `f320fd726fcbcc12add6ae8d2cbca14dccf4dbad`. Keep live providers disabled until the authoritative payment lifecycle is wired.
 - [ ] Consolidate PRs #71/#73 only after resolving the monetary-unit contract in issue #81.
 - [ ] Complete the authoritative payment attempt → provider verification → invoice/VIP/prepay fulfillment lifecycle in issue #24.
 - [ ] Add the missing invoice-settlement → commission → technician pending-wallet credit → RELEASE ledger flow; invoice payment currently does not create technician earnings.\n- [ ] Add the missing invoice-settlement → commission → technician pending-wallet credit → RELEASE ledger flow; invoice payment currently does not create technician earnings.
@@ -30,19 +30,30 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - [ ] Reconcile environment variable schema, production Docker/Worker build, health/readiness, logging, monitoring, and operational runbooks.
 - [ ] Produce a Release Candidate with all required CI checks green on the exact same commit.
 
+### Recently merged security work
+
+- PR #90: `802e91de00c148c7d7981a68702fe873e181ace9`.
+- PR #92: `135db9a0ea9a57ea4fe2c5d5662adf1e5260cde6`.
+- PR #94: `8bab4c9e3dfc99cb07323d432c6b9ce0076130a3`.
+- PR #95: `7eb870bb6e494c6973d17a64b55f28d11c7eba0e`.
+- PR #98: `5c3f2789ababbde68543d86934996636f5726fe7`.
+
 ### Current financial blockers
 - [ ] Issue #24 — real provider lifecycle is not wired; current invoice/gateway/prepay routes are simulator-only and production-disabled.
 - [ ] Issue #81 — stored monetary units, currency metadata, Persian formatting, FX rate source, and bank payout units disagree.
 - [ ] Technician invoice earnings are not yet credited to the wallet through a complete idempotent escrow/commission flow.
 - [ ] Do not activate live payment, wallet top-up, withdrawal, or bank payout until these are resolved.
 
-### Standalone admin authentication hardening
+### Completed security remediations — deployment follow-through remains
 
-- [ ] Merge and verify the revocable HttpOnly admin-session remediation (SEC-89) after all required workflows pass on the exact PR head.
+- [x] PR #90 — standalone admin JWT replaced with revocable HttpOnly cookie session; same-origin protections added; dedicated admin bearer tokens are no longer returned or accepted.
+- [x] PR #92 — unsupported job participant roles denied before job lookup; CUSTOMER/TECHNICIAN ownership and assignment rules covered by regression tests.
+- [x] PR #94 — unrestricted related User includes replaced with explicit safe projections; legacy password/session/OTP fields are omitted.
+- [x] PR #95 — platform-wide financial and technician analytics restricted to ADMIN before database queries.
+- [x] PR #98 — top-level User responses in OTP verification, mechanic approval, and development demo use explicit credential-free projections.
 - [ ] Apply the SQLite/D1 and PostgreSQL `AdminUser.sessionVersion` migrations before deploying the updated admin panel.
-- [ ] Confirm the standalone admin panel no longer stores or transmits dedicated admin JWTs through browser JavaScript.
-- [ ] Verify same-origin protections on login, logout, onboarding create/update/delete, and confirm the OTP-based in-app AdminApp path remains functional.
-- [ ] Confirm existing standalone admin users are required to sign in again after deployment; old LocalStorage bearer tokens are intentionally not accepted.
+- [ ] Verify standalone admin login/logout and onboarding protections in an isolated staging environment; confirm the OTP-based in-app AdminApp path remains functional.
+- [ ] Confirm existing standalone admin users sign in again after deployment; old LocalStorage bearer tokens are intentionally not accepted.
 
 ## 2. Activate shortly before launch — deliberately deferred
 
