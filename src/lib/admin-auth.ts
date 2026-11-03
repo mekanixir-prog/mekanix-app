@@ -56,7 +56,12 @@ export type AdminSession = {
   adminId: string;
   username: string;
   role: string;
+  sessionVersion?: number;
 };
+
+export const ADMIN_SESSION_COOKIE = "mekanix_admin_session";
+export const ADMIN_SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+const ADMIN_SESSION_COOKIE_PATH = "/api/admin-panel";
 
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);
@@ -66,49 +71,161 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
   return bcrypt.compare(password, hash);
 }
 
-export async function createAdminToken(payload: AdminSession): Promise<string> {
-  return new SignJWT({ ...payload })
+export async function createAdminToken(
+  payload: AdminSession & { sessionVersion?: number }
+): Promise<string> {
+  const sessionVersion = payload.sessionVersion ?? 0;
+  if (!Number.isSafeInteger(sessionVersion) || sessionVersion < 0) {
+    throw new Error("Invalid admin session version");
+  }
+
+  return new SignJWT({
+    adminId: payload.adminId,
+    username: payload.username,
+    role: payload.role,
+    sessionVersion,
+  })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("7d")
     .sign(getAdminSecret());
 }
 
-export async function verifyAdminToken(token: string): Promise<AdminSession | null> {
+export async function verifyAdminToken(
+  token: string
+): Promise<(AdminSession & { sessionVersion: number }) | null> {
   try {
     const { payload } = await jwtVerify(token, getAdminSecret());
-
-    // ── Payload-shape validation (SEC-21 layer 2) ──────────────────────────
-    // Reject any token that does not carry a real admin identity. This blocks
-    // user-session JWTs (role "CUSTOMER", no adminId) even if the signing
-    // secret happens to match.
     const adminId = payload.adminId;
     const role = payload.role;
+    const sessionVersion = payload.sessionVersion;
+
     if (typeof adminId !== "string" || adminId.length === 0) return null;
     if (typeof role !== "string" || !ADMIN_ROLES.has(role)) return null;
+    if (typeof sessionVersion !== "number" || !Number.isSafeInteger(sessionVersion) || sessionVersion < 0) {
+      return null;
+    }
 
     return {
       adminId,
       username: typeof payload.username === "string" ? payload.username : "",
       role,
+      sessionVersion,
     };
   } catch {
     return null;
   }
 }
 
+export function getAdminCookieToken(req: Request): string | null {
+  const cookieHeader = req.headers.get("cookie");
+  if (!cookieHeader) return null;
+
+  for (const part of cookieHeader.split(";")) {
+    const separator = part.indexOf("=");
+    if (separator < 0) continue;
+    const name = part.slice(0, separator).trim();
+    if (name !== ADMIN_SESSION_COOKIE) continue;
+    const value = part.slice(separator + 1).trim();
+    return value || null;
+  }
+
+  return null;
+}
+
+/**
+ * Cookie-authenticated mutations require an explicit same-origin signal.
+ * Origin is authoritative when present; Fetch Metadata is the fallback.
+ */
+export function isSameOriginRequest(req: Request): boolean {
+  let requestOrigin: string;
+  try {
+    requestOrigin = new URL(req.url).origin;
+  } catch {
+    return false;
+  }
+
+  const origin = req.headers.get("origin");
+  if (origin) {
+    try {
+      if (new URL(origin).origin !== requestOrigin) return false;
+    } catch {
+      return false;
+    }
+  } else if (req.headers.get("sec-fetch-site") !== "same-origin") {
+    return false;
+  }
+
+  const fetchSite = req.headers.get("sec-fetch-site");
+  return !fetchSite || fetchSite === "same-origin";
+}
+
+export function hasValidAdminCookieCsrf(req: Request): boolean {
+  return !getAdminCookieToken(req) || isSameOriginRequest(req);
+}
+
+export function setAdminSessionCookie(response: Response, token: string, req: Request): void {
+  const secure = process.env.NODE_ENV === "production" || new URL(req.url).protocol === "https:";
+  const attributes = [
+    `${ADMIN_SESSION_COOKIE}=${token}`,
+    `Path=${ADMIN_SESSION_COOKIE_PATH}`,
+    "HttpOnly",
+    "SameSite=Strict",
+    `Max-Age=${ADMIN_SESSION_MAX_AGE_SECONDS}`,
+  ];
+  if (secure) attributes.push("Secure");
+  response.headers.append("Set-Cookie", attributes.join("; "));
+}
+
+export function clearAdminSessionCookie(response: Response, req: Request): void {
+  const secure = process.env.NODE_ENV === "production" || new URL(req.url).protocol === "https:";
+  const attributes = [
+    `${ADMIN_SESSION_COOKIE}=`,
+    `Path=${ADMIN_SESSION_COOKIE_PATH}`,
+    "HttpOnly",
+    "SameSite=Strict",
+    "Max-Age=0",
+    "Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+  ];
+  if (secure) attributes.push("Secure");
+  response.headers.append("Set-Cookie", attributes.join("; "));
+}
+
 export async function getAdminFromRequest(req: Request): Promise<AdminSession | null> {
+  // The standalone admin panel uses a revocable HttpOnly cookie. If a cookie
+  // is present but invalid/revoked, do not fall back to a bearer credential.
+  const cookieToken = getAdminCookieToken(req);
+  if (cookieToken) {
+    const adminToken = await verifyAdminToken(cookieToken);
+    if (!adminToken) return null;
+
+    const db = await getDbForLib();
+    const admin = await db.adminUser.findUnique({
+      where: { id: adminToken.adminId },
+      select: { id: true, username: true, role: true, sessionVersion: true },
+    });
+    if (
+      !admin ||
+      !ADMIN_ROLES.has(admin.role) ||
+      admin.role !== adminToken.role ||
+      admin.sessionVersion !== adminToken.sessionVersion
+    ) {
+      return null;
+    }
+
+    return {
+      adminId: admin.id,
+      username: admin.username,
+      role: admin.role,
+      sessionVersion: admin.sessionVersion,
+    };
+  }
+
+  // The in-app AdminApp continues to authenticate through the regular OTP
+  // session flow. Dedicated admin JWTs are no longer accepted as bearer tokens.
   const auth = req.headers.get("authorization");
   if (!auth?.startsWith("Bearer ")) return null;
-  const token = auth.slice(7);
-
-  // Dedicated AdminUser tokens remain the preferred admin-panel credential.
-  const adminToken = await verifyAdminToken(token);
-  if (adminToken) return adminToken;
-
-  // The in-app AdminApp authenticates through the regular OTP session flow.
-  // Permit only a persisted, non-revoked session whose server-side role is ADMIN.
-  const userSession = await verifySession(token);
+  const userSession = await verifySession(auth.slice(7));
   if (!userSession || userSession.role !== "ADMIN") return null;
 
   const db = await getDbForLib();
@@ -119,7 +236,7 @@ export async function getAdminFromRequest(req: Request): Promise<AdminSession | 
   if (!user || user.role !== "ADMIN" || user.status !== "ACTIVE") return null;
   return {
     adminId: userSession.userId,
-    username: user?.name ?? "",
+    username: user.name ?? "",
     role: "ADMIN",
   };
 }
