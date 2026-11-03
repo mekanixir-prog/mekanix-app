@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   assertDatabaseEmptyForDemoSeed,
+  assertDemoSetupAllowed,
   SEED_PROTECTED_MODEL_DELEGATES,
 } from "@/lib/seed-safety";
 
@@ -14,6 +15,12 @@ function makeDb(counts: Record<string, number> = {}) {
 }
 
 describe("demo seed safety guard", () => {
+  it("refuses the setup command before schema push in production", () => {
+    expect(() => assertDemoSetupAllowed("production")).toThrow(/disabled in production/);
+    expect(() => assertDemoSetupAllowed("development")).not.toThrow();
+    expect(() => assertDemoSetupAllowed("test")).not.toThrow();
+  });
+
   it("allows seeding only when every application table is empty", async () => {
     const db = makeDb();
     await expect(assertDatabaseEmptyForDemoSeed(db)).resolves.toBeUndefined();
