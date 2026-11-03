@@ -106,6 +106,7 @@ describe("atomic escrow release D1 SQLite integration", () => {
       balance: 3000, pendingBalance: 0,
     });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletReleaseGuard"').get()).toEqual({ count: 0 });
   });
 
   it("does not mark the transaction AVAILABLE or write a ledger row when pending balance is insufficient", async () => {
@@ -116,6 +117,7 @@ describe("atomic escrow release D1 SQLite integration", () => {
     });
     expect(sqlite.prepare('SELECT "status" FROM "WalletTransaction" WHERE "id" = ?').get("txn-1")).toEqual({ status: "PENDING" });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletReleaseGuard"').get()).toEqual({ count: 0 });
   });
 
   it("does not release a negative net amount", async () => {
