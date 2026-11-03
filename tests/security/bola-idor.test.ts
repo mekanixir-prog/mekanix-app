@@ -197,6 +197,22 @@ describe("BOLA / IDOR Security Tests", () => {
       expect(result).toBeNull();
     });
 
+    it.each(["FLEET_MANAGER", "PARTNER"] as const)(
+      "should deny %s access because no individual-job ownership scope is defined",
+      async (role) => {
+        const { requireJobParticipant } = await import("@/lib/auth");
+        const session = {
+          userId: "unscoped-user",
+          role,
+          phone: null,
+          isGuest: false,
+        };
+        const result = await requireJobParticipant(session, "job-other");
+        expect(result).not.toBeNull();
+        expect(result?.status).toBe(403);
+      },
+    );
+
     it("should return 404 when the job does not exist (no info leak)", async () => {
       const { requireJobParticipant } = await import("@/lib/auth");
       const session = {
