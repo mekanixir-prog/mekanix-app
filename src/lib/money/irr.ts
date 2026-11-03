@@ -5,6 +5,8 @@ import Decimal from "decimal.js";
  *
  * This module validates and calculates integer IRR values only. It does not
  * infer currencies, convert Toman, apply FX rates, or define business tariffs.
+ * Owner approval of the IRR unit does not prove legacy-row provenance or
+ * authorize using these helpers on an unclassified historical amount.
  */
 
 export type IrrRoundingMode = "half-up" | "down" | "up";
