@@ -504,3 +504,8 @@ These flags are not set by this change. They are activation gates, not substitut
 ## 8.18 Updated validation status
 
 The latest fully completed five-workflow checkpoint at commit `89ffc8674c8e788b1c1a9fc177476d51c67bdc6c` was green. Subsequent changes add fleet-currency filtering, explicit payment-gateway currency, prepay and VIP price provenance gates, and corresponding tests. A fresh CI run was triggered for the latest head; its result is pending and must be checked before claiming the new head is green.
+
+
+## Owner decision update — 2026-11-03
+
+The product owner approved canonical integer IRR for all persisted accounting values and Toman-only display conversion (10 IRR = 1 Toman). The API findings above remain valid: the approval does not retroactively validate upstream values or make the current invoice, prepay, CARE, parts, wallet, or withdrawal writers safe. Each writer must enforce the approved unit and safe-integer contract before persistence or money movement. CARE may retain a separately named Toman input only with strict integer validation and exactly one conversion at its boundary. Payment and prepay simulators remain non-production only; the live payment attempt, verified callback, ledger fulfillment and payout reconciliation lifecycle is still incomplete.
