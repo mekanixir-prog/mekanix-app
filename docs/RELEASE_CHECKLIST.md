@@ -1,152 +1,88 @@
 # MEKANIX — Release Checklist
 
-**Last Updated:** 2026-10-16
-**Commit:** `21fe440` (Release Candidate)
-**Baseline:** main @ `e4c2faf` (untouched)
+**Status date:** 2026-11-03  
+**Current main:** `2f3b5b750377f07657cc7db853b12338a8cfaa4a`  
+**Release decision:** <strong>NO-GO</strong> — code hardening and release evidence remain incomplete.
 
-> **Historical snapshot warning (2026-10-30):** the staging, load-test, and CI claims below refer to the older commit listed above. They are not current production Go/No-Go evidence. The current release remains blocked by unmerged financial hardening PRs, isolated D1 validation, and live SMS/payment integration. See [RELEASE_GATE_CURRENT.md](./RELEASE_GATE_CURRENT.md).
+This replaces the historical checklist snapshots from October. Do not use old “Release Candidate — all checks passed” or old staging/load-test claims as current release evidence.
 
-> ✅ Release Candidate — all checks passed.
-> CI: 4/4 workflows green on `21fe440`.
-> D1 Staging: Worker deployed, smoke test passed.
-> Backup/Restore: checksum identical.
-> Load Test: 0% errors, p(95)=41.6ms.
+## 1. Work to finish now — no production services required
 
-## Status Legend
+### Code and business flows
+- [x] Merge PR #67 — bind VIP activation to the exact verified VIP payment record.
+- [x] Merge PR #68 — validate CARE extra-cost values and Finding ownership.
+- [x] Merge PR #69 — secure and atomically assign service requests.
+- [x] Merge PR #70 — make CARE approval/rejection transitions atomic.
+- [x] Merge PR #79 — atomically create CARE extra proposals on current main.
+- [ ] PR #65 — complete escrow release worker validation; all five CI workflows must pass on the latest head and isolated D1 staging evidence must be recorded before merge.
+- [x] PR #80 — merged after all five workflows passed; invoice issuance is idempotent, tax/pricing inputs are validated, and DRAFT→SENT is compare-and-set.
+- [ ] PR #66 — finish provider adapter review; keep live providers disabled until the authoritative payment lifecycle is wired.
+- [ ] Consolidate PRs #71/#73 only after resolving the monetary-unit contract in issue #81.
+- [ ] Complete the authoritative payment attempt → provider verification → invoice/VIP/prepay fulfillment lifecycle in issue #24.
+- [ ] Add the missing invoice-settlement → commission → technician pending-wallet credit → RELEASE ledger flow; invoice payment currently does not create technician earnings.\n- [ ] Add the missing invoice-settlement → commission → technician pending-wallet credit → RELEASE ledger flow; invoice payment currently does not create technician earnings.
+- [ ] Add invoice settlement → commission → technician pending-wallet credit → RELEASE ledger flow. Current invoice simulator does not create technician earnings.
+- [ ] Resolve canonical currency, precision, rounding, FX snapshot, and payout settlement rules in issue #81.
+- [ ] Complete invoice, wallet, withdrawal, payout, and callback replay/concurrency tests across SQLite/D1 and PostgreSQL.
+- [ ] Complete end-to-end customer, technician, admin, CARE, warranty, refund/recovery, and notification scenarios.
+- [ ] Complete final authorization/IDOR/BOLA review for every write route and admin action.
+- [ ] Run performance/load tests and security scanning against a release-candidate build; record exact commit and reports.
+- [ ] Verify backup creation, restore, integrity, and rollback procedure in an isolated environment.
+- [ ] Reconcile environment variable schema, production Docker/Worker build, health/readiness, logging, monitoring, and operational runbooks.
+- [ ] Produce a Release Candidate with all required CI checks green on the exact same commit.
 
-- ☐ Not started
-- ☑ Completed (verified locally)
-- ⚠ Blocked / pending dependency
+### Current financial blockers
+- [ ] Issue #24 — real provider lifecycle is not wired; current invoice/gateway/prepay routes are simulator-only and production-disabled.
+- [ ] Issue #81 — stored monetary units, currency metadata, Persian formatting, FX rate source, and bank payout units disagree.
+- [ ] Technician invoice earnings are not yet credited to the wallet through a complete idempotent escrow/commission flow.
+- [ ] Do not activate live payment, wallet top-up, withdrawal, or bank payout until these are resolved.
 
----
+## 2. Activate shortly before launch — deliberately deferred
 
-## Phase 1: Code Migration
+- [ ] Provision production VPS/hosting and configure deployment access.
+- [ ] Purchase/connect production domain; configure DNS and HTTPS/TLS.
+- [ ] Provision production database and Redis only after migration/backup review.
+- [ ] Add production secrets through the host's secret manager (never commit them).
+- [ ] Configure live SMS provider credentials and delivery templates.
+- [ ] Configure Zarinpal/IDPay merchant credentials only after sandbox certification and payment lifecycle approval.
+- [ ] Configure maps/geocoding credentials and validate quota/security restrictions.
+- [ ] Configure production monitoring, error alerts, log retention, backup schedule, and restore ownership.
+- [ ] Apply reviewed production migrations only after a fresh backup and verified rollback plan.
+- [ ] Run production smoke tests with test accounts and zero-value/non-settling checks where supported.
+- [ ] Verify OTP delivery, provider callback signatures, amount/order binding, idempotency, invoice settlement, wallet ledger, and payout reconciliation.
+- [ ] Run business-owner Go/No-Go review and authorize public launch explicitly.
 
-- ☑ Migrate auth (4 routes + 2 lib files, 38 calls) — verified: `auth.ts` uses `getDbForLib` (14 refs)
-- ☑ Migrate vehicles (2 routes, 5 calls)
-- ☑ Migrate technicians (2 routes, 2 calls)
-- ☑ Migrate service-requests + jobs (7 routes, 34 calls)
-- ☑ Migrate dashboard (1 route, 16 calls)
-- ☑ Migrate gateway (2 routes, 5 calls) + security hardening
-- ☑ Migrate prepay (1 route, 10 calls) + security hardening
-- ☑ Migrate invoices (2 routes, 13 calls)
-- ☑ Migrate payments (1 route, 12 calls) + race condition fix
-- ☑ Migrate wallets (2 routes, 11 calls) + atomic balance
-- ☑ Migrate care (16 routes, 58 calls)
-- ☑ Migrate remaining 9 lib files (43 calls) — verified: 12 lib files use `getDbForLib`
-- ☑ Migrate remaining 15 route files (71 calls) — verified: 65 API files use `getDbForLib`, 0 use sync `db`
-- ☑ Migrate admin-panel + admin routes (22 calls) — verified: 6 admin files use `getDbForLib`
+## 3. Go / No-Go criteria
 
-## Phase 2: Quality & Security
+**GO only when all are true:**
+- [ ] All five required workflows pass on the exact Release Candidate commit.
+- [ ] No open critical/high security or financial-integrity blocker.
+- [ ] SQLite/D1 and PostgreSQL migration/build/integration checks pass.
+- [ ] D1 escrow worker has isolated staging evidence, safe retry proof, and no duplicate RELEASE ledger rows.
+- [ ] Payment and currency contract is approved, sandbox-certified, and replay/concurrency tested.
+- [ ] Invoice-to-technician-wallet settlement and payout reconciliation are proven end-to-end.
+- [ ] Backup restore and rollback are rehearsed and documented.
+- [ ] Production SMS, domain/TLS, hosting, monitoring, and secrets are configured and smoke-tested.
+- [ ] Business owner signs off on final Persian UX and end-to-end workflows.
 
-- ☑ TypeScript passes (`bunx tsc --noEmit` exit 0) — verified on `21fe440`
-- ☑ ESLint passes (0 errors on security files) — verified on `21fe440`
-- ☑ Tests pass (389/389) — verified on `21fe440`
-- ☑ `verifySession()` fail-closed in production
-- ☑ `createSession()` fail-closed in production
-- ☑ `revokeSession()` / `revokeAllUserSessions()` no error swallowing
-- ☑ `JWT_SECRET` in `.dev.vars` (not `wrangler.toml [vars]`)
-- ☑ Gateway production guard (404)
-- ☑ Prepay auth + ownership + optimistic concurrency
-- ☑ Payments duplicate guard (409) + optimistic concurrency
-- ☑ Wallets atomic balance deduction
-- ☑ Test routes removed (`/api/test/d1`, `/api/test/cache`)
-- ☑ `runSequential` unused imports removed
-- ☑ Security audit of remaining 34 files — completed (Phase 3 audit V2: 20 findings)
-- ☑ SEC-7 fix: VIP subscribe production guard + payment validation
-- ☑ SEC-8 fix: Wallets auto-release conditional updateMany + count check
-- ☑ SEC-9 fix: Withdraw atomic decrement + reorder (orphan prevention)
-- ☑ SEC-10 fix: OTP atomic updateMany (consumed:false WHERE)
-- ☑ SEC-11 fix: Timeline BOLA (requireBookingParticipant)
-- ☑ SEC-4 fix: Admin PATCH audit logging (5 branches)
-- ☑ SEC-5 fix: Admin login rate limit + audit logging
-- ☑ SEC-13 fix: Unified 401 + timing mitigation (DUMMY_HASH)
-- ☑ Workers runtime test — DONE: Worker deployed, smoke test passed (health, OTP, exchange-rate, VIP guard, admin login, demo guard)
-- ☑ Concurrency/race condition verification — DONE: 28 failure scenario tests + load test (0% errors, p(95)=41.6ms)
+**Automatic NO-GO:** any unknown money unit, simulator reachable in production, missing ledger proof, non-idempotent callback, unverified payout, failed restore, or required workflow not green.
 
-## Phase 3: CI & PR
+## 4. Rollback readiness
 
-- ☑ CI green on commit `06f161e` (verified by reviewer, historical)
-- ☑ CI green on commit `0942466` (remote feature HEAD, 4 workflows success)
-- ☑ CI green on commit `21fe440` (PUSHED, 4/4 workflows success — verified via GitHub API)
-- ☑ PR #3 description updated (Phase 3 audit)
-- ☐ Independent code review by project owner
-- ☐ Merge PR #3 to main
-- ☐ CI green on main after merge
+- [ ] Previous application image/Worker version and deployment configuration are retained.
+- [ ] Database backup is verified and restorable.
+- [ ] Migration rollback/forward-fix plan is written for every production schema change.
+- [ ] DNS/TLS rollback and provider credential revocation steps are documented.
+- [ ] Incident owner and escalation contacts are assigned.
+- [ ] No irreversible migration or live money movement without explicit approval.
 
-## Phase 4: Cloudflare Environment
+## 5. Release evidence record
 
-- ☐ `wrangler secret put JWT_SECRET` (production)
-- ☐ `wrangler secret put DATABASE_URL` (if needed)
-- ☐ Configure SMS provider (Kavenegar/MeliPayamak/FaraPayamak)
-- ☐ Configure payment gateway (Zarinpal/IDPay)
-- ☐ Configure production domain + DNS
-- ☐ Configure `wrangler.toml` for production (NODE_ENV=production)
+For each completed gate, record:
+- exact commit SHA;
+- workflow/run URL and result;
+- environment used (local, CI, isolated staging, production);
+- test data and expected/actual result;
+- backup/restore reference where applicable;
+- reviewer and date.
 
-## Phase 5: D1 Migration
-
-- ☐ Generate migration SQL: `bunx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script`
-- ☐ Review SQL for D1 compatibility
-- ☐ Backup existing data (if any)
-- ☐ Apply to staging D1: `wrangler d1 execute mekanix --remote --file=migration.sql`
-- ☐ Verify tables: `wrangler d1 execute mekanix --remote --command "SELECT name FROM sqlite_master WHERE type='table'"`
-- ☐ Seed test data
-- ☐ Apply to production D1 (with backup + rollback plan)
-
-## Phase 6: Deploy & Verify
-
-- ☑ Build Worker: `bash scripts/build-cloudflare.sh` — SUCCESS
-- ☑ Deploy to staging: `wrangler deploy` — SUCCESS (https://mekanix.mekanixir.workers.dev)
-- ☑ Smoke test staging endpoints — ALL PASSED
-- ☑ Test OTP flow end-to-end — PASSED (console SMS)
-- ☐ Test payment simulator — deferred (VIP route 404 in production by design)
-- ☐ Test CRUD operations — deferred (requires authenticated session)
-- ☐ Deploy to production: `wrangler deploy` — pending Go/No-Go
-- ☑ Verify `/api/health` returns 200 — PASSED
-- ☑ Verify `/api/ready` returns 200 — PASSED
-- ☐ Monitor logs for 24h — pending
-- ☐ Confirm no critical errors — pending
-
-## Phase 7: Backup & Restore Testing
-
-- ☑ Test backup script: `bash scripts/backup-db.sh` — SUCCESS (39KB backup)
-- ☑ Test restore script: `bash scripts/restore-db.sh` — SUCCESS
-- ☑ Verify backup integrity (checksum + row count) — IDENTICAL checksum
-- ☑ Verify restore produces identical data — 21 OtpCode records matched
-- ☐ Document backup schedule + retention policy — pending
-
-## Rollback Plan
-
-- [ ] Previous `wrangler.toml` + `next.config.ts` backed up
-- [ ] D1 backup SQL available
-- [ ] `git revert` to `e4c2faf` (main before merge) documented
-- [ ] `wrangler rollback` command documented (if available)
-- [ ] DNS rollback plan documented (if domain changed)
-
----
-
-## Discrepancy Resolution
-
-### Previous checklist (on `0942466`) vs current state (on `e916b3e`):
-
-| Item | Previous (`0942466`) | Current (`e916b3e`) | Evidence |
-|------|---------------------|---------------------|----------|
-| Lib migration (9 files) | ☐ Not started | ☑ Completed | 12 lib files use `getDbForLib` |
-| Route migration (15 files) | ☐ Not started | ☑ Completed | 65 API files use `getDbForLib`, 0 use sync `db` |
-| Admin migration (22 calls) | ☐ Not started | ☑ Completed | 6 admin files use `getDbForLib` |
-| Test count | 335/335 | 389/389 | +54 tests (SEC-4/5/7/8/10/11/13 + B2.2) |
-| Security audit (34 files) | ☐ Not started | ☑ Completed | Phase 3 audit V2: 20 findings |
-| Workers runtime test | ☐ Not started | ☐ Not done | Requires D1 staging |
-| Concurrency on Workers | ☐ Not started | ☐ Not done | Requires D1 staging |
-
-### Blocking items for Release Candidate:
-
-1. ☑ Commit `21fe440` pushed to GitHub — CI green (4/4 workflows)
-2. ☑ Workers runtime test — DONE (smoke test on deployed Worker)
-3. ☑ Concurrency verification — DONE (28 tests + load test)
-4. ☑ Backup/restore testing — DONE (checksum identical)
-
-### Remaining for production release:
-5. ☐ Activate real services (host, domain, SMS, payment gateway)
-6. ☐ Go/No-Go decision
-
+A green PR check is not a deployment. A staging test is not a production test. Do not conflate them.
