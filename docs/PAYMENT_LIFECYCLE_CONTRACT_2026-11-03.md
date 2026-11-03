@@ -1,0 +1,154 @@
+# MEKANIX — Payment Lifecycle Contract (Pre-Implementation Design)
+
+**Status:** Design proposal; not an implementation approval  
+**Reviewed main baseline:** `63095f5daffbe950ef707e2a0521b8ffd28a22c1`  
+**Related blockers:** [Issue #24](https://github.com/mekanixir-prog/mekanix-app/issues/24), [Issue #81](https://github.com/mekanixir-prog/mekanix-app/issues/81)
+
+> This document defines the engineering sequence and safety invariants for a future payment lifecycle. It does not approve a canonical monetary unit, tariffs, conversion rules, provider activation, or historical-data migration. No live payment or production money movement is authorized.
+
+## 1. Verified current-state facts
+
+The reviewed main branch currently has:
+
+- `Payment` with optional unique `invoiceId`, `userId`, `amount`, `currency`, `status`, and optional unique `gatewayLogId`.
+- `PaymentGatewayLog` with a unique human-facing `code`, owner, amount/currency, gateway, status, reference, callback payload, timestamps and a non-relational `paymentId` string.
+- No first-class persisted payment-attempt model binding one internal order to a purpose, target business record, provider request, provider authority, verification result and fulfillment state.
+- `src/lib/payment-provider.ts` contains Zarinpal/IDPay adapter scaffolding, but the production payment routes do not call it. Its readiness helper correctly reports `integrationWired: false`.
+- `POST /api/payments`, `POST /api/gateway/initiate`, and `POST /api/gateway/verify` are simulator routes and return 404 in production. The simulator must remain unavailable in production.
+- The current invoice simulator can mark an invoice PAID, complete its Job and create a warranty, but does not create the technician's commission/net escrow transaction and matching wallet ledger entries.
+- The current provider adapter hardening work is in Draft PR #66. It is not a completed payment lifecycle.
+
+These are code observations, not a claim that existing persisted financial amounts have a verified unit.
+
+## 2. Non-negotiable invariants
+
+1. **Server-owned amount:** clients submit a business target and an idempotency key, never the payable amount, currency, success status, provider reference, or fulfillment result.
+2. **Ownership:** the server resolves the authenticated payer and verifies ownership/permission for the target invoice, plan or booking before creating an attempt.
+3. **Immutable order identity:** create a cryptographically unpredictable internal order/attempt ID before contacting a provider. Persist it and pass it unchanged to the adapter. Never generate a replacement order ID inside an adapter.
+4. **Persist before redirect:** the attempt and its idempotency identity exist before the external provider request. A provider timeout must leave a recoverable state, not an untraceable payment.
+5. **No long database transaction around network I/O:** persist a state transition, call the provider, then persist the result with compare-and-set. Never hold a database transaction open while waiting for a gateway.
+6. **Callback is untrusted input:** browser redirect parameters, client OTP, client amount, client status and callback payload are signals only. The server must load the attempt and call the provider's server-side verification API.
+7. **Exact match:** verified provider response must match the persisted attempt's provider, authority, internal order identity (where supported), exact provider amount and currency contract, and expected payer/merchant context. Any mismatch becomes a reviewable failure; it must not fulfill business state.
+8. **Idempotent verification:** repeated or concurrent callbacks for one attempt produce one verified payment and one fulfillment effect. Database uniqueness and conditional transitions backstop application checks.
+9. **Purpose-specific fulfillment:** invoice payment, VIP activation, prepay and wallet top-up are different business operations. A generic “payment succeeded” function must not guess what to activate or credit.
+10. **Atomic fulfillment evidence:** the verified payment transition and a durable fulfillment/outbox record are committed atomically. A retry worker can safely finish incomplete fulfillment.
+11. **Append-only financial evidence:** corrections/refunds use explicit compensating records and audited state transitions. Never rewrite a successful payment into a different amount or silently delete evidence.
+12. **Fail closed:** unknown provider, missing credentials, ambiguous units, amount mismatch, stale callback, duplicate order, unavailable verification API, or incomplete fulfillment must not be reported as success.
+
+## 3. Proposed lifecycle
+
+The names below are a proposal for review, not existing enum values.
+
+```text
+CREATED
+  -> INITIATION_PENDING
+  -> REDIRECT_READY
+  -> CALLBACK_RECEIVED
+  -> VERIFYING
+  -> VERIFIED
+  -> FULFILLMENT_PENDING
+  -> FULFILLED
+
+Alternative terminal / review states:
+INITIATION_FAILED | VERIFICATION_FAILED | EXPIRED | CANCELLED | REVIEW_REQUIRED
+```
+
+- Provider initiation failure is distinct from customer cancellation and verification failure.
+- A callback arriving before the provider request result is persisted is reconciled by the immutable internal attempt ID and provider authority; it must not create a second attempt.
+- A timeout after provider initiation is an unknown outcome. Reconciliation queries the provider using persisted identifiers; it must not create a new charge automatically.
+- A late callback after expiry is verified against the original attempt. It is either accepted under a documented late-settlement policy or moved to manual review; it is never silently discarded or applied twice.
+- A verified payment whose business fulfillment fails remains VERIFIED + FULFILLMENT_PENDING. Retrying fulfillment must not call the provider again.
+
+## 4. Candidate persistence boundaries
+
+Before schema work, agree the exact field contract and database portability. Candidate records:
+
+### PaymentAttempt (candidate)
+
+- Internal ID / immutable order ID with a database unique constraint.
+- Authenticated payer ID.
+- Purpose discriminator and target record ID (for example invoice ID, VIP plan/subscription request ID, or booking/prepay ID).
+- Source amount and source-unit snapshot copied from the authoritative business record without reinterpretation.
+- Provider name, provider authority, provider-facing amount/unit snapshot only after the monetary-unit contract is approved.
+- Idempotency key and a request fingerprint; reusing a key with a different payer, purpose, target or payload returns conflict.
+- Lifecycle status, created/updated/expiry timestamps, verified timestamp and normalized provider reference.
+- Sanitized failure code and reconciliation metadata. Do not persist OTPs, PAN, CVV, secrets, or unnecessary raw callback data.
+
+### Payment / existing records
+
+- `Payment` remains the successful financial record only after server-side verification; it must be uniquely linked to the attempt.
+- `PaymentGatewayLog` should either become an audit/event record with a real relation to the attempt or be retired after a reviewed compatibility migration. Avoid maintaining two competing sources of truth.
+- Add database uniqueness for one successful fulfillment per attempt and, where applicable, one payment consumption per VIP subscription.
+- Do not add or migrate amount fields until issue #81 establishes the unit and historical-value treatment.
+
+### FulfillmentOutbox (candidate)
+
+- Unique event key derived from payment-attempt ID + fulfillment purpose.
+- Event type, target ID, payload version, retry count, next-attempt time, status, created/processed timestamps and a sanitized last error.
+- Created in the same database transaction/batch that marks the attempt VERIFIED.
+- Worker handlers are purpose-specific, compare-and-set target state, and are safe under duplicate delivery.
+
+Prisma/PostgreSQL and Cloudflare D1 must implement equivalent uniqueness and atomicity semantics. The implementation must use the repository's tested database abstraction rather than assuming PostgreSQL-only transactions are available in Worker/D1 execution.
+
+## 5. Purpose-specific fulfillment contracts
+
+| Purpose | Preconditions | Successful fulfillment | Required idempotency guard |
+|---|---|---|---|
+| Invoice | Invoice exists, is payable, belongs to payer; payable amount is server-derived | Mark invoice paid; perform only valid job/warranty transition; create technician gross/commission/net escrow and ledger evidence according to an approved settlement policy | Unique payment-to-invoice relation; invoice compare-and-set; unique wallet transaction/ledger event key |
+| VIP | Selected plan is active and its price/unit is verified; payer owns the checkout | Create or replace the subscription only after verified payment; do not extend/replace twice | Unique payment consumption and atomic subscription transition |
+| Prepay | Booking/job and fee source are verified; prepay is actually required | Apply prepay to the correct booking/job and create only the explicitly approved wallet/escrow effects | Unique attempt-to-booking purpose key |
+| Wallet top-up | Wallet owner and top-up policy are verified; this product flow is explicitly approved | Credit the intended wallet through immutable ledger entries | Unique top-up event key; never infer wallet top-up from a generic successful payment |
+
+No commission percentage, release hold, refund policy, VIP entitlement, or price is approved by this design. Existing business rules must be audited and explicitly confirmed before implementation.
+
+## 6. Endpoint/service responsibilities
+
+- **Initiation endpoint:** authenticate; validate target and idempotency key; resolve amount from the server-side business record; check source-unit provenance; create attempt; call selected provider; persist provider authority/payment URL; return only the redirect result and opaque attempt reference.
+- **Callback endpoint:** validate provider-specific callback shape and size; resolve attempt by persisted provider authority/internal order ID; record a callback-received signal; never trust callback status or amount.
+- **Verification service:** load the immutable attempt; lock/claim it with a conditional state transition; call the provider's server-side verify API using persisted amount and identifiers; validate exact response; persist normalized verification result and Payment + outbox atomically.
+- **Status endpoint:** expose only the authenticated owner's attempt status; never expose secrets or raw callback data.
+- **Fulfillment worker:** process outbox events with bounded retries, idempotent handlers, dead-letter/manual-review state and auditable operator resolution.
+- **Readiness endpoint:** report live-ready only when the selected adapter is implemented, required credentials are present, the lifecycle is wired, and required sandbox certification evidence is current. Environment selection alone is never readiness.
+
+## 7. Required test matrix
+
+### Initiation and ownership
+- Unknown purpose/target, foreign-owned invoice, inactive VIP plan, already-paid invoice, invalid idempotency key.
+- Client-supplied amount/currency/status ignored or rejected.
+- Same idempotency key + same fingerprint returns the original attempt.
+- Same key + different payer/purpose/target/fingerprint returns conflict.
+- Provider timeout after request submission is recoverable without duplicate charge.
+
+### Verification and callbacks
+- Forged callback, invalid signature/token, wrong provider authority, wrong order ID, wrong payer/merchant, wrong amount/unit.
+- Provider timeout/outage, malformed JSON, non-success provider code, missing tracking reference.
+- Duplicate callback, concurrent callback, callback replay, out-of-order callback, late callback and callback after cancellation/expiry.
+- Verification retry after provider accepted payment but application persistence failed.
+
+### Fulfillment and accounting
+- One invoice payment creates one Payment, one invoice transition, one warranty transition where applicable, and one approved technician escrow/ledger event.
+- One VIP payment creates one subscription consumption.
+- One prepay attempt affects only its target booking/job.
+- Injected failure between verification and fulfillment is recovered by outbox retry without another provider charge.
+- Refund/chargeback creates a compensating audited flow and cannot silently revert unrelated job/wallet state.
+- PostgreSQL and D1 concurrency tests prove equivalent outcomes under duplicate requests and injected rollback failures.
+
+## 8. Dependency and implementation order
+
+1. **Resolve issue #81 first:** owner-approved canonical unit, source-unit classification, provider-facing conversion policy, rounding, limits, and historical-record treatment. Until then, no financial schema migration or provider amount can be safely finalized.
+2. Finalize purpose-specific business rules and who receives each settlement; reconcile invoice-to-technician escrow and ledger semantics.
+3. Review and merge provider adapter contract hardening (PR #66) only after current-main CI and sandbox behavior are independently verified; it does not itself wire routes.
+4. Add attempt/outbox schema and Prisma + D1 migrations with rollback/concurrency tests.
+5. Implement shared initiation, callback, verification, status and fulfillment services; keep simulator and live provider adapters behind explicit environment boundaries.
+6. Add end-to-end contract tests and sandbox certification evidence for each supported provider.
+7. Update readiness and operational runbooks. Keep production credentials and live activation deferred until the launch window and explicit approval.
+
+## 9. Explicitly prohibited until approval
+
+- No canonical-unit assumption (including treating the engineering IRR recommendation as an owner decision).
+- No conversion, relabelling, bulk update or deletion of historical financial records.
+- No new provider amount derived from a client request.
+- No live credentials, real gateway requests, real payment, refund, payout or production activation.
+- No weakening or removal of production 404/fail-closed guards to make a demo work.
+
+**Decision:** design ready for technical review; implementation remains blocked by the monetary-unit decision and purpose-specific settlement approval.
