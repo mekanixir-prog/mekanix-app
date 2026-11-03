@@ -325,3 +325,5 @@ export function getPaymentProviderStatus(): PaymentProviderStatus {
     warnings,
   };
 }
+
+// Keep provider adapters sandbox-only until the separate lifecycle launch review.
