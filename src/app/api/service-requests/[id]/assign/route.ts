@@ -1,3 +1,4 @@
+import { PARTICIPANT_USER_SELECT } from "@/lib/user-select";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
@@ -7,13 +8,13 @@ import {
 } from "@/lib/service-request-assignment";
 
 const include = {
-  request: { include: { customer: { include: { user: true } }, vehicle: true } },
-  technician: { include: { user: true, specialties: true } },
+  request: { include: { customer: { include: { user: { select: PARTICIPANT_USER_SELECT } } }, vehicle: true } },
+  technician: { include: { user: { select: PARTICIPANT_USER_SELECT }, specialties: true } },
   parts: true,
   diagnosisRecords: true,
   invoice: true,
   reviews: true,
-  messages: { include: { fromUser: true }, orderBy: { createdAt: "asc" } },
+  messages: { include: { fromUser: { select: PARTICIPANT_USER_SELECT } }, orderBy: { createdAt: "asc" } },
   tracking: { orderBy: { ts: "asc" } },
 } as const;
 
@@ -69,7 +70,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const tech = await db.technician.findUnique({
     where: { id: technicianId },
-    include: { user: true, specialties: true },
+    include: { user: { select: PARTICIPANT_USER_SELECT }, specialties: true },
   });
   if (!tech) return NextResponse.json({ error: "مکانیک یافت نشد" }, { status: 404 });
 
