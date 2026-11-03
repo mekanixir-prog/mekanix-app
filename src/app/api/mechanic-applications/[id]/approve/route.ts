@@ -1,4 +1,4 @@
-import { ADMIN_USER_SELECT } from "@/lib/user-select";
+import { ADMIN_USER_SELECT, AUTH_USER_SELECT } from "@/lib/user-select";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { verifySession, requireRole } from "@/lib/auth";
@@ -52,9 +52,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         phoneVerified: true,
         avatar: `https://i.pravatar.cc/150?u=${app.phone}`,
       },
+      select: AUTH_USER_SELECT,
     });
   } else {
-    user = await db.user.update({ where: { id: user.id }, data: { role: "TECHNICIAN", phoneVerified: true } });
+    user = await db.user.update({ where: { id: user.id }, data: { role: "TECHNICIAN", phoneVerified: true }, select: AUTH_USER_SELECT });
   }
 
   let tech = await db.technician.findUnique({ where: { userId: user.id } });
