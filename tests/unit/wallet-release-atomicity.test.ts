@@ -101,6 +101,7 @@ describe("wallet escrow release atomicity", () => {
         { meta: { changes: 1 } },
         { meta: { changes: 1 } },
         { meta: { changes: 1 } },
+        { meta: { changes: 1 } },
       ]),
     };
 
@@ -108,7 +109,7 @@ describe("wallet escrow release atomicity", () => {
       .resolves.toBe(true);
     expect(d1.batch).toHaveBeenCalledTimes(1);
     const statements = d1.batch.mock.calls[0][0] as Array<{ sql: string; values: unknown[] }>;
-    expect(statements).toHaveLength(4);
+    expect(statements).toHaveLength(5);
     expect(statements[0].sql).toContain('INSERT INTO "WalletLedger"');
     expect(statements[0].sql).toContain("'RELEASE'");
     expect(statements[0].sql).toContain('"balanceBefore"');
@@ -117,7 +118,9 @@ describe("wallet escrow release atomicity", () => {
     expect(statements[1].sql).toContain('"balanceBefore" = w."balance"');
     expect(statements[2].sql).toContain('"status" = \'PENDING\'');
     expect(statements[2].sql).toContain('"balance" = ledger."balanceAfter"');
+    expect(statements[3].sql).toContain('INSERT INTO "WalletReleaseGuard"');
     expect(statements[3].sql).toContain('ELSE NULL');
+    expect(statements[4].sql).toContain('DELETE FROM "WalletReleaseGuard"');
     expect(statements.every((statement) => !statement.sql.includes("changes()"))).toBe(true);
     expect(statements[0].values).toContain("wallet-release:txn-1:LEDGER");
   });
@@ -129,6 +132,7 @@ describe("wallet escrow release atomicity", () => {
         { meta: { changes: 0 } },
         { meta: { changes: 0 } },
         { meta: { changes: 0 } },
+        { meta: { changes: 1 } },
         { meta: { changes: 1 } },
       ]),
     };
