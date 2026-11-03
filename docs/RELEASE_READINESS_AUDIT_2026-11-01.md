@@ -1,7 +1,7 @@
 # MEKANIX — Release Readiness Audit
 
 **Audit date:** 2026-11-03  
-**Audited code baseline:** `28d13e32c2046ed2743d549a8ab3c24bdd972054`  
+**Audited code baseline:** `ab99e97dd3023a648a24308c8e73aecaa17e6234`  
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Decision:** **NOT READY FOR PRODUCTION**
 
@@ -25,6 +25,7 @@ This audit separates verified code/CI evidence from staging and provider operati
 | CARE extra approval decisions | PR #70 | Approval/rejection, booking, Finding, and timeline changes use compare-and-set and one transaction/batch |
 | Financial unit audit | PR #74 | Documentation-only audit is merged; integer IRR is a recommendation, not a confirmed product-owner decision. Issue #81 remains open; no financial runtime behavior changed |
 | Financial data provenance and API flow audits | PR #76, #77 | Documentation-only inventories of source units, seed risks, money-flow validation, and migration gates are merged; no runtime money behavior changed |
+| Gateway simulator production guards | PR #83 | Test-only regression coverage merged; `/api/gateway/initiate` and `/api/gateway/verify` must return 404 before auth/DB access in production |
 
 ## 2. Verified CI evidence
 
@@ -43,6 +44,8 @@ This audit separates verified code/CI evidence from staging and provider operati
 - PR #74 merged as `28d13e32c2046ed2743d549a8ab3c24bdd972054` after all four documentation-branch workflows passed. It records the financial-unit audit and recommended target only; it does not approve IRR or change runtime behavior.
 - PR #76 merged as `18614ea43bb050ad97b9ca4309ba6fab8fa0eac8` after all four workflows passed on its main-synced head; it records monetary data provenance, seed risks, and migration safeguards.
 - PR #77 merged as `19a4bb1023aedf5814f9dd4a8fa8bb53ade2a1f9` after all four workflows passed on its main-synced head; it records API money-flow sources, validation boundaries, and fail-closed sequencing.
+- PR #83 merged as `ab99e97dd3023a648a24308c8e73aecaa17e6234` after all four applicable workflows passed; it adds production-guard regression tests for both gateway simulator routes and changes no runtime payment behavior.
+- Main CI passed all five required workflows on `ab99e97dd3023a648a24308c8e73aecaa17e6234`.
 - PRs #75 and #78 remain Draft and unwired. Their IRR-specific implementation assumptions must not be adopted until the product owner approves the canonical monetary unit and provenance/migration gates are satisfied.
 - Issue #81 is open as a release blocker for the monetary-unit mismatch across schema, wallet accounting, UI formatting, invoice/payment metadata, and Iranian gateway amounts. PRs #71/#73 remain unmerged pending a canonical currency contract and consolidation; PRs #75/#78 remain Draft pending explicit owner approval.
 - Issue #52 is closed as completed for code-level remediation. Issue #29 is closed as not planned for a generic callback helper because the repository audit found no production call sites; route-specific contracts are used instead.
@@ -61,6 +64,8 @@ This audit separates verified code/CI evidence from staging and provider operati
 
 ### 3.2 Real payment provider — issue #24
 
+- PR #66 remains Draft and is refreshed on the current-main baseline. Its current head `361fbb6314401b327f6ea2f7ab5273bb25063119` hardens IDPay/Zarinpal adapter verification, requires persisted order IDs and safe integer provider amounts, and defaults both adapters to sandbox. Current-head CI is still running.
+- PR #66 does not connect provider adapters to the payment routes and does not resolve invoice-to-wallet settlement or issue #81.
 - Zarinpal/IDPay adapter scaffolding exists, but the authoritative initiation → persisted attempt → provider verification → business settlement lifecycle is not wired.
 - `/api/payments`, `/api/gateway/initiate`, `/api/gateway/verify`, and VIP/prepay simulator paths remain unavailable in production.
 - Provider selection, server-side callback verification, amount/currency/order ownership checks, duplicate/replay handling, refund behavior, and sandbox evidence remain open.
