@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
+import type { JobStatus as PrismaJobStatus } from "@prisma/client";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
+import {
+  JobStatusConflictError,
+  transitionJobStatusAtomically,
+} from "@/lib/job-status-atomic";
 
 const include = {
   request: { include: { customer: { include: { user: true } }, vehicle: true } },
@@ -95,7 +100,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   // Load the current job so we can validate the transition
   const db = await getDbForLib();
-  const existing = await db.job.findUnique({ where: { id }, select: { status: true, technicianId: true } });
+  const existing = await db.job.findUnique({
+    where: { id },
+    select: {
+      status: true,
+      technicianId: true,
+      requestId: true,
+      code: true,
+      parts: { select: { unitPrice: true, quantity: true } },
+      technician: { select: { hourlyRate: true, travelFeeBase: true } },
+      invoice: { select: { id: true } },
+    },
+  });
   if (!existing) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
 
   // For technicians, ensure they are the ASSIGNED technician (requireJobParticipant already checked)
@@ -118,47 +134,96 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     );
   }
 
-  // Additional check: only the ASSIGNED technician can advance a tech-allowed status
-  if (session.role === "TECHNICIAN" && status) {
-    const tech = await getTechnicianFromSession(session);
-    if (!tech || tech.id !== existing.technicianId) {
-      return NextResponse.json({ error: "فقط مکانیک مسئول این کار مجاز است" }, { status: 403 });
+  // Capture the trusted technician profile ID and pass it into the atomic CAS.
+  // The route-level check is for fast rejection; the database guard below is
+  // what closes the reassignment race between authorization and mutation.
+  const actorTechnician = session.role === "TECHNICIAN"
+    ? await getTechnicianFromSession(session)
+    : null;
+  if (session.role === "TECHNICIAN" &&
+      (!actorTechnician?.id || actorTechnician.id !== existing.technicianId)) {
+    return NextResponse.json({ error: "فقط مکانیک مسئول این کار مجاز است" }, { status: 403 });
+  }
+
+  if (status === "WAITING_APPROVAL" && extra.laborHours !== undefined &&
+      (typeof extra.laborHours !== "number" || !Number.isFinite(extra.laborHours) ||
+       extra.laborHours <= 0 || extra.laborHours > 24)) {
+    return NextResponse.json({ error: "مدت کار باید عددی بین ۰ تا ۲۴ ساعت باشد" }, { status: 400 });
+  }
+
+  const invoiceInput = status === "WAITING_APPROVAL" && !existing.invoice
+    ? (() => {
+        const laborHours = extra.laborHours ?? 1.5;
+        const laborRate = Number(existing.technician.hourlyRate);
+        const laborTotal = laborHours * laborRate;
+        const partsTotal = existing.parts.reduce(
+          (sum, part) => sum + Number(part.unitPrice) * part.quantity,
+          0,
+        );
+        const travelFee = Number(existing.technician.travelFeeBase);
+        const subtotal = laborTotal + partsTotal + travelFee;
+        const taxRate = 0.09;
+        const taxTotal = subtotal * taxRate;
+        return {
+          id: crypto.randomUUID(),
+          code: `INV-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`,
+          jobId: id,
+          laborHours,
+          laborRate,
+          laborTotal,
+          partsTotal,
+          travelFee,
+          subtotal,
+          taxRate,
+          taxTotal,
+          discount: 0,
+          total: subtotal + taxTotal,
+          currency: "IRR",
+          status: "SENT" as const,
+          notes: "Parts covered by 6-month warranty.",
+        };
+      })()
+    : null;
+  const holdUntil = status === "COMPLETED"
+    ? new Date(Date.now() + HOLD_HOURS * 60 * 60 * 1000)
+    : null;
+
+  const updates: {
+    startedAt?: Date;
+    arrivedAt?: Date;
+    completedAt?: Date;
+    technicianNotes?: string;
+    customerApproved?: boolean;
+  } = {};
+  if (status === "ACCEPTED") updates.startedAt = new Date();
+  if (status === "ARRIVED") updates.arrivedAt = new Date();
+  if (status === "COMPLETED") updates.completedAt = new Date();
+  if (extra.technicianNotes != null) updates.technicianNotes = extra.technicianNotes;
+  if (customerApproved !== undefined) updates.customerApproved = customerApproved;
+
+  try {
+    await transitionJobStatusAtomically(db, {
+      jobId: id,
+      requestId: existing.requestId,
+      technicianId: existing.technicianId,
+      actorRole: session.role === "ADMIN" ? "ADMIN"
+        : session.role === "TECHNICIAN" ? "TECHNICIAN"
+        : session.role === "FLEET_MANAGER" ? "FLEET_MANAGER" : "CUSTOMER",
+      actorTechnicianId: actorTechnician?.id ?? null,
+      invoice: invoiceInput,
+      holdUntil,
+      currentStatus: existing.status as PrismaJobStatus,
+      nextStatus: (status ?? existing.status) as PrismaJobStatus,
+      updates,
+    });
+  } catch (error) {
+    if (error instanceof JobStatusConflictError) {
+      return NextResponse.json(
+        { error: "وضعیت کار یا درخواست هم‌زمان تغییر کرده است — لطفاً دوباره تلاش کنید" },
+        { status: 409 },
+      );
     }
-  }
-
-  const data: any = {};
-  if (status) data.status = status;
-  if (status === "ACCEPTED") {
-    data.startedAt = new Date();
-    data.request = { update: { status: "ASSIGNED" } };
-  }
-  if (status === "ARRIVED") data.arrivedAt = new Date();
-  if (status === "COMPLETED") data.completedAt = new Date();
-  if (status === "CANCELLED") data.request = { update: { status: "CANCELLED" } };
-  if (status === "REJECTED") {
-    data.request = { update: { status: "OPEN", matchedTechId: null } };
-  }
-
-  if (extra.technicianNotes != null) data.technicianNotes = extra.technicianNotes;
-  if (customerApproved !== undefined) data.customerApproved = customerApproved;
-
-  // Use optimistic concurrency — updateMany with status check prevents race conditions
-  // Two concurrent requests can't both change status from the same starting point
-  const updateData: any = { ...data };
-  if (status === "COMPLETED") {
-    updateData.completedAt = new Date();
-  }
-
-  const result = await db.job.updateMany({
-    where: { id, status: existing.status }, // Only update if status hasn't changed
-    data: updateData,
-  });
-
-  if (result.count === 0) {
-    return NextResponse.json(
-      { error: "وضعیت کار تغییر کرده — لطفاً دوباره تلاش کنید" },
-      { status: 409 }
-    );
+    throw error;
   }
 
   // Fetch updated job with relations
@@ -167,37 +232,31 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const cust = job.request.customer.user;
   const tech = job.technician.user;
 
-  // When job is COMPLETED, run all post-completion side effects sequentially
-  // (D1 has no $transaction; earlier writes stay if a later one throws).
+  // Financial state is already committed atomically; notifications are best-effort.
   if (status === "COMPLETED") {
-    // Start 12-hour hold countdown on PENDING prepay transactions
-    const holdUntil = new Date(Date.now() + HOLD_HOURS * 60 * 60 * 1000);
-    await db.walletTransaction.updateMany({
-      where: { jobId: job.id, status: "PENDING" },
-      data: { holdUntil },
-    });
-
-    // Create completion notification
-    await db.notification.create({
-      data: {
-        userId: cust.id,
-        type: "job_completed",
-        title: "کار تکمیل شد",
-        body: `${tech.name} کار را تکمیل کرد. فاکتور آماده بررسی است.`,
-        category: "job",
-        link: "customer/invoice",
-      },
-    });
-
-    // Create system message in chat
-    await db.message.create({
-      data: {
-        jobId: job.id,
-        fromUserId: tech.id,
-        kind: "system",
-        body: `کار تکمیل شد — ${job.code}`,
-      },
-    });
+    // Notifications and chat are best-effort after the financial state commit.
+    try {
+      await db.notification.create({
+        data: {
+          userId: cust.id,
+          type: "job_completed",
+          title: "کار تکمیل شد",
+          body: `${tech.name} کار را تکمیل کرد. فاکتور آماده بررسی است.`,
+          category: "job",
+          link: "customer/invoice",
+        },
+      });
+      await db.message.create({
+        data: {
+          jobId: job.id,
+          fromUserId: tech.id,
+          kind: "system",
+          body: `کار تکمیل شد — ${job.code}`,
+        },
+      });
+    } catch (error) {
+      console.error("[jobs/status] Completion notification failed:", error);
+    }
   } else {
     // Side-effects: notifications + system messages
     const notifMap: Record<string, { type: string; title: string; body: string; category: string; link: string }> = {
@@ -254,57 +313,28 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const notif = notifMap[status];
   if (notif) {
     const notifCategory = status === "REJECTED" ? "alert" : notif.category;
-    await db.notification.create({
-      data: {
-        userId: cust.id,
-        type: notif.type,
-        title: notif.title,
-        body: notif.body,
-        category: notifCategory,
-        link: notif.link,
-      },
-    });
-    await db.message.create({
-      data: {
-        jobId: job.id,
-        fromUserId: tech.id,
-        kind: "system",
-        body: notif.title,
-      },
-    });
-  }
-
-  // Auto-create invoice on WAITING_APPROVAL if none exists
-  if (status === "WAITING_APPROVAL" && !job.invoice) {
-    const laborHours = extra.laborHours ?? 1.5;
-    const laborRate = Number(job.technician.hourlyRate);
-    const laborTotal = laborHours * laborRate;
-    const partsTotal = job.parts.reduce((s, p) => s + Number(p.unitPrice) * p.quantity, 0);
-    const travelFee = Number(job.technician.travelFeeBase);
-    const subtotal = laborTotal + partsTotal + travelFee;
-    const taxTotal = subtotal * 0.09;
-    const total = subtotal + taxTotal;
-    await db.invoice.create({
-      data: {
-        code: `INV-${Math.floor(3000 + Math.random() * 6000)}`,
-        jobId: job.id,
-        laborHours,
-        laborRate,
-        laborTotal,
-        partsTotal,
-        travelFee,
-        subtotal,
-        taxRate: 0.09,
-        taxTotal,
-        discount: 0,
-        total,
-        currency: "IRR",
-        status: "SENT",
-        notes: "Parts covered by 6-month warranty.",
-      },
-    });
-    const fresh = await db.job.findUnique({ where: { id }, include });
-    return NextResponse.json(fresh);
+    try {
+      await db.notification.create({
+        data: {
+          userId: cust.id,
+          type: notif.type,
+          title: notif.title,
+          body: notif.body,
+          category: notifCategory,
+          link: notif.link,
+        },
+      });
+      await db.message.create({
+        data: {
+          jobId: job.id,
+          fromUserId: tech.id,
+          kind: "system",
+          body: notif.title,
+        },
+      });
+    } catch (error) {
+      console.error("[jobs/status] Status notification failed:", error);
+    }
   }
   }
 
