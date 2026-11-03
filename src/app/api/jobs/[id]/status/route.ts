@@ -175,7 +175,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     const subtotal = laborHours * laborRate + partsTotal + travelFee;
     const taxSetting = await db.platformSetting.findUnique({ where: { key: "tax_rate" } });
-    const taxRate = taxSetting?.value == null ? 0.09 : Number(taxSetting.value);
+    const taxRate = taxSetting?.value == null ? 0.09 : (taxSetting.value.trim() ? Number(taxSetting.value) : Number.NaN);
     if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 1) {
       return NextResponse.json({ error: "تنظیمات مالیات نامعتبر است" }, { status: 503 });
     }
