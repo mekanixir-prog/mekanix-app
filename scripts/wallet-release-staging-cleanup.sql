@@ -1,4 +1,5 @@
 -- STAGING ONLY. Removes only the synthetic fixture created by the paired seed script.
+DELETE FROM "WalletReleaseGuard" WHERE "id" LIKE 'wallet-release-assert:%';
 DELETE FROM "WalletLedger" WHERE "idempotencyKey" LIKE 'wallet-release-staging:%';
 DELETE FROM "WalletLedger" WHERE "idempotencyKey" = 'wallet-release:wallet-release-staging-txn:LEDGER';
 DELETE FROM "WalletTransaction" WHERE "id" = 'wallet-release-staging-txn';
