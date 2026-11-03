@@ -2,12 +2,20 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 
-// GET /api/dashboard — platform-wide stats.
-// Authenticated users only. Customer/Technician see aggregate stats (no PII).
-// Admin sees the same stats (the data is already aggregate).
+// GET /api/dashboard — platform-wide administrative analytics.
+// Admin-only: the response includes financial aggregates, technician-level
+// revenue/performance, and recent activity involving customer and technician names.
 export async function GET(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
+
+  // This endpoint contains platform-wide financial analytics, technician
+  // performance/revenue, and recent customer/technician activity. It is an
+  // internal administration surface and must not be exposed to customer or
+  // technician sessions.
+  if (session.role !== "ADMIN") {
+    return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
+  }
 
   const now = Date.now();
   const day = 86400000;
