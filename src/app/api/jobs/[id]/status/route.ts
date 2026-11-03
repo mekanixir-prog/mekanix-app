@@ -4,6 +4,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
 import {
+  type AtomicInvoiceInput,
   JobStatusConflictError,
   transitionJobStatusAtomically,
 } from "@/lib/job-status-atomic";
@@ -151,7 +152,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "مدت کار باید عددی بین ۰ تا ۲۴ ساعت باشد" }, { status: 400 });
   }
 
-  let invoiceInput = null;
+  let invoiceInput: AtomicInvoiceInput | null = null;
   if (status === "WAITING_APPROVAL" && !existing.invoice) {
     const laborHours = extra.laborHours ?? 1.5;
     const laborRate = Number(existing.technician.hourlyRate);
