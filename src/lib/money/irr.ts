@@ -48,6 +48,30 @@ export function parseIrrInput(value: unknown, context = "IRR input"): number {
   return value;
 }
 
+export function assertIrrSignedInteger(
+  value: unknown,
+  context = "IRR amount",
+): asserts value is number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+    throw new TypeError(`${context} must be a safe integer number of IRR`);
+  }
+}
+
+export function addIrrSigned(...amounts: number[]): number {
+  let total = 0;
+
+  for (const amount of amounts) {
+    assertIrrSignedInteger(amount, "IRR ledger delta");
+    const next = total + amount;
+    if (!Number.isSafeInteger(next)) {
+      throw new RangeError("IRR signed addition exceeds the safe integer range");
+    }
+    total = next;
+  }
+
+  return total;
+}
+
 export function addIrr(...amounts: number[]): number {
   let total = 0;
 
@@ -100,7 +124,9 @@ export function multiplyRatioIrr(
 
 /** Format an already validated IRR amount; presentation only, no FX lookup. */
 export function formatIrr(amount: number, locale = "fa-IR"): string {
-  assertIrrInteger(amount, "IRR amount");
+  // Ledger entries and balance adjustments may be signed; formatting accepts
+  // either sign while payable/request validators remain non-negative.
+  assertIrrSignedInteger(amount, "IRR amount");
   return new Intl.NumberFormat(locale, {
     maximumFractionDigits: 0,
     minimumFractionDigits: 0,
