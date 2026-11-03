@@ -4,17 +4,14 @@ import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant } from "@/lib/auth";
 
 // PATCH /api/invoices/[id]
-// Customer can: APPROVE (set customerApproved flag), MARK_PAID (pay invoice — but actual payment
-//   flows through /api/payments). Customer CANNOT change amounts or status to PAID directly.
-// Technician/Admin can: edit notes only (amounts are server-authoritative — see /api/invoices POST).
-// Status transitions to PAID happen only via /api/payments after gateway verification.
+// Amounts and currency are server-authoritative. PAID is written only by the
+// verified payment lifecycle. InvoiceStatus currently has no CANCELLED value;
+// unsupported cancellation is rejected rather than sending an invalid Prisma enum.
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
   const { id } = await params;
-
-  // Resolve invoice + job so we can check ownership/participation
   const db = await getDbForLib();
   const inv = await db.invoice.findUnique({
     where: { id },
@@ -22,70 +19,80 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   });
   if (!inv) return NextResponse.json({ error: "فاکتور یافت نشد" }, { status: 404 });
 
-  // BOLA: must be participant in the linked job (or admin)
   const access = await requireJobParticipant(session, inv.jobId);
   if (access) return access;
 
-  let body: any;
+  let body: unknown;
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "بدنه درخواست نامعتبر است" }, { status: 400 });
+  }
+  const input = body as Record<string, unknown>;
+  const allowedUpdates: Record<string, unknown> = {};
 
-  // Whitelist allowed fields based on role
-  const allowedUpdates: Record<string, any> = {};
+  if (typeof input.notes === "string" && input.notes.length <= 2000 &&
+      (session.role === "TECHNICIAN" || session.role === "ADMIN")) {
+    allowedUpdates.notes = input.notes;
+  }
 
-  // FORBIDDEN for everyone via this route (server-authoritative only):
-  // - laborHours, laborRate, laborTotal, partsTotal, travelFee, subtotal, taxRate, taxTotal, total
-  // - status (PAID is set only via /api/payments after successful gateway verify)
-  // - currency
-
-  // Notes can be edited by technician or admin
-  if (typeof body.notes === "string" && body.notes.length <= 2000) {
+  let statusTransitionRequested = false;
+  if (typeof input.status === "string") {
     if (session.role === "TECHNICIAN" || session.role === "ADMIN") {
-      allowedUpdates.notes = body.notes.slice(0, 2000);
+      if (input.status === "SENT" && inv.status === "DRAFT") {
+        allowedUpdates.status = "SENT";
+        statusTransitionRequested = true;
+      } else {
+        // In particular, CANCELLED is not a member of InvoiceStatus and PAID
+        // must never be set through this route.
+        return NextResponse.json(
+          { error: "تغییر وضعیت فاکتور مجاز نیست — برای پرداخت از مسیر پرداخت تأییدشده استفاده کنید" },
+          { status: 403 },
+        );
+      }
+    } else if (session.role === "CUSTOMER" && input.status === "PAID") {
+      return NextResponse.json(
+        { error: "مشتری نمی‌تواند فاکتور را مستقیماً پرداخت‌شده علامت بزند" },
+        { status: 403 },
+      );
     }
   }
 
-  // Customer can mark customerApproved (approve the repair estimate)
-  if (typeof body.customerApproved === "boolean" && session.role === "CUSTOMER") {
-    // Only allow approving — never un-approving once approved (defensive; the invoice itself
-    // doesn't store this but the job does — handled by /api/jobs/[id]/status)
-    // We don't expose customerApproved on the Invoice model; redirect this to the job.
-    if (body.customerApproved === true) {
-      await db.job.update({
-        where: { id: inv.jobId },
+  if (typeof input.customerApproved === "boolean" && session.role === "CUSTOMER") {
+    if (input.customerApproved === true) {
+      await db.job.updateMany({
+        where: { id: inv.jobId, customerApproved: false },
         data: { customerApproved: true },
       });
     }
   }
 
-  // Status transitions: explicit PAID is forbidden here (must go through /api/payments).
-  // Allow DRAFT → SENT only for technician/admin (re-issue).
-  if (typeof body.status === "string" && (session.role === "TECHNICIAN" || session.role === "ADMIN")) {
-    if (body.status === "SENT" && inv.status === "DRAFT") {
-      allowedUpdates.status = "SENT";
-    } else if (body.status === "CANCELLED") {
-      allowedUpdates.status = "CANCELLED";
-    } else {
-      return NextResponse.json(
-        { error: "تغییر وضعیت فاکتور مجاز نیست — برای پرداخت از /api/payments استفاده کنید" },
-        { status: 403 }
-      );
-    }
-  } else if (typeof body.status === "string" && session.role === "CUSTOMER") {
-    if (body.status === "PAID") {
-      return NextResponse.json(
-        { error: "مشتری نمی‌تواند فاکتور را مستقیماً پرداخت‌شده علامت بزند — از /api/payments استفاده کنید" },
-        { status: 403 }
-      );
-    }
+  if (Object.keys(allowedUpdates).length === 0) {
+    const fresh = await db.invoice.findUnique({
+      where: { id },
+      include: { job: true, payment: true },
+    });
+    return NextResponse.json(fresh);
   }
 
-  if (Object.keys(allowedUpdates).length === 0) {
-    // Nothing to update — return current state
-    const fresh = await db.invoice.findUnique({ where: { id }, include: { job: true, payment: true } });
+  if (statusTransitionRequested) {
+    const changed = await db.invoice.updateMany({
+      where: { id, status: inv.status },
+      data: allowedUpdates,
+    });
+    if (changed.count !== 1) {
+      return NextResponse.json(
+        { error: "وضعیت فاکتور هم‌زمان تغییر کرده است؛ صفحه را تازه‌سازی کنید" },
+        { status: 409 },
+      );
+    }
+    const fresh = await db.invoice.findUnique({
+      where: { id },
+      include: { job: true, payment: true },
+    });
     return NextResponse.json(fresh);
   }
 
