@@ -13,7 +13,9 @@ describe("canonical IRR money primitives", () => {
   describe("money display and explicit FX conversion", () => {
     it("formats IRR as stored and does not apply an exchange rate", () => {
       expect(fmtMoney(125_000, "IRR", "en")).toBe("﷼125,000");
-      expect(fmtMoney(125_000, "IRR", "fa")).toContain("۱۲۵");
+      expect(fmtMoney(125_000, "IRR", "fa")).toContain("۱۲،۵۰۰ تومان");
+      expect(fmtMoney(1, "IRR", "fa")).toContain("۰٫۱ تومان");
+      expect(fmtMoney(-1_000, "IRR", "fa")).toContain("-۱۰۰ تومان");
       expect(convertUsdToIrr(1, 99_999)).toBe(99_999);
       expect(() => convertUsdToIrr(1, 0)).toThrow("positive verified");
     });
