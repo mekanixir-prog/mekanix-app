@@ -33,7 +33,7 @@ Payment and prepay simulator routes are production-guarded in the reviewed sourc
 | Parts `POST /api/jobs/[id]/parts` | Client `unitPrice`, `quantity` | Rejects negative price and nonpositive quantity only when number; fractional prices are accepted; quantity is floored; no finite/safe-integer/currency validation | Part.unitPrice and quantity | **Ambiguous.** Money must be validated as integer IRR at this boundary once unit contract is declared. |
 | Prepay `POST /api/prepay` | Technician inspection fee + travel fee | Server derives from technician profile; commission = gross × 0.10 using JS number; no safe-integer/unit check; simulator-only and production-guarded | Job fee/commission/net fields, WalletTransaction, WalletLedger, Wallet aggregates | **High risk.** Technician fee source conflicts with USD-labelled seed values and IRR schema comments. |
 | Wallet read / auto-release `GET /api/wallets` | Existing WalletTransaction.netAmount | Atomic release helper moves pendingBalance to balance; validates state and sufficient pending balance, not monetary unit or integer-IRR semantics | Wallet balances and transaction status | Atomicity is good; it cannot repair or prove source units. |
-| Withdrawal `POST /api/wallets/withdraw` | Client `amount` | Finite, positive, <= 10,000; idempotency and atomic balance check exist; no safe-integer or explicit unit contract | WithdrawalRequest, wallet balance, ledger via atomic helper | **Not ready for IRR-only contract.** Do not guess intended limit or multiply values. |
+| Withdrawal `POST /api/wallets/withdraw` | Client `amount` | Finite, positive, <= 10,000; idempotency and atomic balance check exist; no safe-integer or explicit unit contract | WithdrawalRequest, wallet balance, ledger via atomic helper | **Not ready if the proposed IRR-only contract is adopted.** Do not guess intended limit or multiply values. |
 | Admin CARE package `POST /api/care/admin/packages` | Client `basePrice` | Writes `body.basePrice || 0`; no type, finite, nonnegative, safe-integer, or currency validation | ServicePackage.basePrice | **Unspecified unit.** Package amount is currently informational in pricing engine; do not treat as active approved tariff. |
 | Pricing engine `calculatePrice` | Caller `partsCost`, `laborHours`, `travelDistanceKm`, optional VIP discount | Decimal.js arithmetic and integer rounding; no input validation for partsCost safe integer/nonnegative; no output safe-integer check; hardcoded defaults include 50,000 IRR/hour, 15,000 IRR visit, 2,000 IRR/km, 9% tax and 1.5 emergency multiplier | PricingBreakdown / PricingSnapshot currency IRR | Intended IRR path, but defaults are implementation values, not owner-approved prices or tax policy. |
 
@@ -117,9 +117,9 @@ File: `src/app/api/wallets/withdraw/route.ts`
 - Idempotency and atomic balance decrement are present.
 - It does not require `Number.isSafeInteger(amount)`.
 - The route does not explicitly state whether request amount is IRR or another unit.
-- A separate PR #73 contains USD-base withdrawal thresholds; that policy is not compatible with the IRR-only contract.
+- A separate PR #73 contains USD-base withdrawal thresholds; that policy is not compatible with the proposed IRR-only target.
 
-**Required later:** make the API unit explicit and IRR-only; require safe integer IRR. Do not set min/max limits until the owner approves them. Resolve or supersede the conflicting PR #73 policy before enabling withdrawals.
+**Required later, if IRR is approved as canonical:** make the API unit explicit and IRR-only; require safe integer IRR. Do not set min/max limits until the owner approves them. Resolve or supersede the conflicting PR #73 policy before enabling withdrawals.
 
 ### API-FLOW-07 — Pricing engine rounds but does not validate IRR inputs/outputs
 
@@ -164,7 +164,7 @@ These protections must not be weakened while adding money-unit validation.
 
 ## 4A. Open PR dependency and CI review (2026-11-02)
 
-The open financial/security PRs were checked against their exact current head commits. A green CI result proves the branch passed its configured automation; it does not prove the branch is safe to merge under the IRR-only product contract.
+The open financial/security PRs were checked against their exact current head commits. A green CI result proves the branch passed its configured automation; it does not prove the branch is safe to merge under the proposed IRR-only target.
 
 | PR | Scope | Head CI | Dependency / disposition |
 |---|---|---|---|
@@ -175,7 +175,7 @@ The open financial/security PRs were checked against their exact current head co
 | #66 | Payment provider verification contract | 5/5 green | Adapter hardening only; does not connect the authoritative persisted payment lifecycle |
 | #67 | VIP payment-purpose binding | 5/5 green | Defense-in-depth; still requires exact integer-IRR amount/currency equality in the full VIP lifecycle |
 | #71 | Withdrawal destination and atomic payout handling | 5/5 green | Bank/Sheba destination safety; do not treat as complete until withdrawal amount contract is integer IRR |
-| #73 | Withdrawal limits based on USD minimum/maximum and decimal precision | 5/5 green | **Do not merge** under the binding IRR-only rule; conflicts with the product currency contract |
+| #73 | Withdrawal limits based on USD minimum/maximum and decimal precision | 5/5 green | **Do not merge** if the proposed IRR-only target is adopted; conflicts with that target |
 | #74 | Financial unit contract audit | 4/4 green | Documentation only |
 | #76 | Financial data provenance inventory | 4/4 green | Documentation only |
 | #77 | API flow audit | 4/4 green on head `30dcf03c03f33a1e8efe6427f2abe720cad37d4c` | Documentation only |
@@ -239,7 +239,7 @@ This section records source-level findings from `main` at `4e701370d674cdcde40ca
 - `src/lib/format.ts::fmtMoney` treats every value passed with currency `IRR` as a USD-base amount and multiplies it by the mutable `USD_TO_IRR` rate (default 60,000).
 - `src/lib/use-t.ts::useT().money` forces the currency argument to `IRR` whenever the UI language is Persian, regardless of the source record's actual unit.
 - The same hook fetches `/api/exchange-rate` on mount and refreshes the rate every five minutes. This means the displayed value of a persisted amount can change as the FX rate changes, even when the underlying record does not.
-- Therefore the current formatter contract is not “format a persisted IRR amount”; it is “multiply an assumed USD-base amount by a live rate, then label it IRR.” That contract conflicts with the product's IRR-only money requirement and is unsafe for any already-IRR or Toman value.
+- Therefore the current formatter contract is not “format a persisted IRR amount”; it is “multiply an assumed USD-base amount by a live rate, then label it IRR.” That contract conflicts with the proposed IRR-only money target and is unsafe for any already-IRR or Toman value.
 
 ### 8.2 Known display callsites and unit evidence
 
@@ -319,11 +319,11 @@ A targeted source pass over 19 money-bearing UI/helper files found additional co
 #### Safe migration order
 
 - Build a source-field matrix from Prisma schema, migrations, seed writers, API writers/readers, and UI consumers for: `hourlyRate`, `travelFeeBase`, `inspectionFee`, `JobPart.unitPrice`, invoice monetary columns, payment amount/currency, wallet ledger amounts, withdrawal amount, CARE package `basePrice`, and extra-proposal amounts.
-- Define a single canonical persisted unit for all MEKANIX domestic monetary values: integer IRR. Keep Toman only at explicitly named input/compatibility boundaries, converting exactly once before persistence. Keep USD only in explicitly typed FX/external-market contexts.
+- If approved by the product owner, define a single canonical persisted unit for MEKANIX domestic monetary values: integer IRR. Keep Toman only at explicitly named input/compatibility boundaries, converting exactly once before persistence. Keep USD only in explicitly typed FX/external-market contexts.
 - Require currency/unit metadata or a typed domain boundary for legacy values until each dataset is reconciled. Do not default unknown legacy values to IRR.
 - Replace client-side quote arithmetic with server-returned, versioned pricing snapshots; display the snapshot's currency and unit, not the locale's preferred currency.
 - Make payment, invoice, wallet, withdrawal, admin aggregates, and technician earnings use the same validated integer-IRR contract while preserving distinct gross/net semantics.
-- Add tests proving: Persian locale never changes the source unit; FX refresh cannot change IRR display; a USD amount cannot enter an IRR-only writer; unknown currency is rejected/quarantined; UI estimate equals the server snapshot; gross invoice revenue is not presented as net technician earnings.
+- Add tests proving: Persian locale never changes the source unit; FX refresh cannot change IRR display; a USD amount cannot enter an IRR-only writer once that contract is approved; unknown currency is rejected/quarantined; UI estimate equals the server snapshot; gross invoice revenue is not presented as net technician earnings.
 
 **No runtime code, schema, seed, migration, production configuration, or historical financial record was changed by this expanded trace.**
 
@@ -353,12 +353,12 @@ The dashboard API, payment admin screen, technician dashboard, technician earnin
 | `src/components/mek/technician/dashboard.tsx` | Derives “today” from the first two completed jobs and “week” from every completed job returned by `listJobs`. | The code itself calls this a mock. It does not filter by date; “today” is not actually today and “week” is not actually this week. It sums invoice totals (customer gross), not wallet net earnings. |
 | `src/components/mek/technician/earnings.tsx` | Wallet KPIs use Wallet fields; 14-day chart instead sums payment amounts from completed-job invoice payments. | The chart is based on customer payment gross, while the adjacent KPIs are wallet balances/net/commission. The same “earned/revenue” visual grouping mixes different financial meanings. Payment currency is not checked in the chart. |
 | `src/app/api/payments/route.ts` | New payment amount and currency are copied from `inv.total` and `inv.currency`. | The normal writer preserves invoice currency, which is good, but downstream aggregators ignore it. The notification body still renders a dollar sign with the invoice total, contradicting an IRR invoice. The simulator is production-blocked. |
-| `prisma/schema.prisma` Payment | `amount Decimal`, `currency String @default("IRR")`. | Currency is stored per payment, but no enum/check constraint or repository-wide invariant enforces IRR-only domestic payments. A default does not validate legacy or explicitly supplied values. |
+| `prisma/schema.prisma` Payment | `amount Decimal`, `currency String @default("IRR")`. | Currency is stored per payment, but no enum/check constraint or repository-wide invariant enforces the proposed IRR-only domestic-payment target. A default does not validate legacy or explicitly supplied values. |
 
 #### Additional verified issues
 
 1. **Admin payments total is not currency-safe.** The API returns Payment rows with their currency field, but the UI reduces all successful amounts together and formats each with the locale-driven `money()`. A non-IRR row would be silently included in an IRR-looking total.
-2. **Platform dashboard revenue is not currency-safe.** `/api/dashboard` sums successful payment amounts without `currency: "IRR"` and does the same for each daily bucket and technician-performance bucket. If MEKANIX is to be IRR-only, reject/quarantine non-IRR domestic payment rows at write/read boundaries rather than silently mixing them.
+2. **Platform dashboard revenue is not currency-safe.** `/api/dashboard` sums successful payment amounts without `currency: "IRR"` and does the same for each daily bucket and technician-performance bucket. If the product owner approves an IRR-only contract, reject/quarantine non-IRR domestic payment rows at write/read boundaries rather than silently mixing them.
 3. **Category “revenue” is actually invoice value.** It sums invoice totals regardless of invoice/payment state; unpaid, refunded, or draft/overdue invoice values may be counted. Rename the metric to invoiced amount or calculate collected revenue from succeeded payments with a defined refund policy.
 4. **Technician gross/net semantics are mixed.** Admin performance and technician dashboard use customer-side invoice/payment gross, while wallet `totalEarned` and `netAmount` are technician-side amounts after commission. Do not call gross invoice value “technician earnings”.
 5. **Technician dashboard date labels are incorrect.** The source comments say “mock today/week earnings”; today is the first two completed jobs in the returned list and week is all completed jobs. Replace with server-authoritative time-windowed wallet ledger aggregates, or label as lifetime/sample totals until that exists.
@@ -371,7 +371,7 @@ The dashboard API, payment admin screen, technician dashboard, technician earnin
 - All sums must be computed from canonical integer-IRR ledger values, with explicit currency filtering/validation. Unknown or non-IRR rows must not enter an IRR aggregate.
 - Date-window metrics must filter on the business event timestamp chosen for the metric (payment created/settled, invoice issued, wallet released), not on a convenient unrelated timestamp.
 - Dashboard response types must include metric names and currency/unit metadata; frontend must not infer the unit from language.
-- Add fixtures for IRR-only, mixed-currency, refunded, unpaid, and technician commission cases. Assert that mixed/unknown currencies cannot inflate IRR KPIs and that gross customer payments differ from technician net earnings where commission applies.
+- Add fixtures for the approved currency contract, mixed-currency, refunded, unpaid, and technician commission cases. Assert that mixed/unknown currencies cannot inflate IRR KPIs and that gross customer payments differ from technician net earnings where commission applies.
 
 **No runtime code, schema, migrations, seed rows, financial history, or production settings were modified by this dashboard trace.**
 
@@ -386,14 +386,14 @@ The prepay writer, atomic Prisma/D1 implementations, wallet read/release path, a
 - The prepay wallet transaction is created with status `PENDING` and `holdUntil: null`; the generic wallet release path only releases PENDING rows with non-null matured `holdUntil`. The prepay route's Job row sets `holdUntil: null` too. The source reviewed here does not establish how this prepay hold is later released; identify the separate release trigger/flow before relying on it. Do not assume the generic `/api/wallets` auto-release will release this particular prepay transaction.
 - `src/app/api/wallets/route.ts` returns wallet values without currency metadata. It does release matured transactions before returning a refreshed wallet; the release transition is atomic, but currency remains implicit.
 - `src/app/api/wallets/withdraw/status/route.ts` correctly checks that a withdrawal request has a matching immutable negative ledger entry before reporting COMMITTED. It compares amount equality but has no currency field to verify.
-- `src/app/api/wallets/withdraw/route.ts` validates only finite positive amount and a maximum of 10,000; it does not require an integer/safe integer or a currency field. The database schema comments say IRR, so this is an apparent IRR-only route with no explicit boundary assertion.
+- `src/app/api/wallets/withdraw/route.ts` validates only finite positive amount and a maximum of 10,000; it does not require an integer/safe integer or a currency field. The database schema comments say IRR, so this route appears to assume IRR, but has no explicit boundary assertion.
 - `src/components/mek/technician/earnings.tsx` calls `parseFloat` on user-entered withdrawal text, uses `MIN_WITHDRAWAL = 5 // USD`, and shows a dollar sign in the minimum error. It posts that raw number to the IRR-labelled API. A technician entering “5” is therefore ambiguous by a factor that must not be guessed.
 
 #### Wallet/prepay release blockers
 
 1. Resolve technician fee seed units and historical fee values before enabling prepay in a real payment flow.
 2. Add a canonical integer-IRR validation boundary to prepay input derivation, commission calculation, wallet transaction writes, and ledger writes; reject unsafe/fractional values.
-3. Add explicit unit metadata or an IRR-only invariant for wallet and ledger records; do not infer unit from the Persian locale or schema comments alone.
+3. Add explicit unit metadata or, if IRR-only is approved, an IRR invariant for wallet and ledger records; do not infer unit from the Persian locale or schema comments alone.
 4. Decide whether `totalEarned` means gross lifetime amount or net technician earnings. Preserve gross and net as separate fields/metrics and label them accurately in UI.
 5. Trace the prepay hold-release lifecycle. The generic release helper requires non-null `holdUntil`, while prepay rows currently have null. Verify a separate, idempotent completion-time hold scheduler or fix the lifecycle before production.
 6. Replace USD minimum withdrawal text with the owner-approved IRR policy only after the intended amount scale and historical wallet data are reconciled. Do not just replace the string “$” with “ریال”.
