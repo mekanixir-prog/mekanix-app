@@ -1,7 +1,7 @@
 # MEKANIX — Release Readiness Audit
 
 **Audit date:** 2026-11-03  
-**Audited mainline baseline:** `1380597c7a0616a18896c2a7f295a92629c337b4`  
+**Audited mainline baseline:** `2f3b5b750377f07657cc7db853b12338a8cfaa4a`  
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Decision:** **NOT READY FOR PRODUCTION**
 
@@ -26,7 +26,8 @@ This audit separates verified code/CI evidence from staging and provider operati
 - PR #57 merged after all five applicable workflows passed on its exact head.
 - PR #59 merged with route-specific CARE idempotency, atomic writes, and reconciliation tests.
 - PR #63 merged as `5ca2651923af888547946ad5308e507dd4519266` after all five applicable workflows passed on its exact head: CI, Cloudflare Build, Production readiness, PostgreSQL CI, and Docker E2E.
-- PR #63 includes 100-concurrent-same-key D1/SQLite integration simulations and 80-concurrent PostgreSQL integration tests for service requests and claims, payload mismatch/replay behavior, and injected rollback failures.\n- PR #67 merged as `e6c03dcb6ff7316e98fec73092cd9307855fb3c1`; all five workflows passed on its exact head before merge.\n- PR #68 merged as `49e602b5f0413f1e0cc8949708c03dab3709cddd`; all five workflows passed on its exact head before merge.\n- PR #69 merged as `2662e4c671e3f0a07958d941954744ef4fd8d2d3`; all five workflows passed on its exact head before merge.\n- PR #70 merged as `54c9466bac054e8163c8a5859d28227af4fb1983`; all five workflows passed on its exact head before merge.\n- PR #79 merged as `1380597c7a0616a18896c2a7f295a92629c337b4` after all five workflows passed on its current-mainline head. It supersedes the divergent pre-squash PR #72, which is now closed.\n- Issue #81 is open as a release blocker for the monetary-unit mismatch across schema, wallet accounting, UI formatting, invoice/payment metadata, and Iranian gateway amounts. PRs #71/#73 remain unmerged pending a canonical currency contract and consolidation.
+- PR #63 includes 100-concurrent-same-key D1/SQLite integration simulations and 80-concurrent PostgreSQL integration tests for service requests and claims, payload mismatch/replay behavior, and injected rollback failures.\n- PR #67 merged as `e6c03dcb6ff7316e98fec73092cd9307855fb3c1`; all five workflows passed on its exact head before merge.\n- PR #68 merged as `49e602b5f0413f1e0cc8949708c03dab3709cddd`; all five workflows passed on its exact head before merge.\n- PR #69 merged as `2662e4c671e3f0a07958d941954744ef4fd8d2d3`; all five workflows passed on its exact head before merge.\n- PR #70 merged as `54c9466bac054e8163c8a5859d28227af4fb1983`; all five workflows passed on its exact head before merge.\n- PR #79 merged as `1380597c7a0616a18896c2a7f295a92629c337b4` after all five workflows passed on its current-mainline head. It supersedes the divergent pre-squash PR #72, which is now closed.
+- PR #80 merged as `2f3b5b750377f07657cc7db853b12338a8cfaa4a` after all five required workflows passed on a branch containing current main.\n- Issue #81 is open as a release blocker for the monetary-unit mismatch across schema, wallet accounting, UI formatting, invoice/payment metadata, and Iranian gateway amounts. PRs #71/#73 remain unmerged pending a canonical currency contract and consolidation.
 - Issue #52 is closed as completed for code-level remediation. Issue #29 is closed as not planned for a generic callback helper because the repository audit found no production call sites; route-specific contracts are used instead.
 - Issue #28 is closed as completed for code-level rate-limit atomicity; real Cloudflare D1 runtime validation remains a separate operational gate.
 
