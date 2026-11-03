@@ -3,10 +3,11 @@ import Decimal from "decimal.js";
 /**
  * Canonical, policy-neutral money primitives for Iranian Rial (IRR).
  *
- * This module validates and calculates integer IRR values only. It does not
- * infer currencies, convert Toman, apply FX rates, or define business tariffs.
- * Owner approval of the IRR unit does not prove legacy-row provenance or
- * authorize using these helpers on an unclassified historical amount.
+ * This module validates and calculates integer IRR values and provides an
+ * explicit presentation-only IRR-to-Toman formatter. It does not infer
+ * currencies, apply FX rates, or define business tariffs. Owner approval of
+ * the IRR unit does not prove legacy-row provenance or authorize using these
+ * helpers on an unclassified historical amount.
  */
 
 export type IrrRoundingMode = "half-up" | "down" | "up";
@@ -131,4 +132,46 @@ export function formatIrr(amount: number, locale = "fa-IR"): string {
     maximumFractionDigits: 0,
     minimumFractionDigits: 0,
   }).format(amount);
+}
+
+/**
+ * Format a verified integer IRR amount as Toman for presentation only.
+ * The conversion is exact (10 IRR = 1 Toman); the optional tenth is retained
+ * because one IRR equals 0.1 Toman. This must not be used to reinterpret
+ * unclassified legacy values or to parse Toman API input.
+ */
+export function formatTomanFromIrr(amount: number, locale = "fa-IR"): string {
+  assertIrrSignedInteger(amount, "IRR amount");
+
+  const signed = BigInt(amount);
+  const ten = BigInt(10);
+  const zero = BigInt(0);
+  const negative = signed < zero;
+  const absolute = negative ? -signed : signed;
+  const wholeToman = absolute / ten;
+  const tenthToman = absolute % ten;
+
+  const integerFormatter = new Intl.NumberFormat(locale, {
+    maximumFractionDigits: 0,
+    minimumFractionDigits: 0,
+  });
+  const integerText = integerFormatter.format(wholeToman);
+  if (tenthToman === BigInt(0)) {
+    if (!negative) return integerText;
+    const minus = integerFormatter.formatToParts(BigInt(-1)).find((part) => part.type === "minusSign")?.value ?? "-";
+    return minus + integerText;
+  }
+
+  const decimal = new Intl.NumberFormat(locale, { minimumFractionDigits: 1 })
+    .formatToParts(1.1)
+    .find((part) => part.type === "decimal")?.value ?? ".";
+  const fraction = new Intl.NumberFormat(locale, {
+    useGrouping: false,
+    maximumFractionDigits: 0,
+  }).format(Number(tenthToman));
+  const minus = negative
+    ? integerFormatter.formatToParts(BigInt(-1)).find((part) => part.type === "minusSign")?.value ?? "-"
+    : "";
+
+  return minus + integerText + decimal + fraction;
 }
