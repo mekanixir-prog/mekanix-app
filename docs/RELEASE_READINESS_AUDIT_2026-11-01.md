@@ -1,7 +1,7 @@
 # MEKANIX — Release Readiness Audit
 
 **Audit date:** 2026-11-03  
-**Audited code baseline:** `63095f5daffbe950ef707e2a0521b8ffd28a22c1`  
+**Audited code baseline:** `f18c8acb667e073a0bda99799177f3f4f0d6fae9`  
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Decision:** **NOT READY FOR PRODUCTION**
 
@@ -27,7 +27,7 @@ This audit separates verified code/CI evidence from staging and provider operati
 | Financial data provenance and API flow audits | PR #76, #77 | Documentation-only inventories of source units, seed risks, money-flow validation, and migration gates are merged; no runtime money behavior changed |
 | Gateway simulator production guards | PR #83 | Test-only regression coverage merged; `/api/gateway/initiate` and `/api/gateway/verify` must return 404 before auth/DB access in production |
 | Payment adapter verification contract | PR #66 (Draft) | Sandbox-only IDPay/Zarinpal adapter hardening; exact current head passed all five required workflows; still disconnected from payment routes |
-| Payment lifecycle contract | PR #86 (proposed) | Design-only lifecycle, idempotency, callback, fulfillment/outbox and test requirements; no monetary unit or runtime behavior approved |
+| Payment lifecycle contract | PR #86 (merged) | Design-only lifecycle, idempotency, callback, fulfillment/outbox and test requirements; all four applicable workflows passed; no monetary unit or runtime behavior approved |
 
 ## 2. Verified CI evidence
 
@@ -49,6 +49,7 @@ This audit separates verified code/CI evidence from staging and provider operati
 - PR #83 merged as `ab99e97dd3023a648a24308c8e73aecaa17e6234` after all four applicable workflows passed; it adds production-guard regression tests for both gateway simulator routes and changes no runtime payment behavior.
 - PR #84 merged as `e97c638065d5b96ee055f4add8681e8ccfd01846`; its four applicable documentation-branch workflows passed.
 - PR #85 merged as `63095f5daffbe950ef707e2a0521b8ffd28a22c1`; all four applicable workflows passed on its exact documentation-only head. The latest main CI also passed all five required workflows on the pre-merge main baseline.
+- PR #86 merged as `f18c8acb667e073a0bda99799177f3f4f0d6fae9` after all four applicable workflows passed on its exact head; it adds a design-only payment lifecycle contract and changes no runtime financial behavior.
 - Main CI passed all five required workflows on `ab99e97dd3023a648a24308c8e73aecaa17e6234`.
 - PRs #75 and #78 remain Draft and unwired. Their IRR-specific implementation assumptions must not be adopted until the product owner approves the canonical monetary unit and provenance/migration gates are satisfied.
 - Issue #81 is open as a release blocker for the monetary-unit mismatch across schema, wallet accounting, UI formatting, invoice/payment metadata, and Iranian gateway amounts. PRs #71/#73 remain unmerged pending a canonical currency contract and consolidation; PRs #75/#78 remain Draft pending explicit owner approval.
