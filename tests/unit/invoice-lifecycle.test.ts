@@ -80,7 +80,7 @@ const refreshedJob = {
 };
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  Object.values(mocks).forEach((mock) => mock.mockReset());
   mocks.auth.mockResolvedValue({ userId: "admin-1", role: "ADMIN" });
   mocks.participant.mockResolvedValue(null);
   mocks.technician.mockResolvedValue(null);
