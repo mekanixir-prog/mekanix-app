@@ -25,7 +25,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Applying complete Prisma SQLite migration history to local D1..."
-bunx wrangler d1 migrations apply "$DB_NAME" --local --config "$CONFIG"
+printf 'y\\n' | bunx wrangler d1 migrations apply "$DB_NAME" --local --config "$CONFIG"
 
 assert_sql() {
   local query="$1"
