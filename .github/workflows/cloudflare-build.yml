@@ -35,6 +35,7 @@ on:
       - 'tests/integration/wallet-release-worker-cursor.test.ts'
       - 'tests/types/node-sqlite.d.ts'
       - 'scripts/wallet-release-staging-fixture.sh'
+      - 'scripts/test-wallet-release-local-d1.sh'
       - 'scripts/wallet-release-staging-*.sql'
       - 'src/**'
       - 'tests/integration/idempotent-create-flows-d1-sqlite.test.ts'
@@ -74,31 +75,10 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Apply full Prisma SQLite migration history to local D1
+      - name: Exercise scheduled escrow release against isolated local D1
         run: |
-          bash -n scripts/wallet-release-staging-fixture.sh
-          printf 'y\n' | bunx wrangler d1 migrations apply mekanix-wallet-escrow-staging \
-            --local --config wrangler.wallet-release.toml
-          INDEX_RESULT="$(bunx wrangler d1 execute mekanix-wallet-escrow-staging --local \
-            --config wrangler.wallet-release.toml \
-            --command "SELECT name FROM sqlite_schema WHERE type='index' AND name='WalletTransaction_status_holdUntil_id_idx';")"
-          echo "$INDEX_RESULT"
-          grep -q "WalletTransaction_status_holdUntil_id_idx" <<< "$INDEX_RESULT"
-          CURSOR_RESULT="$(bunx wrangler d1 execute mekanix-wallet-escrow-staging --local \
-            --config wrangler.wallet-release.toml \
-            --command "SELECT name FROM sqlite_schema WHERE type='table' AND name='WalletReleaseWorkerState';")"
-          echo "$CURSOR_RESULT"
-          grep -q "WalletReleaseWorkerState" <<< "$CURSOR_RESULT"
-          bunx wrangler d1 execute mekanix-wallet-escrow-staging --local --yes \
-            --config wrangler.wallet-release.toml --file scripts/wallet-release-staging-seed.sql
-          SEED_RESULT="$(bunx wrangler d1 execute mekanix-wallet-escrow-staging --local \
-            --config wrangler.wallet-release.toml \
-            --command "SELECT status FROM WalletTransaction WHERE id='wallet-release-staging-txn';")"
-          echo "$SEED_RESULT"
-          grep -q "PENDING" <<< "$SEED_RESULT"
-          bunx wrangler d1 execute mekanix-wallet-escrow-staging --local --yes \
-            --config wrangler.wallet-release.toml --file scripts/wallet-release-staging-cleanup.sql
-          echo "✅ Nested Prisma migrations, worker schema, and staging fixture SQL verified in local D1"
+          bash -n scripts/test-wallet-release-local-d1.sh
+          bash scripts/test-wallet-release-local-d1.sh
 
       - name: Build Cloudflare Worker
         env:
