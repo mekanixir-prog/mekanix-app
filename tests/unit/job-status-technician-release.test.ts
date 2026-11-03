@@ -111,6 +111,7 @@ describe("job status route delegates atomic state changes", () => {
       invoice: null,
       request: { customer: { user: { id: "customer-user", name: "Customer" } } },
     };
+    mocks.jobFind.mockReset();
     mocks.jobFind.mockResolvedValueOnce(repair).mockResolvedValue(job);
     mocks.taxFind.mockResolvedValueOnce({ value: "0.12" });
     const request = new Request("https://mekanix.test/api/jobs/job-1/status", {
@@ -147,6 +148,7 @@ describe("job status route delegates atomic state changes", () => {
       invoice: null,
       request: { customer: { user: { id: "customer-user", name: "Customer" } } },
     };
+    mocks.jobFind.mockReset();
     mocks.jobFind.mockResolvedValueOnce(repair);
     mocks.taxFind.mockResolvedValueOnce({ value: "0.09invalid" });
     const request = new Request("https://mekanix.test/api/jobs/job-1/status", {
