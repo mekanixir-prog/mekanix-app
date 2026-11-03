@@ -2,26 +2,39 @@
 import { useState, useEffect } from "react";
 
 export default function AdminPanelPage() {
-  const [token, setToken] = useState<string | null>(null);
+  const [authenticated, setAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const t = localStorage.getItem("mekanix_admin_token");
-    Promise.resolve().then(() => {
-      setToken(t);
-      setLoading(false);
-    });
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/admin-panel/auth/me", { credentials: "same-origin", cache: "no-store" });
+        if (!cancelled) setAuthenticated(res.ok);
+      } catch {
+        if (!cancelled) setAuthenticated(false);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   if (loading) {
     return <div className="grid min-h-screen place-items-center bg-background"><div className="size-8 animate-spin rounded-full border-2 border-amber border-t-transparent" /></div>;
   }
 
-  if (!token) return <LoginScreen onLogin={setToken} />;
-  return <AdminDashboard onLogout={() => { localStorage.removeItem("mekanix_admin_token"); setToken(null); }} />;
+  if (!authenticated) return <LoginScreen onLogin={() => setAuthenticated(true)} />;
+  return <AdminDashboard onLogout={async () => {
+    try {
+      await fetch("/api/admin-panel/auth/logout", { method: "POST", credentials: "same-origin" });
+    } finally {
+      setAuthenticated(false);
+    }
+  }} />;
 }
 
-function LoginScreen({ onLogin }: { onLogin: (t: string) => void }) {
+function LoginScreen({ onLogin }: { onLogin: () => void }) {
   const [emailOrUsername, setEmailOrUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
@@ -32,13 +45,14 @@ function LoginScreen({ onLogin }: { onLogin: (t: string) => void }) {
     setBusy(true); setError("");
     try {
       const res = await fetch("/api/admin-panel/auth/login", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ emailOrUsername, password }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      localStorage.setItem("mekanix_admin_token", data.token);
-      onLogin(data.token);
+      onLogin();
     } catch (e: any) { setError(e.message); }
     finally { setBusy(false); }
   }
@@ -89,8 +103,7 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     (async () => {
       setLoading(true);
       try {
-        const token = localStorage.getItem("mekanix_admin_token");
-        const res = await fetch("/api/admin-panel/onboarding", { headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch("/api/admin-panel/onboarding", { credentials: "same-origin" });
         const data = await res.json();
         if (!cancelled) setSlides(data || []);
       } catch {}
@@ -102,8 +115,7 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const loadSlides = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("mekanix_admin_token");
-      const res = await fetch("/api/admin-panel/onboarding", { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch("/api/admin-panel/onboarding", { credentials: "same-origin" });
       const data = await res.json();
       setSlides(data || []);
     } catch {}
@@ -112,15 +124,15 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
 
   async function handleDelete(id: string) {
     if (!confirm("حذف شود؟")) return;
-    const token = localStorage.getItem("mekanix_admin_token");
-    await fetch(`/api/admin-panel/onboarding/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+    await fetch(`/api/admin-panel/onboarding/${id}`, { method: "DELETE", credentials: "same-origin" });
     loadSlides();
   }
 
   async function handleToggleActive(slide: any) {
-    const token = localStorage.getItem("mekanix_admin_token");
     await fetch(`/api/admin-panel/onboarding/${slide.id}`, {
-      method: "PATCH", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      method: "PATCH",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ active: !slide.active }),
     });
     loadSlides();
@@ -216,10 +228,14 @@ function EditModal({ slide, onClose }: { slide: any; onClose: () => void }) {
     if (!form.titleFa || !form.subtitleFa) { alert("عنوان و زیرعنوان الزامی است"); return; }
     setSaving(true);
     try {
-      const token = localStorage.getItem("mekanix_admin_token");
       const payload = { ...form, bulletsFa: JSON.stringify(form.bulletsFa.split("\n").filter(Boolean)), bulletsEn: JSON.stringify(form.bulletsEn.split("\n").filter(Boolean)) };
       const url = isEdit ? `/api/admin-panel/onboarding/${slide.id}` : "/api/admin-panel/onboarding";
-      await fetch(url, { method: isEdit ? "PATCH" : "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      await fetch(url, {
+        method: isEdit ? "PATCH" : "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
       onClose();
     } catch (e: any) { alert(e.message); }
     finally { setSaving(false); }
