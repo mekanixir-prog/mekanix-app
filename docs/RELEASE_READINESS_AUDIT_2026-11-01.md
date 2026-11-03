@@ -64,7 +64,7 @@ This audit separates verified code/CI evidence from staging and provider operati
 
 ### 3.2 Real payment provider — issue #24
 
-- PR #66 remains Draft and is refreshed on the current-main baseline. Its current head `361fbb6314401b327f6ea2f7ab5273bb25063119` hardens IDPay/Zarinpal adapter verification, requires persisted order IDs and safe integer provider amounts, and defaults both adapters to sandbox. Current-head CI is still running.
+- PR #66 remains Draft and is refreshed on the current audited code baseline. Its current head `361fbb6314401b327f6ea2f7ab5273bb25063119` hardens IDPay/Zarinpal adapter verification, requires persisted order IDs and safe integer provider amounts, and defaults both adapters to sandbox. All five required workflows passed on this exact head; the adapters remain disconnected from payment routes.
 - PR #66 does not connect provider adapters to the payment routes and does not resolve invoice-to-wallet settlement or issue #81.
 - Zarinpal/IDPay adapter scaffolding exists, but the authoritative initiation → persisted attempt → provider verification → business settlement lifecycle is not wired.
 - `/api/payments`, `/api/gateway/initiate`, `/api/gateway/verify`, and VIP/prepay simulator paths remain unavailable in production.
