@@ -21,7 +21,8 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - [ ] Complete the authoritative payment attempt → provider verification → invoice/VIP/prepay fulfillment lifecycle in issue #24.
 - [ ] Add the missing invoice-settlement → commission → technician pending-wallet credit → RELEASE ledger flow; invoice payment currently does not create technician earnings.\n- [ ] Add the missing invoice-settlement → commission → technician pending-wallet credit → RELEASE ledger flow; invoice payment currently does not create technician earnings.
 - [ ] Add invoice settlement → commission → technician pending-wallet credit → RELEASE ledger flow. Current invoice simulator does not create technician earnings.
-- [ ] Resolve canonical currency, precision, rounding, FX snapshot, and payout settlement rules in issue #81.
+- [x] Owner approved canonical integer IRR storage and Toman-only display conversion (10 IRR = 1 Toman); decision recorded in issue #81.
+- [ ] Reconcile historical money-unit provenance, approve integer/rounding bounds and commercial pricing, and implement the safe migration plan in issue #81.
 - [ ] Complete invoice, wallet, withdrawal, payout, and callback replay/concurrency tests across SQLite/D1 and PostgreSQL.
 - [ ] Complete end-to-end customer, technician, admin, CARE, warranty, refund/recovery, and notification scenarios.
 - [ ] Complete final authorization/IDOR/BOLA review for every write route and admin action.
@@ -40,7 +41,7 @@ This replaces the historical checklist snapshots from October. Do not use old �
 
 ### Current financial blockers
 - [ ] Issue #24 — real provider lifecycle is not wired; current invoice/gateway/prepay routes are simulator-only and production-disabled.
-- [ ] Issue #81 — stored monetary units, currency metadata, Persian formatting, FX rate source, and bank payout units disagree.
+- [ ] Issue #81 — canonical unit is approved (integer IRR; Toman display only), but legacy row provenance, mixed-unit seed values, pricing inputs, integer validation, formatting and payout reconciliation remain unresolved.
 - [ ] Technician invoice earnings are not yet credited to the wallet through a complete idempotent escrow/commission flow.
 - [ ] Do not activate live payment, wallet top-up, withdrawal, or bank payout until these are resolved.
 
@@ -78,7 +79,7 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - [ ] No open critical/high security or financial-integrity blocker.
 - [ ] SQLite/D1 and PostgreSQL migration/build/integration checks pass.
 - [ ] D1 escrow worker passes the local D1 scheduled-event integration test, and remote staging/Cron evidence is recorded before production enablement.
-- [ ] Payment and currency contract is approved, sandbox-certified, and replay/concurrency tested.
+- [ ] Payment lifecycle is complete, sandbox-certified, and replay/concurrency tested against the approved integer-IRR contract.
 - [ ] Invoice-to-technician-wallet settlement and payout reconciliation are proven end-to-end.
 - [ ] Backup restore and rollback are rehearsed and documented.
 - [ ] Production SMS, domain/TLS, hosting, monitoring, and secrets are configured and smoke-tested.
