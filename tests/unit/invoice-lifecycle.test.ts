@@ -97,7 +97,7 @@ beforeEach(() => {
 });
 
 describe("POST /api/invoices lifecycle", () => {
-  it("returns the invoice already created by the job-status flow", async () => {
+  it("returns the invoice already created by the current-main job-status flow", async () => {
     mocks.invoiceFindUnique.mockResolvedValueOnce(existingInvoice);
 
     const response = await createInvoice(postRequest({ jobId: "job-1" }));
