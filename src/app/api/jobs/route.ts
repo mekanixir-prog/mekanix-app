@@ -1,3 +1,4 @@
+import { PARTICIPANT_USER_SELECT } from "@/lib/user-select";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
@@ -5,13 +6,13 @@ import { getCustomerFromSession, getTechnicianFromSession } from "@/lib/auth";
 import { wantsLite, liteResponse } from "@/lib/lite-response";
 
 const include = {
-  request: { include: { customer: { include: { user: true } }, vehicle: true } },
-  technician: { include: { user: true, specialties: true } },
+  request: { include: { customer: { include: { user: { select: PARTICIPANT_USER_SELECT } } }, vehicle: true } },
+  technician: { include: { user: { select: PARTICIPANT_USER_SELECT }, specialties: true } },
   parts: true,
   diagnosisRecords: true,
   invoice: true,
   reviews: true,
-  messages: { include: { fromUser: true }, orderBy: { createdAt: "asc" } },
+  messages: { include: { fromUser: { select: PARTICIPANT_USER_SELECT } }, orderBy: { createdAt: "asc" } },
   tracking: { orderBy: { ts: "asc" } },
 } as const;
 
