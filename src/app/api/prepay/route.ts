@@ -1,3 +1,4 @@
+import { PARTICIPANT_USER_SELECT } from "@/lib/user-select";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
@@ -54,8 +55,8 @@ export async function POST(req: Request) {
   const job = await db.job.findUnique({
     where: { id: jobId },
     include: {
-      request: { include: { vehicle: true, customer: { include: { user: true } } } },
-      technician: { include: { wallet: true, user: true } },
+      request: { include: { vehicle: true, customer: { include: { user: { select: PARTICIPANT_USER_SELECT } } } } },
+      technician: { include: { wallet: true, user: { select: PARTICIPANT_USER_SELECT } } },
     },
   });
   if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
@@ -139,13 +140,13 @@ export async function POST(req: Request) {
   const updatedJob = await db.job.findUnique({
     where: { id: jobId },
     include: {
-      request: { include: { vehicle: true, customer: { include: { user: true } } } },
-      technician: { include: { user: true, specialties: true } },
+      request: { include: { vehicle: true, customer: { include: { user: { select: PARTICIPANT_USER_SELECT } } } } },
+      technician: { include: { user: { select: PARTICIPANT_USER_SELECT }, specialties: true } },
       parts: true,
       diagnosisRecords: true,
       invoice: true,
       reviews: true,
-      messages: { include: { fromUser: true }, orderBy: { createdAt: "asc" } },
+      messages: { include: { fromUser: { select: PARTICIPANT_USER_SELECT } }, orderBy: { createdAt: "asc" } },
       tracking: { orderBy: { ts: "asc" } },
     },
   });
