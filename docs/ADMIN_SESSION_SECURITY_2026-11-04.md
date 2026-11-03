@@ -32,8 +32,8 @@ The OTP-authenticated in-app AdminApp bearer flow remains separate and continues
 ## Data migration
 
 Both migration tracks add `AdminUser.sessionVersion INTEGER NOT NULL DEFAULT 0`:
-- SQLite / Cloudflare D1: `prisma/migrations/20261104000000_admin_session_version`
-- PostgreSQL: `prisma/migrations-postgresql/20261104000000_admin_session_version`
+- SQLite / Cloudflare D1: `prisma/migrations/20261103020000_admin_session_version`
+- PostgreSQL: `prisma/migrations-postgresql/20261103020000_admin_session_version`
 
 Apply the matching migration before deploying the new application code. The default preserves existing AdminUser rows. Existing browser-stored dedicated JWTs are intentionally invalidated by the new token shape and must be replaced by a fresh login.
 
