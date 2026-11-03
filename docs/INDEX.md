@@ -1,6 +1,6 @@
 # MEKANIX Engineering Documentation
 
-> **Current audited mainline:** `2f3b5b750377f07657cc7db853b12338a8cfaa4a` (2026-11-03). The dated release audit is the source of truth for code and release status.
+> **Current audited mainline:** `0ebba5716396499e537efd1e7cca037c64604533` (2026-11-03). The dated release audit is the source of truth for code and release status.
 
 ## Start here
 
@@ -8,6 +8,8 @@
 2. [Release Checklist](RELEASE_CHECKLIST.md) — operational gates split between work to finish now and services to activate shortly before launch.
 3. [Production Deployment Runbook](PRODUCTION_DEPLOYMENT_RUNBOOK.md) — staging, configuration, deployment, smoke tests, and rollback sequence.
 4. [Payment & Wallet Audit](AUDIT_PAYMENT_WALLET.md) — provider, invoice, wallet, payout, and idempotency findings.
+5. [Financial Unit Contract Audit](FINANCIAL_UNIT_CONTRACT_AUDIT_2026-11-02.md) — current currency-unit inconsistencies, proposed IRR target, and owner-approval/migration gates.
+6. [Financial Data Provenance Inventory](FINANCIAL_DATA_PROVENANCE_INVENTORY_2026-11-02.md) and [Financial API Flow Audit](FINANCIAL_API_FLOW_AUDIT_2026-11-02.md) — source units, seed risks, and money-flow validation boundaries.
 5. [D1 / Prisma Audit](AUDIT_D1_PRISMA.md) — adapter, migrations, transaction, and concurrency constraints.
 6. [Security Audit](AUDIT_SECURITY.md) and [Phase 3 Security Audit v2](PHASE3_SECURITY_AUDIT_V2.md) — security review history.
 7. [Cloudflare Build Audit](AUDIT_CLOUDFLARE_BUILD.md) and [CI/CD Audit](AUDIT_CICD.md) — build and workflow details.
