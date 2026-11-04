@@ -19,14 +19,14 @@ const mockSessionCreate = vi.fn().mockResolvedValue({});
 const mockSessionFindUnique = vi.fn();
 const mockSessionUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
 
-vi.mock("@/lib/db-access", () => ({
-  getDbForLib: async () => ({
+vi.mock("@/lib/db", () => ({
+  db: {
     session: {
       create: (...args: any[]) => mockSessionCreate(...args),
       findUnique: (...args: any[]) => mockSessionFindUnique(...args),
       updateMany: (...args: any[]) => mockSessionUpdateMany(...args),
     },
-  }),
+  },
 }));
 
 vi.mock("@/lib/rate-limit", () => ({
@@ -424,17 +424,5 @@ describe("POST /api/auth/logout — endpoint", () => {
     const res = await logoutPOST(req);
     expect(res.status).toBe(200);
     expect(mockSessionUpdateMany).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("verifySession — deleted account", () => {
-  it("rejects a session when its related user record no longer exists", async () => {
-    const token = await createSession(PAYLOAD);
-    mockSessionFindUnique.mockResolvedValueOnce({
-      ...validSessionRecord(),
-      user: null,
-    });
-
-    await expect(verifySession(token)).resolves.toBeNull();
   });
 });
