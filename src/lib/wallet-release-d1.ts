@@ -32,7 +32,7 @@ export async function releaseWalletTransactionWithD1(
   const ledgerInsert = d1.prepare(`
     INSERT INTO "WalletLedger"
       ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
-       "referenceType", "referenceId", "description", "idempotencyKey", "createdAt")
+       "referenceType", "referenceId", "description", "idempotencyKey", "createdAt", "financialUnitStatus")
     SELECT ?, w."id", 'RELEASE', wt."netAmount", w."balance",
            w."balance" + wt."netAmount",
            'WalletTransaction', wt."id", ?, ?, ?, 'VERIFIED_IRR'
