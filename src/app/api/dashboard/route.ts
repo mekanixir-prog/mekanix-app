@@ -57,7 +57,7 @@ export async function GET(req: Request) {
     const jobs = await db.job.count({ where: { status: "COMPLETED", completedAt: { gte: start, lt: end } } });
     revenueSeries.push({
       date: end.toISOString().slice(5, 10),
-      revenue: Math.round(pays.reduce((s, p) => s + Number(p.amount), 0)),
+      revenue: Math.round(pays.reduce((s, p) => s + (isSafeStoredIrrAmount(p.amount) ? Number(p.amount) : 0), 0)),
       jobs,
     });
   }
@@ -90,7 +90,7 @@ export async function GET(req: Request) {
         where: { status: "SUCCEEDED", currency: "IRR", financialUnitStatus: "VERIFIED_IRR", invoice: { job: { technicianId: t.id } } },
         select: { amount: true },
       });
-      const revenue = Math.round(pays.reduce((s, p) => s + Number(p.amount), 0));
+      const revenue = Math.round(pays.reduce((s, p) => s + (isSafeStoredIrrAmount(p.amount) ? Number(p.amount) : 0), 0));
       return {
         name: t.user.name,
         jobs: jobCount,
