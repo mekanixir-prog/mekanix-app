@@ -7,7 +7,9 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 import { getTechnicianFromSession } from "@/lib/auth";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 export async function GET(req: Request) {
   const db = await getDbForLib();
@@ -60,5 +62,5 @@ export async function GET(req: Request) {
     },
     orderBy: { createdAt: "desc" },
   });
-  return NextResponse.json(missions);
+  return NextResponse.json(missions.map((mission) => ({ ...mission, package: maskFinancialFields(mission.package, ["basePrice"]) })));
 }
