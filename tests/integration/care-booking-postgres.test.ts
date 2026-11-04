@@ -77,6 +77,7 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
       pricing: {
         labor: 50000,
         travel: 15000,
+        inspection: 0,
         parts: 0,
         discount: 0,
         taxRate: 0.09,
