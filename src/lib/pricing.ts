@@ -33,6 +33,7 @@
 import Decimal from "decimal.js";
 import { getDbForLib } from "./db-access";
 import { assertIrrInteger } from "./money/irr";
+import { getPricingRateCard, normalizeVehicleAssetClass, type ServiceCode } from "./pricing-rate-card";
 
 /**
  * Production pricing is fail-closed until the canonical IRR rate card has
@@ -49,7 +50,10 @@ export function isProductionPricingApproved(
 export interface PricingInput {
   packageId?: string;
   vehicleType: string; // CAR, TRUCK, EXCAVATOR, etc.
-  laborHours: number; // estimated hours
+  /** Fixed-fee service code. Defaults to diagnostic for legacy callers. */
+  serviceCode?: ServiceCode;
+  /** @deprecated Kept for API compatibility; fixed-fee pricing ignores elapsed hours. */
+  laborHours: number;
   partsCost: number; // sum of parts
   travelDistanceKm: number;
   isEmergency: boolean;
@@ -61,6 +65,7 @@ export interface PricingBreakdown {
   labor: number;
   parts: number;
   travel: number;
+  inspection: number;
   emergency: number;
   discount: number;
   /** Subtotal BEFORE discount (= labor + parts + travel + emergency). */
@@ -73,6 +78,9 @@ export interface PricingBreakdown {
   breakdown: {
     laborRate: number;
     laborHours: number;
+    serviceCode: string;
+    assetClass: "passenger" | "heavy";
+    includedDistanceKm: number;
     travelRate: number;
     travelDistanceKm: number;
     emergencyMultiplier: number;
@@ -80,38 +88,8 @@ export interface PricingBreakdown {
   };
 }
 
-const DEFAULT_TAX_RATE = 0.09; // 9% VAT
-const EMERGENCY_MULTIPLIER = 1.5;
-
-// Region multipliers (Tehran = 1.0 base). Reserved for future region-based
-// pricing — currently not applied (see `void REGION_MULTIPLIERS` below).
-const REGION_MULTIPLIERS: Record<string, number> = {
-  tehran: 1.0,
-  karaj: 0.95,
-  isfahan: 0.9,
-  shiraz: 0.9,
-  mashhad: 0.9,
-  tabriz: 0.88,
-  other: 0.85,
-};
-
-// Vehicle type multipliers (heavy machinery costs more).
-const VEHICLE_TYPE_MULTIPLIERS: Record<string, number> = {
-  CAR: 1.0,
-  TRUCK: 1.5,
-  BUS: 1.4,
-  EXCAVATOR: 2.0,
-  LOADER: 2.0,
-  BULLDOZER: 2.2,
-  GRADER: 1.8,
-  AGRI: 1.6,
-  INDUSTRIAL: 1.8,
-  OTHER: 1.3,
-};
-
-// IRR has no minor units — all money values are integers. Decimal.round()
-// yields a Decimal that exactly represents the rounded integer; toNumber()
-// then converts without precision loss.
+// Fixed-fee rate card is stored centrally in PlatformSetting and is editable
+// from /admin-panel/pricing. All persisted values are integer IRR.
 function round(dec: Decimal): number {
   const amount = dec.round().toNumber();
   assertIrrInteger(amount, "Calculated price");
@@ -122,7 +100,6 @@ export async function calculatePrice(input: PricingInput): Promise<PricingBreakd
   if (!isProductionPricingApproved()) {
     throw new Error("Production IRR pricing is disabled until the canonical rate card is approved");
   }
-
   if (!Number.isFinite(input.laborHours) || input.laborHours < 0) {
     throw new RangeError("Labor hours must be a finite non-negative number");
   }
@@ -130,101 +107,74 @@ export async function calculatePrice(input: PricingInput): Promise<PricingBreakd
   if (!Number.isFinite(input.travelDistanceKm) || input.travelDistanceKm < 0) {
     throw new RangeError("Travel distance must be a finite non-negative number");
   }
+  // VIP never discounts repair labor or parts. Its visit benefit is fulfilled
+  // by the subscription/booking flow, not by a percentage discount here.
   const vipPercent = input.vipDiscountPercent ?? 0;
   if (!Number.isFinite(vipPercent) || vipPercent < 0 || vipPercent > 100) {
     throw new RangeError("VIP discount percent must be between 0 and 100");
   }
+  if (vipPercent > 0) {
+    throw new Error("VIP does not discount repairs or parts; periodic-visit benefits are applied by the booking flow");
+  }
 
-    const db = await getDbForLib();
-  // Get package base price if provided. Today the package base price is
-  // informational — the primary price driver is vehicle-type-scaled labor +
-  // parts + travel. Phase 5 will fold it into the calculation (e.g. as a
-  // pre-paid service credit) once the package redemption flow lands. Keeping
-  // the fetch preserves the async contract callers will depend on.
+  const db = await getDbForLib();
   let packageBasePrice = new Decimal(0);
   if (input.packageId) {
     const pkg = await db.servicePackage.findUnique({ where: { id: input.packageId } });
-    if (pkg?.basePrice != null) {
-      packageBasePrice = new Decimal(pkg.basePrice.toString());
-    }
+    if (pkg?.basePrice != null) packageBasePrice = new Decimal(pkg.basePrice.toString());
   }
 
-  // ── Labor ───────────────────────────────────────────────────────────────
-  // Labor rate depends on vehicle type (heavy machinery = higher rate).
-  //   baseLaborRate = 50,000 IRR/hour
-  //   laborRate    = baseLaborRate × vehicleMultiplier
-  //   labor        = laborRate × laborHours
-  const vehicleMultiplier = VEHICLE_TYPE_MULTIPLIERS[input.vehicleType] ?? 1.3;
-  const baseLaborRate = new Decimal(50000);
-  const laborRate = baseLaborRate.mul(vehicleMultiplier);
-  const labor = laborRate.mul(input.laborHours);
-
-  // ── Parts ───────────────────────────────────────────────────────────────
+  const card = await getPricingRateCard();
+  const assetClass = normalizeVehicleAssetClass(input.vehicleType);
+  const serviceCode = input.serviceCode ?? "diagnostic";
+  const fixedLabor = card.serviceFeesIrr[assetClass][serviceCode];
+  if (fixedLabor === null || fixedLabor === undefined) {
+    throw new Error("این خدمت برای گروه وسیله انتخاب‌شده در نرخ‌نامه تعریف نشده است");
+  }
+  const labor = new Decimal(assertIrrInteger(fixedLabor, "Fixed labor fee") ? fixedLabor : fixedLabor);
+  const inspection = new Decimal(card.fees[assetClass].inspectionIrr);
+  const distance = new Decimal(input.travelDistanceKm);
+  const includedKm = new Decimal(card.fees[assetClass].includedKm);
+  const extraKm = Decimal.max(0, distance.sub(includedKm));
+  const travel = new Decimal(card.fees[assetClass].visitBaseIrr)
+    .add(new Decimal(card.fees[assetClass].perKmIrr).mul(extraKm));
   const parts = new Decimal(input.partsCost);
+  const emergencyRate = new Decimal(card.emergencySurchargeBps).div(10_000);
+  const emergency = input.isEmergency ? labor.mul(emergencyRate) : new Decimal(0);
+  const subtotal = labor.add(parts).add(travel).add(inspection).add(emergency);
+  const discount = new Decimal(0);
 
-  // ── Travel ─────────────────────────────────────────────────────────────
-  //   baseTravelFee = 15,000 IRR (on-site visit fee)
-  //   perKmRate     = 2,000 IRR/km
-  //   travel        = baseTravelFee + perKmRate × travelDistanceKm
-  const baseTravelFee = new Decimal(15000);
-  const perKmRate = new Decimal(2000);
-  const travel = baseTravelFee.add(perKmRate.mul(input.travelDistanceKm));
+  if (card.tax.enabled && card.tax.rateBps > 0 && process.env.MEKANIX_TAX_IRR_APPROVED !== "true") {
+    throw new Error("Tax calculation is disabled until MEKANIX_TAX_IRR_APPROVED=true and tax policy is reviewed");
+  }
+  const taxRate = card.tax.enabled ? card.tax.rateBps / 10_000 : 0;
+  const taxTotal = card.tax.enabled ? subtotal.mul(card.tax.rateBps).div(10_000) : new Decimal(0);
+  const total = subtotal.add(taxTotal);
 
-  // ── Emergency surcharge ─────────────────────────────────────────────────
-  //   emergency = (labor + parts + travel) × (EMERGENCY_MULTIPLIER − 1)
-  //            = preDiscount × 0.5   (when isEmergency=true)
-  const preDiscount = labor.add(parts).add(travel);
-  const emergency = input.isEmergency
-    ? preDiscount.mul(EMERGENCY_MULTIPLIER - 1)
-    : new Decimal(0);
-
-  // ── Subtotal (before discount) ──────────────────────────────────────────
-  //   subtotal = preDiscount + emergency
-  // Note: `subtotal` in the returned object is the PRE-DISCOUNT subtotal.
-  // The post-discount subtotal (= subtotal − discount) is implicit in
-  // `total − taxTotal`.
-  const subtotal = preDiscount.add(emergency);
-
-  // ── Discount (VIP or promo) ─────────────────────────────────────────────
-  //   discount = subtotal × vipPercent / 100
-  const discount = subtotal.mul(vipPercent).div(100);
-
-  // ── After-discount subtotal ─────────────────────────────────────────────
-  const afterDiscount = subtotal.sub(discount);
-
-  // ── Tax (9% VAT on the after-discount subtotal) ────────────────────────
-  const taxTotal = afterDiscount.mul(DEFAULT_TAX_RATE);
-
-  // ── Total = afterDiscount + taxTotal ────────────────────────────────────
-  const total = afterDiscount.add(taxTotal);
-
-  // Region multiplier is reserved for future region-based pricing — keep it
-  // in the input contract so callers don't need to change shape when we
-  // activate it. For now we don't apply it (Tehran base = 1.0 is the
-  // implicit default above).
   void packageBasePrice;
-  void REGION_MULTIPLIERS;
-  void input.region;
-
   return {
     labor: round(labor),
     parts: round(parts),
     travel: round(travel),
+    inspection: round(inspection),
     emergency: round(emergency),
     discount: round(discount),
     subtotal: round(subtotal),
-    taxRate: DEFAULT_TAX_RATE,
+    taxRate,
     taxTotal: round(taxTotal),
     total: round(total),
     currency: "IRR",
-    pricingVersion: "2.1", // Bumped for Decimal-safe arithmetic
+    pricingVersion: "rate-card-" + card.version,
     breakdown: {
-      laborRate: laborRate.toNumber(),
-      laborHours: input.laborHours,
-      travelRate: perKmRate.toNumber(),
+      laborRate: fixedLabor,
+      laborHours: 0,
+      serviceCode,
+      assetClass,
+      includedDistanceKm: card.fees[assetClass].includedKm,
+      travelRate: card.fees[assetClass].perKmIrr,
       travelDistanceKm: input.travelDistanceKm,
-      emergencyMultiplier: input.isEmergency ? EMERGENCY_MULTIPLIER : 1,
-      vipDiscountPercent: vipPercent,
+      emergencyMultiplier: 1 + card.emergencySurchargeBps / 10_000,
+      vipDiscountPercent: 0,
     },
   };
 }
@@ -246,6 +196,8 @@ export async function createPricingSnapshot(
       bookingId,
       servicePrice: pricing.labor, // labor as service price
       visitPrice: pricing.travel,
+      inspectionPrice: pricing.inspection,
+      financialUnitStatus: "VERIFIED_IRR",
       laborPrice: pricing.labor,
       partsPrice: pricing.parts,
       discount: pricing.discount,
