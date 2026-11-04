@@ -4,7 +4,7 @@ import { createSession } from "@/lib/auth";
 import { validateBody } from "@/lib/api-helpers";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { otpVerifySchema } from "@/lib/schemas";
-import { hashOtpCode } from "@/lib/otp-crypto";
+import { hashOtpCode, hashSha256 } from "@/lib/otp-crypto";
 import { AUTH_USER_SELECT } from "@/lib/user-select";
 
 const TECHNICIAN_INCLUDE = {
@@ -55,6 +55,28 @@ export async function POST(req: Request) {
   // match — the user will get a 400 and can request a new code. That's the
   // correct, secure behavior; we do NOT fall back to plaintext lookup.
   const codeHash = hashOtpCode(code);
+
+  // Add a phone-scoped budget in addition to the IP budget above. This stops
+  // distributed attackers from rotating IPs to brute-force one recipient's
+  // six-digit code. Hash the normalized phone in the rate-limit key so the
+  // RateLimit table does not persist raw phone numbers in its key column.
+  const phoneLimited = await rateLimitAsync(
+    `otp-verify:phone:${hashSha256(phone)}`,
+    10,
+    5 * 60 * 1000,
+  );
+  if (phoneLimited.unavailable) {
+    return NextResponse.json(
+      { error: "سرویس محدودسازی درخواست موقتاً در دسترس نیست" },
+      { status: 503, headers: { "Retry-After": "30" } }
+    );
+  }
+  if (!phoneLimited.success) {
+    return NextResponse.json(
+      { error: "تعداد تلاش‌های کد تأیید برای این شماره بیش از حد است" },
+      { status: 429, headers: { "Retry-After": String(Math.max(1, Math.ceil(phoneLimited.resetMs / 1000)) } }
+    );
+  }
 
   const db = await getDbForLib();
 
