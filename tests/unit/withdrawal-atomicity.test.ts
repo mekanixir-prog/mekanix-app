@@ -26,7 +26,9 @@ describe("atomic withdrawal creation", () => {
       },
       wallet: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-        findUnique: vi.fn().mockResolvedValue({ balance: 1500 }),
+        findUnique: vi.fn()
+          .mockResolvedValueOnce({ balance: 2000, financialUnitStatus: "VERIFIED_IRR" })
+          .mockResolvedValueOnce({ balance: 1500, financialUnitStatus: "VERIFIED_IRR" }),
       },
       walletLedger: { create: vi.fn().mockResolvedValue({}) },
     };
@@ -86,7 +88,9 @@ describe("atomic withdrawal creation", () => {
       },
       wallet: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-        findUnique: vi.fn().mockResolvedValue({ balance: 1500 }),
+        findUnique: vi.fn()
+          .mockResolvedValueOnce({ balance: 2000, financialUnitStatus: "VERIFIED_IRR" })
+          .mockResolvedValueOnce({ balance: 1500, financialUnitStatus: "VERIFIED_IRR" }),
       },
       walletLedger: { create: vi.fn().mockRejectedValue(new Error("ledger failed")) },
     };
