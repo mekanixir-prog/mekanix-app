@@ -39,7 +39,7 @@ describe("atomic withdrawal creation", () => {
     await expect(createWithdrawalWithPrisma(db, input)).resolves.toBe(true);
     expect(db.$transaction).toHaveBeenCalledTimes(1);
     expect(tx.wallet.updateMany).toHaveBeenCalledWith({
-      where: { id: "wallet-1", balance: { gte: 500 } },
+      where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR", balance: { gte: 500 } },
       data: { balance: { decrement: 500 } },
     });
     expect(tx.withdrawalRequest.create).toHaveBeenCalledWith(expect.objectContaining({
