@@ -74,7 +74,7 @@ export async function POST(req: Request) {
   if (!phoneLimited.success) {
     return NextResponse.json(
       { error: "تعداد تلاش‌های کد تأیید برای این شماره بیش از حد است" },
-      { status: 429, headers: { "Retry-After": String(Math.max(1, Math.ceil(phoneLimited.resetMs / 1000)) } }
+      { status: 429, headers: { "Retry-After": String(Math.max(1, Math.ceil(phoneLimited.resetMs / 1000))) } }
     );
   }
 
