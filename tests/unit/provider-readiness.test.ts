@@ -1,9 +1,13 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const dbMocks = vi.hoisted(() => ({ queryRaw: vi.fn() }));
+const dbMocks = vi.hoisted(() => ({ queryRaw: vi.fn(), rateLimitCount: vi.fn(), adminCount: vi.fn() }));
 vi.mock("@/lib/db-access", () => ({
-  getDbForLib: async () => ({ $queryRaw: dbMocks.queryRaw }),
+  getDbForLib: async () => ({
+    $queryRaw: dbMocks.queryRaw,
+    rateLimit: { count: dbMocks.rateLimitCount },
+    adminUser: { count: dbMocks.adminCount },
+  }),
 }));
 import { getPaymentProviderStatus } from "@/lib/payment-provider";
 import { getSmsProviderStatus } from "@/lib/sms-provider";
@@ -159,6 +163,42 @@ describe("production readiness gates", () => {
     vi.stubEnv("SMS_PROVIDER", "console");
     vi.stubEnv("PAYMENT_PROVIDER", "simulator");
     expect(checkProductionGates()).toEqual([]);
+  });
+
+  it("blocks production readiness when the shared rate-limit table is unavailable", async () => {
+    dbMocks.rateLimitCount.mockRejectedValue(new Error("RateLimit table missing"));
+
+    const response = await readyGET();
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.checks.sharedRateLimitStore).toBe(false);
+    expect(body.errors).toContain("Shared rate-limit store is unavailable");
+  });
+
+  it("blocks production readiness when no admin exists and bootstrap password is weak", async () => {
+    dbMocks.adminCount.mockResolvedValue(0);
+    vi.stubEnv("ADMIN_BOOTSTRAP_PASSWORD", "short");
+
+    const response = await readyGET();
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.checks.adminProvisioning).toBe(false);
+    expect(body.errors).toContain(
+      "No valid admin exists and ADMIN_BOOTSTRAP_PASSWORD is missing or shorter than 16 characters"
+    );
+  });
+
+  it("allows admin provisioning readiness with a valid existing admin or strong bootstrap secret", async () => {
+    dbMocks.adminCount.mockResolvedValue(0);
+    vi.stubEnv("ADMIN_BOOTSTRAP_PASSWORD", "a-long-unique-bootstrap-secret");
+
+    const response = await readyGET();
+    const body = await response.json();
+
+    expect(body.checks.adminProvisioning).toBe(true);
+    expect(response.status).toBe(200);
   });
 
   it("does not expose database connection details in production readiness responses", async () => {
