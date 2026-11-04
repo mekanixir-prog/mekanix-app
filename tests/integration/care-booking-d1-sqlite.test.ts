@@ -156,6 +156,7 @@ describe("CARE D1 booking atomicity — SQLite integration", () => {
     expect(new Set(results.map((booking) => booking.id)).size).toBe(1);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceBooking"').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "PricingSnapshot"').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT "emergencyPrice" FROM "PricingSnapshot"').get()).toEqual({ emergencyPrice: 0 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceTimelineEvent"').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT "pricingSnapshotId" FROM "ServiceBooking"').get()).toEqual({
       pricingSnapshotId: sqlite.prepare('SELECT "id" FROM "PricingSnapshot"').get()?.id,
