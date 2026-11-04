@@ -74,6 +74,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
   }
 
+  // Idempotent retry: the job-status flow may already have created this invoice.
+  const existingInvoice = await db.invoice.findUnique({
+    where: { jobId },
+    include: FULL_INCLUDE,
+  });
+  if (existingInvoice) return NextResponse.json(maskInvoiceFinancialData(existingInvoice as unknown as Record<string, unknown>));
+
   // Production invoice totals currently depend on technician profile fees.
   // Do not interpret legacy values as IRR until the rate card and fee units
   // have both been independently reconciled and explicitly approved.
@@ -83,13 +90,6 @@ export async function POST(req: Request) {
       { status: 409 },
     );
   }
-
-  // Idempotent retry: the job-status flow may already have created this invoice.
-  const existingInvoice = await db.invoice.findUnique({
-    where: { jobId },
-    include: FULL_INCLUDE,
-  });
-  if (existingInvoice) return NextResponse.json(maskInvoiceFinancialData(existingInvoice as unknown as Record<string, unknown>));
 
   // MEKANIX uses fixed labor fees. The current legacy writer derives labor
   // from hourlyRate × hours, so it must not issue a financial invoice until
