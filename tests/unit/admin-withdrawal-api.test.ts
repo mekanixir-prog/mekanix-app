@@ -9,7 +9,10 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   audit: vi.fn(),
 }));
-vi.mock("@/lib/admin-auth", () => ({ getAdminFromRequest: mocks.admin }));
+vi.mock("@/lib/admin-auth", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, getAdminFromRequest: mocks.admin };
+});
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: async () => ({
     withdrawalRequest: {
