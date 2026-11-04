@@ -16,9 +16,9 @@ Currency labels, numeric magnitude, environment variables, seed names, and curre
 
 ## Covered records
 
-The schema adds record-level status to Technician, Job, Part, Invoice, Payment, ServiceCategory, Referral, InsurancePolicy, InsuranceClaim, Wallet, WalletTransaction, WithdrawalRequest, VipPlan, PaymentGatewayLog, WalletLedger, ServicePackage, CustomerApproval, PartUsage, and PricingSnapshot.
+The schema adds record-level status to Technician, Job, Part, Invoice, Payment, ServiceCategory, Referral, InsurancePolicy, InsuranceClaim, Wallet, WalletTransaction, WithdrawalRequest, VipPlan, PaymentGatewayLog, WalletLedger, ServicePackage, CustomerApproval, PartUsage, and PricingSnapshot. `DiscountCode` uses separate `valueUnitStatus` and `minAmountUnitStatus` fields because its `value` may be a percentage or a fixed monetary amount.
 
-The status applies to the monetary fields belonging to that record. If a future model mixes currencies or independently sourced amounts within one row, it must use field-level attestations rather than overloading this record-level status.
+The status applies to the monetary fields belonging to that record. Models that mix currencies or independently sourced amounts within one row must use field-level attestations rather than overloading a record-level status. Existing discount-code rows default both field-level statuses to `UNVERIFIED`.
 
 ## Migration behavior
 
