@@ -1,6 +1,6 @@
 # MEKANIX Engineering Documentation
 
-> **Current audited code baseline:** `e03f84da91db464edd2ca6ae32fdd156174c948b` (2026-11-04). The [2026-11-04 Release Readiness Audit](RELEASE_READINESS_AUDIT_2026-11-04.md) is the current source of truth for mainline and release status.
+> **Current audited code baseline:** `147d5485ee0dfd2dc5795f6000dd38b35c808c07` (2026-11-04). The [2026-11-04 Release Readiness Audit](RELEASE_READINESS_AUDIT_2026-11-04.md) is the current source of truth for mainline and release status.
 
 ## Start here
 
