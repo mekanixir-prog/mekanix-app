@@ -1,7 +1,7 @@
 # MEKANIX — Release Checklist
 
 **Status date:** 2026-11-04  
-**Current main baseline:** `db0f3361c3158764c47cfeb48d5b9dafadc90610`  
+**Current main baseline:** `16aa0f43112860c2723db94a7759318e5887379e`  
 **Release decision:** <strong>NO-GO</strong> — code hardening and release evidence remain incomplete.
 
 This replaces the historical checklist snapshots from October. Do not use old “Release Candidate — all checks passed” or old staging/load-test claims as current release evidence.
@@ -24,6 +24,8 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - [x] PR #75 — merged integer-IRR validation, safe arithmetic, explicit ratio rounding, and signed ledger-delta helpers as `38cd3db63bc5c0389f608a3541146c5bdc43ec9b`. These primitives are not yet wired through legacy records or the complete payment/settlement lifecycle.
 - [x] PR #101 — merged non-destructive demo-seed protections as `5c191f7efdea278611a9a65f39d481072ed37189`; all five required PR workflows passed on the exact reviewed head. Subsequent full main-branch CI passed on `abf7f849c70d90580f08aa84a74fc7f93d1b9acf`.
 - [x] PR #103 — merged `formatTomanFromIrr` as `406f72b9c726e4d305ccfffc11ca9f6f01c5d50d`; exact 10:1 IRR→Toman presentation, signed values, locale-aware digits/separators, and validation tests. Helper-only; no legacy data conversion or UI call-site rollout.
+- [x] PR #131 — removed mutable USD FX multiplication from the shared IRR formatter and preserved explicitly supplied currencies for Persian users; merged as `68201eb6fe4705c79d27abf502c895e86bacf3ba`. Persian Toman presentation remains deferred until read-side provenance masking.
+- [x] PR #133 — Job Part writer rejects fractional/unsafe quantities and prices and requires explicit integer IRR; merged as `16aa0f43112860c2723db94a7759318e5887379e`.
 - [ ] Reconcile historical money-unit provenance under the approved integer-IRR contract; approve tax/commission rounding and commercial rate cards in #99; implement a reviewed, non-destructive migration plan in #81.
 - [ ] Complete invoice, wallet, withdrawal, payout, and callback replay/concurrency tests across SQLite/D1 and PostgreSQL.
 - [ ] Complete end-to-end customer, technician, admin, CARE, warranty, refund/recovery, and notification scenarios.
@@ -46,7 +48,7 @@ This replaces the historical checklist snapshots from October. Do not use old �
 ### Current financial blockers
 - [ ] Issue #24 — authoritative real-provider lifecycle is not wired; current invoice/gateway/prepay routes are simulator-only and production-disabled.
 - [ ] Issue #81 — integer IRR is approved, but legacy row provenance, mixed-unit seed values, wallet/invoice read masking, and payout reconciliation remain unresolved.
-- [ ] Issue #130 — Persian IRR formatting still passes through mutable USD FX; wallet/invoice GET paths expose unverified amounts; safe-integer writer enforcement is incomplete.
+- [ ] Issue #130 — PR #131 removed mutable FX conversion from the shared IRR formatter; Persian Toman display is deferred until provenance masking. PR #133 hardened the Job Part writer. Wallet/invoice GET paths still expose unverified amounts; invoice/prepay/wallet/ledger writer enforcement remains incomplete.
 - [ ] Issue #99 — preserve confirmed scope: fixed-fee labor, heavy machinery priority, non-Iranian passenger vehicles only (exclude Iran Khodro/Saipa), annual VIP with free periodic visits only (repairs/parts not free). Actual rate cards, tax, commission, escrow/release, VIP price/refunds and withdrawal limits remain owner decisions. Prior 15%/sample-price examples are not approved.
 - [ ] Technician invoice earnings are not yet credited to the wallet through a complete idempotent escrow/commission flow.
 - [ ] Do not activate live payment, wallet top-up, withdrawal, or bank payout until these are resolved.
@@ -122,7 +124,7 @@ This section records changes after the previous 2026-11-03 checklist snapshot. T
 
 - [x] PR #112 — historical withdrawal approval/rejection/payout actions now fail closed until withdrawal-record IRR provenance is explicitly verified. Merged as `ad1f6af246369bfc071a28dc68589c3f6a0d1331`.
 - [x] PR #120 — production readiness requires strong user/admin/OTP secrets, shared rate-limit storage, admin provisioning, IRR pricing/provenance, withdrawal policy/provenance, and escrow-worker readiness. Merged as `2bf40e8642019550b2710bb171f2fd5ebe4116e8`.
-- [x] Current main `db0f3361c3158764c47cfeb48d5b9dafadc90610`: GitHub Checks API verified 8 successful check runs and 1 skipped (`Prepare dependency remediation branch`). The eight successful checks are OpenNext → Cloudflare Worker, Analyze JavaScript and TypeScript, Audit the committed lockfile (no auto-fix), Scan repository history for exposed secrets, PostgreSQL Migration + Build, Docker Build + Compose + Health, Lint + TypeCheck + Test, and quality. [Exact SHA check evidence](https://github.com/mekanixir-prog/mekanix-app/commit/db0f3361c3158764c47cfeb48d5b9dafadc90610/checks).
+- [x] Current main `16aa0f43112860c2723db94a7759318e5887379e`: GitHub Checks API verified 8 successful check runs and 1 skipped (`Prepare dependency remediation branch`). The eight successful checks are PostgreSQL Migration + Build, quality, OpenNext → Cloudflare Worker, Docker Build + Compose + Health, Audit the committed lockfile (no auto-fix), Analyze JavaScript and TypeScript, Secret Scan, and Lint + TypeCheck + Test. [Exact SHA check evidence](https://github.com/mekanixir-prog/mekanix-app/commit/16aa0f43112860c2723db94a7759318e5887379e/checks).
 
 ### Security PR reconciliation
 
@@ -148,7 +150,7 @@ This section records changes after the previous 2026-11-03 checklist snapshot. T
 
 - [ ] Issue #24 — complete authoritative payment attempts, provider initiation/verification, callback idempotency, purpose-specific fulfillment, and invoice-to-technician ledger/escrow settlement.
 - [ ] Issue #81 — classify and reconcile historical money provenance under the owner-approved integer-IRR contract. Unknown rows remain quarantined; no blanket conversion.
-- [ ] Issue #130 — remove FX-based IRR formatting, mask unverified wallet/invoice reads, and enforce safe-integer IRR at writers.
+- [ ] Issue #130 — mask unverified wallet/invoice reads, switch verified Persian IRR to exact Toman after masking, and enforce safe-integer IRR at invoice/prepay/wallet/ledger writers. Job Part integer-IRR validation is merged in PR #133.
 - [ ] Issue #99 — approve fixed-fee labor and separate IRR rate cards for priority heavy machinery and supported foreign passenger vehicles (excluding Iran Khodro/Saipa); approve tax, commission/escrow, annual VIP price (free periodic visits only; repairs/parts excluded), CARE boundary and withdrawal policy. No illustrative 15% commission or sample prices may be treated as approved.
 - [x] PRs #71/#73 are closed; useful safe work from #71 was ported to #129, while #73's USD/decimal policy was not ported. PR #78 remains a stale large branch and must be split/rebased into bounded changes before review.
 

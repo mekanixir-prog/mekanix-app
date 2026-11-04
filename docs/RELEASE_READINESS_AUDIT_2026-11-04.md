@@ -2,7 +2,7 @@
 
 **Audit date:** 2026-11-04  
 **Audited branch:** `main`  
-**Current main baseline:** `db0f3361c3158764c47cfeb48d5b9dafadc90610`  
+**Current main baseline:** `16aa0f43112860c2723db94a7759318e5887379e`  
 **Repository:** [mekanixir-prog/mekanix-app](https://github.com/mekanixir-prog/mekanix-app)  
 **Release decision:** **NO-GO** — the current mainline is CI-green, but financial integrity, release evidence, and repository governance are not complete.
 
@@ -10,22 +10,22 @@ This report supersedes earlier point-in-time release snapshots. It does not clai
 
 ## 1. Executive decision
 
-The last fully green main baseline `147d5485ee0dfd2dc5795f6000dd38b35c808c07` passed all eight workflows. Withdrawal hardening PR #129 then passed all eight applicable PR checks and merged as `dae8fe53bf8c5c776ed939d665a8a146619162db`. Dependabot PRs #124, #125 and #126 then passed their applicable PR checks and merged sequentially, producing current main `db0f3361c3158764c47cfeb48d5b9dafadc90610`.
+The last fully green main baseline `147d5485ee0dfd2dc5795f6000dd38b35c808c07` passed all eight workflows. Withdrawal hardening PR #129 then passed all eight applicable PR checks and merged as `dae8fe53bf8c5c776ed939d665a8a146619162db`. Dependabot PRs #124, #125 and #126 then passed their applicable PR checks and merged sequentially, producing `db0f3361c3158764c47cfeb48d5b9dafadc90610`. Documentation PR #128 corrected the release evidence; formatter PR #131 then removed implicit FX conversion from the IRR display path and merged as `68201eb6fe4705c79d27abf502c895e86bacf3ba`. Job Part integer-IRR writer PR #133 then merged as `16aa0f43112860c2723db94a7759318e5887379e`, the current main baseline.
 
-A fresh read of the GitHub Checks API for the exact current-main SHA `db0f3361c3158764c47cfeb48d5b9dafadc90610` confirms **8 successful checks and 1 skipped check**. The skipped item is `Prepare dependency remediation branch`; it is not counted as a successful workflow and is not treated as a failure. The eight successful checks are:
+A fresh read of the GitHub Checks API for the exact current-main SHA `16aa0f43112860c2723db94a7759318e5887379e` confirms **8 successful checks and 1 skipped check**. The skipped item is `Prepare dependency remediation branch`; it is not counted as a successful workflow and is not treated as a failure. The eight successful checks are:
 
 | Check run | Result |
 |---|---|
-| OpenNext → Cloudflare Worker | PASS |
-| Analyze JavaScript and TypeScript | PASS |
-| Audit the committed lockfile (no auto-fix) | PASS |
-| Scan repository history for exposed secrets | PASS |
 | PostgreSQL Migration + Build | PASS |
-| Docker Build + Compose + Health | PASS |
-| Lint + TypeCheck + Test | PASS |
 | quality | PASS |
+| OpenNext → Cloudflare Worker | PASS |
+| Docker Build + Compose + Health | PASS |
+| Audit the committed lockfile (no auto-fix) | PASS |
+| Analyze JavaScript and TypeScript | PASS |
+| Scan repository history for exposed secrets | PASS |
+| Lint + TypeCheck + Test | PASS |
 
-[Exact current-main check-run evidence](https://github.com/mekanixir-prog/mekanix-app/commit/db0f3361c3158764c47cfeb48d5b9dafadc90610/checks). Historical workflow links below refer to earlier baselines and must not be read as evidence for the current SHA.
+[Exact current-main check-run evidence](https://github.com/mekanixir-prog/mekanix-app/commit/16aa0f43112860c2723db94a7759318e5887379e/checks). Historical workflow links below refer to earlier baselines and must not be read as evidence for the current SHA.
 
 **Interpretation:** green CI proves the configured checks passed against this commit and their test environments. It does not prove live SMS, real gateway callbacks, production secrets, DNS/TLS, remote database state, actual bank payout, backup restoration, or business-owner acceptance.
 
@@ -74,7 +74,10 @@ Do not require a second approval until a second maintainer exists. Configure an 
 - **PR #129** — bank-only/valid-Sheba withdrawal creation plus D1 zero-row rollback guards. Eight applicable checks passed on exact head `73140a1797f1`; merged as `dae8fe53bf8c5c776ed939d665a8a146619162db`. Existing production IRR gates were preserved.
 - **PR #124** — `actions/upload-artifact` upgraded to v7; eight applicable checks passed, merged as `25e08a476cd2d975b517651a4d758e82ac51b3db`.
 - **PR #125** — `actions/checkout` upgraded to v7; eight applicable checks passed, merged as `8ac36ef874590150d1af6f92693b30ea41708e6a`.
-- **PR #126** — `docker/setup-buildx-action` upgraded to v4; seven applicable checks passed (Cloudflare Build was not triggered by its path filter), merged as current main baseline `db0f3361c3158764c47cfeb48d5b9dafadc90610`.
+- **PR #126** — `docker/setup-buildx-action` upgraded to v4; seven applicable checks passed (Cloudflare Build was not triggered by its path filter), merged as `db0f3361c3158764c47cfeb48d5b9dafadc90610`.
+- **PR #128** — corrected the 2026-11-04 release audit/checklist against exact current-main check-run evidence; seven applicable checks passed and merged as `e0c8459871d739ab12c29136636e7555a2f266ed`.
+- **PR #131** — removed mutable USD FX multiplication from the shared IRR formatter and stopped Persian language selection from overriding an explicitly supplied currency; eight checks passed and merged as `68201eb6fe4705c79d27abf502c895e86bacf3ba`. Persian Toman presentation remains deferred until record-level provenance masking is implemented.
+- **PR #133** — Job Part writer now rejects missing, fractional, negative, and unsafe quantity/IRR price values; all applicable CI checks passed and it merged as current main `16aa0f43112860c2723db94a7759318e5887379e`.
 
 ### Closed as superseded
 
@@ -120,12 +123,12 @@ Implementation tracking: [Issue #130](https://github.com/mekanixir-prog/mekanix-
 
 A current-main source trace adds four concrete tasks to the provenance work:
 
-- `src/lib/use-t.ts` forces IRR for Persian display and refreshes a live USD→IRR exchange rate. `src/lib/format.ts::fmtMoney` then multiplies every IRR amount by that mutable FX rate (default 60,000). This is incompatible with the approved IRR accounting unit and exact 10:1 IRR→Toman presentation. The `formatTomanFromIrr` helper exists, but the shared Persian `useT().money` path does not use it.
+- **Resolved by PR #131:** `src/lib/format.ts::fmtMoney` no longer multiplies IRR amounts by mutable USD FX, and `useT().money` no longer forces the currency to IRR solely because the language is Persian. Explicit USD values remain USD. The current interim Persian display is raw IRR; exact Toman presentation is deliberately deferred until read-side provenance masking prevents unknown historical amounts from being presented as verified IRR.
 - `GET /api/wallets` returns wallet balances, transactions and withdrawals without read-side provenance masking.
 - `GET /api/invoices` returns existing invoice/payment records without applying the write-side price-provenance gate. The POST writer is gated, but that does not classify legacy records.
 - Invoice writes check finite/non-negative values but do not consistently require every persisted money component and final total to be safe integer IRR. The JobPart API also still accepts fractional/ambiguous unit prices.
 
-**Required sequence:** classify the read sources; mask or quarantine unverified financial fields in read APIs; fix the shared formatter so verified IRR is rendered directly or as exact Toman without live USD FX; then enforce safe-integer IRR on invoice/parts/prepay/wallet writers and shared ledger boundaries. Do not enable provenance flags until these changes and row-level evidence are complete.
+**Required sequence:** classify the read sources; mask or quarantine unverified financial fields in read APIs; after masking, switch verified Persian IRR to exact Toman; then enforce safe-integer IRR on invoice/prepay/wallet writers and shared ledger boundaries. Job Part input validation is implemented and merged in PR #133. Remaining work includes row-level read masking and integer-IRR validation/attestation for invoice, prepay, wallet, and ledger writers. Do not enable provenance flags until these changes and row-level evidence are complete.
 
 Preserve the existing containment: `POST /api/payments` remains production-disabled and validates currency/integer IRR in non-production. Do not enable it before the authoritative provider lifecycle and ledger settlement are complete.
 
