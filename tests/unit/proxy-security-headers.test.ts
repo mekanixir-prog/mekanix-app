@@ -6,6 +6,59 @@ import { proxy } from "@/proxy";
 afterEach(() => vi.unstubAllEnvs());
 
 describe("security response headers", () => {
+  it("rejects cross-origin mutations carrying a browser session cookie before the route runs", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const response = proxy(new NextRequest("https://mekanix.ir/api/wallets/withdraw", {
+      method: "POST",
+      headers: {
+        cookie: "mekanix-token=opaque-session",
+        origin: "https://attacker.example",
+        "sec-fetch-site": "cross-site",
+      },
+    }));
+    expect(response.status).toBe(403);
+  });
+
+  it("allows same-origin cookie-authenticated mutations", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const response = proxy(new NextRequest("https://mekanix.ir/api/wallets/withdraw", {
+      method: "POST",
+      headers: {
+        cookie: "mekanix-token=opaque-session",
+        origin: "https://mekanix.ir",
+        "sec-fetch-site": "same-origin",
+      },
+    }));
+    expect(response.status).toBe(200);
+  });
+
+  it("does not block bearer-only cross-origin API clients", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const response = proxy(new NextRequest("https://mekanix.ir/api/mobile/action", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer native-session",
+        origin: "https://mobile-client.example",
+        "sec-fetch-site": "cross-site",
+      },
+    }));
+    expect(response.status).toBe(200);
+  });
+
+  it("does not reject safe GET requests based on cookie origin", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const response = proxy(new NextRequest("https://mekanix.ir/api/wallets", {
+      method: "GET",
+      headers: {
+        cookie: "mekanix-token=opaque-session",
+        origin: "https://attacker.example",
+        "sec-fetch-site": "cross-site",
+      },
+    }));
+    expect(response.status).toBe(200);
+  });
+
+
   it("restricts production framing to the application and approved preview gateway", () => {
     vi.stubEnv("NODE_ENV", "production");
     const response = proxy(new NextRequest("https://mekanix.ir/admin-panel"));
