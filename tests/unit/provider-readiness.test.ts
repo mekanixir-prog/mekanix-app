@@ -94,6 +94,8 @@ describe("payment provider live readiness", () => {
 
 describe("production readiness gates", () => {
   beforeEach(() => {
+    vi.stubEnv("JWT_SECRET", "production-user-jwt-secret-at-least-32-bytes");
+    vi.stubEnv("ADMIN_JWT_SECRET", "production-admin-jwt-secret-at-least-32-bytes");
     vi.stubEnv("OTP_HASH_SECRET", "production-otp-secret-at-least-32-bytes-long");
     // These tests isolate provider/database behavior. The separate
     // production-financial-readiness-gates suite verifies missing IRR controls.
