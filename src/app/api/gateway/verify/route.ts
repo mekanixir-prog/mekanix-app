@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
+import { isSafeStoredIrrAmount, maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 // Verify a payment (simulated Shaparak OTP flow).
 // Simulator-only: real provider callbacks must use provider signature verification.
@@ -37,6 +38,9 @@ export async function POST(req: Request) {
   if (log.userId !== session.userId) {
     return NextResponse.json({ error: "این درخواست متعلق به شما نیست" }, { status: 403 });
   }
+  if (log.currency !== "IRR" || log.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(log.amount) || Number(log.amount) <= 0) {
+    return NextResponse.json({ error: "مبلغ درگاه از نظر واحد و منشأ ریال تأیید نشده است", code: "GATEWAY_IRR_PROVENANCE_UNVERIFIED" }, { status: 409 });
+  }
   if (log.status === "FAILED" || log.status === "CANCELLED") {
     return NextResponse.json({ error: "این پرداخت ناموفق یا لغو شده است" }, { status: 409 });
   }
@@ -45,14 +49,14 @@ export async function POST(req: Request) {
   // linking it to the gateway log. gatewayLogId is a database-enforced unique key.
   let payment = await db.payment.findUnique({ where: { gatewayLogId: log.id } });
   if (payment) {
-    if (payment.userId !== session.userId || payment.status !== "SUCCEEDED") {
+    if (payment.userId !== session.userId || payment.status !== "SUCCEEDED" || payment.currency !== "IRR" || payment.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(payment.amount) || Number(payment.amount) !== Number(log.amount)) {
       return NextResponse.json({ error: "وضعیت پرداخت قابل تأیید نیست" }, { status: 409 });
     }
     await db.paymentGatewayLog.update({
       where: { id: log.id },
-      data: { status: "VERIFIED", verifiedAt: log.verifiedAt ?? new Date(), paymentId: payment.id },
+      data: { status: "VERIFIED", financialUnitStatus: "VERIFIED_IRR", verifiedAt: log.verifiedAt ?? new Date(), paymentId: payment.id },
     });
-    return NextResponse.json({ ok: true, paymentId: payment.id, amount: payment.amount, purpose: log.purpose, alreadyVerified: true });
+    return NextResponse.json({ ok: true, paymentId: payment.id, amount: Number(payment.amount), purpose: log.purpose, alreadyVerified: true });
   }
 
   // Legacy simulator callbacks marked the log VERIFIED before creating and
@@ -67,11 +71,11 @@ export async function POST(req: Request) {
       );
     }
     const legacyPayment = await db.payment.findUnique({ where: { id: log.paymentId } });
-    if (!legacyPayment || legacyPayment.userId !== session.userId || legacyPayment.status !== "SUCCEEDED") {
+    if (!legacyPayment || legacyPayment.userId !== session.userId || legacyPayment.status !== "SUCCEEDED" || legacyPayment.currency !== "IRR" || legacyPayment.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(legacyPayment.amount) || Number(legacyPayment.amount) !== Number(log.amount)) {
       return NextResponse.json({ error: "رکورد پرداخت قبلی قابل تطبیق نیست؛ بررسی دستی لازم است" }, { status: 409 });
     }
     return NextResponse.json({
-      ok: true, paymentId: legacyPayment.id, amount: legacyPayment.amount,
+      ok: true, paymentId: legacyPayment.id, amount: Number(legacyPayment.amount),
       purpose: log.purpose, alreadyVerified: true,
     });
   }
@@ -88,6 +92,7 @@ export async function POST(req: Request) {
         currency: log.currency || "IRR",
         method: "card",
         status: "SUCCEEDED",
+        financialUnitStatus: "VERIFIED_IRR",
         gatewayLogId: log.id,
       },
     });
@@ -105,8 +110,8 @@ export async function POST(req: Request) {
   // retrying this endpoint repairs the log instead of losing the payment.
   await db.paymentGatewayLog.update({
     where: { id: log.id },
-    data: { status: "VERIFIED", verifiedAt: log.verifiedAt ?? new Date(), paymentId: payment.id },
+    data: { status: "VERIFIED", financialUnitStatus: "VERIFIED_IRR", verifiedAt: log.verifiedAt ?? new Date(), paymentId: payment.id },
   });
 
-  return NextResponse.json({ ok: true, paymentId: payment.id, amount: payment.amount, purpose: log.purpose });
+  return NextResponse.json({ ok: true, paymentId: payment.id, amount: Number(payment.amount), purpose: log.purpose });
 }
