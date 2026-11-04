@@ -74,15 +74,23 @@ export async function POST(req: Request) {
     return NextResponse.json(existing);
   }
 
-  const pricing = await calculatePrice({
-    packageId: packageId || undefined,
-    vehicleType: vehicle.type,
-    serviceCode: serviceType === "periodic" ? "periodic" : "diagnostic",
-    laborHours: 1,
-    partsCost: 0,
-    travelDistanceKm: 0,
-    isEmergency: serviceType === "emergency",
-  });
+  let pricing: Awaited<ReturnType<typeof calculatePrice>>;
+  try {
+    pricing = await calculatePrice({
+      packageId: packageId || undefined,
+      vehicleType: vehicle.type,
+      serviceCode: serviceType === "periodic" ? "periodic" : "diagnostic",
+      laborHours: 1,
+      partsCost: 0,
+      travelDistanceKm: 0,
+      isEmergency: serviceType === "emergency",
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "محاسبه تعرفه ممکن نیست", code: "PRICING_NOT_AVAILABLE" },
+      { status: 409 },
+    );
+  }
 
   try {
     const booking = await createCareBookingAtomically(db, {
