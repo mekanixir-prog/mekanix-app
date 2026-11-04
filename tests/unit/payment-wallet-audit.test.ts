@@ -209,11 +209,15 @@ function makePostRequest(url: string, body: unknown): Request {
   });
 }
 
-function makeWithdrawalRequest(body: unknown, key: string): Request {
+function makeWithdrawalRequest(body: Record<string, unknown>, key: string): Request {
   return new Request("https://mekanix.test/api/wallets/withdraw", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Idempotency-Key": key },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      method: "bank",
+      shebaNumber: "IR062960000000100324200001",
+      ...body,
+    }),
   });
 }
 
@@ -626,7 +630,7 @@ describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
     mockCreateWithdrawalAtomically.mockResolvedValue(false);
 
     const res = await withdrawPOST(makeWithdrawalRequest(
-      { amount: 500, method: "card" }, "test-withdrawal-key-001"
+      { amount: 500 }, "test-withdrawal-key-001"
     ));
 
     expect(res.status).toBe(400);
@@ -638,7 +642,7 @@ describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
 
   it("returns the committed request after an atomic withdrawal", async () => {
     const withdrawal = {
-      id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, method: "card", cardNumber: null, bankName: null, shebaNumber: null, status: "REQUESTED",
+      id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, method: "bank", cardNumber: null, bankName: null, shebaNumber: "IR062960000000100324200001", status: "REQUESTED",
     };
     mockWalletFindUnique
       .mockResolvedValueOnce({ id: "wallet_1", balance: 1000, technicianId: "tech_1" })
@@ -647,7 +651,7 @@ describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
     mockCreateWithdrawalAtomically.mockResolvedValue(true);
 
     const res = await withdrawPOST(makeWithdrawalRequest(
-      { amount: 500, method: "card" }, "test-withdrawal-key-002"
+      { amount: 500 }, "test-withdrawal-key-002"
     ));
 
     expect(res.status).toBe(200);
