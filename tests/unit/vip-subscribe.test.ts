@@ -93,7 +93,6 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       financialUnitStatus: "VERIFIED_IRR",
       amount: 100_000, // exactly covers plan price
       currency: "IRR",
-      financialUnitStatus: "VERIFIED_IRR",
       gatewayLogId: "gateway-1",
     });
     mockPaymentGatewayLogFindUnique.mockResolvedValue({
@@ -105,7 +104,6 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       paymentId: "pay-1",
       amount: 100_000,
       currency: "IRR",
-      financialUnitStatus: "VERIFIED_IRR",
     });
     mockUserVipSubscriptionUpdateMany.mockResolvedValue({ count: 0 });
     mockCreateVipSubscriptionAtomically.mockResolvedValue("sub-1");
@@ -284,7 +282,6 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       id: "gateway-1", userId: "user-1", status: "VERIFIED",
       financialUnitStatus: "VERIFIED_IRR",
       purpose: "invoice", paymentId: "pay-1", amount: 100_000, currency: "IRR",
-      financialUnitStatus: "VERIFIED_IRR",
     });
     const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
     expect(res.status).toBe(400);
@@ -297,7 +294,6 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       id: "gateway-1", userId: "user-1", status: "VERIFIED",
       financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip", paymentId: "different-payment", amount: 100_000, currency: "IRR",
-      financialUnitStatus: "VERIFIED_IRR",
     });
     const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
     expect(res.status).toBe(400);
