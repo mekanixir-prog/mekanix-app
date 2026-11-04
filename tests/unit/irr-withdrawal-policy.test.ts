@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getApprovedIrrWithdrawalPolicy,
   isValidIrrWithdrawalAmount,
+  getWithdrawalRecordIrrError,
 } from "@/lib/money/withdrawal-policy";
 
 describe("IRR withdrawal policy", () => {
@@ -50,5 +51,31 @@ describe("IRR withdrawal policy", () => {
     expect(isValidIrrWithdrawalAmount(100000001, policy!)).toBe(false);
     expect(isValidIrrWithdrawalAmount(100000.5, policy!)).toBe(false);
     expect(isValidIrrWithdrawalAmount(Number.MAX_SAFE_INTEGER + 1, policy!)).toBe(false);
+  });
+});
+
+
+describe("historical withdrawal IRR provenance gate", () => {
+  it("blocks production admin transitions until historical amounts are reconciled", () => {
+    expect(getWithdrawalRecordIrrError(500000, {
+      NODE_ENV: "production",
+    })).toBe("WITHDRAWAL_IRR_PROVENANCE_UNVERIFIED");
+  });
+
+  it("rejects fractional, unsafe and non-positive historical amounts after attestation", () => {
+    const env = {
+      NODE_ENV: "production",
+      MEKANIX_WITHDRAWAL_IRR_PROVENANCE_VERIFIED: "true",
+    };
+    expect(getWithdrawalRecordIrrError(1000.5, env)).toBe("WITHDRAWAL_AMOUNT_NOT_INTEGER_IRR");
+    expect(getWithdrawalRecordIrrError(Number.MAX_SAFE_INTEGER + 1, env)).toBe("WITHDRAWAL_AMOUNT_NOT_INTEGER_IRR");
+    expect(getWithdrawalRecordIrrError(0, env)).toBe("WITHDRAWAL_AMOUNT_NOT_INTEGER_IRR");
+    expect(getWithdrawalRecordIrrError(1000, env)).toBeNull();
+  });
+
+  it("does not block non-production demo admin workflows", () => {
+    expect(getWithdrawalRecordIrrError(1000.5, {
+      NODE_ENV: "development",
+    })).toBeNull();
   });
 });
