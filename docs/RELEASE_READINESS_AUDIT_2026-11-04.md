@@ -2,7 +2,7 @@
 
 **Audit date:** 2026-11-04  
 **Audited branch:** `main`  
-**Current main baseline:** `dae8fe53bf8c5c776ed939d665a8a146619162db`  
+**Current main baseline:** `db0f3361c3158764c47cfeb48d5b9dafadc90610`  
 **Repository:** [mekanixir-prog/mekanix-app](https://github.com/mekanixir-prog/mekanix-app)  
 **Release decision:** **NO-GO** — the current mainline is CI-green, but financial integrity, release evidence, and repository governance are not complete.
 
@@ -10,7 +10,7 @@ This report supersedes earlier point-in-time release snapshots. It does not clai
 
 ## 1. Executive decision
 
-The last fully green main baseline `2bf40e8642019550b2710bb171f2fd5ebe4116e8` passed all eight workflows. After PR #113 merged, main advanced to `e03f84da91db464edd2ca6ae32fdd156174c948b`; all eight active workflows passed on that exact commit. PR #127 then merged its OTP rate-limit regression test as `147d5485ee0dfd2dc5795f6000dd38b35c808c07`; at the time of this audit refresh, its Docker workflow was still running. Withdrawal hardening PR #129 subsequently passed all eight applicable PR checks and merged as `dae8fe53bf8c5c776ed939d665a8a146619162db`. Fresh main checks for this newest commit are running. Do not treat earlier green checks as checks on the newest SHA:
+The last fully green main baseline `147d5485ee0dfd2dc5795f6000dd38b35c808c07` passed all eight workflows. Withdrawal hardening PR #129 then passed all eight applicable PR checks and merged as `dae8fe53bf8c5c776ed939d665a8a146619162db`; at the time of this refresh, seven active main checks had passed and Docker E2E was still running. Dependabot PRs #124, #125 and #126 then passed their applicable PR checks and merged sequentially, producing current main `db0f3361c3158764c47cfeb48d5b9dafadc90610`. Fresh main checks for this newest commit are queued/running. Do not treat earlier green checks as checks on the newest SHA:
 
 | Workflow | Result |
 |---|---|
@@ -69,7 +69,10 @@ Do not require a second approval until a second maintainer exists. Configure an 
 - **PR #112** — historical withdrawal actions are blocked unless withdrawal IRR provenance has been explicitly verified. Merged as `ad1f6af246369bfc071a28dc68589c3f6a0d1331`.
 - **PR #120** — production readiness gates now require strong secrets, shared rate-limit availability, admin provisioning, financial policy/provenance attestations, and escrow-worker readiness. Merged as `2bf40e8642019550b2710bb171f2fd5ebe4116e8`.
 - **PR #127** — adds the missing HTTP 503 regression test for unavailable shared per-phone OTP verification rate-limit storage. Seven applicable checks passed on exact head `27de3d38e8bb`; merged as `147d5485ee0dfd2dc5795f6000dd38b35c808c07`.
-- **PR #129** — bank-only/valid-Sheba withdrawal creation plus D1 zero-row rollback guards. Eight applicable checks passed on exact head `73140a1797f1`; merged as current main baseline `dae8fe53bf8c5c776ed939d665a8a146619162db`. Existing production IRR gates were preserved.
+- **PR #129** — bank-only/valid-Sheba withdrawal creation plus D1 zero-row rollback guards. Eight applicable checks passed on exact head `73140a1797f1`; merged as `dae8fe53bf8c5c776ed939d665a8a146619162db`. Existing production IRR gates were preserved.
+- **PR #124** — `actions/upload-artifact` upgraded to v7; eight applicable checks passed, merged as `25e08a476cd2d975b517651a4d758e82ac51b3db`.
+- **PR #125** — `actions/checkout` upgraded to v7; eight applicable checks passed, merged as `8ac36ef874590150d1af6f92693b30ea41708e6a`.
+- **PR #126** — `docker/setup-buildx-action` upgraded to v4; seven applicable checks passed (Cloudflare Build was not triggered by its path filter), merged as current main baseline `db0f3361c3158764c47cfeb48d5b9dafadc90610`.
 
 ### Closed as superseded
 
@@ -80,7 +83,7 @@ Do not require a second approval until a second maintainer exists. Configure an 
 ### Still open
 
 - **PR #78** — broad 80-file financial branch, stacked on the old `feat/irr-money-core` branch. It is 260 commits ahead and 144 behind current `main`; do not merge wholesale. It also writes `currency: "IRR"` to `Part` while its own `prisma/schema.prisma` still has no `Part.currency` field and the schema is not changed in the PR. Extract and re-review small, current-mainline changes by bounded financial flow after the data and commercial contracts are settled.
-- **PRs #124–#126** — Dependabot updates to GitHub Actions. Their earlier exact-head checks passed; base was refreshed to current main for another validation pass. Review individually; do not batch-merge major action upgrades without checking runner/runtime compatibility and exact CI.
+
 
 ## 4. Financial integrity — hard release blockers
 
