@@ -29,7 +29,7 @@
     "@gsap/react": "^2.1.2",
     "@hookform/resolvers": "^5.1.1",
     "@mdxeditor/editor": "^3.39.1",
-    "@opennextjs/cloudflare": "^1.20.9",
+    "@opennextjs/cloudflare": "^1.20.15",
     "@prisma/adapter-d1": "6.19.3",
     "@prisma/client": "^6.11.1",
     "@radix-ui/react-accordion": "^1.2.11",
@@ -94,7 +94,7 @@
     "react-resizable-panels": "^3.0.3",
     "react-syntax-highlighter": "^15.6.1",
     "recharts": "^2.15.4",
-    "sharp": "^0.34.3",
+    "sharp": "^0.35.5",
     "sonner": "^2.0.6",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
@@ -121,5 +121,21 @@
     "tw-animate-css": "^1.3.5",
     "typescript": "^5",
     "vitest": "^5.0.1"
+  },
+  "overrides": {
+    "deepmerge-ts": "^8.0.1",
+    "glob": "^14.0.2",
+    "js-yaml": "^4.3.2",
+    "minimatch": "^11.0.1",
+    "prismjs": "^1.30.0",
+    "sharp": "^0.35.5",
+    "undici": "^8.12.2",
+    "@prisma/config>deepmerge-ts": "^8.0.1",
+    "@opennextjs/cloudflare>glob": "^14.0.2",
+    "@node-minify/core>glob": "^14.0.2",
+    "@mdxeditor/editor>js-yaml": "^4.3.2",
+    "refractor>prismjs": "^1.30.0",
+    "miniflare>sharp": "^0.35.5",
+    "miniflare>undici": "^7.30.1"
   }
 }
