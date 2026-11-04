@@ -187,7 +187,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         : session.role === "TECHNICIAN" ? "TECHNICIAN"
         : session.role === "FLEET_MANAGER" ? "FLEET_MANAGER" : "CUSTOMER",
       actorTechnicianId: actorTechnician?.id ?? null,
-      invoice: invoiceInput,
       holdUntil,
       currentStatus: existing.status as PrismaJobStatus,
       nextStatus: (status ?? existing.status) as PrismaJobStatus,
