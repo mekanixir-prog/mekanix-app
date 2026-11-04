@@ -169,7 +169,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       newFinding,
     });
 
-    const totalPrice = proposal.partPrice * proposal.quantity + proposal.laborPrice;
     try {
       await db.notification.create({
         data: {
