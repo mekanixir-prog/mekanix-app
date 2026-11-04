@@ -162,11 +162,25 @@ export async function verifySession(token: string): Promise<Session | null> {
     const tokenHash = hashToken(token);
     const sessionRecord = await db.session.findUnique({
       where: { tokenHash },
+      include: {
+        user: {
+          select: { status: true, role: true },
+        },
+      },
     });
 
     if (!sessionRecord) return null;                  // not in DB → revoked or never existed
     if (sessionRecord.revokedAt) return null;         // explicitly revoked
     if (sessionRecord.expiresAt.getTime() < Date.now()) return null; // expired
+
+    // Session validity is subordinate to the current account state. A
+    // suspended/pending/deleted account must lose API access immediately,
+    // even when its JWT and Session row have not expired or been revoked.
+    if (!sessionRecord.user || sessionRecord.user.status !== "ACTIVE") return null;
+
+    // Role changes must also take effect immediately. Do not continue to
+    // authorize using a stale role embedded in a long-lived JWT.
+    if (sessionRecord.user.role !== session.role) return null;
   } catch (e) {
     console.error("[auth] Failed to query Session DB:", e);
     // Fail-closed in production: DB error → reject session.
