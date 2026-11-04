@@ -20,7 +20,7 @@ const FULL_INCLUDE = {
 } as const;
 
 
-function serviceCodeFromCategory(category: string): ServiceCode {
+function serviceCodeFromCategory(category: string): ServiceCode | null {
   const value = category.toLowerCase();
   if (value.includes("hydraulic") || value.includes("هیدرولیک")) return "hydraulic";
   if (value.includes("elect") || value.includes("برق") || value.includes("سیم")) return "electrical";
@@ -32,7 +32,8 @@ function serviceCodeFromCategory(category: string): ServiceCode {
   }
   if (value.includes("transmission") || value.includes("gearbox") || value.includes("گیربکس") || value.includes("انتقال قدرت")) return "transmission";
   if (value.includes("undercarriage") || value.includes("chassis") || value.includes("زیربندی") || value.includes("شاسی")) return "undercarriage";
-  return "diagnostic";
+  if (value.includes("diagnos") || value.includes("diagnostic") || value.includes("عیب") || value.includes("دیاگ") || value.includes("تشخیص")) return "diagnostic";
+  return null;
 }
 
 function estimateTravelDistanceKm(
@@ -150,6 +151,9 @@ export async function POST(req: Request) {
   }
 
   const serviceCode = serviceCodeFromCategory(job.request.category);
+  if (!serviceCode) {
+    return NextResponse.json({ error: "دسته خدمت در نرخ‌نامه تعریف نشده است؛ پیش از صدور فاکتور باید خدمت به کد تعرفه متصل شود", code: "SERVICE_RATE_MAPPING_REQUIRED" }, { status: 409 });
+  }
   const latestTrackedLocation = job.tracking[0] ?? job.technician;
   const travelDistanceKm = estimateTravelDistanceKm(
     { lat: latestTrackedLocation.lat, lng: latestTrackedLocation.lng },
