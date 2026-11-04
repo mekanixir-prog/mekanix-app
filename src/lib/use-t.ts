@@ -24,7 +24,7 @@ export function useT() {
 
   // Language controls number presentation only. It must never change the
   // currency declared by the underlying record or trigger an implicit FX path.
-  const money = (amount: number, currency: string = "IRR") =>
+  const money = (amount: unknown, currency: string = "IRR") =>
     fmtMoney(amount, currency, lang);
   const isFa = lang === "fa";
   return {
