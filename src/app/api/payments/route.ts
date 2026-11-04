@@ -3,7 +3,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { getInvoicePaymentAmountError } from "@/lib/money/payment-amount";
-import { maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { isSafeStoredIrrAmount, maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 // POST /api/payments
 // Records a payment against an invoice.
@@ -131,7 +131,7 @@ export async function POST(req: Request) {
   const existing = await db.payment.findUnique({ where: { invoiceId } });
   if (existing) {
     // Historical payment rows are not upgraded from currency labels alone.
-    if (existing.financialUnitStatus !== "VERIFIED_IRR" || existing.currency !== "IRR" || Number(existing.amount) !== Number(inv.total)) {
+    if (existing.financialUnitStatus !== "VERIFIED_IRR" || existing.currency !== "IRR" || !isSafeStoredIrrAmount(existing.amount) || Number(existing.amount) !== Number(inv.total)) {
       return NextResponse.json({ error: "سوابق پرداخت موجود نیازمند تطبیق مالی است", code: "PAYMENT_FINANCIAL_PROVENANCE_UNVERIFIED" }, { status: 409 });
     }
     // Update existing payment record
