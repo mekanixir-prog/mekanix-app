@@ -124,6 +124,7 @@ model Customer {
 // ───────────────────────── Technician ─────────────────────────
 
 model Technician {
+  financialUnitStatus String   @default("UNVERIFIED")
   id                 String     @id @default(cuid())
   userId             String     @unique
   user               User       @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -287,6 +288,7 @@ enum RequestStatus {
 }
 
 model Job {
+  financialUnitStatus String   @default("UNVERIFIED")
   id                 String         @id @default(cuid())
   code               String         @unique // JOB-...
   requestId          String         @unique
@@ -353,6 +355,7 @@ model Diagnosis {
 }
 
 model Part {
+  financialUnitStatus String   @default("UNVERIFIED")
   id        String   @id @default(cuid())
   jobId     String
   job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
@@ -376,6 +379,7 @@ model TrackingEvent {
 // ───────────────────────── Invoices & Payments ─────────────────────────
 
 model Invoice {
+  financialUnitStatus String   @default("UNVERIFIED")
   id         String        @id @default(cuid())
   code       String        @unique // INV-...
   jobId      String        @unique
@@ -409,6 +413,7 @@ enum InvoiceStatus {
 }
 
 model Payment {
+  financialUnitStatus String   @default("UNVERIFIED")
   id        String        @id @default(cuid())
   code      String        @unique
   invoiceId String?       @unique
@@ -498,6 +503,7 @@ model Warranty {
 // ───────────────────────── Service Categories (platform) ─────────────────────────
 
 model ServiceCategory {
+  financialUnitStatus String   @default("UNVERIFIED")
   id          String  @id @default(cuid())
   slug        String  @unique
   name        String
@@ -589,6 +595,7 @@ model MaintenanceSchedule {
 // their first job, the referrer gets a commission credit.
 
 model Referral {
+  financialUnitStatus String   @default("UNVERIFIED")
   id             String    @id @default(cuid())
   code           String    @unique // user's unique referral code
   referrerId     String
@@ -611,6 +618,7 @@ model Referral {
 // purchase through MEKANIX partners. Claims are tracked.
 
 model InsurancePolicy {
+  financialUnitStatus String   @default("UNVERIFIED")
   id             String   @id @default(cuid())
   code           String   @unique // POL-...
   userId         String
@@ -635,6 +643,7 @@ model InsurancePolicy {
 }
 
 model InsuranceClaim {
+  financialUnitStatus String   @default("UNVERIFIED")
   id            String          @id @default(cuid())
   code          String          @unique // CLM-...
   idempotencyKey String?        @unique
@@ -682,6 +691,7 @@ model SupportTicket {
 // are held for 12 hours from job completion before becoming withdrawable.
 
 model Wallet {
+  financialUnitStatus String   @default("UNVERIFIED")
   id              String     @id @default(cuid())
   technicianId    String     @unique
   technician      Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
@@ -715,6 +725,7 @@ enum TxnStatus {
 }
 
 model WalletTransaction {
+  financialUnitStatus String   @default("UNVERIFIED")
   id               String    @id @default(cuid())
   walletId         String
   wallet           Wallet    @relation(fields: [walletId], references: [id], onDelete: Cascade)
@@ -744,6 +755,7 @@ enum WithdrawalStatus {
 }
 
 model WithdrawalRequest {
+  financialUnitStatus String   @default("UNVERIFIED")
   id          String           @id @default(cuid())
   code        String           @unique // WD-...
   walletId    String
@@ -770,6 +782,7 @@ model WithdrawalRequest {
 // discounted inspection fees, extended warranty, dedicated support).
 
 model VipPlan {
+  financialUnitStatus String   @default("UNVERIFIED")
   id                      String   @id @default(cuid())
   slug                    String   @unique // silver | gold | platinum
   name                    String // display name (en) — UI uses i18n key vip.plan.<slug>
@@ -830,6 +843,7 @@ enum GatewayStatus {
 }
 
 model PaymentGatewayLog {
+  financialUnitStatus String   @default("UNVERIFIED")
   id              String        @id @default(cuid())
   code            String        @unique // PG-...
   userId          String?
@@ -930,8 +944,10 @@ model ExchangeRateHistory {
 
 // ───────────────────────── Discount Codes ─────────────────────────
 model DiscountCode {
-  id          String   @id @default(cuid())
-  code        String   @unique
+  id                  String   @id @default(cuid())
+  valueUnitStatus     String   @default("UNVERIFIED")
+  minAmountUnitStatus String   @default("UNVERIFIED")
+  code                String   @unique
   description String?
   type        String   @default("PERCENT")
   value       Decimal    @default(0)
@@ -988,6 +1004,7 @@ model PushNotification {
 
 // ───────────────────────── Wallet Ledger ─────────────────────────
 model WalletLedger {
+  financialUnitStatus String   @default("UNVERIFIED")
   id              String   @id @default(cuid())
   walletId        String
   wallet          Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
@@ -1069,6 +1086,7 @@ model MaintenanceScheduleItem {
 
 // Service packages — Basic, Standard, MEKANIX CHECK
 model ServicePackage {
+  financialUnitStatus String   @default("UNVERIFIED")
   id              String   @id @default(cuid())
   name            String
   nameFa          String
@@ -1186,6 +1204,7 @@ model Finding {
 
 // Customer approval — for extra costs, part changes, etc.
 model CustomerApproval {
+  financialUnitStatus String   @default("UNVERIFIED")
   id              String   @id @default(cuid())
   bookingId       String
   booking         ServiceBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
@@ -1213,6 +1232,7 @@ model CustomerApproval {
 
 // Part usage — actual parts used during service
 model PartUsage {
+  financialUnitStatus String   @default("UNVERIFIED")
   id              String   @id @default(cuid())
   bookingId       String
   booking         ServiceBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
@@ -1234,6 +1254,7 @@ model PartUsage {
 
 // Pricing snapshot — frozen at booking time
 model PricingSnapshot {
+  financialUnitStatus String   @default("UNVERIFIED")
   id              String   @id @default(cuid())
   bookingId       String?  @unique
   servicePrice    Decimal    @default(0)
