@@ -145,13 +145,13 @@ echo ""
 # ─── 10. Dependency vulnerabilities ───
 echo "10. Checking dependencies..."
 if command -v bun &> /dev/null; then
-  BUN_AUDIT=$(bun audit 2>&1 || true)
-  if echo "$BUN_AUDIT" | grep -qi "vulnerabilit"; then
-    echo "⚠️  Dependency vulnerabilities found:"
-    echo "$BUN_AUDIT" | tail -10
-    WARNINGS=$((WARNINGS + 1))
+  if BUN_AUDIT=$(bun audit --audit-level=moderate 2>&1); then
+    echo "✅ No known moderate-or-higher dependency vulnerabilities"
+    echo "$BUN_AUDIT" | tail -3
   else
-    echo "✅ No known dependency vulnerabilities"
+    echo "❌ Moderate-or-higher dependency vulnerabilities found:"
+    echo "$BUN_AUDIT" | tail -30
+    ISSUES=$((ISSUES + 1))
   fi
 else
   echo "⚠️  bun not available, skipping dependency audit"
