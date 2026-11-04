@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { isSafeStoredIrrAmount } from "@/lib/money/financial-read-mask";
 
 type PrepayInput = {
   jobId: string;
@@ -26,11 +27,28 @@ type D1Database = {
  * abort the whole batch/transaction; they are never silently ignored. Notifications
  * deliberately remain outside this financial transaction and are best effort.
  */
+function isValidPrepayInput(input: PrepayInput): boolean {
+  const values = [input.gross, input.commission, input.net, input.inspectionFee, input.travelFee];
+  return values.every((value) => Number.isSafeInteger(value) && value >= 0) &&
+    input.gross > 0 && input.gross === input.inspectionFee + input.travelFee &&
+    input.gross === input.commission + input.net;
+}
+
 export async function recordPrepayWithPrisma(
   db: PrismaClient,
   input: PrepayInput
 ): Promise<boolean> {
+  if (!isValidPrepayInput(input)) return false;
   return db.$transaction(async (tx) => {
+    const wallet = await tx.wallet.upsert({
+      where: { technicianId: input.technicianId },
+      create: { technicianId: input.technicianId, financialUnitStatus: "VERIFIED_IRR" },
+      update: {},
+      select: { id: true, balance: true, pendingBalance: true, totalEarned: true, totalCommission: true, financialUnitStatus: true },
+    });
+    if (wallet.financialUnitStatus !== "VERIFIED_IRR" ||
+        ![wallet.balance, wallet.pendingBalance, wallet.totalEarned, wallet.totalCommission].every(isSafeStoredIrrAmount)) return false;
+
     const jobUpdate = await tx.job.updateMany({
       where: { id: input.jobId, prepayPaid: false },
       data: {
@@ -41,16 +59,10 @@ export async function recordPrepayWithPrisma(
         platformCommission: input.commission,
         netEarnings: input.net,
         holdUntil: null,
+        financialUnitStatus: "VERIFIED_IRR",
       },
     });
     if (jobUpdate.count !== 1) return false;
-
-    const wallet = await tx.wallet.upsert({
-      where: { technicianId: input.technicianId },
-      create: { technicianId: input.technicianId },
-      update: {},
-      select: { id: true, pendingBalance: true },
-    });
 
     const prepayKey = `prepay:${input.jobId}:PREPAY`;
     const commissionKey = `prepay:${input.jobId}:COMMISSION`;
@@ -66,6 +78,7 @@ export async function recordPrepayWithPrisma(
         holdUntil: null,
         description: `Pre-service payment — ${input.jobCode} (${input.machineLabel})`,
         idempotencyKey: prepayKey,
+        financialUnitStatus: "VERIFIED_IRR",
       },
     });
     await tx.walletTransaction.create({
@@ -79,6 +92,7 @@ export async function recordPrepayWithPrisma(
         netAmount: -input.commission,
         description: `Platform commission (10%) — ${input.jobCode}`,
         idempotencyKey: commissionKey,
+        financialUnitStatus: "VERIFIED_IRR",
       },
     });
 
@@ -93,6 +107,7 @@ export async function recordPrepayWithPrisma(
         referenceId: input.jobId,
         description: `Prepay escrow — ${input.jobCode}`,
         idempotencyKey: `prepay:${input.jobId}:LEDGER_HOLD`,
+        financialUnitStatus: "VERIFIED_IRR",
       },
     });
     await tx.walletLedger.create({
@@ -106,17 +121,19 @@ export async function recordPrepayWithPrisma(
         referenceId: input.jobId,
         description: `Platform commission — ${input.jobCode}`,
         idempotencyKey: `prepay:${input.jobId}:LEDGER_COMMISSION`,
+        financialUnitStatus: "VERIFIED_IRR",
       },
     });
 
-    await tx.wallet.update({
-      where: { id: wallet.id },
+    const walletUpdate = await tx.wallet.updateMany({
+      where: { id: wallet.id, financialUnitStatus: "VERIFIED_IRR" },
       data: {
         pendingBalance: { increment: input.net },
         totalEarned: { increment: input.gross },
         totalCommission: { increment: input.commission },
       },
     });
+    if (walletUpdate.count !== 1) throw new Error("Verified IRR wallet aggregate update failed");
     return true;
   });
 }
