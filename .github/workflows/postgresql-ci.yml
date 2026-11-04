@@ -65,11 +65,9 @@ jobs:
       
       - name: Backup and restore rehearsal on isolated test database
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y ca-certificates curl gnupg
-          sudo install -d /usr/share/postgresql-common/pgdg
-          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --batch --yes --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
-          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo "$VERSION_CODENAME")-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          # Ubuntu 24.04 ships PostgreSQL 16 client packages in its native
+          # repositories. Avoid adding an external apt signing key/repository
+          # to a backup-security rehearsal when the matching client is native.
           sudo apt-get update -qq
           sudo apt-get install -y postgresql-client-16
           pg_dump --version | grep -E ' 16\.'
