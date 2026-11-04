@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
+import { areInvoicePriceSourcesVerified, areJobPartPriceSourcesVerified } from "@/lib/money/provenance";
 
 const FULL_INCLUDE = {
   job: {
@@ -72,6 +73,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
   }
 
+  // Production invoice totals currently depend on technician profile fees.
+  // Do not interpret legacy values as IRR until the rate card and fee units
+  // have both been independently reconciled and explicitly approved.
+  if (!areInvoicePriceSourcesVerified()) {
+    return NextResponse.json(
+      { error: "تعرفه یا واحد هزینه‌های مکانیک هنوز به‌عنوان ریال تأیید نشده است؛ صدور فاکتور پس از تطبیق مالی فعال می‌شود", code: "INVOICE_PRICE_PROVENANCE_UNVERIFIED" },
+      { status: 409 },
+    );
+  }
+
   // Idempotent retry: the job-status flow may already have created this invoice.
   const existingInvoice = await db.invoice.findUnique({
     where: { jobId },
@@ -84,6 +95,12 @@ export async function POST(req: Request) {
     include: { parts: true, technician: true },
   });
   if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
+  if (!areJobPartPriceSourcesVerified(job.parts.length > 0)) {
+    return NextResponse.json(
+      { error: "واحد قیمت قطعات قدیمی هنوز به ریال تطبیق داده نشده است؛ صدور فاکتور پس از تأیید سوابق قطعات فعال می‌شود", code: "JOB_PART_CURRENCY_UNVERIFIED" },
+      { status: 409 },
+    );
+  }
   if (job.status !== "WAITING_APPROVAL" && job.status !== "COMPLETED") {
     return NextResponse.json({ error: "فاکتور فقط پس از پایان عملیات تعمیر قابل صدور است" }, { status: 409 });
   }
