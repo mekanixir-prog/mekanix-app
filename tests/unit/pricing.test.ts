@@ -423,3 +423,40 @@ describe("production IRR pricing approval gate", () => {
     }
   });
 });
+
+
+describe("pricing — canonical integer IRR boundaries", () => {
+  it.each([1.5, -1, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects invalid parts cost %s",
+    async (partsCost) => {
+      await expect(calculatePrice({ ...baseInput, partsCost })).rejects.toThrow();
+    },
+  );
+
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY])(
+    "rejects invalid labor hours %s",
+    async (laborHours) => {
+      await expect(calculatePrice({ ...baseInput, laborHours })).rejects.toThrow(
+        "Labor hours must be a finite non-negative number",
+      );
+    },
+  );
+
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY])(
+    "rejects invalid travel distance %s",
+    async (travelDistanceKm) => {
+      await expect(calculatePrice({ ...baseInput, travelDistanceKm })).rejects.toThrow(
+        "Travel distance must be a finite non-negative number",
+      );
+    },
+  );
+
+  it.each([-0.01, 100.01, Number.NaN, Number.POSITIVE_INFINITY])(
+    "rejects invalid VIP discount percent %s",
+    async (vipDiscountPercent) => {
+      await expect(calculatePrice({ ...baseInput, vipDiscountPercent })).rejects.toThrow(
+        "VIP discount percent must be between 0 and 100",
+      );
+    },
+  );
+});
