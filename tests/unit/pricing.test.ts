@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { calculatePrice, isProductionPricingApproved, type PricingInput } from "@/lib/pricing";
 
-const dbMock = {
-  servicePackage: { findUnique: vi.fn().mockResolvedValue(null) },
-  platformSetting: { findUnique: vi.fn().mockResolvedValue(null) },
-  pricingSnapshot: { create: vi.fn().mockResolvedValue({ id: "snapshot-1" }) },
-};
+const { dbMock } = vi.hoisted(() => ({
+  dbMock: {
+    servicePackage: { findUnique: vi.fn().mockResolvedValue(null) },
+    platformSetting: { findUnique: vi.fn().mockResolvedValue(null) },
+    pricingSnapshot: { create: vi.fn().mockResolvedValue({ id: "snapshot-1" }) },
+  },
+}));
 vi.mock("@/lib/db-access", () => ({ getDbForLib: vi.fn(async () => dbMock) }));
 
 const base: PricingInput = {
