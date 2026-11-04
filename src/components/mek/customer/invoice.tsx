@@ -143,6 +143,7 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
           <div className="border-t border-border bg-muted/20 p-5">
             <div className="mx-auto max-w-xs space-y-1.5 text-sm">
               <Line label={t("invoice.laborFixed")} amount={Number(invoice.laborTotal)} moneyFn={money} />
+              {Number(invoice.emergencyFee) > 0 && <Line label={t("invoice.emergencyFee")} amount={Number(invoice.emergencyFee)} moneyFn={money} />}
               <Line label={t("invoice.partsMaterials")} amount={Number(invoice.partsTotal)} moneyFn={money} />
               <Line label={t("invoice.travelFee")} amount={Number(invoice.travelFee)} moneyFn={money} />
               <Line label={t("invoice.inspectionFee")} amount={Number(invoice.inspectionFee)} moneyFn={money} />
