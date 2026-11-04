@@ -121,13 +121,13 @@ This section records changes after the previous 2026-11-03 checklist snapshot. T
 
 - [x] PR #112 — historical withdrawal approval/rejection/payout actions now fail closed until withdrawal-record IRR provenance is explicitly verified. Merged as `ad1f6af246369bfc071a28dc68589c3f6a0d1331`.
 - [x] PR #120 — production readiness requires strong user/admin/OTP secrets, shared rate-limit storage, admin provisioning, IRR pricing/provenance, withdrawal policy/provenance, and escrow-worker readiness. Merged as `2bf40e8642019550b2710bb171f2fd5ebe4116e8`.
-- [x] All eight main-branch workflows passed on the exact current baseline `2bf40e8642019550b2710bb171f2fd5ebe4116e8`.
+- [x] All eight active main-branch workflows passed on exact baselines `2bf40e8642019550b2710bb171f2fd5ebe4116e8` and `e03f84da91db464edd2ca6ae32fdd156174c948b`; the newest baseline `dae8fe53bf8c5c776ed939d665a8a146619162db` is undergoing its fresh full workflow run.
 
 ### Security PR reconciliation
 
-- [x] PR #113 — same-origin admin CSRF defense-in-depth reviewed and squash-merged as `e03f84da91db464edd2ca6ae32fdd156174c948b`; fresh main workflows are running.
-- [x] PR #115 — closed as superseded: current main already checks the related User's status and role in the Session query. Deleted-user regression coverage is carried by PR #127.
-- [x] PR #116 — closed as superseded: current main already uses canonicalized keyed-HMAC per-phone OTP throttling at 5 attempts per 10 minutes. PR #127 adds tests for that existing behavior.
+- [x] PR #113 — same-origin admin CSRF defense-in-depth reviewed and squash-merged as `e03f84da91db464edd2ca6ae32fdd156174c948b`; all eight active main workflows passed on that exact commit.
+- [x] PR #115 — closed as superseded: current main already checks the related User's status and role in the Session query and rejects a missing related User. The dedicated deleted-user regression test has not yet been added.
+- [x] PR #116 — closed as superseded: current main already uses canonicalized keyed-HMAC per-phone OTP throttling at 5 attempts per 10 minutes; PR #127 adds the missing unavailable-store 503 test.
 - [x] PR #127 — shared per-phone OTP verification limiter unavailable-store (503) regression test; all seven applicable checks passed and the PR merged as `147d5485ee0dfd2dc5795f6000dd38b35c808c07`.
 
 ### Withdrawal hardening
@@ -146,7 +146,7 @@ This section records changes after the previous 2026-11-03 checklist snapshot. T
 - [ ] Issue #81 — classify and reconcile historical money provenance under the owner-approved integer-IRR contract. Unknown rows remain quarantined; no blanket conversion.
 - [ ] Issue #130 — remove FX-based IRR formatting, mask unverified wallet/invoice reads, and enforce safe-integer IRR at writers.
 - [ ] Issue #99 — obtain owner-approved rate cards, tax, commission/escrow, VIP prices, CARE boundary and withdrawal policy.
-- [ ] Do not merge PRs #71/#73 independently. PR #73's USD/decimal withdrawal policy conflicts with the integer-IRR contract. PR #78 is a large stale stacked branch and must be split/rebased into bounded changes before review.
+- [x] PRs #71/#73 are closed; useful safe work from #71 was ported to #129, while #73's USD/decimal policy was not ported. PR #78 remains a stale large branch and must be split/rebased into bounded changes before review.
 
 ### Launch infrastructure remains deliberately deferred
 
