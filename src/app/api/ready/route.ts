@@ -31,6 +31,21 @@ export function checkProductionGates(): GateResult[] {
     });
   }
 
+  const jwtSecret = process.env.JWT_SECRET ?? "";
+  const adminJwtSecret = process.env.ADMIN_JWT_SECRET ?? "";
+  if (new TextEncoder().encode(jwtSecret).length < 32) {
+    gates.push({
+      ok: false,
+      reason: "JWT_SECRET is missing or shorter than 32 bytes.",
+    });
+  }
+  if (new TextEncoder().encode(adminJwtSecret).length < 32) {
+    gates.push({
+      ok: false,
+      reason: "ADMIN_JWT_SECRET is missing or shorter than 32 bytes.",
+    });
+  }
+
   const otpHashSecret = process.env.OTP_HASH_SECRET ?? "";
   if (new TextEncoder().encode(otpHashSecret).length < 32) {
     gates.push({
