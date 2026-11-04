@@ -198,6 +198,7 @@ export async function createPricingSnapshot(
       servicePrice: pricing.labor, // labor as service price
       visitPrice: pricing.travel,
       inspectionPrice: pricing.inspection,
+      emergencyPrice: pricing.emergency,
       financialUnitStatus: "VERIFIED_IRR",
       laborPrice: pricing.labor,
       partsPrice: pricing.parts,
