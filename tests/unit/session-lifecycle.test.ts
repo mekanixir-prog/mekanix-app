@@ -19,14 +19,14 @@ const mockSessionCreate = vi.fn().mockResolvedValue({});
 const mockSessionFindUnique = vi.fn();
 const mockSessionUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
 
-vi.mock("@/lib/db", () => ({
-  db: {
+vi.mock("@/lib/db-access", () => ({
+  getDbForLib: async () => ({
     session: {
       create: (...args: any[]) => mockSessionCreate(...args),
       findUnique: (...args: any[]) => mockSessionFindUnique(...args),
       updateMany: (...args: any[]) => mockSessionUpdateMany(...args),
     },
-  },
+  }),
 }));
 
 vi.mock("@/lib/rate-limit", () => ({
