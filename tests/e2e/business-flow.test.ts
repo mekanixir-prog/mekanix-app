@@ -182,6 +182,7 @@ vi.mock("@/lib/db", () => {
       },
       serviceTimelineEvent: { create: vi.fn() },
       servicePackage: { findUnique: vi.fn(async () => null) },
+      platformSetting: { findUnique: vi.fn(async () => null) },
       pricingSnapshot: { create: vi.fn() },
       dispatchCandidate: { createMany: vi.fn(async () => ({ count: 0 })) },
       wallet: { findUnique: vi.fn() },
@@ -399,100 +400,43 @@ describe("MEKANIX Business E2E Flow", () => {
 
   // ── 4. Pricing Flow ──────────────────────────────────────────────────
   describe("4. Pricing Flow", () => {
-    it("should calculate price with correct components (CAR, no emergency)", async () => {
+    it("uses fixed passenger labor, inspection, dispatch and parts", async () => {
       const { calculatePrice } = await import("@/lib/pricing");
       const price = await calculatePrice({
-        packageId: undefined,
-        vehicleType: "CAR",
-        laborHours: 2,
-        partsCost: 50_000,
-        travelDistanceKm: 15,
-        isEmergency: false,
+        packageId: undefined, vehicleType: "CAR", serviceCode: "diagnostic",
+        laborHours: 2, partsCost: 50_000, travelDistanceKm: 15, isEmergency: false,
       });
-
-      // labor = 50000/hr × 1.0 (CAR) × 2hr = 100000
-      // parts = 50000
-      // travel = 15000 + 2000 × 15 = 45000
-      // subtotal = 100000 + 50000 + 45000 = 195000 (pre-discount)
-      // tax = 195000 × 0.09 = 17550
-      // total = 195000 + 17550 = 212550
-      expect(price.labor).toBe(100_000);
+      expect(price.labor).toBe(8_000_000);
+      expect(price.inspection).toBe(6_000_000);
       expect(price.parts).toBe(50_000);
-      expect(price.travel).toBe(45_000);
-      expect(price.taxRate).toBe(0.09);
-      expect(price.taxTotal).toBe(17_550);
-      expect(price.total).toBe(212_550);
+      expect(price.travel).toBe(5_500_000);
+      expect(price.taxRate).toBe(0);
+      expect(price.taxTotal).toBe(0);
+      expect(price.total).toBe(19_550_000);
       expect(price.currency).toBe("IRR");
-      expect(price.pricingVersion).toBe("2.1");
-      // total must be strictly greater than (labor + parts + travel) due to tax
-      expect(price.total).toBeGreaterThan(price.labor + price.parts + price.travel);
+      expect(price.pricingVersion).toBe("rate-card-1");
     });
 
-    it("should apply emergency surcharge (1.5× multiplier)", async () => {
+    it("applies emergency surcharge to fixed labor only", async () => {
       const { calculatePrice } = await import("@/lib/pricing");
-      const normal = await calculatePrice({
-        packageId: undefined,
-        vehicleType: "CAR",
-        laborHours: 1,
-        partsCost: 0,
-        travelDistanceKm: 0,
-        isEmergency: false,
-      });
-      const emergency = await calculatePrice({
-        packageId: undefined,
-        vehicleType: "CAR",
-        laborHours: 1,
-        partsCost: 0,
-        travelDistanceKm: 0,
-        isEmergency: true,
-      });
-      expect(emergency.emergency).toBeGreaterThan(0);
+      const normal = await calculatePrice({ vehicleType: "CAR", serviceCode: "diagnostic", laborHours: 1, partsCost: 0, travelDistanceKm: 0, isEmergency: false });
+      const emergency = await calculatePrice({ vehicleType: "CAR", serviceCode: "diagnostic", laborHours: 1, partsCost: 0, travelDistanceKm: 0, isEmergency: true });
+      expect(emergency.emergency).toBe(2_400_000);
       expect(emergency.total).toBeGreaterThan(normal.total);
     });
 
-    it("should apply VIP discount", async () => {
+    it("does not apply VIP percentage discounts to repair labor or parts", async () => {
       const { calculatePrice } = await import("@/lib/pricing");
-      const noVip = await calculatePrice({
-        packageId: undefined,
-        vehicleType: "CAR",
-        laborHours: 1,
-        partsCost: 0,
-        travelDistanceKm: 0,
-        isEmergency: false,
-      });
-      const vip = await calculatePrice({
-        packageId: undefined,
-        vehicleType: "CAR",
-        laborHours: 1,
-        partsCost: 0,
-        travelDistanceKm: 0,
-        isEmergency: false,
-        vipDiscountPercent: 10,
-      });
-      expect(vip.discount).toBeGreaterThan(0);
-      expect(vip.total).toBeLessThan(noVip.total);
+      await expect(calculatePrice({ vehicleType: "CAR", serviceCode: "diagnostic", laborHours: 1, partsCost: 0, travelDistanceKm: 0, isEmergency: false, vipDiscountPercent: 10 }))
+        .rejects.toThrow("VIP does not discount repairs or parts");
     });
 
-    it("should scale labor by vehicle type (TRUCK = 1.5× CAR)", async () => {
+    it("uses a dedicated heavy-equipment tariff instead of a vehicle multiplier", async () => {
       const { calculatePrice } = await import("@/lib/pricing");
-      const car = await calculatePrice({
-        packageId: undefined,
-        vehicleType: "CAR",
-        laborHours: 1,
-        partsCost: 0,
-        travelDistanceKm: 0,
-        isEmergency: false,
-      });
-      const truck = await calculatePrice({
-        packageId: undefined,
-        vehicleType: "TRUCK",
-        laborHours: 1,
-        partsCost: 0,
-        travelDistanceKm: 0,
-        isEmergency: false,
-      });
-      // CAR laborRate = 50000, TRUCK laborRate = 50000 × 1.5 = 75000
-      expect(truck.labor).toBe(Math.round(car.labor * 1.5));
+      const car = await calculatePrice({ vehicleType: "CAR", serviceCode: "diagnostic", laborHours: 1, partsCost: 0, travelDistanceKm: 0, isEmergency: false });
+      const truck = await calculatePrice({ vehicleType: "TRUCK", serviceCode: "diagnostic", laborHours: 1, partsCost: 0, travelDistanceKm: 0, isEmergency: false });
+      expect(truck.labor).toBe(35_000_000);
+      expect(truck.labor).toBeGreaterThan(car.labor);
     });
   });
 
