@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant } from "@/lib/auth";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 // Read-only reconciliation lookup. It verifies the job marker and all
 // four financial records written by recordPrepayAtomically().
@@ -33,11 +34,12 @@ export async function GET(req: Request) {
       travelFee: true,
       platformCommission: true,
       netEarnings: true,
+      financialUnitStatus: true,
     },
   });
   if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
 
-  const [prepayTxn, commissionTxn, holdLedger, commissionLedger] = await Promise.all([
+  const safeJob = maskFinancialFields(job as unknown as Record<string, unknown>, [\n    "inspectionFee", "travelFee", "platformCommission", "netEarnings",\n  ]);\n\n  const [prepayTxn, commissionTxn, holdLedger, commissionLedger] = await Promise.all([
     db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${job.id}:PREPAY` }, select: { id: true } }),
     db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${job.id}:COMMISSION` }, select: { id: true } }),
     db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_HOLD` }, select: { id: true } }),
@@ -52,10 +54,10 @@ export async function GET(req: Request) {
         jobId: job.id,
         jobCode: job.code,
         paidAt: job.prepayPaidAt,
-        inspectionFee: String(job.inspectionFee ?? 0),
-        travelFee: String(job.travelFee ?? 0),
-        commission: String(job.platformCommission ?? 0),
-        net: String(job.netEarnings ?? 0),
+        inspectionFee: safeJob.inspectionFee == null ? null : String(safeJob.inspectionFee),
+        travelFee: safeJob.travelFee == null ? null : String(safeJob.travelFee),
+        commission: safeJob.platformCommission == null ? null : String(safeJob.platformCommission),
+        net: safeJob.netEarnings == null ? null : String(safeJob.netEarnings),\n        financialUnitStatus: safeJob.financialUnitStatus,
       },
     });
   }
