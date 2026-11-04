@@ -152,85 +152,101 @@ export async function recordPrepayWithD1(
   if (!isValidPrepayInput(input)) return false;
   const at = input.paidAt.toISOString();
   const walletId = crypto.randomUUID();
-  const prepayKey = `prepay:${input.jobId}:PREPAY`;
-  const commissionKey = `prepay:${input.jobId}:COMMISSION`;
-  const holdLedgerKey = `prepay:${input.jobId}:LEDGER_HOLD`;
-  const commissionLedgerKey = `prepay:${input.jobId}:LEDGER_COMMISSION`;
-  const marker = `"id" = ? AND "prepayPaid" = 1 AND "prepayPaidAt" = ?`;
-  const joinedJobMarker = `j."id" = ? AND j."prepayPaid" = 1 AND j."prepayPaidAt" = ?`;
-  const assertOneChange = () => d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '
-    d1.prepare(`
-      UPDATE "Job"
-      SET "prepayPaid" = 1, "prepayPaidAt" = ?, "inspectionFee" = ?,
-          "travelFee" = ?, "platformCommission" = ?, "netEarnings" = ?,
-          "holdUntil" = NULL, "financialUnitStatus" = 'VERIFIED_IRR', "updatedAt" = ?
-      WHERE "id" = ? AND "prepayPaid" = 0
-    `).bind(at, input.inspectionFee, input.travelFee, input.commission, input.net, at, input.jobId),
+  const prepayKey = "prepay:" + input.jobId + ":PREPAY";
+  const commissionKey = "prepay:" + input.jobId + ":COMMISSION";
+  const holdLedgerKey = "prepay:" + input.jobId + ":LEDGER_HOLD";
+  const commissionLedgerKey = "prepay:" + input.jobId + ":LEDGER_COMMISSION";
+  const assertOneChange = () =>
+    d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '$') END").bind();
+  const assertVerifiedWallet = () => d1.prepare(
+    "SELECT CASE WHEN EXISTS (" +
+    "SELECT 1 FROM \\"Wallet\\" WHERE \\"technicianId\\" = ? AND \\"financialUnitStatus\\" = 'VERIFIED_IRR' " +
+    "AND \\"balance\\" = CAST(\\"balance\\" AS INTEGER) AND abs(\\"balance\\") <= 9007199254740991 " +
+    "AND \\"pendingBalance\\" = CAST(\\"pendingBalance\\" AS INTEGER) AND abs(\\"pendingBalance\\") <= 9007199254740991 " +
+    "AND \\"totalEarned\\" = CAST(\\"totalEarned\\" AS INTEGER) AND abs(\\"totalEarned\\") <= 9007199254740991 " +
+    "AND \\"totalCommission\\" = CAST(\\"totalCommission\\" AS INTEGER) AND abs(\\"totalCommission\\") <= 9007199254740991" +
+    ") THEN 1 ELSE json_extract('not-json', '$') END"
+  ).bind(input.technicianId);
 
-    d1.prepare(`
-      INSERT INTO "Wallet" ("id", "technicianId", "financialUnitStatus", "createdAt", "updatedAt")
-      SELECT ?, ?, 'VERIFIED_IRR', ?, ?
-      WHERE EXISTS (SELECT 1 FROM "Job" WHERE ${marker})
-      ON CONFLICT("technicianId") DO NOTHING
-    `).bind(walletId, input.technicianId, at, at, input.jobId, at),
+  const statements = [
+    d1.prepare(
+      "UPDATE \\"Job\\" SET \\"prepayPaid\\" = 1, \\"prepayPaidAt\\" = ?, \\"inspectionFee\\" = ?, " +
+      "\\"travelFee\\" = ?, \\"platformCommission\\" = ?, \\"netEarnings\\" = ?, \\"holdUntil\\" = NULL, " +
+      "\\"financialUnitStatus\\" = 'VERIFIED_IRR', \\"updatedAt\\" = ? WHERE \\"id\\" = ? AND \\"prepayPaid\\" = 0"
+    ).bind(at, input.inspectionFee, input.travelFee, input.commission, input.net, at, input.jobId),
+    assertOneChange(),
+
+    d1.prepare(
+      "INSERT INTO \\"Wallet\\" (\\"id\\", \\"technicianId\\", \\"financialUnitStatus\\", \\"createdAt\\", \\"updatedAt\\") " +
+      "SELECT ?, ?, 'VERIFIED_IRR', ?, ? WHERE EXISTS (" +
+      "SELECT 1 FROM \\"Job\\" WHERE \\"id\\" = ? AND \\"prepayPaid\\" = 1 AND \\"prepayPaidAt\\" = ?" +
+      ") ON CONFLICT(\\"technicianId\\") DO NOTHING"
+    ).bind(walletId, input.technicianId, at, at, input.jobId, at),
     assertVerifiedWallet(),
 
-    d1.prepare(`
-      INSERT INTO "WalletTransaction"
-        ("id", "walletId", "jobId", "kind", "status", "grossAmount",
-         "commissionAmount", "netAmount", "holdUntil", "description",
-         "idempotencyKey", "financialUnitStatus", "createdAt")
-      SELECT ?, w."id", j."id", 'PREPAY', 'PENDING', ?, ?, ?, NULL, ?, ?, 'VERIFIED_IRR', ?
-      FROM "Wallet" w JOIN "Job" j ON j."technicianId" = ?
-      WHERE w."technicianId" = ? AND w."financialUnitStatus" = 'VERIFIED_IRR' AND ${joinedJobMarker}
-    `).bind(crypto.randomUUID(), input.gross, input.commission, input.net,
-      `Pre-service payment — ${input.jobCode} (${input.machineLabel})`,
+    d1.prepare(
+      "INSERT INTO \\"WalletTransaction\\" (\\"id\\", \\"walletId\\", \\"jobId\\", \\"kind\\", \\"status\\", " +
+      "\\"grossAmount\\", \\"commissionAmount\\", \\"netAmount\\", \\"holdUntil\\", \\"description\\", " +
+      "\\"idempotencyKey\\", \\"financialUnitStatus\\", \\"createdAt\\") " +
+      "SELECT ?, w.\\"id\\", j.\\"id\\", 'PREPAY', 'PENDING', ?, ?, ?, NULL, ?, ?, 'VERIFIED_IRR', ? " +
+      "FROM \\"Wallet\\" w JOIN \\"Job\\" j ON j.\\"technicianId\\" = ? " +
+      "WHERE w.\\"technicianId\\" = ? AND w.\\"financialUnitStatus\\" = 'VERIFIED_IRR' " +
+      "AND j.\\"id\\" = ? AND j.\\"prepayPaid\\" = 1 AND j.\\"prepayPaidAt\\" = ?"
+    ).bind(crypto.randomUUID(), input.gross, input.commission, input.net,
+      "Pre-service payment — " + input.jobCode + " (" + input.machineLabel + ")",
       prepayKey, at, input.technicianId, input.technicianId, input.jobId, at),
+    assertOneChange(),
 
-    d1.prepare(`
-      INSERT INTO "WalletTransaction"
-        ("id", "walletId", "jobId", "kind", "status", "grossAmount",
-         "commissionAmount", "netAmount", "description", "idempotencyKey", "financialUnitStatus", "createdAt")
-      SELECT ?, w."id", j."id", 'COMMISSION', 'COMPLETED', 0, ?, ?, ?, ?, 'VERIFIED_IRR', ?
-      FROM "Wallet" w JOIN "Job" j ON j."technicianId" = ?
-      WHERE w."technicianId" = ? AND ${joinedJobMarker}
-    `).bind(crypto.randomUUID(), input.commission, -input.commission,
-      `Platform commission — ${input.jobCode}`,
+    d1.prepare(
+      "INSERT INTO \\"WalletTransaction\\" (\\"id\\", \\"walletId\\", \\"jobId\\", \\"kind\\", \\"status\\", " +
+      "\\"grossAmount\\", \\"commissionAmount\\", \\"netAmount\\", \\"description\\", \\"idempotencyKey\\", " +
+      "\\"financialUnitStatus\\", \\"createdAt\\") " +
+      "SELECT ?, w.\\"id\\", j.\\"id\\", 'COMMISSION', 'COMPLETED', 0, ?, ?, ?, ?, 'VERIFIED_IRR', ? " +
+      "FROM \\"Wallet\\" w JOIN \\"Job\\" j ON j.\\"technicianId\\" = ? " +
+      "WHERE w.\\"technicianId\\" = ? AND w.\\"financialUnitStatus\\" = 'VERIFIED_IRR' " +
+      "AND j.\\"id\\" = ? AND j.\\"prepayPaid\\" = 1 AND j.\\"prepayPaidAt\\" = ?"
+    ).bind(crypto.randomUUID(), input.commission, -input.commission,
+      "Platform commission — " + input.jobCode,
       commissionKey, at, input.technicianId, input.technicianId, input.jobId, at),
     assertOneChange(),
 
-    d1.prepare(`
-      INSERT INTO "WalletLedger"
-        ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
-         "referenceType", "referenceId", "description", "idempotencyKey", "financialUnitStatus", "createdAt")
-      SELECT ?, w."id", 'HOLD', ?, w."pendingBalance", w."pendingBalance" + ?,
-             'Job', j."id", ?, ?, 'VERIFIED_IRR', ?
-      FROM "Wallet" w JOIN "Job" j ON j."technicianId" = ?
-      WHERE w."technicianId" = ? AND ${joinedJobMarker}
-    `).bind(crypto.randomUUID(), input.net, input.net,
-      `Prepay escrow — ${input.jobCode}`, holdLedgerKey, at,
+    d1.prepare(
+      "INSERT INTO \\"WalletLedger\\" (\\"id\\", \\"walletId\\", \\"type\\", \\"amount\\", \\"balanceBefore\\", " +
+      "\\"balanceAfter\\", \\"referenceType\\", \\"referenceId\\", \\"description\\", \\"idempotencyKey\\", " +
+      "\\"financialUnitStatus\\", \\"createdAt\\") " +
+      "SELECT ?, w.\\"id\\", 'HOLD', ?, w.\\"pendingBalance\\", w.\\"pendingBalance\\" + ?, " +
+      "'Job', j.\\"id\\", ?, ?, 'VERIFIED_IRR', ? FROM \\"Wallet\\" w " +
+      "JOIN \\"Job\\" j ON j.\\"technicianId\\" = ? " +
+      "WHERE w.\\"technicianId\\" = ? AND w.\\"financialUnitStatus\\" = 'VERIFIED_IRR' " +
+      "AND j.\\"id\\" = ? AND j.\\"prepayPaid\\" = 1 AND j.\\"prepayPaidAt\\" = ?"
+    ).bind(crypto.randomUUID(), input.net, input.net,
+      "Prepay escrow — " + input.jobCode, holdLedgerKey, at,
       input.technicianId, input.technicianId, input.jobId, at),
     assertOneChange(),
 
-    d1.prepare(`
-      UPDATE "Wallet"
-      SET "pendingBalance" = "pendingBalance" + ?,
-          "totalEarned" = "totalEarned" + ?,
-          "totalCommission" = "totalCommission" + ?,
-          "updatedAt" = ?
-      WHERE "technicianId" = ? AND "financialUnitStatus" = 'VERIFIED_IRR' AND changes() = 1
-    `).bind(input.net, input.gross, input.commission, at, input.technicianId),
+    d1.prepare(
+      "UPDATE \\"Wallet\\" SET \\"pendingBalance\\" = \\"pendingBalance\\" + ?, " +
+      "\\"totalEarned\\" = \\"totalEarned\\" + ?, \\"totalCommission\\" = \\"totalCommission\\" + ?, " +
+      "\\"updatedAt\\" = ? WHERE \\"technicianId\\" = ? AND \\"financialUnitStatus\\" = 'VERIFIED_IRR' " +
+      "AND \\"pendingBalance\\" = CAST(\\"pendingBalance\\" AS INTEGER) AND abs(\\"pendingBalance\\") <= 9007199254740991 " +
+      "AND \\"totalEarned\\" = CAST(\\"totalEarned\\" AS INTEGER) AND abs(\\"totalEarned\\") <= 9007199254740991 " +
+      "AND \\"totalCommission\\" = CAST(\\"totalCommission\\" AS INTEGER) AND abs(\\"totalCommission\\") <= 9007199254740991 " +
+      "AND EXISTS (SELECT 1 FROM \\"WalletLedger\\" WHERE \\"idempotencyKey\\" = ? AND \\"walletId\\" = \\"Wallet\\".\\"id\\")"
+    ).bind(input.net, input.gross, input.commission, at, input.technicianId, holdLedgerKey),
+    assertOneChange(),
+    assertVerifiedWallet(),
 
-    d1.prepare(`
-      INSERT INTO "WalletLedger"
-        ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
-         "referenceType", "referenceId", "description", "idempotencyKey", "financialUnitStatus", "createdAt")
-      SELECT ?, w."id", 'COMMISSION', ?, w."pendingBalance", w."pendingBalance",
-             'Job', j."id", ?, ?, 'VERIFIED_IRR', ?
-      FROM "Wallet" w JOIN "Job" j ON j."technicianId" = ?
-      WHERE w."technicianId" = ? AND ${joinedJobMarker}
-    `).bind(crypto.randomUUID(), -input.commission,
-      `Platform commission — ${input.jobCode}`, commissionLedgerKey, at,
+    d1.prepare(
+      "INSERT INTO \\"WalletLedger\\" (\\"id\\", \\"walletId\\", \\"type\\", \\"amount\\", \\"balanceBefore\\", " +
+      "\\"balanceAfter\\", \\"referenceType\\", \\"referenceId\\", \\"description\\", \\"idempotencyKey\\", " +
+      "\\"financialUnitStatus\\", \\"createdAt\\") " +
+      "SELECT ?, w.\\"id\\", 'COMMISSION', ?, w.\\"pendingBalance\\", w.\\"pendingBalance\\", " +
+      "'Job', j.\\"id\\", ?, ?, 'VERIFIED_IRR', ? FROM \\"Wallet\\" w " +
+      "JOIN \\"Job\\" j ON j.\\"technicianId\\" = ? " +
+      "WHERE w.\\"technicianId\\" = ? AND w.\\"financialUnitStatus\\" = 'VERIFIED_IRR' " +
+      "AND j.\\"id\\" = ? AND j.\\"prepayPaid\\" = 1 AND j.\\"prepayPaidAt\\" = ?"
+    ).bind(crypto.randomUUID(), -input.commission,
+      "Platform commission — " + input.jobCode, commissionLedgerKey, at,
       input.technicianId, input.technicianId, input.jobId, at),
     assertOneChange(),
   ];
