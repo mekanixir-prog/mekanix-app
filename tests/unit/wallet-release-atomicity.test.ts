@@ -73,7 +73,7 @@ describe("wallet escrow release atomicity", () => {
   it("throws inside the Prisma transaction when pending balance cannot cover the release", async () => {
     const tx = {
       walletTransaction: {
-        findFirst: vi.fn().mockResolvedValue({ netAmount: 1250 }),
+        findFirst: vi.fn().mockResolvedValue({ netAmount: 1250, financialUnitStatus: "VERIFIED_IRR" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       wallet: { updateMany: vi.fn().mockResolvedValue({ count: 0 }), findUnique: vi.fn() },
