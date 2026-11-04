@@ -9,10 +9,21 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   audit: vi.fn(),
 }));
-vi.mock("@/lib/admin-auth", async (importOriginal) => {
-  const actual = await importOriginal();
-  return { ...actual, getAdminFromRequest: mocks.admin };
-});
+vi.mock("@/lib/admin-auth", () => ({
+  getAdminFromRequest: mocks.admin,
+  hasValidAdminCookieCsrf: (req: Request) => {
+    const cookie = req.headers.get("cookie") || "";
+    if (!cookie.split(";").some((part) => part.trim().startsWith("mekanix_admin_session="))) return true;
+    let origin: string;
+    try { origin = new URL(req.url).origin; } catch { return false; }
+    const suppliedOrigin = req.headers.get("origin");
+    if (suppliedOrigin) {
+      try { if (new URL(suppliedOrigin).origin !== origin) return false; } catch { return false; }
+    } else if (req.headers.get("sec-fetch-site") !== "same-origin") return false;
+    const fetchSite = req.headers.get("sec-fetch-site");
+    return !fetchSite || fetchSite === "same-origin";
+  },
+}));
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: async () => ({
     withdrawalRequest: {
