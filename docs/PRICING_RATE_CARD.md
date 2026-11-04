@@ -28,7 +28,7 @@ Emergency surcharge is 30% of fixed labor only. Parts are separately quoted and 
 
 ## Commercial guardrails
 - Passenger rates apply only to supported foreign vehicles; Iran Khodro and Saipa remain excluded.
-- Heavy equipment has a separate rate card.
+- Heavy equipment has a separate rate card (truck, bus, excavator, loader, bulldozer, grader, agricultural and industrial machinery). Unsupported/OTHER vehicle types are rejected instead of silently receiving a heavy-equipment price.
 - Tax is disabled at 0% until tax treatment and taxable base are confirmed.
 - Platform commission is disabled at 0%; it is separate from technician wages and must not be deducted before settlement policy approval.
 - Proposed annual VIP: 1,800,000 Toman passenger / 6,000,000 Toman heavy, four periodic visits per year. It covers dispatch and inspection only; repairs, parts, and extra-distance travel are excluded. VIP remains disabled until the payment/subscription lifecycle is ready.
