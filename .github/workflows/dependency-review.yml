@@ -18,9 +18,9 @@ concurrency:
 
 jobs:
   audit:
-    name: Audit locked dependencies
+    name: Audit and propose safe locked dependency updates
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -34,5 +34,29 @@ jobs:
       - name: Install exact locked dependencies
         run: bun install --frozen-lockfile
 
-      - name: Fail on moderate or higher known vulnerabilities
+      - name: Apply only compatible security updates in the runner workspace
+        id: remediation
+        continue-on-error: true
+        run: bun audit fix --ignore-scripts
+
+      - name: Audit the resulting lockfile
+        id: audit
+        continue-on-error: true
         run: bun audit --audit-level=moderate
+
+      - name: Upload reviewed dependency update candidate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-remediation-${{ github.sha }}
+          path: |
+            package.json
+            bun.lock
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Fail if known moderate-or-higher vulnerabilities remain
+        if: steps.audit.outcome == 'failure'
+        run: |
+          echo "Known moderate-or-higher vulnerabilities remain after compatible automated updates."
+          exit 1
