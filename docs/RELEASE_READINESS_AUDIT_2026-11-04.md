@@ -108,6 +108,19 @@ Required next work:
 
 No production/historical row conversion is authorized by the unit decision.
 
+### Current-main display and read-path findings
+
+A current-main source trace adds four concrete tasks to the provenance work:
+
+- `src/lib/use-t.ts` forces IRR for Persian display and refreshes a live USD→IRR exchange rate. `src/lib/format.ts::fmtMoney` then multiplies every IRR amount by that mutable FX rate (default 60,000). This is incompatible with the approved IRR accounting unit and exact 10:1 IRR→Toman presentation. The `formatTomanFromIrr` helper exists, but the shared Persian `useT().money` path does not use it.
+- `GET /api/wallets` returns wallet balances, transactions and withdrawals without read-side provenance masking.
+- `GET /api/invoices` returns existing invoice/payment records without applying the write-side price-provenance gate. The POST writer is gated, but that does not classify legacy records.
+- Invoice writes check finite/non-negative values but do not consistently require every persisted money component and final total to be safe integer IRR. The JobPart API also still accepts fractional/ambiguous unit prices.
+
+**Required sequence:** classify the read sources; mask or quarantine unverified financial fields in read APIs; fix the shared formatter so verified IRR is rendered directly or as exact Toman without live USD FX; then enforce safe-integer IRR on invoice/parts/prepay/wallet writers and shared ledger boundaries. Do not enable provenance flags until these changes and row-level evidence are complete.
+
+Preserve the existing containment: `POST /api/payments` remains production-disabled and validates currency/integer IRR in non-production. Do not enable it before the authoritative provider lifecycle and ledger settlement are complete.
+
 ### Issue #99 — commercial policy
 
 [Issue #99](https://github.com/mekanixir-prog/mekanix-app/issues/99) remains open and requires explicit owner decisions for:
