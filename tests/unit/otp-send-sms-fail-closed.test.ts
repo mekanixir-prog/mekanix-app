@@ -21,6 +21,7 @@ vi.mock("@/lib/otp-crypto", () => ({
   generateOtpCode: () => "123456",
   hashOtpCode: () => "hash-123456",
   hashSha256: () => "hashed-phone-key",
+  hashSha256: () => "hashed-phone-key",
 }));
 vi.mock("@/lib/sms-provider", () => ({
   assertSmsProviderReady: mocks.ready,
