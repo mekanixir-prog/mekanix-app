@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches: [main, security/automated-code-scanning]
   schedule:
     - cron: "43 4 * * 1"
   workflow_dispatch:
@@ -60,3 +60,56 @@ jobs:
         run: |
           echo "Known moderate-or-higher vulnerabilities remain after compatible automated updates."
           exit 1
+
+  dependency-remediation:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/security/automated-code-scanning' && github.actor == 'mekanixir-prog'
+    name: Prepare dependency remediation PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout trusted security branch
+        uses: actions/checkout@v6
+        with:
+          ref: security/automated-code-scanning
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
+
+      - name: Apply latest compatible vulnerability fixes without lifecycle scripts
+        continue-on-error: true
+        run: bun audit fix --latest --ignore-scripts
+
+      - name: Report remaining advisories
+        continue-on-error: true
+        run: bun audit --audit-level=moderate
+
+      - name: Create dependency update branch and pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- package.json bun.lock; then
+            echo "No dependency changes were generated."
+            exit 0
+          fi
+          git switch -C fix/dependency-audit-remediation
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json bun.lock
+          git commit -m "fix(deps): remediate vulnerable dependency versions"
+          git push --force-with-lease origin HEAD:fix/dependency-audit-remediation
+          if gh pr view --repo mekanixir-prog/mekanix-app --head fix/dependency-audit-remediation >/dev/null 2>&1; then
+            gh pr edit fix/dependency-audit-remediation --repo mekanixir-prog/mekanix-app \
+              --title "fix(deps): remediate vulnerable dependency versions" \
+              --body "Automated Bun audit remediation. Review the exact lockfile changes and require all CI/security checks before merge."
+          else
+            gh pr create --repo mekanixir-prog/mekanix-app \
+              --base main --head fix/dependency-audit-remediation \
+              --title "fix(deps): remediate vulnerable dependency versions" \
+              --body "Automated Bun audit remediation. Review the exact lockfile changes and require all CI/security checks before merge."
+          fi
