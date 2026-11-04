@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
-import { isSafeStoredIrrAmount, maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { isSafeStoredIrrAmount } from "@/lib/money/financial-read-mask";
 
 // Verify a payment (simulated Shaparak OTP flow).
 // Simulator-only: real provider callbacks must use provider signature verification.
@@ -101,7 +101,7 @@ export async function POST(req: Request) {
       throw error;
     }
     payment = await db.payment.findUnique({ where: { gatewayLogId: log.id } });
-    if (!payment || payment.userId !== session.userId || payment.status !== "SUCCEEDED") {
+    if (!payment || payment.userId !== session.userId || payment.status !== "SUCCEEDED" || payment.currency !== "IRR" || payment.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(payment.amount) || Number(payment.amount) !== Number(log.amount)) {
       throw error;
     }
   }
