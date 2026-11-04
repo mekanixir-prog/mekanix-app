@@ -1,21 +1,38 @@
-name: Dependency Review
+name: Dependency Security Audit
 
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "43 4 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: dependency-audit-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  dependency-review:
-    name: Block newly introduced vulnerable dependencies
+  audit:
+    name: Audit locked dependencies
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - name: Review dependency changes
-        uses: actions/dependency-review-action@v4
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          fail-on-severity: moderate
-          fail-on-scopes: runtime, development
-          license-check: false
+          bun-version: "1.4.4"
+          cache: true
+
+      - name: Install exact locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Fail on moderate or higher known vulnerabilities
+        run: bun audit --audit-level=moderate
