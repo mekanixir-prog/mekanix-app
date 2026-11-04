@@ -26,7 +26,9 @@ export async function releaseWalletTransactionWithD1(
   const idempotencyKey = `wallet-release:${transactionId}:LEDGER`;
   const eligible = `
     wt."id" = ? AND wt."walletId" = ? AND wt."status" = 'PENDING' AND wt."financialUnitStatus" = 'VERIFIED_IRR'
-    AND wt."netAmount" >= 0 AND wt."holdUntil" IS NOT NULL AND wt."holdUntil" <= ?
+    AND wt."netAmount" >= 0 AND wt."netAmount" = CAST(wt."netAmount" AS INTEGER)
+    AND abs(wt."netAmount") <= 9007199254740991
+    AND wt."holdUntil" IS NOT NULL AND wt."holdUntil" <= ?
   `;
 
   const ledgerInsert = d1.prepare(`
@@ -39,7 +41,9 @@ export async function releaseWalletTransactionWithD1(
     FROM "Wallet" w
     JOIN "WalletTransaction" wt ON wt."walletId" = w."id"
     WHERE ${eligible}
-      AND w."id" = ?
+      AND w."id" = ? AND w."financialUnitStatus" = 'VERIFIED_IRR'
+      AND w."balance" = CAST(w."balance" AS INTEGER) AND abs(w."balance") <= 9007199254740991
+      AND w."pendingBalance" = CAST(w."pendingBalance" AS INTEGER) AND abs(w."pendingBalance") <= 9007199254740991
       AND w."pendingBalance" >= wt."netAmount"
       AND NOT EXISTS (
         SELECT 1 FROM "WalletLedger" existing
@@ -68,6 +72,8 @@ export async function releaseWalletTransactionWithD1(
       ),
       "updatedAt" = ?
     WHERE w."id" = ? AND w."financialUnitStatus" = 'VERIFIED_IRR'
+      AND w."balance" = CAST(w."balance" AS INTEGER) AND abs(w."balance") <= 9007199254740991
+      AND w."pendingBalance" = CAST(w."pendingBalance" AS INTEGER) AND abs(w."pendingBalance") <= 9007199254740991
       AND EXISTS (
         SELECT 1
         FROM "WalletTransaction" wt
@@ -78,6 +84,8 @@ export async function releaseWalletTransactionWithD1(
           AND wt."status" = 'PENDING' AND wt."financialUnitStatus" = 'VERIFIED_IRR' AND wt."netAmount" >= 0
           AND wt."holdUntil" IS NOT NULL AND wt."holdUntil" <= ?
           AND w."pendingBalance" >= wt."netAmount"
+          AND w."balance" = CAST(w."balance" AS INTEGER) AND abs(w."balance") <= 9007199254740991
+          AND w."pendingBalance" = CAST(w."pendingBalance" AS INTEGER) AND abs(w."pendingBalance") <= 9007199254740991
           AND ledger."balanceBefore" = w."balance"
           AND ledger."balanceAfter" = w."balance" + wt."netAmount"
       )
@@ -98,7 +106,10 @@ export async function releaseWalletTransactionWithD1(
          AND ledger."referenceId" = wt."id"
          AND ledger."idempotencyKey" = ?
         WHERE w."id" = wt."walletId"
-          AND w."balance" = ledger."balanceAfter"
+          AND w."financialUnitStatus" = 'VERIFIED_IRR'
+            AND w."balance" = ledger."balanceAfter"
+            AND w."balance" = CAST(w."balance" AS INTEGER) AND abs(w."balance") <= 9007199254740991
+            AND w."pendingBalance" = CAST(w."pendingBalance" AS INTEGER) AND abs(w."pendingBalance") <= 9007199254740991
       )
   `).bind(timestamp, transactionId, walletId, timestamp, idempotencyKey);
 
@@ -114,7 +125,7 @@ export async function releaseWalletTransactionWithD1(
       CASE
         WHEN NOT EXISTS (
           SELECT 1 FROM "WalletTransaction"
-          WHERE "id" = ? AND "status" IN ('PENDING', 'AVAILABLE')
+          WHERE "id" = ? AND "status" = 'PENDING'
         ) OR EXISTS (
           SELECT 1
           FROM "WalletTransaction" wt
