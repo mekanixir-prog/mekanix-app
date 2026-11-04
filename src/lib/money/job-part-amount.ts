@@ -4,7 +4,7 @@ export type JobPartAmountError =
   | "PART_QUANTITY_MUST_BE_POSITIVE_INTEGER"
   | "PART_UNIT_PRICE_MUST_BE_NON_NEGATIVE_INTEGER_IRR";
 
-/** Validate the API contract without coercion, flooring, or implicit defaults. */
+/** Validate the API contract without coercion, flooring, implicit defaults, or currency conversion. */
 export function getJobPartAmountError(
   quantity: unknown,
   unitPrice: unknown,
