@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
+import { assertIrrInteger } from "@/lib/money/irr";
 
 // POST /api/payments
 // Records a payment against an invoice.
@@ -92,6 +93,23 @@ export async function POST(req: Request) {
 
   const userId = session.userId;
   if (!userId) return NextResponse.json({ error: "Unable to resolve payer" }, { status: 400 });
+
+  // The invoice is the server-authoritative source, but its amount is payable
+  // only when both currency and integer-unit provenance match the IRR contract.
+  if (inv.currency !== "IRR") {
+    return NextResponse.json(
+      { error: "واحد پول فاکتور برای پرداخت ریالی معتبر نیست", code: "PAYMENT_CURRENCY_NOT_IRR" },
+      { status: 409 },
+    );
+  }
+  try {
+    assertIrrInteger(Number(inv.total), "Invoice payment amount", { allowZero: false });
+  } catch {
+    return NextResponse.json(
+      { error: "مبلغ فاکتور باید عدد صحیح مثبت به ریال باشد", code: "PAYMENT_AMOUNT_NOT_INTEGER_IRR" },
+      { status: 409 },
+    );
+  }
 
   // Check if invoice is already paid — prevent duplicate payment
   if (inv.status === "PAID") {
