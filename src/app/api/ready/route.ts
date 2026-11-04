@@ -31,6 +31,62 @@ export function checkProductionGates(): GateResult[] {
     });
   }
 
+  // Financial release gates are intentionally independent of provider health.
+  // A healthy database/provider must never make legacy or unapproved money
+  // paths appear production-ready.
+  if (process.env.MEKANIX_PRICING_IRR_APPROVED !== "true") {
+    gates.push({
+      ok: false,
+      reason: "IRR pricing policy has not been explicitly approved.",
+    });
+  }
+
+  if (process.env.MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED !== "true") {
+    gates.push({
+      ok: false,
+      reason: "Legacy technician fee units have not been reconciled and verified as IRR.",
+    });
+  }
+
+  // Conservative gate: legacy JobPart rows may not carry reliable currency
+  // provenance. Do not infer their unit from locale or historical display.
+  if (process.env.MEKANIX_JOB_PART_IRR_PROVENANCE_VERIFIED !== "true") {
+    gates.push({
+      ok: false,
+      reason: "Legacy job-part prices have not been reconciled and verified as IRR.",
+    });
+  }
+
+  const minWithdrawalIrr = Number(process.env.MEKANIX_WITHDRAWAL_MIN_IRR);
+  const maxWithdrawalIrr = Number(process.env.MEKANIX_WITHDRAWAL_MAX_IRR);
+  const withdrawalPolicyValid =
+    process.env.MEKANIX_WITHDRAWAL_IRR_POLICY_APPROVED === "true" &&
+    Number.isSafeInteger(minWithdrawalIrr) &&
+    Number.isSafeInteger(maxWithdrawalIrr) &&
+    minWithdrawalIrr > 0 &&
+    maxWithdrawalIrr >= minWithdrawalIrr;
+
+  if (!withdrawalPolicyValid) {
+    gates.push({
+      ok: false,
+      reason: "Owner-approved integer-IRR withdrawal limits are missing or invalid.",
+    });
+  }
+
+  if (process.env.MEKANIX_WITHDRAWAL_IRR_PROVENANCE_VERIFIED !== "true") {
+    gates.push({
+      ok: false,
+      reason: "Historical withdrawal records have not been reconciled to integer IRR.",
+    });
+  }
+
+  if (process.env.WALLET_RELEASE_SCHEDULED !== "true") {
+    gates.push({
+      ok: false,
+      reason: "Scheduled escrow release worker has not been deployed and verified.",
+    });
+  }
+
   const dbUrl = process.env.DATABASE_URL ?? "";
   if (dbUrl.startsWith("file:")) {
     gates.push({
