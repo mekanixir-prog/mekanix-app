@@ -71,7 +71,9 @@ describe("CARE booking idempotency", () => {
         requestFingerprint: input.requestFingerprint,
       }),
     }));
-    expect(tx.pricingSnapshot.create).toHaveBeenCalledTimes(1);
+    expect(tx.pricingSnapshot.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ emergencyPrice: input.pricing.emergency }),
+    }));
     expect(tx.serviceBooking.update).toHaveBeenCalledTimes(1);
     expect(tx.serviceTimelineEvent.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
