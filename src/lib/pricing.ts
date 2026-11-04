@@ -33,6 +33,18 @@
 import Decimal from "decimal.js";
 import { getDbForLib } from "./db-access";
 
+/**
+ * Production pricing is fail-closed until the canonical IRR rate card has
+ * explicit business-owner approval. Development and tests retain demo rates.
+ */
+export function isProductionPricingApproved(
+  nodeEnv = process.env.NODE_ENV,
+  approved = process.env.MEKANIX_PRICING_IRR_APPROVED,
+): boolean {
+  return nodeEnv !== "production" || approved === "true";
+}
+
+
 export interface PricingInput {
   packageId?: string;
   vehicleType: string; // CAR, TRUCK, EXCAVATOR, etc.
@@ -104,6 +116,10 @@ function round(dec: Decimal): number {
 }
 
 export async function calculatePrice(input: PricingInput): Promise<PricingBreakdown> {
+  if (!isProductionPricingApproved()) {
+    throw new Error("Production IRR pricing is disabled until the canonical rate card is approved");
+  }
+
     const db = await getDbForLib();
   // Get package base price if provided. Today the package base price is
   // informational — the primary price driver is vehicle-type-scaled labor +
