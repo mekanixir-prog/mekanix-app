@@ -1,6 +1,6 @@
 # MEKANIX Editable IRR Rate Card
 
-Owner-approved initial proposal: 2026-11-04. Canonical storage is integer IRR; admin input/display is integer Toman (10 IRR = 1 Toman). Each save creates a new version and retains the previous 20 versions.
+Initial editable proposal — pending explicit owner approval: 2026-11-04. Canonical storage is integer IRR; admin input/display is integer Toman (10 IRR = 1 Toman). Each save creates a new version and retains the previous 20 versions.
 
 ## Dispatch and inspection (Toman)
 | Item | Foreign passenger | Heavy machinery |
@@ -35,6 +35,8 @@ Emergency surcharge is 30% of fixed labor only. Parts are separately quoted and 
 - Manual discount cap: 10%, subject to admin authorization and audit.
 - No ambiguous legacy seed values are reused or re-labelled. Existing historical financial records remain unverified.
 - A new rate version applies only to new price calculations; existing orders retain their frozen PricingSnapshot.
+- This baseline is a proposal, not an approved production tariff. Production remains disabled until the owner reviews the actual rates and deliberately enables the approval gate.
+- Extra-distance billing uses the earliest job-scoped tracking point. If no job tracking point exists, only the base dispatch fee is charged; no unverified extra kilometres are estimated.
 - Admin editor: /admin-panel/pricing. API: GET/PUT /api/admin-panel/pricing. Storage: PlatformSetting key mekanix.pricing.rate-card.v1. Every update is audited.
 - Production calculation remains fail-closed until MEKANIX_PRICING_IRR_APPROVED=true; live payment, commission settlement, tax, and VIP activation remain separate release gates.
 
