@@ -1,7 +1,7 @@
 import { ADMIN_USER_SELECT } from "@/lib/user-select";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
-import { getAdminFromRequest } from "@/lib/admin-auth";
+import { getAdminFromRequest, hasValidAdminCookieCsrf } from "@/lib/admin-auth";
 import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/admin-api";
 import { updateWithdrawalAtomically } from "@/lib/withdrawal-admin-atomic";
@@ -50,6 +50,13 @@ async function safeAudit(opts: {
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ resource: string; id: string }> }) {
+  // Cookie-authenticated admin mutations must carry a same-origin signal.
+  // Bearer-token AdminApp requests remain supported because this guard only
+  // applies when the dedicated admin session cookie is present.
+  if (!hasValidAdminCookieCsrf(req)) {
+    return NextResponse.json({ error: "درخواست از مبدأ نامعتبر است" }, { status: 403 });
+  }
+
   const adminSession = await getAdminFromRequest(req);
   if (!adminSession) {
     return NextResponse.json({ error: "احراز هویت مدیر الزامی است" }, { status: 401 });
