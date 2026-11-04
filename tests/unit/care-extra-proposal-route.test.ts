@@ -30,7 +30,7 @@ vi.mock("@/lib/care-extra-proposal-atomic", () => ({
 
 import { POST } from "@/app/api/care/bookings/[id]/extra-proposal/route";
 
-const approval = { id: "approval-1", status: "PROPOSED" };
+const approval = { id: "approval-1", status: "PROPOSED", financialUnitStatus: "UNVERIFIED" };
 
 function makeRequest(body: string) {
   return new Request("https://mekanix.test/api/care/bookings/booking-1/extra-proposal", {
