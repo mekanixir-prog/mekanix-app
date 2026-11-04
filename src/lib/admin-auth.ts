@@ -84,7 +84,7 @@ export async function verifyAdminToken(
   token: string
 ): Promise<(AdminSession & { sessionVersion: number }) | null> {
   try {
-    const { payload } = await jwtVerify(token, getAdminSecret());
+    const { payload } = await jwtVerify(token, getAdminSecret(), { algorithms: ["HS256"] });
     const adminId = payload.adminId;
     const role = payload.role;
     const sessionVersion = payload.sessionVersion;
