@@ -147,6 +147,7 @@ export async function updateWithdrawalWithD1(
         UPDATE "WithdrawalRequest"
         SET "status" = 'APPROVED', "reviewerId" = ?, "adminNotes" = ?
         WHERE "id" = ? AND "status" = 'REQUESTED' AND "financialUnitStatus" = 'VERIFIED_IRR'
+          AND EXISTS (SELECT 1 FROM "Wallet" w WHERE w."id" = "WithdrawalRequest"."walletId" AND w."financialUnitStatus" = 'VERIFIED_IRR')
       `).bind(input.adminId, input.adminNotes, input.withdrawalId),
     ]);
     return result[0]?.meta?.changes === 1;
@@ -158,6 +159,7 @@ export async function updateWithdrawalWithD1(
         UPDATE "WithdrawalRequest"
         SET "status" = 'REJECTED', "reviewerId" = ?, "adminNotes" = ?, "processedAt" = ?
         WHERE "id" = ? AND "status" IN ('REQUESTED', 'APPROVED') AND "financialUnitStatus" = 'VERIFIED_IRR'
+          AND EXISTS (SELECT 1 FROM "Wallet" w WHERE w."id" = "WithdrawalRequest"."walletId" AND w."financialUnitStatus" = 'VERIFIED_IRR')
       `).bind(input.adminId, input.adminNotes, at, input.withdrawalId),
       assertOneChange(),
       d1.prepare(`
@@ -214,6 +216,7 @@ export async function updateWithdrawalWithD1(
       SET "status" = 'PAID', "reviewerId" = ?, "adminNotes" = ?,
           "processedAt" = ?, "txnId" = ?
       WHERE "id" = ? AND "status" = 'APPROVED' AND "financialUnitStatus" = 'VERIFIED_IRR'
+        AND EXISTS (SELECT 1 FROM "Wallet" w WHERE w."id" = "WithdrawalRequest"."walletId" AND w."financialUnitStatus" = 'VERIFIED_IRR')
     `).bind(input.adminId, input.adminNotes, at, payoutReference, input.withdrawalId),
     assertOneChange(),
     d1.prepare(`
