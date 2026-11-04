@@ -128,6 +128,20 @@ describe("atomic prepay D1 SQLite integration", () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 2 });
   });
 
+  it("rolls back the paid marker when the existing wallet lacks verified IRR provenance", async () => {
+    const { sqlite, d1 } = makeD1(); databases.push(sqlite); seed(sqlite);
+    sqlite.prepare('UPDATE "Wallet" SET "financialUnitStatus" = ? WHERE "id" = ?')
+      .run("UNVERIFIED", "wallet-1");
+
+    await expect(recordPrepayWithD1(d1 as never, input)).resolves.toBe(false);
+    expect(sqlite.prepare('SELECT "prepayPaid" FROM "Job" WHERE "id" = ?').get("job-1"))
+      .toEqual({ prepayPaid: 0 });
+    expect(sqlite.prepare('SELECT "pendingBalance", "totalEarned", "totalCommission" FROM "Wallet" WHERE "id" = ?').get("wallet-1"))
+      .toEqual({ pendingBalance: 100, totalEarned: 0, totalCommission: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletTransaction"').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
+  });
+
   it("does not apply the financial writes again on a retry after a completed prepay", async () => {
     const { sqlite, d1 } = makeD1(); databases.push(sqlite); seed(sqlite);
     expect(await recordPrepayWithD1(d1 as never, input)).toBe(true);
