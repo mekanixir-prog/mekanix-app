@@ -136,16 +136,28 @@ export async function verifySession(token: string): Promise<Session | null> {
   //    (bad signature, expired, malformed), nothing else matters.
   let payload;
   try {
-    ({ payload } = await jwtVerify(token, getSecret()));
+    ({ payload } = await jwtVerify(token, getSecret(), { algorithms: ["HS256"] }));
   } catch {
     return null;
   }
 
+  const allowedRoles = new Set<Session["role"]>([
+    "CUSTOMER",
+    "TECHNICIAN",
+    "ADMIN",
+    "FLEET_MANAGER",
+    "PARTNER",
+  ]);
+  if (typeof payload.userId !== "string" || payload.userId.length === 0) return null;
+  if (typeof payload.role !== "string" || !allowedRoles.has(payload.role as Session["role"])) return null;
+  if (payload.phone !== null && typeof payload.phone !== "string") return null;
+  if (typeof payload.isGuest !== "boolean") return null;
+
   const session: Session = {
-    userId: payload.userId as string,
+    userId: payload.userId,
     role: payload.role as Session["role"],
     phone: payload.phone as string | null,
-    isGuest: payload.isGuest as boolean,
+    isGuest: payload.isGuest,
   };
 
   // 2. Check the Session DB for revocation.
