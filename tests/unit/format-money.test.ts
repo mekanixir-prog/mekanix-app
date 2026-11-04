@@ -26,6 +26,10 @@ describe("fmtMoney", () => {
     expect(fmtMoney(Number.NaN, "IRR", "en")).toBe("—");
     expect(fmtMoney(Number.POSITIVE_INFINITY, "IRR", "en")).toBe("—");
     expect(fmtMoney(1_250.5, "IRR", "en")).toBe("—");
+    expect(fmtMoney("1250.5", "IRR", "en")).toBe("—");
+    expect(fmtMoney("1.00000000000000001", "IRR", "en")).toBe("—");
+    expect(fmtMoney("9007199254740991.0000000000000001", "IRR", "en")).toBe("—");
+    expect(fmtMoney("9007199254740992", "IRR", "en")).toBe("—");
     expect(fmtMoney(Number.MAX_SAFE_INTEGER + 1, "IRR", "en")).toBe("—");
   });
 });
