@@ -25,7 +25,7 @@ export async function releaseWalletTransactionWithD1(
   const timestamp = now.toISOString();
   const idempotencyKey = `wallet-release:${transactionId}:LEDGER`;
   const eligible = `
-    wt."id" = ? AND wt."walletId" = ? AND wt."status" = 'PENDING'
+    wt."id" = ? AND wt."walletId" = ? AND wt."status" = 'PENDING' AND wt."financialUnitStatus" = 'VERIFIED_IRR'
     AND wt."netAmount" >= 0 AND wt."holdUntil" IS NOT NULL AND wt."holdUntil" <= ?
   `;
 
@@ -35,7 +35,7 @@ export async function releaseWalletTransactionWithD1(
        "referenceType", "referenceId", "description", "idempotencyKey", "createdAt")
     SELECT ?, w."id", 'RELEASE', wt."netAmount", w."balance",
            w."balance" + wt."netAmount",
-           'WalletTransaction', wt."id", ?, ?, ?
+           'WalletTransaction', wt."id", ?, ?, ?, 'VERIFIED_IRR'
     FROM "Wallet" w
     JOIN "WalletTransaction" wt ON wt."walletId" = w."id"
     WHERE ${eligible}
@@ -67,7 +67,7 @@ export async function releaseWalletTransactionWithD1(
         WHERE wt."id" = ? AND wt."walletId" = w."id"
       ),
       "updatedAt" = ?
-    WHERE w."id" = ?
+    WHERE w."id" = ? AND w."financialUnitStatus" = 'VERIFIED_IRR'
       AND EXISTS (
         SELECT 1
         FROM "WalletTransaction" wt
@@ -75,7 +75,7 @@ export async function releaseWalletTransactionWithD1(
           ON ledger."referenceId" = wt."id"
          AND ledger."idempotencyKey" = ?
         WHERE wt."id" = ? AND wt."walletId" = w."id"
-          AND wt."status" = 'PENDING' AND wt."netAmount" >= 0
+          AND wt."status" = 'PENDING' AND wt."financialUnitStatus" = 'VERIFIED_IRR' AND wt."netAmount" >= 0
           AND wt."holdUntil" IS NOT NULL AND wt."holdUntil" <= ?
           AND w."pendingBalance" >= wt."netAmount"
           AND ledger."balanceBefore" = w."balance"
@@ -123,7 +123,7 @@ export async function releaseWalletTransactionWithD1(
             ON ledger."walletId" = w."id"
            AND ledger."referenceId" = wt."id"
            AND ledger."idempotencyKey" = ?
-          WHERE wt."id" = ? AND wt."status" = 'AVAILABLE'
+          WHERE wt."id" = ? AND wt."status" = 'AVAILABLE' AND wt."financialUnitStatus" = 'VERIFIED_IRR'
             AND w."balance" = ledger."balanceAfter"
         ) THEN 1
         ELSE NULL
