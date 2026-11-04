@@ -3,6 +3,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
 import { releaseWalletTransaction } from "@/lib/wallet-release";
+import { shouldUseLegacyWalletReleaseFallback } from "@/lib/wallet-release-policy";
 
 // GET /api/wallets
 // Returns the wallet + recent transactions for the authenticated technician.
@@ -52,7 +53,7 @@ export async function GET(req: Request) {
   // dedicated scheduled Worker has been deployed and verified. Once
   // WALLET_RELEASE_SCHEDULED=true is set on this app Worker, escrow releases
   // are performed only by the scheduled Worker, not by a read request.
-  if (process.env.WALLET_RELEASE_SCHEDULED !== "true") {
+  if (shouldUseLegacyWalletReleaseFallback()) {
     const now = new Date();
     const releasable = wallet.transactions.filter(
       (t) => t.status === "PENDING" && t.holdUntil && t.holdUntil.getTime() <= now.getTime()
