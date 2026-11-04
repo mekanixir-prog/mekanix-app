@@ -7,6 +7,15 @@ describe("fmtMoney", () => {
     expect(fmtMoney(125_000, "IRR", "fa")).toBe("﷼۱۲۵،۰۰۰");
   });
 
+  it("formats serialized Prisma decimal strings without changing the declared unit", () => {
+    expect(fmtMoney("125000", "IRR", "fa")).toBe("﷼۱۲۵،۰۰۰");
+    expect(fmtMoney("1250.5", "USD", "en")).toBe("$1,250.5");
+  });
+
+  it("does not guess a currency for unknown currency codes", () => {
+    expect(fmtMoney(125000, "UNKNOWN", "en")).toBe("—");
+  });
+
   it("preserves the declared USD currency for Persian and English users", () => {
     expect(fmtMoney(1_250.5, "USD", "en")).toBe("$1,250.5");
     expect(fmtMoney(1_250.5, "USD", "fa")).toBe("$۱،۲۵۰.۵");
