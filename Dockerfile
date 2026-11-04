@@ -4,14 +4,14 @@
 # ─── Stage 1: Install dependencies ───
 FROM node:20-slim AS deps
 WORKDIR /app
-RUN npm install -g bun
+RUN npm install -g bun@1.4.4
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
 # ─── Stage 2: Build application ───
 FROM node:20-slim AS builder
 WORKDIR /app
-RUN npm install -g bun
+RUN npm install -g bun@1.4.4
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN bunx prisma generate
