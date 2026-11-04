@@ -3,15 +3,14 @@ import { getDbForLib } from "@/lib/db-access";
 import { validateBody } from "@/lib/api-helpers";
 import { rateLimitAsync, getClientId } from "@/lib/rate-limit";
 import { otpSendSchema } from "@/lib/schemas";
-import { generateOtpCode, hashOtpCode } from "@/lib/otp-crypto";
+import { generateOtpCode, hashOtpCode, hashOtpPhone } from "@/lib/otp-crypto";
 import { assertSmsProviderReady, sendOtp } from "@/lib/sms-provider";
 
 // Send an OTP code to a phone number.
 // - Rate-limited per-phone (5 / 10min) AND per-IP (20 / hour).
 // - The code is generated with a CSPRNG (`crypto.randomInt`) — NOT Math.random.
-// - The code is HASHED (SHA-256) before storage, so a read-only DB leak
-//   (SQL injection, backup theft, snapshot access) cannot reveal usable
-//   codes. See `src/lib/otp-crypto.ts` for the threat model.
+// - The code is stored as a keyed HMAC, so a database-only leak cannot brute-force
+//   the six-digit code space without the separately managed OTP_HASH_SECRET.
 // - In development, the plaintext code is returned so the UI can display it
 //   for testing. In production, the plaintext is NEVER returned in the
 //   response body — it must be delivered out-of-band (SMS / push) so a
@@ -38,7 +37,16 @@ export async function POST(req: Request) {
   // Rate limit by phone (5 per 10 min) — protects a single user from OTP spam.
   // Uses the shared D1-backed rateLimitAsync in Workers; falls back to in-memory
   // only in non-production development. See `src/lib/rate-limit.ts`.
-  const phoneLimited = await rateLimitAsync(`otp-send:phone:${phone}`, 5, 10 * 60 * 1000);
+  let phoneRateLimitKey: string;
+  try {
+    phoneRateLimitKey = hashOtpPhone(phone);
+  } catch {
+    return NextResponse.json(
+      { error: "سرویس احراز هویت موقتاً آماده نیست" },
+      { status: 503, headers: { "Retry-After": "60" } }
+    );
+  }
+  const phoneLimited = await rateLimitAsync(`otp-send:phone:${phoneRateLimitKey}`, 5, 10 * 60 * 1000);
   if (phoneLimited.unavailable) {
     return NextResponse.json(
       { error: "سرویس محدودسازی درخواست موقتاً در دسترس نیست" },
@@ -92,9 +100,16 @@ export async function POST(req: Request) {
 
   // Hash the code before persisting — see `src/lib/otp-crypto.ts`. The
   // plaintext `code` variable above is NEVER written to the DB; only its
-  // SHA-256 hex digest is stored. The verify route re-hashes the
-  // user-supplied code and matches the digest.
-  const codeHash = hashOtpCode(code);
+  // HMAC-SHA256 is stored; the HMAC key is never persisted in the database.
+  let codeHash: string;
+  try {
+    codeHash = hashOtpCode(code);
+  } catch {
+    return NextResponse.json(
+      { error: "سرویس احراز هویت موقتاً آماده نیست" },
+      { status: 503, headers: { "Retry-After": "60" } }
+    );
+  }
 
   // Invalidate any previous unconsumed codes for this phone (only the newest one is valid).
   const db = await getDbForLib();
