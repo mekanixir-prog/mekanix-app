@@ -91,6 +91,14 @@ export async function POST(req: Request) {
   });
   if (existingInvoice) return NextResponse.json(maskInvoiceFinancialData(existingInvoice as unknown as Record<string, unknown>));
 
+  // MEKANIX uses fixed labor fees. The current legacy writer derives labor
+  // from hourlyRate × hours, so it must not issue a financial invoice until
+  // the owner-approved fixed-fee rate card and calculation path are implemented.
+  return NextResponse.json(
+    { error: "مدل تعرفه دستمزد ثابت هنوز پیاده‌سازی و تأیید نشده است؛ صدور فاکتور مالی موقتاً مسدود است", code: "FIXED_LABOR_RATE_CARD_NOT_IMPLEMENTED" },
+    { status: 409 },
+  );
+
   const job = await db.job.findUnique({
     where: { id: jobId },
     include: { parts: true, technician: true },
