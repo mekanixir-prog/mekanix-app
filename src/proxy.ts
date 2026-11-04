@@ -11,7 +11,58 @@ import type { NextRequest } from "next/server";
 // Everything else (config.matcher, request shape, NextResponse API) is
 // unchanged from the previous middleware convention.
 
+const SESSION_COOKIE_NAMES = new Set(["mekanix-token", "mekanix_admin_session"]);
+
+function hasBrowserSessionCookie(req: Request): boolean {
+  const cookie = req.headers.get("cookie");
+  if (!cookie) return false;
+  return cookie.split(";").some((part) => {
+    const separator = part.indexOf("=");
+    if (separator < 0) return false;
+    return SESSION_COOKIE_NAMES.has(part.slice(0, separator).trim());
+  });
+}
+
+function isSameOriginMutation(req: Request): boolean {
+  let requestOrigin: string;
+  try {
+    requestOrigin = new URL(req.url).origin;
+  } catch {
+    return false;
+  }
+
+  const origin = req.headers.get("origin");
+  if (origin) {
+    try {
+      if (new URL(origin).origin !== requestOrigin) return false;
+    } catch {
+      return false;
+    }
+  } else if (req.headers.get("sec-fetch-site") !== "same-origin") {
+    return false;
+  }
+
+  const fetchSite = req.headers.get("sec-fetch-site");
+  return !fetchSite || fetchSite === "same-origin";
+}
+
 export function proxy(req: NextRequest) {
+  // Central CSRF defense for every browser-cookie-authenticated API mutation.
+  // Bearer-only native/API clients are not affected because browsers do not
+  // attach Authorization headers cross-site automatically.
+  const method = req.method.toUpperCase();
+  const isUnsafeMethod = !["GET", "HEAD", "OPTIONS"].includes(method);
+  if (
+    isUnsafeMethod &&
+    hasBrowserSessionCookie(req) &&
+    !isSameOriginMutation(req)
+  ) {
+    return NextResponse.json(
+      { error: "درخواست از مبدأ نامعتبر است" },
+      { status: 403 },
+    );
+  }
+
   const res = NextResponse.next();
 
   // Security headers — permissive for preview panel iframe
