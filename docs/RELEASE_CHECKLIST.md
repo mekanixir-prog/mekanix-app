@@ -122,7 +122,7 @@ This section records changes after the previous 2026-11-03 checklist snapshot. T
 
 - [x] PR #112 — historical withdrawal approval/rejection/payout actions now fail closed until withdrawal-record IRR provenance is explicitly verified. Merged as `ad1f6af246369bfc071a28dc68589c3f6a0d1331`.
 - [x] PR #120 — production readiness requires strong user/admin/OTP secrets, shared rate-limit storage, admin provisioning, IRR pricing/provenance, withdrawal policy/provenance, and escrow-worker readiness. Merged as `2bf40e8642019550b2710bb171f2fd5ebe4116e8`.
-- [x] All eight active main-branch workflows passed on exact baselines `2bf40e8642019550b2710bb171f2fd5ebe4116e8` and `e03f84da91db464edd2ca6ae32fdd156174c948b`; the newest baseline `dae8fe53bf8c5c776ed939d665a8a146619162db` is undergoing its fresh full workflow run.
+- [x] Current main `db0f3361c3158764c47cfeb48d5b9dafadc90610`: GitHub Checks API verified 8 successful check runs and 1 skipped (`Prepare dependency remediation branch`). The eight successful checks are OpenNext → Cloudflare Worker, Analyze JavaScript and TypeScript, Audit the committed lockfile (no auto-fix), Scan repository history for exposed secrets, PostgreSQL Migration + Build, Docker Build + Compose + Health, Lint + TypeCheck + Test, and quality. [Exact SHA check evidence](https://github.com/mekanixir-prog/mekanix-app/commit/db0f3361c3158764c47cfeb48d5b9dafadc90610/checks).
 
 ### Security PR reconciliation
 
