@@ -264,7 +264,9 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {(wallet?.transactions ?? []).slice(0, 10).map((txn) => (
+                  {(wallet?.transactions ?? []).slice(0, 10).map((txn) => {
+                    const netAmount = txn.netAmount == null ? null : Number(txn.netAmount);
+                    return (
                     <tr key={txn.id} className="border-t border-border">
                       <td className="px-4 py-2.5 text-xs">
                         <span className="font-medium">{t(`tech.earnings.txnType.${txn.kind}` as any) ?? txn.kind}</span>
@@ -286,7 +288,8 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
                         {money(netAmount === null ? null : Math.abs(netAmount))} {netAmount === null ? "" : netAmount >= 0 ? "+" : "−"}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
