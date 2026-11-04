@@ -37,3 +37,31 @@ export function isValidIrrWithdrawalAmount(
     amount >= policy.minIrr &&
     amount <= policy.maxIrr;
 }
+
+
+export type WithdrawalRecordIrrError =
+  | "WITHDRAWAL_IRR_PROVENANCE_UNVERIFIED"
+  | "WITHDRAWAL_AMOUNT_NOT_INTEGER_IRR";
+
+/**
+ * Protect admin transitions for historical withdrawal rows. The database
+ * does not persist a currency/provenance field on WithdrawalRequest, so
+ * production must require an explicit owner attestation that all existing
+ * withdrawal amounts were reconciled to IRR before approval, refund or payout.
+ */
+export function getWithdrawalRecordIrrError(
+  amount: unknown,
+  env: Record<string, string | undefined> = process.env,
+): WithdrawalRecordIrrError | null {
+  if (env.NODE_ENV !== "production") return null;
+
+  if (env.MEKANIX_WITHDRAWAL_IRR_PROVENANCE_VERIFIED !== "true") {
+    return "WITHDRAWAL_IRR_PROVENANCE_UNVERIFIED";
+  }
+
+  if (typeof amount !== "number" || !Number.isSafeInteger(amount) || amount <= 0) {
+    return "WITHDRAWAL_AMOUNT_NOT_INTEGER_IRR";
+  }
+
+  return null;
+}
