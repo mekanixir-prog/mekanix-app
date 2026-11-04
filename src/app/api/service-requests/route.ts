@@ -5,6 +5,7 @@ import { requireAuth } from "@/lib/api-helpers";
 import { getCustomerFromSession, getTechnicianFromSession } from "@/lib/auth";
 import { IdempotencyConflictError, readIdempotencyKey, requestFingerprint } from "@/lib/idempotency";
 import { createServiceRequestAtomically } from "@/lib/service-request-atomic";
+import { maskFinancialFields, maskJobFinancialData } from "@/lib/money/financial-read-mask";
 
 const include = {
   customer: { include: { user: { select: PARTICIPANT_USER_SELECT } } },
@@ -46,7 +47,12 @@ export async function GET(req: Request) {
     orderBy: { createdAt: "desc" },
     include,
   });
-  return NextResponse.json(list);
+  const safeList = list.map((request) => ({
+    ...request,
+    matchedTech: request.matchedTech ? maskFinancialFields(request.matchedTech, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]) : request.matchedTech,
+    job: request.job ? maskJobFinancialData(request.job) : request.job,
+  }));
+  return NextResponse.json(safeList);
 }
 
 // POST /api/service-requests
@@ -190,7 +196,12 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json(requestRecord, { status: result.created ? 201 : 200 });
+    const safeRequestRecord = {
+      ...requestRecord,
+      matchedTech: requestRecord.matchedTech ? maskFinancialFields(requestRecord.matchedTech, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]) : requestRecord.matchedTech,
+      job: requestRecord.job ? maskJobFinancialData(requestRecord.job) : requestRecord.job,
+    };
+    return NextResponse.json(safeRequestRecord, { status: result.created ? 201 : 200 });
   } catch (error) {
     if (error instanceof IdempotencyConflictError) {
       return NextResponse.json({ error: "این کلید قبلاً برای اطلاعات متفاوتی استفاده شده است" }, { status: 409 });
