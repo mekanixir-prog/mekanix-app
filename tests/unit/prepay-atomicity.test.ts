@@ -44,7 +44,7 @@ describe("atomic prepay recording", () => {
     });
   });
 
-  it("does not create wallet or ledger rows when another request won the job transition", async () => {
+  it("does not create financial rows when another request won the job transition", async () => {
     const tx = {
       job: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
       wallet: { upsert: vi.fn().mockResolvedValue({ id: "wallet-1", balance: 0, pendingBalance: 0, totalEarned: 0, totalCommission: 0, financialUnitStatus: "VERIFIED_IRR" }), updateMany: vi.fn() },
