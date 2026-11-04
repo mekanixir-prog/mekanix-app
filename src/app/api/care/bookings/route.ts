@@ -5,7 +5,6 @@ import { getCustomerFromSession } from "@/lib/auth";
 import { careBookingSchema } from "@/lib/schemas";
 import { requestFingerprint } from "@/lib/idempotency";
 import { calculatePrice } from "@/lib/pricing";
-import { checkVipStatus } from "@/lib/vip";
 import { wantsLite, liteResponse } from "@/lib/lite-response";
 import {
   CareBookingIdempotencyConflict,
@@ -75,15 +74,14 @@ export async function POST(req: Request) {
     return NextResponse.json(existing);
   }
 
-  const vipStatus = await checkVipStatus(session.userId);
   const pricing = await calculatePrice({
     packageId: packageId || undefined,
     vehicleType: vehicle.type,
+    serviceCode: serviceType === "periodic" ? "periodic" : "diagnostic",
     laborHours: 1,
     partsCost: 0,
     travelDistanceKm: 0,
     isEmergency: serviceType === "emergency",
-    vipDiscountPercent: vipStatus.active ? vipStatus.discountPercent : 0,
   });
 
   try {
