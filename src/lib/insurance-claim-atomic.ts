@@ -42,6 +42,7 @@ async function createWithPrisma(db: PrismaClient, input: InsuranceClaimCreateInp
         jobId: input.jobId,
         description: input.description,
         amount: input.amount,
+        financialUnitStatus: "VERIFIED_IRR",
         status: "submitted",
         idempotencyKey: input.idempotencyKey,
         requestFingerprint: input.requestFingerprint,
@@ -67,9 +68,9 @@ async function createWithD1(
   await d1.batch([
     d1.prepare(`
       INSERT INTO "InsuranceClaim"
-        ("id", "code", "policyId", "jobId", "description", "amount", "status",
+        ("id", "code", "policyId", "jobId", "description", "amount", "financialUnitStatus", "status",
          "idempotencyKey", "requestFingerprint", "createdAt")
-      SELECT ?, ?, ?, ?, ?, ?, 'submitted', ?, ?, ?
+      SELECT ?, ?, ?, ?, ?, ?, 'VERIFIED_IRR', 'submitted', ?, ?, ?
       FROM "InsurancePolicy"
       WHERE "id" = ? AND "status" NOT IN ('expired', 'cancelled')
       ON CONFLICT("idempotencyKey") DO NOTHING
