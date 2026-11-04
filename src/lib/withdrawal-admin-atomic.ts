@@ -176,8 +176,10 @@ export async function updateWithdrawalWithD1(
           SELECT "walletId" FROM "WithdrawalRequest"
           WHERE "id" = ? AND "status" = 'REJECTED' AND "processedAt" = ?
         ) AND "financialUnitStatus" = 'VERIFIED_IRR'
-          AND "balance" = CAST("balance" AS INTEGER) AND abs("balance") <= 9007199254740991 AND changes() = 1
-      `).bind(input.withdrawalId, at, at, input.withdrawalId, at),
+          AND "balance" = CAST("balance" AS INTEGER) AND abs("balance") <= 9007199254740991
+          AND "balance" <= 9007199254740991 - (SELECT "amount" FROM "WithdrawalRequest" WHERE "id" = ? AND "status" = 'REJECTED' AND "processedAt" = ?)
+          AND changes() = 1
+      `).bind(input.withdrawalId, at, at, input.withdrawalId, at, input.withdrawalId, at),
       assertOneChange(),
       d1.prepare(`
         INSERT INTO "WalletLedger"
