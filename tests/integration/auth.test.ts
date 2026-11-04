@@ -164,7 +164,7 @@ describe("integration — POST /api/auth/otp/send", () => {
     });
     const res = await otpSendPOST(req);
     expect(res.status).toBe(200);
-    expect(mockRateLimitAsync).toHaveBeenNthCalledWith(1, "otp-send:phone:+989121234567", 5, 10 * 60 * 1000);
+    expect(mockRateLimitAsync).toHaveBeenNthCalledWith(1, `otp-send:phone:${createHash("sha256").update("+989121234567").digest("hex")}`, 5, 10 * 60 * 1000);
     expect(mockRateLimitAsync).toHaveBeenNthCalledWith(2, "otp-send:ip:127.0.0.1", 20, 60 * 60 * 1000);
   });
 
@@ -379,6 +379,48 @@ describe("integration — POST /api/auth/otp/verify", () => {
     const body = await res.json();
     expect(body.created).toBe(true);
     expect(body.user.id).toBe("user_new");
+  });
+
+  it("applies a hashed per-phone verification budget after the IP budget", async () => {
+    const req = jsonReq("https://mekanix.test/api/auth/otp/verify", {
+      phone: "+98 912-123-4567",
+      code: "123456",
+    });
+    const res = await otpVerifyPOST(req);
+    expect(res.status).toBe(400);
+    expect(mockRateLimitAsync).toHaveBeenNthCalledWith(1, "otp-verify:127.0.0.1", 5, 60_000);
+    expect(mockRateLimitAsync).toHaveBeenNthCalledWith(
+      2,
+      `otp-verify:phone:${createHash("sha256").update("+989121234567").digest("hex")}`,
+      10,
+      5 * 60 * 1000,
+    );
+  });
+
+  it("blocks distributed OTP guesses when the per-phone verification budget is exhausted", async () => {
+    mockRateLimitAsync
+      .mockResolvedValueOnce({ success: true, resetMs: 60_000 })
+      .mockResolvedValueOnce({ success: false, resetMs: 120_000 });
+    const res = await otpVerifyPOST(jsonReq("https://mekanix.test/api/auth/otp/verify", {
+      phone: "+989121234567",
+      code: "000000",
+    }));
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("120");
+    expect(mockOtpUpdateMany).not.toHaveBeenCalled();
+    expect(mockUserFindUnique).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the shared per-phone verification budget is unavailable", async () => {
+    mockRateLimitAsync
+      .mockResolvedValueOnce({ success: true, resetMs: 60_000 })
+      .mockResolvedValueOnce({ success: false, resetMs: 30_000, unavailable: true });
+    const res = await otpVerifyPOST(jsonReq("https://mekanix.test/api/auth/otp/verify", {
+      phone: "+989121234567",
+      code: "123456",
+    }));
+    expect(res.status).toBe(503);
+    expect(mockOtpUpdateMany).not.toHaveBeenCalled();
   });
 
   it("returns 400 for an invalid code (no matching OTP record)", async () => {
