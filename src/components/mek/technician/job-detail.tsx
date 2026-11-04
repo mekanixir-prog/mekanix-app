@@ -113,12 +113,22 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
 
   const addPart = async () => {
     if (!job || !partName.trim()) { toast.error(t("tech.jobDetail.errorPartName")); return; }
+    const quantity = Number(partQty);
+    const unitPrice = Number(partPrice);
+    if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+      toast.error(isFa ? "تعداد قطعه باید عدد صحیح مثبت باشد" : "Part quantity must be a positive integer");
+      return;
+    }
+    if (partPrice.trim() === "" || !Number.isSafeInteger(unitPrice) || unitPrice < 0) {
+      toast.error(isFa ? "قیمت واحد را به‌صورت عدد صحیح نامنفی به ریال وارد کنید" : "Enter a non-negative integer unit price in IRR");
+      return;
+    }
     setAddingPart(true);
     try {
       await api.addPart(job.id, {
         name: partName.trim(),
-        quantity: parseInt(partQty) || 1,
-        unitPrice: parseFloat(partPrice) || 0,
+        quantity,
+        unitPrice,
       });
       const fresh = await api.getJob(job.id);
       setJob(fresh);
@@ -324,8 +334,8 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
               )}
               <div className="mt-3 grid grid-cols-[1fr_60px_80px_auto] gap-2">
                 <Input value={partName} onChange={(e) => setPartName(e.target.value)} placeholder={t("tech.jobDetail.partName")} className="h-8 text-xs" />
-                <Input value={partQty} onChange={(e) => setPartQty(e.target.value)} type="number" min={1} placeholder={t("tech.jobDetail.qty")} className="h-8 text-xs" />
-                <Input value={partPrice} onChange={(e) => setPartPrice(e.target.value)} type="number" placeholder={t("tech.jobDetail.price")} className="h-8 text-xs" />
+                <Input value={partQty} onChange={(e) => setPartQty(e.target.value)} type="number" min={1} step={1} placeholder={t("tech.jobDetail.qty")} className="h-8 text-xs" />
+                <Input value={partPrice} onChange={(e) => setPartPrice(e.target.value)} type="number" min={0} step={1} placeholder={t("tech.jobDetail.price")} className="h-8 text-xs" />
                 <Button onClick={addPart} disabled={addingPart} size="sm" className="bg-amber text-black hover:bg-amber/90">
                   {addingPart ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
                 </Button>
