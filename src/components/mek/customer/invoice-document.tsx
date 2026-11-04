@@ -38,7 +38,6 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
   const parts = job?.parts ?? [];
   const tech = job?.technician;
   const cust = job?.request?.customer;
-  const fmtHours = (n: number) => (isFa ? toPersianDigits(n) : String(n));
 
   return (
     <div className="mx-auto max-w-3xl space-y-4" dir={isFa ? "rtl" : "ltr"}>
@@ -126,8 +125,8 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
                 <td className="px-4 py-2.5">
                   <span className="font-medium">{t("invoice.laborFixed")}</span>
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{fmtHours(inv.laborHours)}{t("common.hourShort")}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.laborRate))}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{isFa ? toPersianDigits(1) : "1"}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.laborTotal))}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.laborTotal))}</td>
               </tr>
               {Number(inv.emergencyFee) > 0 && <tr className="border-t border-border"><td className="px-4 py-2.5"><span className="font-medium">{t("invoice.emergencyFee")}</span></td><td className="px-4 py-2.5 text-right tabular-nums">1</td><td className="px-4 py-2.5 text-right tabular-nums">—</td><td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.emergencyFee))}</td></tr>}
