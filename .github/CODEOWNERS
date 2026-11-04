@@ -1,0 +1,10 @@
+# Require owner review for sensitive code and automation.
+* @mekanixir-prog
+
+/.github/ @mekanixir-prog
+/prisma/ @mekanixir-prog
+/src/app/api/ @mekanixir-prog
+/src/lib/auth.ts @mekanixir-prog
+/src/lib/admin-auth.ts @mekanixir-prog
+/src/lib/money/ @mekanixir-prog
+/workers/ @mekanixir-prog

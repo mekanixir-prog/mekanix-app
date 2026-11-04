@@ -1,0 +1,85 @@
+name: Dependency Security Audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - package.json
+      - bun.lock
+  push:
+    branches: [main, security/automated-code-scanning]
+  schedule:
+    - cron: "43 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
+    name: Audit the committed lockfile (no auto-fix)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
+
+      - name: Install exact locked dependencies without lifecycle scripts
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Fail on moderate or higher vulnerabilities in the committed lockfile
+        run: bun audit --audit-level=moderate
+
+  dependency-remediation:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/security/automated-code-scanning' && github.actor == 'mekanixir-prog'
+    name: Prepare dependency remediation branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout trusted security branch
+        uses: actions/checkout@v6
+        with:
+          ref: security/automated-code-scanning
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
+
+      - name: Resolve the trusted package manifest and overrides
+        run: bun install --ignore-scripts
+
+      - name: Apply latest compatible vulnerability fixes without lifecycle scripts
+        continue-on-error: true
+        run: bun audit fix --latest --ignore-scripts
+
+      - name: Report remaining advisories
+        continue-on-error: true
+        run: bun audit --audit-level=moderate
+
+      - name: Push dependency update branch for review
+        run: |
+          if git diff --quiet -- package.json bun.lock; then
+            echo "No dependency changes were generated."
+            exit 0
+          fi
+          git switch -C fix/dependency-audit-remediation
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json bun.lock
+          git commit -m "fix(deps): remediate vulnerable dependency versions"
+          git push --force origin HEAD:refs/heads/fix/dependency-audit-remediation
+          echo "Dependency candidate pushed. PR creation is intentionally left to an authorized repository integration."
