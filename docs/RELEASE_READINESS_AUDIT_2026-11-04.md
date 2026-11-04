@@ -65,24 +65,22 @@ Do not require a second approval until a second maintainer exists. Configure an 
 
 ### Merged
 
-- **PR #113** — cookie-authenticated admin mutations now pass through the same-origin/CSRF helper before any write. The standalone admin cookie remains scoped to `/api/admin-panel`; generic `/api/admin` routes continue to support bearer-token sessions. The PR was reviewed, its seven applicable checks passed on its exact head, and it was squash-merged as `e03f84da91db464edd2ca6ae32fdd156174c948b`.
-- **PR #127** — adds the missing HTTP 503 regression test for unavailable shared per-phone OTP verification rate-limit storage. All seven applicable checks passed on exact head `27de3d38e8bb`; merged as `147d5485ee0dfd2dc5795f6000dd38b35c808c07`.
-- **PR #129** — bank-only/valid-Sheba withdrawal creation plus D1 zero-row rollback guards. All eight applicable checks passed on exact head `73140a1797f1`; merged as current main baseline `dae8fe53bf8c5c776ed939d665a8a146619162db`. Existing production IRR gates were preserved.
+- **PR #113** — cookie-authenticated admin mutations now pass through the same-origin/CSRF helper before any write. The standalone admin cookie remains scoped to `/api/admin-panel`; generic `/api/admin` routes continue to support bearer-token sessions. Seven applicable checks passed on the exact PR head; squash-merged as `e03f84da91db464edd2ca6ae32fdd156174c948b`.
 - **PR #112** — historical withdrawal actions are blocked unless withdrawal IRR provenance has been explicitly verified. Merged as `ad1f6af246369bfc071a28dc68589c3f6a0d1331`.
-- **PR #120** — production readiness now requires strong user/admin/OTP secrets, shared rate-limit availability, admin provisioning, approved IRR pricing/provenance, withdrawal policy/provenance, and escrow-worker readiness. Merged as baseline `2bf40e8642019550b2710bb171f2fd5ebe4116e8`.
+- **PR #120** — production readiness gates now require strong secrets, shared rate-limit availability, admin provisioning, financial policy/provenance attestations, and escrow-worker readiness. Merged as `2bf40e8642019550b2710bb171f2fd5ebe4116e8`.
+- **PR #127** — adds the missing HTTP 503 regression test for unavailable shared per-phone OTP verification rate-limit storage. Seven applicable checks passed on exact head `27de3d38e8bb`; merged as `147d5485ee0dfd2dc5795f6000dd38b35c808c07`.
+- **PR #129** — bank-only/valid-Sheba withdrawal creation plus D1 zero-row rollback guards. Eight applicable checks passed on exact head `73140a1797f1`; merged as current main baseline `dae8fe53bf8c5c776ed939d665a8a146619162db`. Existing production IRR gates were preserved.
 
-### Closed as superseded after current-main source review
+### Closed as superseded
 
-- **PR #115** — current `src/lib/auth.ts` already includes the related User's status and role in the Session query and rejects a missing, inactive, or role-mismatched account. The proposed extra User lookup would duplicate a database read. The missing deleted-user regression test is carried in [PR #127](https://github.com/mekanixir-prog/mekanix-app/pull/127).
-- **PR #116** — current OTP send/verify code already uses keyed HMAC phone identifiers with canonicalization and a 5-attempt / 10-minute per-phone verification budget, in addition to the IP budget. This is preferable to the PR's unkeyed SHA-256 key and 10-attempt / 5-minute policy. Regression tests for the current implementation are in PR #127.
+- **PR #115** — current `src/lib/auth.ts` already checks the related User's status and role in the Session query and rejects a missing related User. The proposed extra `db.user.findUnique` call would duplicate the lookup. The production null check is present; a dedicated deleted-user regression test has not yet been added.
+- **PR #116** — current OTP send/verify code already uses keyed HMAC phone identifiers with canonicalization and a 5-attempt / 10-minute per-phone verification budget, in addition to the IP budget. The old PR's unkeyed SHA-256 key and 10-attempt / 5-minute policy were weaker; the only missing 503 unavailable-store test was added separately in PR #127.
+- **PRs #71 and #73** — closed. Useful bank-only and D1 rollback work from #71 was ported to current-mainline PR #129. #73's USD minimum/maximum and cent precision conflicted with the approved integer-IRR contract and were not ported.
 
 ### Still open
 
-- **PR #113** — cookie-authenticated admin CSRF defense-in-depth. It was retargeted from the historical PR #112 branch to `main`. It is not merged. Its earlier five green checks predate the base retarget; fresh checks against the current base are required before any merge decision. The dedicated admin cookie is currently scoped to `/api/admin-panel`; generic `/api/admin` routes authorize bearer-token admin sessions through `getAdminFromRequest`. The standalone admin login/logout/onboarding endpoints already have same-origin checks. Treat PR #113 as hardening, not as proof of a currently exploitable browser-cookie path.
-
-- **PRs #71 and #73** — closed. Useful bank-only and D1 rollback work from #71 was ported to current-mainline PR #129. #73's USD minimum/maximum and cent precision conflicted with the approved integer-IRR contract and were not ported.
 - **PR #78** — broad 80-file financial branch, stacked on the old `feat/irr-money-core` branch. It is 260 commits ahead and 144 behind current `main`; do not merge wholesale. It also writes `currency: "IRR"` to `Part` while its own `prisma/schema.prisma` still has no `Part.currency` field and the schema is not changed in the PR. Extract and re-review small, current-mainline changes by bounded financial flow after the data and commercial contracts are settled.
-- **PRs #124–#126** — Dependabot updates to GitHub Actions. Review individually; do not batch-merge major action upgrades without checking runner/runtime compatibility and exact CI.
+- **PRs #124–#126** — Dependabot updates to GitHub Actions. Their earlier exact-head checks passed; base was refreshed to current main for another validation pass. Review individually; do not batch-merge major action upgrades without checking runner/runtime compatibility and exact CI.
 
 ## 4. Financial integrity — hard release blockers
 
