@@ -141,6 +141,7 @@ describe("POST /api/invoices lifecycle", () => {
       partsTotal: 200,
       travelFee: 5_000_000,
       inspectionFee: 6_000_000,
+      emergencyFee: 0,
       subtotal: 19_000_200,
       taxRate: 0,
       taxTotal: 0,
@@ -148,6 +149,36 @@ describe("POST /api/invoices lifecycle", () => {
       currency: "IRR",
       financialUnitStatus: "VERIFIED_IRR",
     });
+  });
+
+  it("persists and exposes emergency surcharge separately from fixed labor", async () => {
+    mocks.invoiceFindUnique.mockResolvedValueOnce(null);
+    mocks.jobFindUnique.mockResolvedValueOnce({
+      ...pricingJob,
+      request: { ...pricingJob.request, urgency: "EMERGENCY" },
+    }).mockResolvedValueOnce(refreshedJob);
+
+    const response = await createInvoice(postRequest({ jobId: "job-1" }));
+    expect(response.status).toBe(200);
+    expect(mocks.invoiceCreate.mock.calls[0][0].data).toMatchObject({
+      laborTotal: 8_000_000,
+      emergencyFee: 2_400_000,
+      subtotal: 21_400_200,
+      total: 21_400_200,
+    });
+  });
+
+  it("fails closed when a service category has no tariff mapping", async () => {
+    mocks.invoiceFindUnique.mockResolvedValueOnce(null);
+    mocks.jobFindUnique.mockResolvedValueOnce({
+      ...pricingJob,
+      request: { ...pricingJob.request, category: "unknown-service" },
+    });
+
+    const response = await createInvoice(postRequest({ jobId: "job-1" }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "SERVICE_RATE_MAPPING_REQUIRED" });
+    expect(mocks.invoiceCreate).not.toHaveBeenCalled();
   });
 
   it("does not issue an invoice before the job reaches post-repair approval", async () => {
