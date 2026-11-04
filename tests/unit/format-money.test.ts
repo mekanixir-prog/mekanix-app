@@ -4,12 +4,13 @@ import { fmtMoney } from "@/lib/format";
 describe("fmtMoney", () => {
   it("formats IRR as the stored amount without applying an exchange rate", () => {
     expect(fmtMoney(125_000, "IRR", "en")).toBe("﷼125,000");
-    expect(fmtMoney(125_000, "IRR", "fa")).toBe("﷼۱۲۵،۰۰۰");
+    expect(fmtMoney(125_000, "IRR", "fa")).toBe("۱۲،۵۰۰ تومان");
   });
 
   it("formats serialized Prisma decimal strings without changing the declared unit", () => {
-    expect(fmtMoney("125000", "IRR", "fa")).toBe("﷼۱۲۵،۰۰۰");
+    expect(fmtMoney("125000", "IRR", "fa")).toBe("۱۲،۵۰۰ تومان");
     expect(fmtMoney("1250.5", "USD", "en")).toBe("$1,250.5");
+    expect(fmtMoney(125_005, "IRR", "fa")).toBe("۱۲،۵۰۰.۵ تومان");
   });
 
   it("does not guess a currency for unknown currency codes", () => {
