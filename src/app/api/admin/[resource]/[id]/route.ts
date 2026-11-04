@@ -6,7 +6,7 @@ import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/admin-api";
 import { updateWithdrawalAtomically } from "@/lib/withdrawal-admin-atomic";
 import { isValidIranianSheba } from "@/lib/iranian-iban";
-import { getWithdrawalRecordIrrError } from "@/lib/money/withdrawal-record-provenance";
+import { isSafeStoredIrrAmount, maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 // Mass-assignment protection: define per-resource whitelists.
 const RESOURCE_ALLOWED_FIELDS: Record<string, readonly string[]> = {
@@ -108,7 +108,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     const safe = sanitizeInput(body, allowed);
     // SEC-4: snapshot BEFORE the update for audit log.
     const before = await db.technician.findUnique({ where: { id } });
-    result = await db.technician.update({ where: { id }, data: safe as any, include: { user: { select: ADMIN_USER_SELECT } } });
+    const feeChanged = ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"].some((field) => safe[field] !== undefined);
+    result = await db.technician.update({ where: { id }, data: { ...safe, ...(feeChanged ? { financialUnitStatus: "UNVERIFIED" } : {}) } as any, include: { user: { select: ADMIN_USER_SELECT } } });
     await safeAudit({ session: adminSession, action: "UPDATE_TECHNICIAN", entity: "technician", entityId: id, before, after: result, req });
   } else if (resource === "customers") {
     // Allow direct updates to customer record (company, taxId) — but block userId
@@ -152,7 +153,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     const safe = sanitizeInput(body, allowed);
     // SEC-4: snapshot BEFORE.
     const before = await db.serviceCategory.findUnique({ where: { id } });
-    result = await db.serviceCategory.update({ where: { id }, data: safe as any });
+    const priceChanged = safe.basePrice !== undefined;
+    result = await db.serviceCategory.update({ where: { id }, data: { ...safe, ...(priceChanged ? { financialUnitStatus: "UNVERIFIED" } : {}) } as any });
     await safeAudit({ session: adminSession, action: "UPDATE_CATEGORY", entity: "serviceCategory", entityId: id, before, after: result, req });
   } else if (resource === "reviews") {
     const allowed = RESOURCE_ALLOWED_FIELDS.reviews ?? ALLOWED_FIELDS.review;
@@ -174,7 +176,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     const before = await db.withdrawalRequest.findUnique({
       where: { id },
       select: {
-        id: true, code: true, walletId: true, amount: true, method: true,
+        id: true, code: true, walletId: true, amount: true, financialUnitStatus: true, method: true,
         status: true, requestedAt: true, processedAt: true, reviewerId: true,
         adminNotes: true, txnId: true, shebaNumber: true,
         wallet: { select: { technician: { select: { userId: true } } } },
@@ -182,20 +184,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     });
     if (!before) return NextResponse.json({ error: "درخواست برداشت پیدا نشد" }, { status: 404 });
 
-    // WithdrawalRequest has no persisted currency/provenance field. Existing
-    // rows may predate the IRR-only contract, so no admin approval, refund or
-    // payout may move money until all historical withdrawal units are reconciled.
-    const withdrawalIrrError = getWithdrawalRecordIrrError(Number(before.amount));
-    if (withdrawalIrrError === "WITHDRAWAL_IRR_PROVENANCE_UNVERIFIED") {
+    // A currency label or environment flag cannot substitute for the
+    // row-level attestation. No admin approval/refund/payout may move an
+    // unverified or unsafe withdrawal amount.
+    if (before.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(before.amount)) {
       return NextResponse.json(
-        { error: "سوابق برداشت هنوز از نظر واحد ریال تطبیق و تأیید نشده‌اند", code: withdrawalIrrError },
+        { error: "سوابق برداشت هنوز از نظر منشأ و واحد ریال تأیید نشده‌اند", code: "WITHDRAWAL_FINANCIAL_PROVENANCE_UNVERIFIED" },
         { status: 503 },
-      );
-    }
-    if (withdrawalIrrError === "WITHDRAWAL_AMOUNT_NOT_INTEGER_IRR") {
-      return NextResponse.json(
-        { error: "مبلغ این برداشت عدد صحیح ریالی معتبر نیست؛ ابتدا باید سابقه مالی اصلاح و تطبیق شود", code: withdrawalIrrError },
-        { status: 409 },
       );
     }
 
@@ -286,10 +281,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     }
     // SEC-4: snapshot BEFORE.
     const before = await db.payment.findUnique({ where: { id } });
+    if (!before) return NextResponse.json({ error: "پرداخت یافت نشد" }, { status: 404 });
+    if ((safe.status === "SUCCEEDED" || safe.status === "REFUNDED") && (before.financialUnitStatus !== "VERIFIED_IRR" || before.currency !== "IRR" || !isSafeStoredIrrAmount(before.amount))) {
+      return NextResponse.json({ error: "تغییر وضعیت مالی این پرداخت تا تأیید منشأ مبلغ مسدود است", code: "PAYMENT_FINANCIAL_PROVENANCE_UNVERIFIED" }, { status: 409 });
+    }
     result = await db.payment.update({ where: { id }, data: safe as any });
     await safeAudit({ session: adminSession, action: "UPDATE_PAYMENT", entity: "payment", entityId: id, before, after: result, req });
   } else {
     return NextResponse.json({ error: "Unsupported resource" }, { status: 400 });
   }
+  if (resource === "technicians") result = maskFinancialFields(result, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]);
+  if (resource === "categories") result = maskFinancialFields(result, ["basePrice"]);
+  if (resource === "withdrawals") result = maskFinancialFields(result, ["amount"]);
+  if (resource === "payments") result = maskFinancialFields(result, ["amount"], "currency");
   return NextResponse.json(result);
 }
