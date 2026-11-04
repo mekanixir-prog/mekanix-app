@@ -944,8 +944,10 @@ model ExchangeRateHistory {
 
 // ───────────────────────── Discount Codes ─────────────────────────
 model DiscountCode {
-  id          String   @id @default(cuid())
-  code        String   @unique
+  id                  String   @id @default(cuid())
+  valueUnitStatus     String   @default("UNVERIFIED")
+  minAmountUnitStatus String   @default("UNVERIFIED")
+  code                String   @unique
   description String?
   type        String   @default("PERCENT")
   value       Decimal    @default(0)
