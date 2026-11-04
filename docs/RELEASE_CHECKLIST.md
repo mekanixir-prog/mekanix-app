@@ -1,7 +1,7 @@
 # MEKANIX — Release Checklist
 
-**Status date:** 2026-11-03  
-**Main baseline before this checklist refresh:** `5c191f7efdea278611a9a65f39d481072ed37189`  
+**Status date:** 2026-11-04  
+**Current main baseline:** `db0f3361c3158764c47cfeb48d5b9dafadc90610`  
 **Release decision:** <strong>NO-GO</strong> — code hardening and release evidence remain incomplete.
 
 This replaces the historical checklist snapshots from October. Do not use old “Release Candidate — all checks passed” or old staging/load-test claims as current release evidence.
@@ -17,21 +17,21 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - [x] PR #65 — escrow release worker validation merged as `97d50eb000e39e087eaea6403b23f9fe262b9d76`. The CI/local D1 scheduled-event test passed on its reviewed head. Remote Cloudflare D1 staging and Cron observation remain pre-launch gates before enabling the production schedule.
 - [x] PR #80 — merged after all five workflows passed; invoice issuance is idempotent, tax/pricing inputs are validated, and DRAFT→SENT is compare-and-set.
 - [x] PR #66 — provider adapter hardening merged as `36b05650d011b60ace35f0751921c941de3f24a1`. All five required workflows passed on exact PR head `f320fd726fcbcc12add6ae8d2cbca14dccf4dbad`; post-merge CI on the merge commit is being revalidated. Adapters remain sandbox-only and disconnected from production payment routes.
-- [ ] Consolidate PRs #71/#73 only after resolving the monetary-unit contract in issue #81.
+- [x] PRs #71/#73 closed; safe bank-only and D1 rollback work from #71 was ported to current-main PR #129; #73's USD/decimal policy was not ported.
 - [ ] Complete the authoritative payment attempt → provider verification → invoice/VIP/prepay fulfillment lifecycle in issue #24.
 - [ ] Add invoice settlement → commission → technician pending-wallet credit → RELEASE ledger flow. Current invoice simulator does not create technician earnings.
 - [x] Owner approved canonical integer IRR storage and Toman-only display conversion (10 IRR = 1 Toman); decision recorded in issue #81.
 - [x] PR #75 — merged integer-IRR validation, safe arithmetic, explicit ratio rounding, and signed ledger-delta helpers as `38cd3db63bc5c0389f608a3541146c5bdc43ec9b`. These primitives are not yet wired through legacy records or the complete payment/settlement lifecycle.
 - [x] PR #101 — merged non-destructive demo-seed protections as `5c191f7efdea278611a9a65f39d481072ed37189`; all five required PR workflows passed on the exact reviewed head. Subsequent full main-branch CI passed on `abf7f849c70d90580f08aa84a74fc7f93d1b9acf`.
 - [x] PR #103 — merged `formatTomanFromIrr` as `406f72b9c726e4d305ccfffc11ca9f6f01c5d50d`; exact 10:1 IRR→Toman presentation, signed values, locale-aware digits/separators, and validation tests. Helper-only; no legacy data conversion or UI call-site rollout.
-- [ ] Reconcile historical money-unit provenance, approve integer/rounding bounds and commercial pricing, and implement the safe migration plan in issue #81.
+- [ ] Reconcile historical money-unit provenance under the approved integer-IRR contract; approve tax/commission rounding and commercial rate cards in #99; implement a reviewed, non-destructive migration plan in #81.
 - [ ] Complete invoice, wallet, withdrawal, payout, and callback replay/concurrency tests across SQLite/D1 and PostgreSQL.
 - [ ] Complete end-to-end customer, technician, admin, CARE, warranty, refund/recovery, and notification scenarios.
 - [ ] Complete final authorization/IDOR/BOLA review for every write route and admin action.
 - [ ] Run performance/load tests and security scanning against a release-candidate build; record exact commit and reports.
 - [ ] Verify backup creation, restore, integrity, and rollback procedure in an isolated environment.
 - [ ] Reconcile environment variable schema, production Docker/Worker build, health/readiness, logging, monitoring, and operational runbooks.
-- [ ] Produce a Release Candidate with all required CI checks green on the exact same commit.
+- [ ] Produce a Release Candidate with all applicable CI/security/build workflows green on the exact same commit; require the always-on PR checks and record path-filtered Cloudflare/dependency checks where applicable.
 
 ### Recently merged security work
 
@@ -44,9 +44,10 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - PR #103: `406f72b9c726e4d305ccfffc11ca9f6f01c5d50d` — verified-IRR Toman presentation helper.
 
 ### Current financial blockers
-- [ ] Issue #24 — real provider lifecycle is not wired; current invoice/gateway/prepay routes are simulator-only and production-disabled.
-- [ ] Issue #81 — canonical unit is approved (integer IRR; Toman display only), but legacy row provenance, mixed-unit seed values, formatting by record provenance, and payout reconciliation remain unresolved.
-- [ ] Issue #99 — commercial pricing/settlement schedule is not owner-approved: labor/visit/travel rates, emergency multiplier, tax, vehicle multipliers, commission, VIP prices, and withdrawal minimums must be explicitly decided before activation. Existing code/seed values are not approved business policy.
+- [ ] Issue #24 — authoritative real-provider lifecycle is not wired; current invoice/gateway/prepay routes are simulator-only and production-disabled.
+- [ ] Issue #81 — integer IRR is approved, but legacy row provenance, mixed-unit seed values, wallet/invoice read masking, and payout reconciliation remain unresolved.
+- [ ] Issue #130 — Persian IRR formatting still passes through mutable USD FX; wallet/invoice GET paths expose unverified amounts; safe-integer writer enforcement is incomplete.
+- [ ] Issue #99 — preserve confirmed scope: fixed-fee labor, heavy machinery priority, non-Iranian passenger vehicles only (exclude Iran Khodro/Saipa), annual VIP with free periodic visits only (repairs/parts not free). Actual rate cards, tax, commission, escrow/release, VIP price/refunds and withdrawal limits remain owner decisions. Prior 15%/sample-price examples are not approved.
 - [ ] Technician invoice earnings are not yet credited to the wallet through a complete idempotent escrow/commission flow.
 - [ ] Do not activate live payment, wallet top-up, withdrawal, or bank payout until these are resolved.
 
@@ -68,7 +69,7 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - [ ] Provision production database and Redis only after migration/backup review.
 - [ ] Add production secrets through the host's secret manager (never commit them).
 - [ ] Configure live SMS provider credentials and delivery templates.
-- [ ] Configure Zarinpal/IDPay merchant credentials only after sandbox certification and payment lifecycle approval.
+- [ ] Configure the owner-selected payment provider's merchant credentials only after sandbox certification and payment lifecycle approval.
 - [ ] Configure maps/geocoding credentials and validate quota/security restrictions.
 - [ ] Deploy the escrow Worker to isolated remote D1 staging; verify its binding and Cron Trigger, observe scheduled release/replay behavior, and reconcile wallet/ledger state while keeping the production schedule disabled.
 - [ ] Configure production monitoring, error alerts, log retention, backup schedule, and restore ownership.
@@ -80,7 +81,7 @@ This replaces the historical checklist snapshots from October. Do not use old �
 ## 3. Go / No-Go criteria
 
 **GO only when all are true:**
-- [ ] All five required workflows pass on the exact Release Candidate commit.
+- [ ] All applicable workflows pass on the exact Release Candidate commit: CI, Production readiness, PostgreSQL CI, Docker E2E, CodeQL, Secret Scan, plus Cloudflare Build and Dependency Security Audit when their path triggers apply.
 - [ ] No open critical/high security or financial-integrity blocker.
 - [ ] SQLite/D1 and PostgreSQL migration/build/integration checks pass.
 - [ ] D1 escrow worker passes the local D1 scheduled-event integration test, and remote staging/Cron evidence is recorded before production enablement.
@@ -112,3 +113,47 @@ For each completed gate, record:
 - reviewer and date.
 
 A green PR check is not a deployment. A staging test is not a production test. Do not conflate them.
+
+## 6. Mainline delta — 2026-11-04
+
+This section records changes after the previous 2026-11-03 checklist snapshot. The detailed current audit is `RELEASE_READINESS_AUDIT_2026-11-04.md`.
+
+### Verified on current main
+
+- [x] PR #112 — historical withdrawal approval/rejection/payout actions now fail closed until withdrawal-record IRR provenance is explicitly verified. Merged as `ad1f6af246369bfc071a28dc68589c3f6a0d1331`.
+- [x] PR #120 — production readiness requires strong user/admin/OTP secrets, shared rate-limit storage, admin provisioning, IRR pricing/provenance, withdrawal policy/provenance, and escrow-worker readiness. Merged as `2bf40e8642019550b2710bb171f2fd5ebe4116e8`.
+- [x] Current main `db0f3361c3158764c47cfeb48d5b9dafadc90610`: GitHub Checks API verified 8 successful check runs and 1 skipped (`Prepare dependency remediation branch`). The eight successful checks are OpenNext → Cloudflare Worker, Analyze JavaScript and TypeScript, Audit the committed lockfile (no auto-fix), Scan repository history for exposed secrets, PostgreSQL Migration + Build, Docker Build + Compose + Health, Lint + TypeCheck + Test, and quality. [Exact SHA check evidence](https://github.com/mekanixir-prog/mekanix-app/commit/db0f3361c3158764c47cfeb48d5b9dafadc90610/checks).
+
+### Security PR reconciliation
+
+- [x] PR #113 — same-origin admin CSRF defense-in-depth reviewed and squash-merged as `e03f84da91db464edd2ca6ae32fdd156174c948b`; all eight active main workflows passed on that exact commit.
+- [x] PR #115 — closed as superseded: current main already checks the related User's status and role in the Session query and rejects a missing related User. The dedicated deleted-user regression test has not yet been added.
+- [x] PR #116 — closed as superseded: current main already uses canonicalized keyed-HMAC per-phone OTP throttling at 5 attempts per 10 minutes; PR #127 adds the missing unavailable-store 503 test.
+- [x] PR #127 — shared per-phone OTP verification limiter unavailable-store (503) regression test; all seven applicable checks passed and the PR merged as `147d5485ee0dfd2dc5795f6000dd38b35c808c07`.
+
+### Withdrawal hardening
+
+- [x] PR #129 — bank-only/valid-Sheba creation and D1 rollback guards, preserving the current integer-IRR production gate; all eight applicable PR checks passed and merged as `dae8fe53bf8c5c776ed939d665a8a146619162db`.
+- [x] PR #124 — `actions/upload-artifact` v7; eight applicable PR checks passed and merged as `25e08a476cd2d975b517651a4d758e82ac51b3db`.
+- [x] PR #125 — `actions/checkout` v7; eight applicable PR checks passed and merged as `8ac36ef874590150d1af6f92693b30ea41708e6a`.
+- [x] PR #126 — `docker/setup-buildx-action` v4; seven applicable PR checks passed and merged as `db0f3361c3158764c47cfeb48d5b9dafadc90610`.
+
+### Repository-level governance
+
+- [ ] Issue #121 — enable the existing `main` ruleset. As of this audit, the ruleset exists but enforcement is disabled, main is not protected, and no required status checks or approvals are configured.
+- [ ] Configure required checks to match workflow triggers. Cloudflare Build and Dependency Security Audit are path-filtered; do not require either unconditionally unless the trigger policy is changed.
+- [ ] Do not require a second approval until a second maintainer is available; choose an explicit administrator bypass to avoid blocking all single-maintainer merges.
+
+### Financial work still blocked
+
+- [ ] Issue #24 — complete authoritative payment attempts, provider initiation/verification, callback idempotency, purpose-specific fulfillment, and invoice-to-technician ledger/escrow settlement.
+- [ ] Issue #81 — classify and reconcile historical money provenance under the owner-approved integer-IRR contract. Unknown rows remain quarantined; no blanket conversion.
+- [ ] Issue #130 — remove FX-based IRR formatting, mask unverified wallet/invoice reads, and enforce safe-integer IRR at writers.
+- [ ] Issue #99 — approve fixed-fee labor and separate IRR rate cards for priority heavy machinery and supported foreign passenger vehicles (excluding Iran Khodro/Saipa); approve tax, commission/escrow, annual VIP price (free periodic visits only; repairs/parts excluded), CARE boundary and withdrawal policy. No illustrative 15% commission or sample prices may be treated as approved.
+- [x] PRs #71/#73 are closed; useful safe work from #71 was ported to #129, while #73's USD/decimal policy was not ported. PR #78 remains a stale large branch and must be split/rebased into bounded changes before review.
+
+### Launch infrastructure remains deliberately deferred
+
+- [ ] VPS/hosting, production domain/DNS/HTTPS, live SMS and payment credentials remain scheduled for shortly before launch.
+- [ ] Integration contracts and deployment runbooks must be ready now; isolated staging, remote D1/Cron verification, backup/restore, rollback, monitoring, real-provider smoke tests and business E2E remain mandatory before public launch.
+
