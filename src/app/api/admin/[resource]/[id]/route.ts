@@ -6,6 +6,7 @@ import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/admin-api";
 import { updateWithdrawalAtomically } from "@/lib/withdrawal-admin-atomic";
 import { isValidIranianSheba } from "@/lib/iranian-iban";
+import { getWithdrawalRecordIrrError } from "@/lib/money/withdrawal-policy";
 
 // Mass-assignment protection: define per-resource whitelists.
 const RESOURCE_ALLOWED_FIELDS: Record<string, readonly string[]> = {
@@ -173,6 +174,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
       },
     });
     if (!before) return NextResponse.json({ error: "درخواست برداشت پیدا نشد" }, { status: 404 });
+
+    // Existing withdrawal rows may predate the IRR-only contract. Do not let
+    // admin approval, refund, or payout move money until their historical unit
+    // provenance has been explicitly reconciled by the owner.
+    const withdrawalIrrError = getWithdrawalRecordIrrError(Number(before.amount));
+    if (withdrawalIrrError === "WITHDRAWAL_IRR_PROVENANCE_UNVERIFIED") {
+      return NextResponse.json(
+        { error: "سوابق برداشت هنوز از نظر واحد ریال تطبیق و تأیید نشده‌اند", code: withdrawalIrrError },
+        { status: 503 },
+      );
+    }
+    if (withdrawalIrrError === "WITHDRAWAL_AMOUNT_NOT_INTEGER_IRR") {
+      return NextResponse.json(
+        { error: "مبلغ این برداشت عدد صحیح ریالی معتبر نیست؛ ابتدا باید سابقه مالی اصلاح و تطبیق شود", code: withdrawalIrrError },
+        { status: 409 },
+      );
+    }
 
     let payoutReference: string | null = null;
     if (action === "PAID") {
