@@ -17,6 +17,8 @@ describe("security response headers", () => {
       },
     }));
     expect(response.status).toBe(403);
+    expect(response.headers.get("Content-Security-Policy")).toContain("frame-ancestors");
+    expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
   });
 
   it("allows same-origin cookie-authenticated mutations", () => {
