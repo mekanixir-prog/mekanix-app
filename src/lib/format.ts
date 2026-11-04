@@ -15,15 +15,21 @@ function toPersianDigits(s: string | number): string {
  * provenance masking guarantees that only verified IRR reaches this formatter.
  */
 export function fmtMoney(amount: unknown, currency = "IRR", lang: "en" | "fa" = "en"): string {
-  const c = CURRENCIES[currency] ?? CURRENCIES.USD;
-  if (typeof amount !== "number" || !Number.isFinite(amount)) return "—";
-  if (currency === "IRR" && !Number.isSafeInteger(amount)) return "—";
+  const c = CURRENCIES[currency];
+  if (!c) return "—";
+  const numericAmount = typeof amount === "number"
+    ? amount
+    : typeof amount === "string" && amount.trim() !== ""
+      ? Number(amount)
+      : Number.NaN;
+  if (!Number.isFinite(numericAmount)) return "—";
+  if (currency === "IRR" && !Number.isSafeInteger(numericAmount)) return "—";
 
   const symbol = currency === "IRR" ? "﷼" : c.symbol;
   const formatted = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 0,
     maximumFractionDigits: currency === "IRR" ? 0 : 2,
-  }).format(amount);
+  }).format(numericAmount);
 
   if (lang === "fa") {
     const persianFormatted = toPersianDigits(formatted.replace(/,/g, "،"));
