@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { isSafeStoredIrrAmount } from "@/lib/money/financial-read-mask";
 
 type Action = "APPROVED" | "REJECTED" | "PAID";
 type Input = {
@@ -24,9 +25,12 @@ export async function updateWithdrawalWithPrisma(
   return db.$transaction(async (tx) => {
     const withdrawal = await tx.withdrawalRequest.findUnique({
       where: { id: input.withdrawalId },
-      select: { id: true, walletId: true, amount: true, status: true },
+      select: { id: true, walletId: true, amount: true, status: true, financialUnitStatus: true },
     });
     if (!withdrawal) throw new Error("درخواست برداشت پیدا نشد");
+    if (withdrawal.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(withdrawal.amount)) return false;
+    const walletProvenance = await tx.wallet.findUnique({ where: { id: withdrawal.walletId }, select: { financialUnitStatus: true } });
+    if (walletProvenance?.financialUnitStatus !== "VERIFIED_IRR") return false;
 
     if (input.action === "APPROVED") {
       if (withdrawal.status !== "REQUESTED") return false;
@@ -74,6 +78,7 @@ export async function updateWithdrawalWithPrisma(
           referenceId: withdrawal.id,
           description: `Refund for rejected withdrawal ${withdrawal.id}`,
           idempotencyKey: `withdrawal:${withdrawal.id}:REJECT_REFUND`,
+          financialUnitStatus: "VERIFIED_IRR",
           createdBy: input.adminId,
         },
       });
@@ -109,6 +114,7 @@ export async function updateWithdrawalWithPrisma(
         netAmount: -Number(withdrawal.amount),
         description: `Payout for withdrawal ${withdrawal.id}; bank reference ${payoutReference}`,
         idempotencyKey: `withdrawal:${withdrawal.id}:PAYOUT`,
+        financialUnitStatus: "VERIFIED_IRR",
       },
     });
     const walletUpdate = await tx.wallet.updateMany({
@@ -140,7 +146,7 @@ export async function updateWithdrawalWithD1(
       d1.prepare(`
         UPDATE "WithdrawalRequest"
         SET "status" = 'APPROVED', "reviewerId" = ?, "adminNotes" = ?
-        WHERE "id" = ? AND "status" = 'REQUESTED'
+        WHERE "id" = ? AND "status" = 'REQUESTED' AND "financialUnitStatus" = 'VERIFIED_IRR'
       `).bind(input.adminId, input.adminNotes, input.withdrawalId),
     ]);
     return result[0]?.meta?.changes === 1;
@@ -151,7 +157,7 @@ export async function updateWithdrawalWithD1(
       d1.prepare(`
         UPDATE "WithdrawalRequest"
         SET "status" = 'REJECTED', "reviewerId" = ?, "adminNotes" = ?, "processedAt" = ?
-        WHERE "id" = ? AND "status" IN ('REQUESTED', 'APPROVED')
+        WHERE "id" = ? AND "status" IN ('REQUESTED', 'APPROVED') AND "financialUnitStatus" = 'VERIFIED_IRR'
       `).bind(input.adminId, input.adminNotes, at, input.withdrawalId),
       assertOneChange(),
       d1.prepare(`
@@ -163,18 +169,18 @@ export async function updateWithdrawalWithD1(
         WHERE "id" = (
           SELECT "walletId" FROM "WithdrawalRequest"
           WHERE "id" = ? AND "status" = 'REJECTED' AND "processedAt" = ?
-        ) AND changes() = 1
+        ) AND "financialUnitStatus" = 'VERIFIED_IRR' AND changes() = 1
       `).bind(input.withdrawalId, at, at, input.withdrawalId, at),
       assertOneChange(),
       d1.prepare(`
         INSERT INTO "WalletLedger"
           ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
-           "referenceType", "referenceId", "description", "idempotencyKey", "createdBy", "createdAt")
+           "referenceType", "referenceId", "description", "idempotencyKey", "createdBy", "createdAt", "financialUnitStatus")
         SELECT ?, wr."walletId", 'REFUND',
                CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END,
                (SELECT "balance" FROM "Wallet" WHERE "id" = wr."walletId") - wr."amount",
                (SELECT "balance" FROM "Wallet" WHERE "id" = wr."walletId"),
-               'Withdrawal', wr."id", ?, ?, ?, ?
+               'Withdrawal', wr."id", ?, ?, ?, ?, 'VERIFIED_IRR'
         FROM "WithdrawalRequest" wr
         WHERE wr."id" = ? AND wr."status" = 'REJECTED' AND wr."processedAt" = ?
       `).bind(
@@ -207,16 +213,16 @@ export async function updateWithdrawalWithD1(
       UPDATE "WithdrawalRequest"
       SET "status" = 'PAID', "reviewerId" = ?, "adminNotes" = ?,
           "processedAt" = ?, "txnId" = ?
-      WHERE "id" = ? AND "status" = 'APPROVED'
+      WHERE "id" = ? AND "status" = 'APPROVED' AND "financialUnitStatus" = 'VERIFIED_IRR'
     `).bind(input.adminId, input.adminNotes, at, payoutReference, input.withdrawalId),
     assertOneChange(),
     d1.prepare(`
       INSERT INTO "WalletTransaction"
         ("id", "walletId", "kind", "status", "grossAmount", "commissionAmount",
-         "netAmount", "description", "idempotencyKey", "createdAt")
+         "netAmount", "description", "idempotencyKey", "createdAt", "financialUnitStatus")
       SELECT ?, wr."walletId", 'PAYOUT', 'COMPLETED',
              CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END, 0,
-             -wr."amount", ?, ?, ?
+             -wr."amount", ?, ?, ?, 'VERIFIED_IRR'
       FROM "WithdrawalRequest" wr
       WHERE wr."id" = ? AND wr."status" = 'PAID' AND wr."txnId" = ?
     `).bind(
