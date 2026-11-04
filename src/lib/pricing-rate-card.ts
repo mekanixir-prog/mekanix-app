@@ -66,6 +66,7 @@ export function validatePricingRateCard(value: unknown): Omit<PricingRateCard, "
   const appliesTo = value.commission.appliesTo;
   if (appliesTo !== "LABOR_ONLY" && appliesTo !== "LABOR_AND_VISIT" && appliesTo !== "INVOICE_SUBTOTAL") throw new TypeError("پایه کمیسیون نامعتبر است");
   if (value.vip.coversVisitAndInspection !== true || value.vip.excludesRepairsAndParts !== true) throw new TypeError("مزایای VIP باید محدود به بازدید دوره‌ای باشد");
+  if (value.tax.enabled || value.commission.enabled || value.vip.enabled) throw new TypeError("فعال‌سازی مالیات، کمیسیون یا VIP تا تکمیل اتصال مالی و تأیید جداگانه مجاز نیست");
   return {
     fees, serviceFeesIrr,
     emergencySurchargeBps: int(value.emergencySurchargeBps, "emergencySurchargeBps", 0, 10000),
