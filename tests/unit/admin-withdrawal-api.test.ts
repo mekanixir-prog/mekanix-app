@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   notify: vi.fn(),
   update: vi.fn(),
   audit: vi.fn(),
+  paymentFind: vi.fn(),
+  paymentUpdate: vi.fn(),
 }));
 vi.mock("@/lib/admin-auth", () => ({
   getAdminFromRequest: mocks.admin,
@@ -31,6 +33,7 @@ vi.mock("@/lib/db-access", () => ({
       findUnique: mocks.find,
     },
     notification: { create: mocks.notify },
+    payment: { findUnique: mocks.paymentFind, update: mocks.paymentUpdate },
   }),
 }));
 vi.mock("@/lib/withdrawal-admin-atomic", () => ({
@@ -208,4 +211,26 @@ describe("admin withdrawal API", () => {
     expect(response.status).toBe(409);
     expect(mocks.notify).not.toHaveBeenCalled();
   });
+  it.each(["SUCCEEDED", "REFUNDED"])(
+    "does not allow generic admin PATCH to force a verified payment into %s",
+    async (status) => {
+      mocks.paymentFind.mockResolvedValue({
+        id: "pay-1",
+        amount: 500,
+        currency: "IRR",
+        financialUnitStatus: "VERIFIED_IRR",
+        status: "PENDING",
+      });
+      const response = await PATCH(request({ status }), {
+        params: Promise.resolve({ resource: "payments", id: "pay-1" }),
+      });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        code: "PAYMENT_STATUS_REQUIRES_VERIFIED_LIFECYCLE",
+      });
+      expect(mocks.paymentUpdate).not.toHaveBeenCalled();
+      expect(mocks.audit).not.toHaveBeenCalled();
+    },
+  );
+
 });
