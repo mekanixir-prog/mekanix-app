@@ -89,6 +89,7 @@ function makeD1() {
     CREATE TABLE "InsurancePolicy" (
       "id" TEXT PRIMARY KEY,
       "userId" TEXT NOT NULL,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "status" TEXT NOT NULL
     );
     CREATE TABLE "InsuranceClaim" (
@@ -210,7 +211,7 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
   it("creates and updates an insurance claim exactly once under 100 concurrent retries", async () => {
     const { sqlite, d1 } = makeD1();
     databases.push(sqlite);
-    sqlite.prepare('INSERT INTO "InsurancePolicy" ("id", "userId", "status") VALUES (?, ?, ?)')
+    sqlite.prepare(`INSERT INTO "InsurancePolicy" ("id", "userId", "financialUnitStatus", "status") VALUES (?, ?, 'VERIFIED_IRR', ?)`)
       .run("policy-1", "user-1", "active");
     mocks.getD1Binding.mockResolvedValue(d1);
 
@@ -230,7 +231,7 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
   it("rolls back the claim insert when the policy status transition fails", async () => {
     const { sqlite, d1 } = makeD1();
     databases.push(sqlite);
-    sqlite.prepare('INSERT INTO "InsurancePolicy" ("id", "userId", "status") VALUES (?, ?, ?)')
+    sqlite.prepare(`INSERT INTO "InsurancePolicy" ("id", "userId", "financialUnitStatus", "status") VALUES (?, ?, 'VERIFIED_IRR', ?)`)
       .run("policy-1", "user-1", "active");
     sqlite.exec(`CREATE TRIGGER "fail_policy_update" BEFORE UPDATE ON "InsurancePolicy"
       BEGIN SELECT RAISE(ABORT, 'policy update failed'); END;`);
@@ -246,7 +247,7 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
   it("does not create a claim for an expired policy", async () => {
     const { sqlite, d1 } = makeD1();
     databases.push(sqlite);
-    sqlite.prepare('INSERT INTO "InsurancePolicy" ("id", "userId", "status") VALUES (?, ?, ?)')
+    sqlite.prepare(`INSERT INTO "InsurancePolicy" ("id", "userId", "financialUnitStatus", "status") VALUES (?, ?, 'VERIFIED_IRR', ?)`)
       .run("policy-1", "user-1", "expired");
     mocks.getD1Binding.mockResolvedValue(d1);
 
