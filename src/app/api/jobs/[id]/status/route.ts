@@ -154,6 +154,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "مدت کار باید عددی بین ۰ تا ۲۴ ساعت باشد" }, { status: 400 });
   }
 
+  if (status === "WAITING_APPROVAL" && !existing.invoice) {
+    return NextResponse.json(
+      { error: "مدل تعرفه دستمزد ثابت هنوز پیاده‌سازی و تأیید نشده است؛ صدور برآورد مالی موقتاً مسدود است", code: "FIXED_LABOR_RATE_CARD_NOT_IMPLEMENTED" },
+      { status: 409 },
+    );
+  }
+
   let invoiceInput: AtomicInvoiceInput | null = null;
   if (status === "WAITING_APPROVAL" && !existing.invoice) {
     const laborHours = extra.laborHours ?? 1.5;
