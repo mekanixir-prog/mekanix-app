@@ -73,6 +73,7 @@ const pricingJob = {
   status: "WAITING_APPROVAL",
   parts: [{ unitPrice: 100, quantity: 2 }],
   technician: { hourlyRate: 200, travelFeeBase: 50, lat: null, lng: null },
+  tracking: [],
   request: { category: "diagnostic", urgency: "NORMAL", lat: 35.7, lng: 51.4, vehicle: { type: "CAR" } },
 };
 
