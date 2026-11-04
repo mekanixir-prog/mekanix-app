@@ -2,7 +2,7 @@
 
 **Audit date:** 2026-11-04  
 **Audited branch:** `main`  
-**Current main baseline:** `e03f84da91db464edd2ca6ae32fdd156174c948b`  
+**Current main baseline:** `147d5485ee0dfd2dc5795f6000dd38b35c808c07`  
 **Repository:** [mekanixir-prog/mekanix-app](https://github.com/mekanixir-prog/mekanix-app)  
 **Release decision:** **NO-GO** — the current mainline is CI-green, but financial integrity, release evidence, and repository governance are not complete.
 
@@ -10,7 +10,7 @@ This report supersedes earlier point-in-time release snapshots. It does not clai
 
 ## 1. Executive decision
 
-The last fully green main baseline was `2bf40e8642019550b2710bb171f2fd5ebe4116e8`; all eight workflows passed on that exact commit. After the security hardening PR #113 was merged, current `main` advanced to `e03f84da91db464edd2ca6ae32fdd156174c948b`. Fresh main-branch workflows for this new commit were still running at the time of this audit update. Do not treat the earlier eight green checks as checks on the new commit:
+The last fully green main baseline `2bf40e8642019550b2710bb171f2fd5ebe4116e8` passed all eight workflows. After PR #113 merged, main advanced to `e03f84da91db464edd2ca6ae32fdd156174c948b`; all eight active workflows also passed on that exact commit. Test-only PR #127 then merged as `147d5485ee0dfd2dc5795f6000dd38b35c808c07`, which is the current main baseline. Fresh main checks for this newest test-only commit are running. Do not treat earlier green checks as checks on the newest SHA:
 
 | Workflow | Result |
 |---|---|
@@ -23,7 +23,7 @@ The last fully green main baseline was `2bf40e8642019550b2710bb171f2fd5ebe4116e8
 | Secret Scan | PASS |
 | Dependency Security Audit | PASS |
 
-Evidence for the last fully green baseline: [main CI](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330037), [Docker E2E](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330042), [PostgreSQL CI](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330122), [Production readiness](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330214), [Secret Scan](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330126), [Dependency Security Audit](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330239), [CodeQL](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330259), [Cloudflare Build](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330545). Current main `e03f84da91db` is under a fresh full workflow run.
+Evidence for the last fully green baseline: [main CI](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330037), [Docker E2E](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330042), [PostgreSQL CI](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330122), [Production readiness](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330214), [Secret Scan](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330126), [Dependency Security Audit](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330239), [CodeQL](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330259), [Cloudflare Build](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330545). Current main `147d5485ee0d` is under a fresh full workflow run.
 
 **Interpretation:** green CI proves the configured checks passed against this commit and their test environments. It does not prove live SMS, real gateway callbacks, production secrets, DNS/TLS, remote database state, actual bank payout, backup restoration, or business-owner acceptance.
 
@@ -66,6 +66,7 @@ Do not require a second approval until a second maintainer exists. Configure an 
 ### Merged
 
 - **PR #113** — cookie-authenticated admin mutations now pass through the same-origin/CSRF helper before any write. The standalone admin cookie remains scoped to `/api/admin-panel`; generic `/api/admin` routes continue to support bearer-token sessions. The PR was reviewed, its seven applicable checks passed on its exact head, and it was squash-merged as `e03f84da91db464edd2ca6ae32fdd156174c948b`.
+- **PR #127** — adds the missing HTTP 503 regression test for unavailable shared per-phone OTP verification rate-limit storage. All seven applicable checks passed on exact head `27de3d38e8bb`; merged as current main baseline `147d5485ee0dfd2dc5795f6000dd38b35c808c07`.
 - **PR #112** — historical withdrawal actions are blocked unless withdrawal IRR provenance has been explicitly verified. Merged as `ad1f6af246369bfc071a28dc68589c3f6a0d1331`.
 - **PR #120** — production readiness now requires strong user/admin/OTP secrets, shared rate-limit availability, admin provisioning, approved IRR pricing/provenance, withdrawal policy/provenance, and escrow-worker readiness. Merged as baseline `2bf40e8642019550b2710bb171f2fd5ebe4116e8`.
 
@@ -77,9 +78,9 @@ Do not require a second approval until a second maintainer exists. Configure an 
 ### Still open
 
 - **PR #113** — cookie-authenticated admin CSRF defense-in-depth. It was retargeted from the historical PR #112 branch to `main`. It is not merged. Its earlier five green checks predate the base retarget; fresh checks against the current base are required before any merge decision. The dedicated admin cookie is currently scoped to `/api/admin-panel`; generic `/api/admin` routes authorize bearer-token admin sessions through `getAdminFromRequest`. The standalone admin login/logout/onboarding endpoints already have same-origin checks. Treat PR #113 as hardening, not as proof of a currently exploitable browser-cookie path.
-- **PR #127** — test-only addition for the missing HTTP 503 case when the shared per-phone OTP verification rate-limit store is unavailable. Current main already tests the IP/phone budgets, HMAC key, missing production secret, and exhausted phone budget. An earlier experimental deleted-user test was removed after its fixture failed to exercise the intended DB boundary; no session logic was changed. Current PR head is `27de3d38e8bb`; applicable checks are running. Do not merge until all pass on this exact head.
-- **PRs #71 and #73** — draft withdrawal changes. Do not merge independently: they overlap and contain assumptions from an older USD/decimal contract. #73's USD minimum/maximum and cent precision conflict with the approved integer-IRR contract.
-- **PR #78** — broad 80-file financial branch, stacked on the old `feat/irr-money-core` branch. It is 260 commits ahead and 143 behind current `main`; do not merge wholesale. Extract and re-review small, current-mainline changes by bounded financial flow after the data and commercial contracts are settled.
+- **PR #129** — current-mainline withdrawal hardening: bank-only/valid-Sheba request creation aligned with the existing admin PAID path, plus explicit D1 rollback guards and regression tests for zero-row debit/refund/payout aggregate updates. It preserves the production integer-IRR policy gate and adds no USD limits. CI is running; do not merge until all applicable checks pass on its exact head.
+- **PRs #71 and #73** — closed. Useful bank-only and D1 rollback work from #71 was ported to current-mainline PR #129. #73's USD minimum/maximum and cent precision conflicted with the approved integer-IRR contract and were not ported.
+- **PR #78** — broad 80-file financial branch, stacked on the old `feat/irr-money-core` branch. It is 260 commits ahead and 144 behind current `main`; do not merge wholesale. It also writes `currency: "IRR"` to `Part` while its own `prisma/schema.prisma` still has no `Part.currency` field and the schema is not changed in the PR. Extract and re-review small, current-mainline changes by bounded financial flow after the data and commercial contracts are settled.
 - **PRs #124–#126** — Dependabot updates to GitHub Actions. Review individually; do not batch-merge major action upgrades without checking runner/runtime compatibility and exact CI.
 
 ## 4. Financial integrity — hard release blockers
