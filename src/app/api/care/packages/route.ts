@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 // GET /api/care/packages — list available service packages
 export async function GET(req: Request) {
