@@ -61,6 +61,7 @@ vi.mock("@/lib/db-access", () => ({
 
 // Mock admin auth — getAdminFromRequest returns a valid AdminUser session
 vi.mock("@/lib/admin-auth", () => ({
+  hasValidAdminCookieCsrf: vi.fn().mockReturnValue(true),
   getAdminFromRequest: vi.fn().mockResolvedValue({
     adminId: "admin-1",
     username: "admin",
