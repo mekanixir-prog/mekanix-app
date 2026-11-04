@@ -24,7 +24,7 @@ const input = {
   timeWindow: "09:00-11:00",
   currentMileage: 12000,
   pricing: {
-    labor: 50000, travel: 15000, parts: 0, discount: 0,
+    labor: 50000, travel: 15000, inspection: 0, parts: 0, discount: 0,
     taxRate: 0.09, taxTotal: 5850, total: 70850,
     currency: "IRR", pricingVersion: "2.1",
   },
