@@ -1,7 +1,7 @@
 # MEKANIX — Release Checklist
 
-**Status date:** 2026-11-03  
-**Main baseline before this checklist refresh:** `5c191f7efdea278611a9a65f39d481072ed37189`  
+**Status date:** 2026-11-04  
+**Current main baseline:** `2bf40e8642019550b2710bb171f2fd5ebe4116e8`  
 **Release decision:** <strong>NO-GO</strong> — code hardening and release evidence remain incomplete.
 
 This replaces the historical checklist snapshots from October. Do not use old “Release Candidate — all checks passed” or old staging/load-test claims as current release evidence.
@@ -112,3 +112,39 @@ For each completed gate, record:
 - reviewer and date.
 
 A green PR check is not a deployment. A staging test is not a production test. Do not conflate them.
+
+## 6. Mainline delta — 2026-11-04
+
+This section records changes after the previous 2026-11-03 checklist snapshot. The detailed current audit is `RELEASE_READINESS_AUDIT_2026-11-04.md`.
+
+### Verified on current main
+
+- [x] PR #112 — historical withdrawal approval/rejection/payout actions now fail closed until withdrawal-record IRR provenance is explicitly verified. Merged as `ad1f6af246369bfc071a28dc68589c3f6a0d1331`.
+- [x] PR #120 — production readiness requires strong user/admin/OTP secrets, shared rate-limit storage, admin provisioning, IRR pricing/provenance, withdrawal policy/provenance, and escrow-worker readiness. Merged as `2bf40e8642019550b2710bb171f2fd5ebe4116e8`.
+- [x] All eight main-branch workflows passed on the exact current baseline `2bf40e8642019550b2710bb171f2fd5ebe4116e8`.
+
+### Security PR reconciliation
+
+- [ ] PR #113 — retargeted to `main` after PR #112 merged; defense-in-depth only. Fresh checks against the retargeted base are required before merge.
+- [x] PR #115 — closed as superseded: current main already checks the related User's status and role in the Session query. Deleted-user regression coverage is carried by PR #127.
+- [x] PR #116 — closed as superseded: current main already uses canonicalized keyed-HMAC per-phone OTP throttling at 5 attempts per 10 minutes. PR #127 adds tests for that existing behavior.
+- [ ] PR #127 — test-only coverage for deleted-user sessions and per-phone OTP verification throttling; merge only after all applicable checks pass on its exact head.
+
+### Repository-level governance
+
+- [ ] Issue #121 — enable the existing `main` ruleset. As of this audit, the ruleset exists but enforcement is disabled, main is not protected, and no required status checks or approvals are configured.
+- [ ] Configure required checks to match workflow triggers. Cloudflare Build and Dependency Security Audit are path-filtered; do not require either unconditionally unless the trigger policy is changed.
+- [ ] Do not require a second approval until a second maintainer is available; choose an explicit administrator bypass to avoid blocking all single-maintainer merges.
+
+### Financial work still blocked
+
+- [ ] Issue #24 — complete authoritative payment attempts, provider initiation/verification, callback idempotency, purpose-specific fulfillment, and invoice-to-technician ledger/escrow settlement.
+- [ ] Issue #81 — classify and reconcile historical money provenance under the owner-approved integer-IRR contract. Unknown rows remain quarantined; no blanket conversion.
+- [ ] Issue #99 — obtain owner-approved rate cards, tax, commission/escrow, VIP prices, CARE boundary and withdrawal policy.
+- [ ] Do not merge PRs #71/#73 independently. PR #73's USD/decimal withdrawal policy conflicts with the integer-IRR contract. PR #78 is a large stale stacked branch and must be split/rebased into bounded changes before review.
+
+### Launch infrastructure remains deliberately deferred
+
+- [ ] VPS/hosting, production domain/DNS/HTTPS, live SMS and payment credentials remain scheduled for shortly before launch.
+- [ ] Integration contracts and deployment runbooks must be ready now; isolated staging, remote D1/Cron verification, backup/restore, rollback, monitoring, real-provider smoke tests and business E2E remain mandatory before public launch.
+
