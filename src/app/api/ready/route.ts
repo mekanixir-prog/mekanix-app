@@ -31,6 +31,14 @@ export function checkProductionGates(): GateResult[] {
     });
   }
 
+  const otpHashSecret = process.env.OTP_HASH_SECRET ?? "";
+  if (new TextEncoder().encode(otpHashSecret).length < 32) {
+    gates.push({
+      ok: false,
+      reason: "Dedicated OTP_HASH_SECRET is missing or shorter than 32 bytes.",
+    });
+  }
+
   // Financial release gates are intentionally independent of provider health.
   // A healthy database/provider must never make legacy or unapproved money
   // paths appear production-ready.
