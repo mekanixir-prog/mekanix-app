@@ -35,6 +35,14 @@ describe("OTP keyed hashing", () => {
     expect(hashOtpPhone("09123456789")).toBe(hashOtpPhone("09123456789"));
   });
 
+  it("shares one phone budget across equivalent Iranian number formats", () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("OTP_HASH_SECRET", "test-secret-with-at-least-32-bytes-123");
+    expect(hashOtpPhone("09123456789")).toBe(hashOtpPhone("989123456789"));
+    expect(hashOtpPhone("09123456789")).toBe(hashOtpPhone("+989123456789"));
+    expect(hashOtpPhone("0912 345 6789")).toBe(hashOtpPhone("+98 912-345-6789"));
+  });
+
   it("fails closed in production when the dedicated secret is absent or weak", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("OTP_HASH_SECRET", "");
