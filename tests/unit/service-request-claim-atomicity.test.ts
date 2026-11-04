@@ -190,7 +190,7 @@ describe("insurance claim atomic writer", () => {
       .resolves.toEqual({ id: "claim-1", code: claimInput.code, created: true });
     expect(tx.insuranceClaim.create).toHaveBeenCalledTimes(1);
     expect(tx.insurancePolicy.updateMany).toHaveBeenCalledWith({
-      where: { id: claimInput.policyId, status: { notIn: ["expired", "cancelled"] } },
+      where: { id: claimInput.policyId, status: { notIn: ["expired", "cancelled"] }, financialUnitStatus: "VERIFIED_IRR" },
       data: { status: "claimed" },
     });
   });
