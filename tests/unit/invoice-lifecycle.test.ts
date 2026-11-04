@@ -33,7 +33,8 @@ vi.mock("@/lib/db-access", () => ({
       findUnique: mocks.jobFindUnique,
       updateMany: mocks.jobUpdateMany,
     },
-    platformSetting: { findUnique: mocks.taxFindUnique },
+    platformSetting: { findUnique: vi.fn().mockResolvedValue(null) },
+    servicePackage: { findUnique: vi.fn().mockResolvedValue(null) },
     notification: { create: mocks.notificationCreate },
     message: { create: mocks.messageCreate },
   })),
@@ -71,7 +72,8 @@ const pricingJob = {
   id: "job-1",
   status: "WAITING_APPROVAL",
   parts: [{ unitPrice: 100, quantity: 2 }],
-  technician: { hourlyRate: 200, travelFeeBase: 50 },
+  technician: { hourlyRate: 200, travelFeeBase: 50, lat: null, lng: null },
+  request: { category: "diagnostic", urgency: "NORMAL", lat: 35.7, lng: 51.4, vehicle: { type: "CAR" } },
 };
 
 const refreshedJob = {
@@ -91,7 +93,7 @@ beforeEach(() => {
   mocks.invoiceUpdateMany.mockResolvedValue({ count: 1 });
   mocks.jobFindUnique.mockResolvedValue(pricingJob);
   mocks.jobUpdateMany.mockResolvedValue({ count: 1 });
-  mocks.taxFindUnique.mockResolvedValue({ value: "0.09" });
+  mocks.taxFindUnique.mockResolvedValue(null);
   mocks.notificationCreate.mockResolvedValue({});
   mocks.messageCreate.mockResolvedValue({});
 });
@@ -124,16 +126,27 @@ describe("POST /api/invoices lifecycle", () => {
     expect(mocks.notificationCreate).not.toHaveBeenCalled();
   });
 
-  it("rejects malformed tax settings instead of persisting a corrupt invoice total", async () => {
+  it("creates an invoice using fixed IRR labor, dispatch, and inspection rates", async () => {
     mocks.invoiceFindUnique.mockResolvedValueOnce(null);
-    mocks.taxFindUnique.mockResolvedValueOnce({ value: "0.09garbage" });
+    mocks.jobFindUnique.mockResolvedValueOnce(pricingJob).mockResolvedValueOnce(refreshedJob);
 
     const response = await createInvoice(postRequest({ jobId: "job-1" }));
-    expect(mocks.jobFindUnique).toHaveBeenCalledTimes(1);
-    expect(mocks.taxFindUnique).toHaveBeenCalledTimes(1);
-    expect(await response.json()).toMatchObject({ error: "تنظیمات مالیات نامعتبر است" });
-    expect(response.status).toBe(503);
-    expect(mocks.invoiceCreate).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    const payload = mocks.invoiceCreate.mock.calls[0][0].data;
+    expect(payload).toMatchObject({
+      laborHours: 1,
+      laborRate: 8_000_000,
+      laborTotal: 8_000_000,
+      partsTotal: 200,
+      travelFee: 5_000_000,
+      inspectionFee: 6_000_000,
+      subtotal: 19_000_200,
+      taxRate: 0,
+      taxTotal: 0,
+      total: 19_000_200,
+      currency: "IRR",
+      financialUnitStatus: "VERIFIED_IRR",
+    });
   });
 
   it("does not issue an invoice before the job reaches post-repair approval", async () => {
@@ -145,13 +158,16 @@ describe("POST /api/invoices lifecycle", () => {
     expect(mocks.invoiceCreate).not.toHaveBeenCalled();
   });
 
-  it("rejects non-finite or out-of-range labor hours", async () => {
+  it("ignores client-supplied hourly values and keeps the server fixed-fee tariff", async () => {
     mocks.invoiceFindUnique.mockResolvedValueOnce(null);
+    mocks.jobFindUnique.mockResolvedValueOnce(pricingJob).mockResolvedValueOnce(refreshedJob);
 
-    const response = await createInvoice(postRequest({ jobId: "job-1", laborHours: "2" }));
-    expect(response.status).toBe(400);
-    expect(mocks.invoiceCreate).not.toHaveBeenCalled();
+    const response = await createInvoice(postRequest({ jobId: "job-1", laborHours: 22, laborRate: 1 }));
+    expect(response.status).toBe(200);
+    expect(mocks.invoiceCreate.mock.calls[0][0].data.laborHours).toBe(1);
+    expect(mocks.invoiceCreate.mock.calls[0][0].data.laborTotal).toBe(8_000_000);
   });
+
 });
 
 describe("PATCH /api/invoices/[id] status transitions", () => {
