@@ -17,7 +17,7 @@
 //   - Decimal-safe arithmetic (v2.1): exact money math via decimal.js
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import Decimal from "decimal.js";
-import { calculatePrice, type PricingInput } from "@/lib/pricing";
+import { calculatePrice, isProductionPricingApproved, type PricingInput } from "@/lib/pricing";
 
 // Mock the db module — calculatePrice only calls db.servicePackage.findUnique
 // when packageId is provided. The pricing math itself is pure.
@@ -395,5 +395,31 @@ describe("pricing — Decimal-safe arithmetic (v2.1)", () => {
     expect(result.subtotal).toBe(203_345);
     expect(result.taxTotal).toBe(18_301);
     expect(result.total).toBe(203_345 + 18_301);
+  });
+});
+
+
+describe("production IRR pricing approval gate", () => {
+  it("allows demo pricing outside production", () => {
+    expect(isProductionPricingApproved("test", undefined)).toBe(true);
+    expect(isProductionPricingApproved("development", "false")).toBe(true);
+  });
+
+  it("requires an explicit owner-approved IRR rate card in production", () => {
+    expect(isProductionPricingApproved("production", undefined)).toBe(false);
+    expect(isProductionPricingApproved("production", "false")).toBe(false);
+    expect(isProductionPricingApproved("production", "true")).toBe(true);
+  });
+
+  it("rejects production price calculation before database access when approval is absent", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("MEKANIX_PRICING_IRR_APPROVED", "false");
+    try {
+      await expect(calculatePrice(baseInput)).rejects.toThrow(
+        "Production IRR pricing is disabled until the canonical rate card is approved",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
