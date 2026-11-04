@@ -33,7 +33,7 @@ VALUES
   ('wallet-release-staging-txn', 'wallet-release-staging-wallet', 'PREPAY', 'PENDING',
    10000, 0, 10000, strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-2 hours'),
    'Synthetic staging-only escrow release fixture',
-   'wallet-release-staging:wallet-release-staging-txn', CURRENT_TIMESTAMP);
+   'wallet-release-staging:wallet-release-staging-txn', 'VERIFIED_IRR', CURRENT_TIMESTAMP);
 
 INSERT INTO "WalletLedger"
   ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
@@ -42,4 +42,4 @@ VALUES
   ('wallet-release-staging-hold-ledger', 'wallet-release-staging-wallet', 'HOLD',
    10000, 0, 10000, 'WalletTransaction', 'wallet-release-staging-txn',
    'Synthetic staging-only escrow hold',
-   'wallet-release-staging:wallet-release-staging-txn:HOLD', CURRENT_TIMESTAMP);
+   'wallet-release-staging:wallet-release-staging-txn:HOLD', 'VERIFIED_IRR', CURRENT_TIMESTAMP);
