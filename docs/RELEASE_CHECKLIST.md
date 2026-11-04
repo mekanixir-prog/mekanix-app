@@ -128,7 +128,7 @@ This section records changes after the previous 2026-11-03 checklist snapshot. T
 - [ ] PR #113 — retargeted to `main` after PR #112 merged; defense-in-depth only. Fresh checks against the retargeted base are required before merge.
 - [x] PR #115 — closed as superseded: current main already checks the related User's status and role in the Session query. Deleted-user regression coverage is carried by PR #127.
 - [x] PR #116 — closed as superseded: current main already uses canonicalized keyed-HMAC per-phone OTP throttling at 5 attempts per 10 minutes. PR #127 adds tests for that existing behavior.
-- [ ] PR #127 — test-only coverage for deleted-user sessions and per-phone OTP verification throttling; merge only after all applicable checks pass on its exact head.
+- [ ] PR #127 — test-only coverage for the shared per-phone OTP verification limiter's unavailable-store (503) path; merge only after all applicable checks pass on its exact head.
 
 ### Repository-level governance
 
