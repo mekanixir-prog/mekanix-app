@@ -18,6 +18,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockSessionCreate = vi.fn().mockResolvedValue({});
 const mockSessionFindUnique = vi.fn();
 const mockSessionUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
+const mockUserFindUnique = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -25,6 +26,9 @@ vi.mock("@/lib/db", () => ({
       create: (...args: any[]) => mockSessionCreate(...args),
       findUnique: (...args: any[]) => mockSessionFindUnique(...args),
       updateMany: (...args: any[]) => mockSessionUpdateMany(...args),
+    },
+    user: {
+      findUnique: (...args: any[]) => mockUserFindUnique(...args),
     },
   },
 }));
@@ -83,6 +87,7 @@ beforeEach(() => {
   mockSessionUpdateMany.mockResolvedValue({ count: 0 });
   // Default: findUnique returns nothing — individual tests override
   mockSessionFindUnique.mockResolvedValue(null);
+  mockUserFindUnique.mockResolvedValue({ role: "CUSTOMER", status: "ACTIVE" });
   // Silence the expected console.error logs from the backward-compat
   // try/catch paths we exercise below. We assert behaviour by return
   // value, not by log output.
@@ -196,6 +201,34 @@ describe("verifySession — DB revocation checks", () => {
     expect(result?.userId).toBe("user_abc");
     expect(result?.role).toBe("CUSTOMER");
     expect(result?.isGuest).toBe(false);
+  });
+
+  it("rejects an otherwise valid session immediately after the account is suspended", async () => {
+    const token = await createSession(PAYLOAD);
+    mockSessionFindUnique.mockResolvedValueOnce(validSessionRecord());
+    mockUserFindUnique.mockResolvedValueOnce({ role: "CUSTOMER", status: "SUSPENDED" });
+
+    await expect(verifySession(token)).resolves.toBeNull();
+    expect(mockUserFindUnique).toHaveBeenCalledWith({
+      where: { id: "user_abc" },
+      select: { role: true, status: true },
+    });
+  });
+
+  it("rejects a session when the user's role no longer matches the signed role", async () => {
+    const token = await createSession(PAYLOAD);
+    mockSessionFindUnique.mockResolvedValueOnce(validSessionRecord());
+    mockUserFindUnique.mockResolvedValueOnce({ role: "TECHNICIAN", status: "ACTIVE" });
+
+    await expect(verifySession(token)).resolves.toBeNull();
+  });
+
+  it("rejects a session when its user account has been deleted", async () => {
+    const token = await createSession(PAYLOAD);
+    mockSessionFindUnique.mockResolvedValueOnce(validSessionRecord());
+    mockUserFindUnique.mockResolvedValueOnce(null);
+
+    await expect(verifySession(token)).resolves.toBeNull();
   });
 
   it("returns null when the DB record is missing (was revoked/cleared)", async () => {
