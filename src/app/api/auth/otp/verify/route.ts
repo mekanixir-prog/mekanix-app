@@ -103,8 +103,8 @@ export async function POST(req: Request) {
   // from consumed:false → consumed:true ONLY if it is still unconsumed AND
   // not expired. count === 1 means we won the race; count === 0 means the
   // code was already used/expired/invalid — same 400 error as before.
-  // Note: WHERE clause uses `code: codeHash` because the DB stores the hash,
-  // not the plaintext code.
+  // Note: WHERE clause uses `code: codeHash` because the DB stores the keyed
+  // verifier, not the plaintext code.
   const now = new Date();
   const consumed = await db.otpCode.updateMany({
     where: {
