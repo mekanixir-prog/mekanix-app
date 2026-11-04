@@ -68,7 +68,6 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write
-      pull-requests: write
     steps:
       - name: Checkout trusted security branch
         uses: actions/checkout@v6
@@ -92,9 +91,7 @@ jobs:
         continue-on-error: true
         run: bun audit --audit-level=moderate
 
-      - name: Create dependency update branch and pull request
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Push dependency update branch for review
         run: |
           if git diff --quiet -- package.json bun.lock; then
             echo "No dependency changes were generated."
@@ -106,14 +103,4 @@ jobs:
           git add package.json bun.lock
           git commit -m "fix(deps): remediate vulnerable dependency versions"
           git push --force origin HEAD:refs/heads/fix/dependency-audit-remediation
-          PR_NUMBER="$(gh pr list --repo mekanixir-prog/mekanix-app --head fix/dependency-audit-remediation --json number --jq '.[0].number // empty')"
-          if [ -n "$PR_NUMBER" ]; then
-            gh pr edit "$PR_NUMBER" --repo mekanixir-prog/mekanix-app \
-              --title "fix(deps): remediate vulnerable dependency versions" \
-              --body "Automated Bun audit remediation. Review the exact lockfile changes and require all CI/security checks before merge."
-          else
-            gh pr create --repo mekanixir-prog/mekanix-app \
-              --base main --head fix/dependency-audit-remediation \
-              --title "fix(deps): remediate vulnerable dependency versions" \
-              --body "Automated Bun audit remediation. Review the exact lockfile changes and require all CI/security checks before merge."
-          fi
+          echo "Dependency candidate pushed. PR creation is intentionally left to an authorized repository integration."
