@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
-import { assertIrrInteger } from "@/lib/money/irr";
+import { getInvoicePaymentAmountError } from "@/lib/money/payment-amount";
 
 // POST /api/payments
 // Records a payment against an invoice.
@@ -96,17 +96,16 @@ export async function POST(req: Request) {
 
   // The invoice is the server-authoritative source, but its amount is payable
   // only when both currency and integer-unit provenance match the IRR contract.
-  if (inv.currency !== "IRR") {
+  const amountError = getInvoicePaymentAmountError(inv.currency, Number(inv.total));
+  if (amountError === "PAYMENT_CURRENCY_NOT_IRR") {
     return NextResponse.json(
-      { error: "واحد پول فاکتور برای پرداخت ریالی معتبر نیست", code: "PAYMENT_CURRENCY_NOT_IRR" },
+      { error: "واحد پول فاکتور برای پرداخت ریالی معتبر نیست", code: amountError },
       { status: 409 },
     );
   }
-  try {
-    assertIrrInteger(Number(inv.total), "Invoice payment amount", { allowZero: false });
-  } catch {
+  if (amountError === "PAYMENT_AMOUNT_NOT_INTEGER_IRR") {
     return NextResponse.json(
-      { error: "مبلغ فاکتور باید عدد صحیح مثبت به ریال باشد", code: "PAYMENT_AMOUNT_NOT_INTEGER_IRR" },
+      { error: "مبلغ فاکتور باید عدد صحیح مثبت به ریال باشد", code: amountError },
       { status: 409 },
     );
   }
