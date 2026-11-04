@@ -102,9 +102,10 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package.json bun.lock
           git commit -m "fix(deps): remediate vulnerable dependency versions"
-          git push --force-with-lease origin HEAD:fix/dependency-audit-remediation
-          if gh pr view --repo mekanixir-prog/mekanix-app --head fix/dependency-audit-remediation >/dev/null 2>&1; then
-            gh pr edit fix/dependency-audit-remediation --repo mekanixir-prog/mekanix-app \
+          git push --force origin HEAD:refs/heads/fix/dependency-audit-remediation
+          PR_NUMBER="$(gh pr list --repo mekanixir-prog/mekanix-app --head fix/dependency-audit-remediation --json number --jq '.[0].number // empty')"
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr edit "$PR_NUMBER" --repo mekanixir-prog/mekanix-app \
               --title "fix(deps): remediate vulnerable dependency versions" \
               --body "Automated Bun audit remediation. Review the exact lockfile changes and require all CI/security checks before merge."
           else
