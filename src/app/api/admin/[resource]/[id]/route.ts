@@ -291,6 +291,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     if ((safe.status === "SUCCEEDED" || safe.status === "REFUNDED") && (before.financialUnitStatus !== "VERIFIED_IRR" || before.currency !== "IRR" || !isSafeStoredIrrAmount(before.amount))) {
       return NextResponse.json({ error: "تغییر وضعیت مالی این پرداخت تا تأیید منشأ مبلغ مسدود است", code: "PAYMENT_FINANCIAL_PROVENANCE_UNVERIFIED" }, { status: 409 });
     }
+    if (safe.status === "SUCCEEDED" || safe.status === "REFUNDED") {
+      return NextResponse.json(
+        { error: "تأیید موفقیت یا بازپرداخت پرداخت فقط از مسیر چرخهٔ پرداختِ دارای مدرک معتبر مجاز است", code: "PAYMENT_STATUS_REQUIRES_VERIFIED_LIFECYCLE" },
+        { status: 409 },
+      );
+    }
     result = await db.payment.update({ where: { id }, data: safe as any });
     await safeAudit({ session: adminSession, action: "UPDATE_PAYMENT", entity: "payment", entityId: id, before, after: result, req });
   } else {
