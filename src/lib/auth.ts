@@ -167,6 +167,22 @@ export async function verifySession(token: string): Promise<Session | null> {
     if (!sessionRecord) return null;                  // not in DB → revoked or never existed
     if (sessionRecord.revokedAt) return null;         // explicitly revoked
     if (sessionRecord.expiresAt.getTime() < Date.now()) return null; // expired
+
+    // Revalidate the account on every authenticated request. A JWT can remain
+    // cryptographically valid after an administrator suspends the account or
+    // changes its role; the session row alone does not reflect either change.
+    // Fail closed for deleted, suspended, pending, or role-mismatched accounts.
+    const currentUser = await db.user.findUnique({
+      where: { id: session.userId },
+      select: { role: true, status: true },
+    });
+    if (
+      !currentUser ||
+      currentUser.status !== "ACTIVE" ||
+      currentUser.role !== session.role
+    ) {
+      return null;
+    }
   } catch (e) {
     console.error("[auth] Failed to query Session DB:", e);
     // Fail-closed in production: DB error → reject session.
