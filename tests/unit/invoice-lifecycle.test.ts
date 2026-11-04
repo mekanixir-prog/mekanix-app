@@ -181,6 +181,19 @@ describe("POST /api/invoices lifecycle", () => {
     expect(mocks.invoiceCreate).not.toHaveBeenCalled();
   });
 
+  it("requires explicit minor or major classification for engine repairs", async () => {
+    mocks.invoiceFindUnique.mockResolvedValueOnce(null);
+    mocks.jobFindUnique.mockResolvedValueOnce({
+      ...pricingJob,
+      request: { ...pricingJob.request, category: "engine repair" },
+    });
+
+    const response = await createInvoice(postRequest({ jobId: "job-1" }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "SERVICE_RATE_MAPPING_REQUIRED" });
+    expect(mocks.invoiceCreate).not.toHaveBeenCalled();
+  });
+
   it("does not issue an invoice before the job reaches post-repair approval", async () => {
     mocks.invoiceFindUnique.mockResolvedValueOnce(null);
     mocks.jobFindUnique.mockResolvedValueOnce({ ...pricingJob, status: "IN_SERVICE" });
