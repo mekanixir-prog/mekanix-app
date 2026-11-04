@@ -389,6 +389,7 @@ model Invoice {
   laborTotal Decimal       @default(0)
   partsTotal Decimal       @default(0)
   travelFee  Decimal       @default(0)
+  inspectionFee Decimal       @default(0)
   subtotal   Decimal       @default(0)
   taxRate    Decimal       @default(0.09)
   taxTotal   Decimal       @default(0)
