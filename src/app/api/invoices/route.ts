@@ -176,6 +176,7 @@ export async function POST(req: Request) {
   const laborTotal = pricing.labor;
   const travelFee = pricing.travel;
   const inspectionFee = pricing.inspection;
+  const emergencyFee = pricing.emergency;
   const subtotal = pricing.subtotal;
   const taxRate = pricing.taxRate;
   const taxTotal = pricing.taxTotal;
@@ -195,6 +196,7 @@ export async function POST(req: Request) {
         partsTotal,
         travelFee,
         inspectionFee,
+        emergencyFee,
         discount,
         subtotal,
         taxRate,
