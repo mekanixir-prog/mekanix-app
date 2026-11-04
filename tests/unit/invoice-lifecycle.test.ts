@@ -77,7 +77,7 @@ beforeEach(() => {
   mocks.invoiceCreate.mockResolvedValue(existingInvoice);
   mocks.invoiceUpdate.mockResolvedValue(existingInvoice);
   mocks.invoiceUpdateMany.mockResolvedValue({ count: 1 });
-  mocks.jobFindUnique.mockResolvedValue(pricingJob);
+  mocks.jobFindUnique.mockResolvedValue(null);
   mocks.jobUpdateMany.mockResolvedValue({ count: 1 });
   mocks.taxFindUnique.mockResolvedValue({ value: "0.09" });
   mocks.notificationCreate.mockResolvedValue({});
