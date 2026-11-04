@@ -187,7 +187,6 @@ export async function calculatePrice(input: PricingInput): Promise<PricingBreakd
 
   // ── Discount (VIP or promo) ─────────────────────────────────────────────
   //   discount = subtotal × vipPercent / 100
-  const vipPercent = input.vipDiscountPercent ?? 0;
   const discount = subtotal.mul(vipPercent).div(100);
 
   // ── After-discount subtotal ─────────────────────────────────────────────
