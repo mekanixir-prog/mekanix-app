@@ -159,7 +159,7 @@ describe("admin withdrawal D1 transaction integration", () => {
       .toEqual({ totalWithdrawn: 0 });
   });
 
-  it("rolls back PAID status if the payout transaction cannot satisfy its wallet foreign key", async () => {
+  it("keeps an approved request unchanged when the verified wallet is missing", async () => {
     sqlite.prepare('UPDATE "WithdrawalRequest" SET "status" = ?, "walletId" = ? WHERE "id" = ?')
       .run("APPROVED", "missing-wallet", "wd-1");
     await expect(updateWithdrawalWithD1(d1 as any, {
