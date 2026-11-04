@@ -78,7 +78,7 @@ Do not require a second approval until a second maintainer exists. Configure an 
 ### Still open
 
 - **PR #113** — cookie-authenticated admin CSRF defense-in-depth. It was retargeted from the historical PR #112 branch to `main`. It is not merged. Its earlier five green checks predate the base retarget; fresh checks against the current base are required before any merge decision. The dedicated admin cookie is currently scoped to `/api/admin-panel`; generic `/api/admin` routes authorize bearer-token admin sessions through `getAdminFromRequest`. The standalone admin login/logout/onboarding endpoints already have same-origin checks. Treat PR #113 as hardening, not as proof of a currently exploitable browser-cookie path.
-- **PR #129** — current-mainline withdrawal hardening: bank-only/valid-Sheba request creation aligned with the existing admin PAID path, plus explicit D1 rollback guards and regression tests for zero-row debit/refund/payout aggregate updates. It preserves the production integer-IRR policy gate and adds no USD limits. CI is running; do not merge until all applicable checks pass on its exact head.
+- **PR #129** — current-mainline withdrawal hardening: bank-only/valid-Sheba request creation aligned with the existing admin PAID path, plus explicit D1 rollback guards and regression tests for zero-row debit/refund/payout aggregate updates. It preserves the production integer-IRR policy gate and adds no USD limits. On exact head `73140a1797f1`, CI, TypeScript/Lint/Test, CodeQL, Secret Scan, Cloudflare Build and Production readiness passed; PostgreSQL and Docker E2E were still running. Do not merge until both finish successfully.
 - **PRs #71 and #73** — closed. Useful bank-only and D1 rollback work from #71 was ported to current-mainline PR #129. #73's USD minimum/maximum and cent precision conflicted with the approved integer-IRR contract and were not ported.
 - **PR #78** — broad 80-file financial branch, stacked on the old `feat/irr-money-core` branch. It is 260 commits ahead and 144 behind current `main`; do not merge wholesale. It also writes `currency: "IRR"` to `Part` while its own `prisma/schema.prisma` still has no `Part.currency` field and the schema is not changed in the PR. Extract and re-review small, current-mainline changes by bounded financial flow after the data and commercial contracts are settled.
 - **PRs #124–#126** — Dependabot updates to GitHub Actions. Review individually; do not batch-merge major action upgrades without checking runner/runtime compatibility and exact CI.
@@ -109,6 +109,8 @@ Required next work:
 5. Prepare a reviewed, reversible migration only after classification and backup/restore rehearsal.
 
 No production/historical row conversion is authorized by the unit decision.
+
+Implementation tracking: [Issue #130](https://github.com/mekanixir-prog/mekanix-app/issues/130) tracks the code-level display, read-masking and writer-boundary fixes described below.
 
 ### Current-main display and read-path findings
 
