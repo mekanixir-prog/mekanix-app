@@ -20,15 +20,15 @@ INSERT INTO "Technician" ("id", "userId", "createdAt", "updatedAt")
 VALUES ('wallet-release-staging-tech', 'wallet-release-staging-user', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 
 INSERT INTO "Wallet"
-  ("id", "technicianId", "balance", "pendingBalance", "totalEarned", "totalCommission",
+  ("id", "technicianId", "financialUnitStatus", "balance", "pendingBalance", "totalEarned", "totalCommission",
    "totalWithdrawn", "createdAt", "updatedAt")
 VALUES
-  ('wallet-release-staging-wallet', 'wallet-release-staging-tech', 0, 10000, 10000, 0,
+  ('wallet-release-staging-wallet', 'wallet-release-staging-tech', 'VERIFIED_IRR', 0, 10000, 10000, 0,
    0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 
 INSERT INTO "WalletTransaction"
   ("id", "walletId", "kind", "status", "grossAmount", "commissionAmount", "netAmount",
-   "holdUntil", "description", "idempotencyKey", "createdAt")
+   "holdUntil", "description", "idempotencyKey", "financialUnitStatus", "createdAt")
 VALUES
   ('wallet-release-staging-txn', 'wallet-release-staging-wallet', 'PREPAY', 'PENDING',
    10000, 0, 10000, strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-2 hours'),
@@ -37,7 +37,7 @@ VALUES
 
 INSERT INTO "WalletLedger"
   ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
-   "referenceType", "referenceId", "description", "idempotencyKey", "createdAt")
+   "referenceType", "referenceId", "description", "idempotencyKey", "financialUnitStatus", "createdAt")
 VALUES
   ('wallet-release-staging-hold-ledger', 'wallet-release-staging-wallet', 'HOLD',
    10000, 0, 10000, 'WalletTransaction', 'wallet-release-staging-txn',
