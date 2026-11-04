@@ -68,19 +68,6 @@ const existingInvoice = {
   financialUnitStatus: "VERIFIED_IRR",
 };
 
-const pricingJob = {
-  id: "job-1",
-  status: "WAITING_APPROVAL",
-  parts: [{ unitPrice: 100, quantity: 2 }],
-  technician: { hourlyRate: 200, travelFeeBase: 50 },
-};
-
-const refreshedJob = {
-  id: "job-1",
-  request: { customer: { user: { id: "customer-1", name: "Customer" } } },
-  technician: { user: { id: "technician-user-1", name: "Technician" } },
-};
-
 beforeEach(() => {
   Object.values(mocks).forEach((mock) => mock.mockReset());
   mocks.auth.mockResolvedValue({ userId: "admin-1", role: "ADMIN" });
@@ -131,8 +118,6 @@ describe("POST /api/invoices lifecycle", () => {
 
   it("keeps all new invoice creation blocked until fixed-labor pricing is implemented", async () => {
     mocks.invoiceFindUnique.mockResolvedValueOnce(null);
-    mocks.jobFindUnique.mockResolvedValueOnce({ ...pricingJob, status: "IN_SERVICE" });
-
     const response = await createInvoice(postRequest({ jobId: "job-1" }));
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ code: "FIXED_LABOR_RATE_CARD_NOT_IMPLEMENTED" });
