@@ -1,46 +1,30 @@
 // MEKANIX — formatting & utility helpers
 import { CURRENCIES } from "./constants";
 
-// USD → IRR conversion rate. Default fallback is 60,000 (realistic 2024 rate).
-// On the client, `useT()` triggers a fetch from /api/exchange-rate which updates
-// this live. In production, that endpoint scrapes Telegram rate channels or
-// calls a free FX API.
-let USD_TO_IRR = 60000;
-
-export function setUsdToIrrRate(rate: number) {
-  if (typeof rate === "number" && rate > 0) {
-    USD_TO_IRR = rate;
-  }
-}
-
-export function getUsdToIrrRate(): number {
-  return USD_TO_IRR;
-}
-
-// Convert digits to Persian
+// Convert digits to Persian.
 function toPersianDigits(s: string | number): string {
   const map = ["۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹"];
   return String(s).replace(/\d/g, (d) => map[Number(d)]);
 }
 
+/**
+ * Format a value in its declared currency without applying an implicit FX rate.
+ * IRR is an integer accounting unit; invalid/non-integer IRR values are not
+ * silently coerced, rounded, or converted and render as an unavailable marker.
+ * Persian Toman presentation is intentionally deferred until read-side
+ * provenance masking guarantees that only verified IRR reaches this formatter.
+ */
 export function fmtMoney(amount: number, currency = "IRR", lang: "en" | "fa" = "en"): string {
   const c = CURRENCIES[currency] ?? CURRENCIES.USD;
-  let converted = amount || 0;
-  let symbol = c.symbol;
+  if (typeof amount !== "number" || !Number.isFinite(amount)) return "—";
+  if (currency === "IRR" && !Number.isSafeInteger(amount)) return "—";
 
-  // Convert USD base to IRR
-  if (currency === "IRR") {
-    converted = converted * USD_TO_IRR;
-    symbol = "﷼";
-  }
-
-  // Format with proper grouping
+  const symbol = currency === "IRR" ? "﷼" : c.symbol;
   const formatted = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 0,
     maximumFractionDigits: currency === "IRR" ? 0 : 2,
-  }).format(converted);
+  }).format(amount);
 
-  // For Persian: convert digits to Persian + use ، (Persian comma) as thousands separator
   if (lang === "fa") {
     const persianFormatted = toPersianDigits(formatted.replace(/,/g, "،"));
     return `${symbol}${persianFormatted}`;
