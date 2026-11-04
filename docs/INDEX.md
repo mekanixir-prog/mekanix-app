@@ -1,15 +1,16 @@
 # MEKANIX Engineering Documentation
 
-> **Current audited code baseline:** `63095f5daffbe950ef707e2a0521b8ffd28a22c1` (2026-11-03). The dated release audit is the source of truth for code and release status.
+> **Current audited code baseline:** `2bf40e8642019550b2710bb171f2fd5ebe4116e8` (2026-11-04). The [2026-11-04 Release Readiness Audit](RELEASE_READINESS_AUDIT_2026-11-04.md) is the current source of truth for mainline and release status.
 
 ## Start here
 
-1. [Release Readiness Audit — 2026-11-01, updated 2026-11-03](RELEASE_READINESS_AUDIT_2026-11-01.md) — current merged work, open blockers, and required evidence.
+1. [Release Readiness Audit — 2026-11-04](RELEASE_READINESS_AUDIT_2026-11-04.md) — exact mainline baseline, current PR/issue disposition, CI evidence, repository governance, financial blockers, and launch gates.
+2. [Historical Release Readiness Audit — 2026-11-01, updated 2026-11-03](RELEASE_READINESS_AUDIT_2026-11-01.md) — prior point-in-time findings; superseded by the 2026-11-04 audit.
 2. [Release Checklist](RELEASE_CHECKLIST.md) — operational gates split between work to finish now and services to activate shortly before launch.
 3. [Production Deployment Runbook](PRODUCTION_DEPLOYMENT_RUNBOOK.md) — staging, configuration, deployment, smoke tests, and rollback sequence.
 4. [Payment & Wallet Audit](AUDIT_PAYMENT_WALLET.md) — provider, invoice, wallet, payout, and idempotency findings.
 5. [Payment Lifecycle Contract](PAYMENT_LIFECYCLE_CONTRACT_2026-11-03.md) — proposed server-authoritative payment, verification, idempotency and fulfillment design; not an implementation approval.
-6. [Financial Unit Contract Audit](FINANCIAL_UNIT_CONTRACT_AUDIT_2026-11-02.md) — current currency-unit inconsistencies, proposed IRR target, and owner-approval/migration gates.
+7. [Financial Unit Contract Audit](FINANCIAL_UNIT_CONTRACT_AUDIT_2026-11-02.md) — currency-unit inconsistencies and implementation/migration gates. The owner approved integer IRR on 2026-11-03; historical provenance and rollout remain incomplete.
 7. [Financial Data Provenance Inventory](FINANCIAL_DATA_PROVENANCE_INVENTORY_2026-11-02.md) — source units, seed assignments, historical-value provenance, and migration risks.
 8. [Financial API Flow Audit](FINANCIAL_API_FLOW_AUDIT_2026-11-02.md) — money sources, validation boundaries, and payment/wallet/withdrawal flow risks.
 9. [D1 / Prisma Audit](AUDIT_D1_PRISMA.md) — adapter, migrations, transaction, and concurrency constraints.
