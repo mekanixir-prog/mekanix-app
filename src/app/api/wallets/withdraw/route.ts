@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { createWithdrawalAtomically } from "@/lib/withdrawal-atomic";
+import { isValidIranianSheba } from "@/lib/iranian-iban";
 import { getApprovedIrrWithdrawalPolicy, isValidIrrWithdrawalAmount } from "@/lib/money/withdrawal-policy";
 
 export async function POST(req: Request) {
@@ -34,13 +35,15 @@ export async function POST(req: Request) {
       { status: 503 },
     );
   }
-  const method = typeof body.method === "string" && body.method.trim()
-    ? body.method.trim()
-    : "card";
-  const cardNumber = typeof body.cardNumber === "string" ? body.cardNumber : null;
-  const bankName = typeof body.bankName === "string" ? body.bankName : null;
-  const shebaNumber = typeof body.shebaNumber === "string" ? body.shebaNumber : null;
-  const maskedCardNumber = cardNumber?.replace(/.(?=.{4})/g, "*") ?? null;
+  // The admin settlement path can only mark a withdrawal PAID after a real
+  // bank transfer with a valid Iranian Sheba. Do not reserve funds for
+  // unsupported card, wallet, or cash destinations.
+  const method = typeof body.method === "string" ? body.method.trim() : "";
+  const bankName = typeof body.bankName === "string" ? body.bankName.trim() : null;
+  const shebaNumber = typeof body.shebaNumber === "string"
+    ? body.shebaNumber.replace(/\s+/g, "").toUpperCase()
+    : null;
+  const maskedCardNumber = null;
   const idempotencyKey = (req.headers.get("idempotency-key") ||
     (typeof body.idempotencyKey === "string" ? body.idempotencyKey : "")).trim();
 
@@ -61,10 +64,15 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-  if (!["card", "wallet", "bank", "cash"].includes(method) ||
-      (cardNumber && cardNumber.length > 30) ||
-      (bankName && bankName.length > 100) || (shebaNumber && shebaNumber.length > 30)) {
-    return NextResponse.json({ error: "اطلاعات حساب بانکی نامعتبر است" }, { status: 400 });
+  if (
+    method !== "bank" ||
+    !isValidIranianSheba(shebaNumber) ||
+    (bankName !== null && bankName.length > 100)
+  ) {
+    return NextResponse.json(
+      { error: "فعلاً فقط برداشت بانکی با شبای معتبر امکان‌پذیر است" },
+      { status: 400 },
+    );
   }
 
   const technician = await getTechnicianFromSession(session);
