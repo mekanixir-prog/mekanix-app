@@ -161,6 +161,10 @@ beforeEach(() => {
   });
   mockSessionCreate.mockResolvedValue({});
   mockSessionUpdateMany.mockResolvedValue({ count: 0 });
+  mockUserFindUnique.mockImplementation(({ where }: { where: { id: string } }) => ({
+    role: where.id === "techuser-a" ? "TECHNICIAN" : "CUSTOMER",
+    status: "ACTIVE",
+  }));
   mockCustomerCreate.mockResolvedValue({});
 });
 
