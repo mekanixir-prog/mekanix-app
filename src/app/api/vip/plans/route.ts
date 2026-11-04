@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 // List all active VIP plans (sorted by order) — public, no auth required.
 export async function GET() {
@@ -9,5 +10,5 @@ export async function GET() {
     orderBy: { order: "asc" },
     include: { subscriptions: false },
   });
-  return NextResponse.json(plans);
+  return NextResponse.json(plans.map((plan) => maskFinancialFields(plan, ["priceIrr"])));
 }
