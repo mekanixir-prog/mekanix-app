@@ -32,22 +32,6 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.clearAllMocks();
 
-  it("fails closed when the shared per-phone rate-limit store is unavailable", async () => {
-    mocks.rateLimitAsync
-      .mockResolvedValueOnce({ success: true, resetMs: 60_000 })
-      .mockResolvedValueOnce({ success: false, resetMs: 30_000, unavailable: true });
-
-    const response = await POST(new Request("https://mekanix.ir/api/auth/otp/verify", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone: "09123456789", code: "123456" }),
-    }));
-
-    expect(response.status).toBe(503);
-    expect(response.headers.get("Retry-After")).toBe("30");
-    expect(mocks.getDbForLib).not.toHaveBeenCalled();
-  });
-
 });
 
 describe("OTP verification phone rate limit", () => {
@@ -104,4 +88,21 @@ describe("OTP verification phone rate limit", () => {
     expect(response.headers.get("Retry-After")).toBe("120");
     expect(mocks.getDbForLib).not.toHaveBeenCalled();
   });
+  
+  it("fails closed when the shared per-phone rate-limit store is unavailable", async () => {
+    mocks.rateLimitAsync
+      .mockResolvedValueOnce({ success: true, resetMs: 60_000 })
+      .mockResolvedValueOnce({ success: false, resetMs: 30_000, unavailable: true });
+
+    const response = await POST(new Request("https://mekanix.ir/api/auth/otp/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone: "09123456789", code: "123456" }),
+    }));
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Retry-After")).toBe("30");
+    expect(mocks.getDbForLib).not.toHaveBeenCalled();
+  });
+
 });
