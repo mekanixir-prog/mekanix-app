@@ -13,6 +13,7 @@ describe("admin withdrawal D1 transaction integration", () => {
       PRAGMA foreign_keys = ON;
       CREATE TABLE "Wallet" (
         "id" TEXT PRIMARY KEY,
+        "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
         "balance" REAL NOT NULL,
         "totalWithdrawn" REAL NOT NULL DEFAULT 0,
         "updatedAt" TEXT NOT NULL
@@ -21,6 +22,7 @@ describe("admin withdrawal D1 transaction integration", () => {
         "id" TEXT PRIMARY KEY,
         "walletId" TEXT NOT NULL,
         "amount" REAL NOT NULL,
+        "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
         "status" TEXT NOT NULL,
         "reviewerId" TEXT,
         "adminNotes" TEXT,
@@ -38,6 +40,7 @@ describe("admin withdrawal D1 transaction integration", () => {
         "referenceId" TEXT NOT NULL,
         "description" TEXT NOT NULL,
         "idempotencyKey" TEXT NOT NULL UNIQUE,
+        "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
         "createdBy" TEXT NOT NULL,
         "createdAt" TEXT NOT NULL
       );
@@ -51,12 +54,13 @@ describe("admin withdrawal D1 transaction integration", () => {
         "netAmount" REAL NOT NULL,
         "description" TEXT NOT NULL,
         "idempotencyKey" TEXT NOT NULL UNIQUE,
+        "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
         "createdAt" TEXT NOT NULL
       );
-      INSERT INTO "Wallet" ("id", "balance", "totalWithdrawn", "updatedAt")
-        VALUES ('wallet-1', 1000, 0, '2026-10-30T09:00:00.000Z');
-      INSERT INTO "WithdrawalRequest" ("id", "walletId", "amount", "status")
-        VALUES ('wd-1', 'wallet-1', 500, 'REQUESTED');
+      INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "totalWithdrawn", "updatedAt")
+        VALUES ('wallet-1', 'VERIFIED_IRR', 1000, 0, '2026-10-30T09:00:00.000Z');
+      INSERT INTO "WithdrawalRequest" ("id", "walletId", "amount", "financialUnitStatus", "status")
+        VALUES ('wd-1', 'wallet-1', 500, 'VERIFIED_IRR', 'REQUESTED');
     `);
     d1 = {
       prepare: (sql: string) => ({
@@ -66,7 +70,12 @@ describe("admin withdrawal D1 transaction integration", () => {
         sqlite.exec("BEGIN IMMEDIATE");
         try {
           const results = statements.map(({ sql, values }) => {
-            const result = sqlite.prepare(sql).run(...values);
+            const statement = sqlite.prepare(sql);
+            if (/^\\s*SELECT/i.test(sql)) {
+              statement.get(...values);
+              return { meta: { changes: 0 } };
+            }
+            const result = statement.run(...values);
             return { meta: { changes: Number(result.changes) } };
           });
           sqlite.exec("COMMIT");
