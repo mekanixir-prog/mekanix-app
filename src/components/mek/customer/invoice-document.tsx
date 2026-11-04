@@ -130,6 +130,7 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
                 <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.laborRate))}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.laborTotal))}</td>
               </tr>
+              {Number(inv.emergencyFee) > 0 && <tr className="border-t border-border"><td className="px-4 py-2.5"><span className="font-medium">{t("invoice.emergencyFee")}</span></td><td className="px-4 py-2.5 text-right tabular-nums">1</td><td className="px-4 py-2.5 text-right tabular-nums">—</td><td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.emergencyFee))}</td></tr>}
               {parts.map((p: any) => (
                 <tr key={p.id} className="border-t border-border">
                   <td className="px-4 py-2.5">
