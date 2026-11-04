@@ -95,6 +95,22 @@ describe("POST /api/invoices lifecycle", () => {
     expect(mocks.invoiceCreate).not.toHaveBeenCalled();
   });
 
+  it("returns an existing invoice idempotently even when production pricing approval is absent", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("MEKANIX_PRICING_IRR_APPROVED", "false");
+    vi.stubEnv("MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED", "false");
+    mocks.invoiceFindUnique.mockResolvedValueOnce(existingInvoice);
+
+    try {
+      const response = await createInvoice(postRequest({ jobId: "job-1" }));
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual(existingInvoice);
+      expect(mocks.invoiceCreate).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("blocks new invoice issuance until the fixed-labor rate card is implemented", async () => {
     mocks.invoiceFindUnique.mockResolvedValueOnce(null);
     const response = await createInvoice(postRequest({ jobId: "job-1" }));
