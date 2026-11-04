@@ -9,7 +9,21 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   audit: vi.fn(),
 }));
-vi.mock("@/lib/admin-auth", () => ({ getAdminFromRequest: mocks.admin }));
+vi.mock("@/lib/admin-auth", () => ({
+  getAdminFromRequest: mocks.admin,
+  hasValidAdminCookieCsrf: (req: Request) => {
+    const cookie = req.headers.get("cookie") || "";
+    if (!cookie.split(";").some((part) => part.trim().startsWith("mekanix_admin_session="))) return true;
+    let origin: string;
+    try { origin = new URL(req.url).origin; } catch { return false; }
+    const suppliedOrigin = req.headers.get("origin");
+    if (suppliedOrigin) {
+      try { if (new URL(suppliedOrigin).origin !== origin) return false; } catch { return false; }
+    } else if (req.headers.get("sec-fetch-site") !== "same-origin") return false;
+    const fetchSite = req.headers.get("sec-fetch-site");
+    return !fetchSite || fetchSite === "same-origin";
+  },
+}));
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: async () => ({
     withdrawalRequest: {
@@ -34,10 +48,10 @@ const before = {
 };
 const after = { ...before, status: "APPROVED" };
 
-function request(body?: unknown) {
+function request(body?: unknown, extraHeaders: Record<string, string> = {}) {
   return new Request("https://mekanix.test/api/admin/withdrawals/wd-1", {
     method: body === undefined ? "GET" : "PATCH",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...extraHeaders },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
@@ -53,6 +67,39 @@ beforeEach(() => {
 });
 
 describe("admin withdrawal API", () => {
+  it("rejects cross-origin cookie-authenticated admin mutations before DB access", async () => {
+    const response = await PATCH(request(
+      { status: "APPROVED" },
+      {
+        cookie: "mekanix_admin_session=valid-admin-cookie",
+        origin: "https://attacker.example",
+        "sec-fetch-site": "cross-site",
+      },
+    ), {
+      params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
+    });
+    expect(response.status).toBe(403);
+    expect(mocks.find).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.audit).not.toHaveBeenCalled();
+  });
+
+  it("allows same-origin cookie-authenticated admin mutations", async () => {
+    const response = await PATCH(request(
+      { status: "APPROVED" },
+      {
+        cookie: "mekanix_admin_session=valid-admin-cookie",
+        origin: "https://mekanix.test",
+        "sec-fetch-site": "same-origin",
+      },
+    ), {
+      params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+  });
+
+
   it("lists withdrawal requests with technician identity", async () => {
     const response = await GET(request(), { params: Promise.resolve({ resource: "withdrawals" }) });
     expect(response.status).toBe(200);

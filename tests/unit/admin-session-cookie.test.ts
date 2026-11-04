@@ -18,7 +18,7 @@ vi.mock("@/lib/db-access", () => ({
 vi.mock("@/lib/admin-api", () => ({ writeAuditLog: mocks.audit }));
 
 import { POST } from "@/app/api/admin-panel/auth/logout/route";
-import { ADMIN_SESSION_COOKIE, createAdminToken, isSameOriginRequest, setAdminSessionCookie } from "@/lib/admin-auth";
+import { ADMIN_SESSION_COOKIE, createAdminToken, hasValidAdminCookieCsrf, isSameOriginRequest, setAdminSessionCookie } from "@/lib/admin-auth";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -62,6 +62,37 @@ describe("admin cookie logout and CSRF protection", () => {
     expect(isSameOriginRequest(new Request("https://mekanix.test/api/admin-panel", {
       headers: { origin: "https://sub.mekanix.test", "sec-fetch-site": "same-site" },
     }))).toBe(false);
+  });
+
+
+  it("requires same-origin validation only when the dedicated admin cookie is present", () => {
+    const bearerOnly = new Request("https://mekanix.test/api/admin/withdrawals/wd-1", {
+      headers: { authorization: "Bearer user-session-token" },
+    });
+    expect(hasValidAdminCookieCsrf(bearerOnly)).toBe(true);
+
+    const sameOriginCookie = new Request("https://mekanix.test/api/admin/withdrawals/wd-1", {
+      headers: {
+        cookie: `${ADMIN_SESSION_COOKIE}=signed.jwt.value`,
+        origin: "https://mekanix.test",
+        "sec-fetch-site": "same-origin",
+      },
+    });
+    expect(hasValidAdminCookieCsrf(sameOriginCookie)).toBe(true);
+
+    const crossOriginCookie = new Request("https://mekanix.test/api/admin/withdrawals/wd-1", {
+      headers: {
+        cookie: `${ADMIN_SESSION_COOKIE}=signed.jwt.value`,
+        origin: "https://attacker.example",
+        "sec-fetch-site": "cross-site",
+      },
+    });
+    expect(hasValidAdminCookieCsrf(crossOriginCookie)).toBe(false);
+
+    const missingOriginSignal = new Request("https://mekanix.test/api/admin/withdrawals/wd-1", {
+      headers: { cookie: `${ADMIN_SESSION_COOKIE}=signed.jwt.value` },
+    });
+    expect(hasValidAdminCookieCsrf(missingOriginSignal)).toBe(false);
   });
 
   it("revokes the persisted session version and clears the HttpOnly cookie", async () => {
