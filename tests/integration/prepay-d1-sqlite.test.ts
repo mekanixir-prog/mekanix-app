@@ -90,7 +90,7 @@ function makeD1() {
 function seed(sqlite: DatabaseSync) {
   sqlite.prepare('INSERT INTO "Job" ("id", "technicianId", "prepayPaid") VALUES (?, ?, 0)')
     .run("job-1", "tech-1");
-  sqlite.prepare('INSERT INTO "Wallet" ("id", "technicianId", "financialUnitStatus", "balance", "pendingBalance", "totalEarned", "totalCommission", "createdAt", "updatedAt") VALUES (?, ?, 'VERIFIED_IRR', 0, ?, ?, ?, ?, ?)')
+  sqlite.prepare(`INSERT INTO "Wallet" ("id", "technicianId", "financialUnitStatus", "balance", "pendingBalance", "totalEarned", "totalCommission", "createdAt", "updatedAt") VALUES (?, ?, 'VERIFIED_IRR', 0, ?, ?, ?, ?, ?)`)
     .run("wallet-1", "tech-1", 100, 0, 0, "2026-10-30T00:00:00.000Z", "2026-10-30T00:00:00.000Z");
 }
 
