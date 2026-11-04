@@ -29,6 +29,7 @@ export async function releaseWalletTransactionWithPrisma(
         id: transactionId,
         walletId,
         status: "PENDING",
+        financialUnitStatus: "VERIFIED_IRR",
         netAmount: { gte: 0 },
         holdUntil: { not: null, lte: now },
       },
@@ -51,9 +52,12 @@ export async function releaseWalletTransactionWithPrisma(
 
     const updatedWallet = await tx.wallet.findUnique({
       where: { id: walletId },
-      select: { balance: true, financialUnitStatus: true },
+      select: { balance: true, pendingBalance: true, financialUnitStatus: true },
     });
-    if (!updatedWallet || updatedWallet.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(updatedWallet.balance)) throw new Error("Wallet financial provenance is not verified");
+    if (!updatedWallet || updatedWallet.financialUnitStatus !== "VERIFIED_IRR" ||
+        !isSafeStoredIrrAmount(updatedWallet.balance) || !isSafeStoredIrrAmount(updatedWallet.pendingBalance)) {
+      throw new Error("Wallet financial provenance or integer IRR aggregates are invalid");
+    }
 
     const amount = transaction.netAmount;
     const balanceAfter = updatedWallet.balance;
