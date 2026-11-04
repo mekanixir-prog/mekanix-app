@@ -50,7 +50,7 @@ async function createWithPrisma(db: PrismaClient, input: InsuranceClaimCreateInp
       select: { id: true, code: true },
     });
     const policyUpdate = await tx.insurancePolicy.updateMany({
-      where: { id: input.policyId, status: { notIn: ["expired", "cancelled"] } },
+      where: { id: input.policyId, status: { notIn: ["expired", "cancelled"] }, financialUnitStatus: "VERIFIED_IRR" },
       data: { status: "claimed" },
     });
     if (policyUpdate.count !== 1) throw new InsurancePolicyInactiveError();
@@ -72,7 +72,7 @@ async function createWithD1(
          "idempotencyKey", "requestFingerprint", "createdAt")
       SELECT ?, ?, ?, ?, ?, ?, 'VERIFIED_IRR', 'submitted', ?, ?, ?
       FROM "InsurancePolicy"
-      WHERE "id" = ? AND "status" NOT IN ('expired', 'cancelled')
+      WHERE "id" = ? AND "status" NOT IN ('expired', 'cancelled') AND "financialUnitStatus" = 'VERIFIED_IRR'
       ON CONFLICT("idempotencyKey") DO NOTHING
     `).bind(
       claimId, input.code, input.policyId, input.jobId, input.description,
@@ -83,6 +83,7 @@ async function createWithD1(
       SET "status" = 'claimed'
       WHERE "id" = ?
         AND "status" NOT IN ('expired', 'cancelled')
+        AND "financialUnitStatus" = 'VERIFIED_IRR'
         AND EXISTS (
           SELECT 1 FROM "InsuranceClaim"
           WHERE "idempotencyKey" = ? AND "requestFingerprint" = ?
@@ -116,6 +117,9 @@ export async function createInsuranceClaimAtomically(
   db: PrismaClient,
   input: InsuranceClaimCreateInput
 ): Promise<CreateResult> {
+  if (!Number.isSafeInteger(input.amount) || input.amount <= 0) {
+    throw new Error("Insurance claim amount must be a positive safe integer IRR value");
+  }
   const existing = await db.insuranceClaim.findUnique({
     where: { idempotencyKey: input.idempotencyKey },
     select: { id: true, code: true, requestFingerprint: true },
