@@ -61,6 +61,29 @@ describe("atomic prepay recording", () => {
     expect(tx.walletLedger.create).not.toHaveBeenCalled();
   });
 
+  it("refuses to mutate an existing wallet without verified IRR provenance", async () => {
+    const tx = {
+      job: { updateMany: vi.fn() },
+      wallet: {
+        upsert: vi.fn().mockResolvedValue({
+          id: "wallet-1", balance: 0, pendingBalance: 100,
+          totalEarned: 0, totalCommission: 0, financialUnitStatus: "UNVERIFIED",
+        }),
+        updateMany: vi.fn(),
+      },
+      walletTransaction: { create: vi.fn() },
+      walletLedger: { create: vi.fn() },
+    };
+    const db = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)),
+    } as any;
+
+    await expect(recordPrepayWithPrisma(db, input)).resolves.toBe(false);
+    expect(tx.job.updateMany).not.toHaveBeenCalled();
+    expect(tx.walletTransaction.create).not.toHaveBeenCalled();
+    expect(tx.walletLedger.create).not.toHaveBeenCalled();
+  });
+
   it("propagates a ledger failure so the Prisma transaction rolls back", async () => {
     const tx = {
       job: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
