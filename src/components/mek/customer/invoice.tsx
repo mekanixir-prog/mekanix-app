@@ -142,9 +142,10 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
         {invoice && (
           <div className="border-t border-border bg-muted/20 p-5">
             <div className="mx-auto max-w-xs space-y-1.5 text-sm">
-              <Line label={t("invoice.labor")} value={`${isFa ? toPersianDigits(invoice.laborHours) : invoice.laborHours}${t("common.hourShort")} × ${money(Number(invoice.laborRate))}`} amount={Number(invoice.laborTotal)} moneyFn={money} />
+              <Line label={t("invoice.laborFixed")} amount={Number(invoice.laborTotal)} moneyFn={money} />
               <Line label={t("invoice.partsMaterials")} amount={Number(invoice.partsTotal)} moneyFn={money} />
               <Line label={t("invoice.travelFee")} amount={Number(invoice.travelFee)} moneyFn={money} />
+              <Line label={t("invoice.inspectionFee")} amount={Number(invoice.inspectionFee)} moneyFn={money} />
               <div className="border-t border-border pt-1.5" />
               <Line label={t("invoice.subtotal")} amount={Number(invoice.subtotal)} muted moneyFn={money} />
               <Line label={t("invoice.tax", undefined).replace("{rate}", isFa ? toPersianDigits(Math.round(Number(invoice.taxRate) * 100)) : String(Math.round(Number(invoice.taxRate) * 100)))} amount={Number(invoice.taxTotal)} muted moneyFn={money} />
