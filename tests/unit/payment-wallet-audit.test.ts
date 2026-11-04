@@ -416,7 +416,6 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
     userId: "user-1",
     amount: 100_000,
     currency: "IRR",
-      financialUnitStatus: "VERIFIED_IRR",
     status: "SUCCEEDED",
       financialUnitStatus: "VERIFIED_IRR",
   };
@@ -534,7 +533,6 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
       userId: "user-1",
       amount: 100_000,
       currency: "IRR",
-      financialUnitStatus: "VERIFIED_IRR",
       status: "VERIFIED",
       financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip",
@@ -563,7 +561,6 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
       userId: "user-1",
       amount: 100_000,
       currency: "IRR",
-      financialUnitStatus: "VERIFIED_IRR",
       status: "VERIFIED",
       financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip",
@@ -710,7 +707,6 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
       financialUnitStatus: "VERIFIED_IRR",
       amount: 100_000,
       currency: "IRR",
-      financialUnitStatus: "VERIFIED_IRR",
       gatewayLogId: "gateway-pay-1",
     });
     mockPaymentGatewayLogFindUnique.mockResolvedValue({
@@ -722,7 +718,6 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
       paymentId: "pay-1",
       amount: 100_000,
       currency: "IRR",
-      financialUnitStatus: "VERIFIED_IRR",
     });
     mockUserVipSubscriptionUpdateMany.mockResolvedValue({ count: 0 });
     mockUserVipSubscriptionFindUnique.mockResolvedValue({
@@ -821,7 +816,6 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
       financialUnitStatus: "VERIFIED_IRR",
         amount: 100_000,
         currency: "IRR",
-      financialUnitStatus: "VERIFIED_IRR",
         gatewayLogId: `gateway-${where.id}`,
       }));
       mockPaymentGatewayLogFindUnique.mockImplementation(async ({ where }: any) => ({
@@ -833,7 +827,6 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
         paymentId: where.id.replace("gateway-", ""),
         amount: 100_000,
         currency: "IRR",
-      financialUnitStatus: "VERIFIED_IRR",
       }));
       mockUserVipSubscriptionFindFirst.mockResolvedValue(null);
       mockCreateVipSubscriptionAtomically
