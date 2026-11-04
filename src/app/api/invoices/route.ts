@@ -153,7 +153,7 @@ export async function POST(req: Request) {
     { lat: job.request.lat, lng: job.request.lng },
     { lat: job.technician.lat, lng: job.technician.lng },
   );
-  let pricing;
+  let pricing: Awaited<ReturnType<typeof calculatePrice>>;
   try {
     pricing = await calculatePrice({
       vehicleType: job.request.vehicle.type,
@@ -201,7 +201,7 @@ export async function POST(req: Request) {
         currency: "IRR",
         financialUnitStatus: "VERIFIED_IRR",
         status: "SENT",
-        notes: `Fixed-fee rate card ${pricing.pricingVersion}; service ${serviceCode}. Parts & labor covered by 6-month MEKANIX warranty.`,
+        notes: `Fixed-fee rate card ${pricing.pricingVersion}; service ${serviceCode}; estimated technician travel ${travelDistanceKm} km. Parts & labor covered by 6-month MEKANIX warranty.`,
       },
       include: FULL_INCLUDE,
     });
