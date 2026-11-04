@@ -58,6 +58,20 @@ describe("OTP verification phone rate limit", () => {
     expect(mocks.getDbForLib).toHaveBeenCalledTimes(1);
   });
 
+  it("fails closed before database access when the production HMAC secret is missing", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("OTP_HASH_SECRET", "");
+
+    const response = await POST(new Request("https://mekanix.ir/api/auth/otp/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone: "09123456789", code: "123456" }),
+    }));
+
+    expect(response.status).toBe(503);
+    expect(mocks.getDbForLib).not.toHaveBeenCalled();
+  });
+
   it("stops before database access when the phone budget is exhausted", async () => {
     mocks.rateLimitAsync
       .mockResolvedValueOnce({ success: true, resetMs: 60_000 })
