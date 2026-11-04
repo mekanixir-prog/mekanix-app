@@ -46,37 +46,19 @@ function isSameOriginMutation(req: Request): boolean {
   return !fetchSite || fetchSite === "same-origin";
 }
 
-export function proxy(req: NextRequest) {
-  // Central CSRF defense for every browser-cookie-authenticated API mutation.
-  // Bearer-only native/API clients are not affected because browsers do not
-  // attach Authorization headers cross-site automatically.
-  const method = req.method.toUpperCase();
-  const isUnsafeMethod = !["GET", "HEAD", "OPTIONS"].includes(method);
-  if (
-    isUnsafeMethod &&
-    hasBrowserSessionCookie(req) &&
-    !isSameOriginMutation(req)
-  ) {
-    return NextResponse.json(
-      { error: "درخواست از مبدأ نامعتبر است" },
-      { status: 403 },
-    );
-  }
-
-  const res = NextResponse.next();
-
-  // Security headers — permissive for preview panel iframe
+function applySecurityHeaders(res: NextResponse): NextResponse {
   res.headers.set("X-Content-Type-Options", "nosniff");
   res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   res.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(self)");
 
-  if (process.env.NODE_ENV === "production") {
+  const isProduction = process.env.NODE_ENV === "production";
+  if (isProduction) {
     res.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
   }
+
   // Restrict production embedding to our own origin and the known preview
   // gateway. A wildcard frame-ancestors policy allows arbitrary sites to
   // frame authenticated pages and creates a clickjacking surface.
-  const isProduction = process.env.NODE_ENV === "production";
   const csp = [
     "default-src 'self'",
     "base-uri 'self'",
@@ -99,8 +81,27 @@ export function proxy(req: NextRequest) {
       : "frame-ancestors 'self' https://*.space-z.ai http://localhost:* http://127.0.0.1:*",
   ].join("; ");
   res.headers.set("Content-Security-Policy", csp);
-
   return res;
+}
+
+export function proxy(req: NextRequest) {
+  // Central CSRF defense for every browser-cookie-authenticated API mutation.
+  // Bearer-only native/API clients are not affected because browsers do not
+  // attach Authorization headers cross-site automatically.
+  const method = req.method.toUpperCase();
+  const isUnsafeMethod = !["GET", "HEAD", "OPTIONS"].includes(method);
+  if (
+    isUnsafeMethod &&
+    hasBrowserSessionCookie(req) &&
+    !isSameOriginMutation(req)
+  ) {
+    return applySecurityHeaders(NextResponse.json(
+      { error: "درخواست از مبدأ نامعتبر است" },
+      { status: 403 },
+    ));
+  }
+
+  return applySecurityHeaders(NextResponse.next());
 }
 
 export const config = {
