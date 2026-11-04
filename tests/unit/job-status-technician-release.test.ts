@@ -96,7 +96,7 @@ describe("job status route delegates atomic state changes", () => {
     }));
   });
 
-  it("uses the configured validated tax rate when the repair enters customer approval", async () => {
+  it("blocks legacy hourly estimates while the fixed-labor rate card is unavailable", async () => {
     const repair = {
       status: "REPAIRING",
       technicianId: "tech-1",
@@ -121,19 +121,12 @@ describe("job status route delegates atomic state changes", () => {
     });
 
     const response = await PATCH(request, { params: Promise.resolve({ id: "job-1" }) });
-    expect(response.status).toBe(200);
-    expect(mocks.transition).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
-      invoice: expect.objectContaining({
-        laborHours: 1.5,
-        subtotal: 550,
-        taxRate: 0.12,
-        taxTotal: 66,
-        total: 616,
-      }),
-    }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "FIXED_LABOR_RATE_CARD_NOT_IMPLEMENTED" });
+    expect(mocks.transition).not.toHaveBeenCalled();
   });
 
-  it("fails closed when the configured tax rate is malformed", async () => {
+  it("does not evaluate legacy hourly tax before fixed-labor pricing is implemented", async () => {
     const repair = {
       status: "REPAIRING",
       technicianId: "tech-1",
@@ -158,7 +151,9 @@ describe("job status route delegates atomic state changes", () => {
     });
 
     const response = await PATCH(request, { params: Promise.resolve({ id: "job-1" }) });
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "FIXED_LABOR_RATE_CARD_NOT_IMPLEMENTED" });
+    expect(mocks.taxFind).not.toHaveBeenCalled();
     expect(mocks.transition).not.toHaveBeenCalled();
   });
 
