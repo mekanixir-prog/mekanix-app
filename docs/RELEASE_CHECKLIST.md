@@ -1,7 +1,7 @@
 # MEKANIX — Release Checklist
 
 **Status date:** 2026-11-04  
-**Current main baseline:** `dae8fe53bf8c5c776ed939d665a8a146619162db`  
+**Current main baseline:** `db0f3361c3158764c47cfeb48d5b9dafadc90610`  
 **Release decision:** <strong>NO-GO</strong> — code hardening and release evidence remain incomplete.
 
 This replaces the historical checklist snapshots from October. Do not use old “Release Candidate — all checks passed” or old staging/load-test claims as current release evidence.
@@ -133,6 +133,9 @@ This section records changes after the previous 2026-11-03 checklist snapshot. T
 ### Withdrawal hardening
 
 - [x] PR #129 — bank-only/valid-Sheba creation and D1 rollback guards, preserving the current integer-IRR production gate; all eight applicable PR checks passed and merged as `dae8fe53bf8c5c776ed939d665a8a146619162db`.
+- [x] PR #124 — `actions/upload-artifact` v7; eight applicable PR checks passed and merged as `25e08a476cd2d975b517651a4d758e82ac51b3db`.
+- [x] PR #125 — `actions/checkout` v7; eight applicable PR checks passed and merged as `8ac36ef874590150d1af6f92693b30ea41708e6a`.
+- [x] PR #126 — `docker/setup-buildx-action` v4; seven applicable PR checks passed and merged as `db0f3361c3158764c47cfeb48d5b9dafadc90610`.
 
 ### Repository-level governance
 
