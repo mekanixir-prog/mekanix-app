@@ -288,12 +288,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     // SEC-4: snapshot BEFORE.
     const before = await db.payment.findUnique({ where: { id } });
     if (!before) return NextResponse.json({ error: "پرداخت یافت نشد" }, { status: 404 });
-    if ((safe.status === "SUCCEEDED" || safe.status === "REFUNDED") && (before.financialUnitStatus !== "VERIFIED_IRR" || before.currency !== "IRR" || !isSafeStoredIrrAmount(before.amount))) {
-      return NextResponse.json({ error: "تغییر وضعیت مالی این پرداخت تا تأیید منشأ مبلغ مسدود است", code: "PAYMENT_FINANCIAL_PROVENANCE_UNVERIFIED" }, { status: 409 });
-    }
-    if (safe.status === "SUCCEEDED" || safe.status === "REFUNDED") {
+    if (safe.status !== undefined) {
       return NextResponse.json(
-        { error: "تأیید موفقیت یا بازپرداخت پرداخت فقط از مسیر چرخهٔ پرداختِ دارای مدرک معتبر مجاز است", code: "PAYMENT_STATUS_REQUIRES_VERIFIED_LIFECYCLE" },
+        { error: "تغییر وضعیت پرداخت از ویرایش عمومی مدیر مجاز نیست؛ همهٔ انتقال‌ها باید از چرخهٔ پرداختِ دارای مدرک معتبر عبور کنند", code: "PAYMENT_STATUS_REQUIRES_VERIFIED_LIFECYCLE" },
         { status: 409 },
       );
     }
