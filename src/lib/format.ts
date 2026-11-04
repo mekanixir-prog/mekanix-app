@@ -14,7 +14,7 @@ function toPersianDigits(s: string | number): string {
  * Persian Toman presentation is intentionally deferred until read-side
  * provenance masking guarantees that only verified IRR reaches this formatter.
  */
-export function fmtMoney(amount: number, currency = "IRR", lang: "en" | "fa" = "en"): string {
+export function fmtMoney(amount: unknown, currency = "IRR", lang: "en" | "fa" = "en"): string {
   const c = CURRENCIES[currency] ?? CURRENCIES.USD;
   if (typeof amount !== "number" || !Number.isFinite(amount)) return "—";
   if (currency === "IRR" && !Number.isSafeInteger(amount)) return "—";
