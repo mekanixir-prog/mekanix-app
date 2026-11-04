@@ -13,5 +13,5 @@ export async function GET(req: Request) {
     orderBy: { order: "asc" },
   });
 
-  return NextResponse.json(packages);
+  return NextResponse.json(packages.map((pkg) => maskFinancialFields(pkg, ["basePrice"])));
 }
