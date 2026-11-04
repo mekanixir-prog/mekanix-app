@@ -4,6 +4,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
 import { areInvoicePriceSourcesVerified, areJobPartPriceSourcesVerified } from "@/lib/money/provenance";
+import { maskInvoiceFinancialData } from "@/lib/money/financial-read-mask";
 
 const FULL_INCLUDE = {
   job: {
@@ -31,7 +32,7 @@ export async function GET(req: Request) {
 
   const db = await getDbForLib();
   const inv = await db.invoice.findUnique({ where: { jobId }, include: FULL_INCLUDE });
-  return NextResponse.json(inv);
+  return NextResponse.json(inv ? maskInvoiceFinancialData(inv as unknown as Record<string, unknown>) : null);
 }
 
 // POST: only the assigned technician or an admin may issue an invoice.
@@ -88,7 +89,7 @@ export async function POST(req: Request) {
     where: { jobId },
     include: FULL_INCLUDE,
   });
-  if (existingInvoice) return NextResponse.json(existingInvoice);
+  if (existingInvoice) return NextResponse.json(maskInvoiceFinancialData(existingInvoice as unknown as Record<string, unknown>));
 
   const job = await db.job.findUnique({
     where: { id: jobId },
@@ -180,7 +181,7 @@ export async function POST(req: Request) {
       where: { jobId },
       include: FULL_INCLUDE,
     }).catch(() => null);
-    if (racedInvoice) return NextResponse.json(racedInvoice);
+    if (racedInvoice) return NextResponse.json(maskInvoiceFinancialData(racedInvoice as unknown as Record<string, unknown>));
     throw error;
   }
 
@@ -202,7 +203,7 @@ export async function POST(req: Request) {
           userId: cust.id,
           type: "invoice_issued",
           title: `Invoice ${invoice.code} issued`,
-          body: `${tech?.name ?? "Mechanic"} issued invoice for ${Number(invoice.total)}. Review and pay to complete the job.`,
+          body: `${tech?.name ?? "Mechanic"} issued invoice ${invoice.code}. Review it to continue.`,
           category: "payment",
           link: "customer/invoice",
         },
@@ -213,7 +214,7 @@ export async function POST(req: Request) {
             userId: tech.id,
             type: "invoice_issued",
             title: `Invoice ${invoice.code} sent to customer`,
-            body: `${invoice.code} for ${Number(invoice.total)} was sent to ${cust.name} for review & payment.`,
+            body: `${invoice.code} was sent to ${cust.name} for review & payment.`,
             category: "payment",
             link: "technician/earnings",
           },
@@ -224,12 +225,12 @@ export async function POST(req: Request) {
           jobId: refreshed.id,
           fromUserId: tech?.id ?? cust.id,
           kind: "system",
-          body: `Invoice ${invoice.code} issued — total ${Number(invoice.total)} ${invoice.currency}.`,
+          body: `Invoice ${invoice.code} issued.`,
         },
       });
     } catch (error) {
       console.error("[invoices] invoice notification failed:", error);
     }
   }
-  return NextResponse.json(invoice);
+  return NextResponse.json(maskInvoiceFinancialData(invoice as unknown as Record<string, unknown>));
 }
