@@ -67,7 +67,7 @@ describe("admin withdrawal transitions", () => {
   it("rolls back rejection if the refund ledger cannot be written", async () => {
     const tx = {
       withdrawalRequest: {
-        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "REQUESTED" }),
+        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "REQUESTED", financialUnitStatus: "VERIFIED_IRR" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       wallet: {
@@ -85,7 +85,7 @@ describe("admin withdrawal transitions", () => {
   it("marks an approved request paid, creates one payout transaction and updates totalWithdrawn", async () => {
     const tx = {
       withdrawalRequest: {
-        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "APPROVED" }),
+        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "APPROVED", financialUnitStatus: "VERIFIED_IRR" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       walletTransaction: { create: vi.fn().mockResolvedValue({}) },
