@@ -58,6 +58,10 @@ describe("fixed-fee pricing engine", () => {
     await expect(calculatePrice({ ...base, vipDiscountPercent: 10 })).rejects.toThrow("VIP does not discount repairs or parts");
   });
 
+  it("rejects unknown vehicle types instead of charging the heavy-equipment rate", async () => {
+    await expect(calculatePrice({ ...base, vehicleType: "OTHER" })).rejects.toThrow("نوع وسیله");
+  });
+
   it("rejects a service not offered for the selected asset class", async () => {
     await expect(calculatePrice({ ...base, serviceCode: "hydraulic" })).rejects.toThrow("در نرخ‌نامه تعریف نشده");
   });
