@@ -193,6 +193,19 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
     { id: "cust", lat: custLoc.lat, lng: custLoc.lng, kind: "customer", label: job.request.vehicle.location ?? t("tech.jobDetail.customer") },
   ];
   const isComplete = job.status === "COMPLETED";
+  const invoiceFinanciallyVerified = job.invoice?.financialUnitStatus === "VERIFIED_IRR";
+  const technicianFeesVerified = job.technician?.financialUnitStatus === "VERIFIED_IRR";
+  const partsFinanciallyVerified = job.parts.every((part) => part.financialUnitStatus === "VERIFIED_IRR");
+  const laborAmount = invoiceFinanciallyVerified
+    ? (job.invoice?.laborTotal == null ? null : Number(job.invoice.laborTotal))
+    : technicianFeesVerified ? (job.invoice?.laborHours ?? 1.5) * Number(job.technician.hourlyRate) : null;
+  const partsAmount = invoiceFinanciallyVerified
+    ? (job.invoice?.partsTotal == null ? null : Number(job.invoice.partsTotal))
+    : partsFinanciallyVerified ? job.parts.reduce((sum, part) => sum + Number(part.unitPrice) * part.quantity, 0) : null;
+  const travelAmount = invoiceFinanciallyVerified
+    ? (job.invoice?.travelFee == null ? null : Number(job.invoice.travelFee))
+    : technicianFeesVerified ? Number(job.technician.travelFeeBase) : null;
+  const totalAmount = invoiceFinanciallyVerified && job.invoice?.total != null ? Number(job.invoice.total) : null;
 
   return (
     <div className="space-y-4" dir={isFa ? "rtl" : "ltr"}>
@@ -324,7 +337,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                     <div key={p.id} className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm">
                       <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
                       <span className="text-[11px] text-muted-foreground">×{isFa ? toPersianDigits(p.quantity) : p.quantity}</span>
-                      <span className="tabular-nums text-amber">{money(Number(p.unitPrice))}</span>
+                      <span className="tabular-nums text-amber">{money(p.unitPrice == null ? null : Number(p.unitPrice))}</span>
                       <button onClick={() => removePart(p.id)} className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
                         <Trash2 className="size-3" />
                       </button>
@@ -360,16 +373,19 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                 {job.invoice && <StatusBadge status={job.invoice.status === "PAID" ? "COMPLETED" : "WAITING_APPROVAL"} />}
               </div>
               <div className="mt-3 space-y-1.5 text-sm">
-                <EstLine label={t("tech.jobDetail.labor").replace("{hours}", isFa ? toPersianDigits(String(job.invoice?.laborHours ?? 1.5)) : String(job.invoice?.laborHours ?? 1.5))} amount={(job.invoice?.laborHours ?? 1.5) * Number(job.technician.hourlyRate)} moneyFn={money} />
-                <EstLine label={t("tech.jobDetail.partsShort")} amount={job.parts.reduce((s, p) => s + Number(p.unitPrice) * p.quantity, 0)} moneyFn={money} />
-                <EstLine label={t("tech.jobDetail.travelFee")} amount={Number(job.technician.travelFeeBase)} moneyFn={money} />
+                <EstLine label={t("tech.jobDetail.labor").replace("{hours}", isFa ? toPersianDigits(String(job.invoice?.laborHours ?? 1.5)) : String(job.invoice?.laborHours ?? 1.5))} amount={laborAmount} moneyFn={money} />
+                <EstLine label={t("tech.jobDetail.partsShort")} amount={partsAmount} moneyFn={money} />
+                <EstLine label={t("tech.jobDetail.travelFee")} amount={travelAmount} moneyFn={money} />
                 <div className="border-t border-border pt-1.5" />
                 <div className="flex items-center justify-between">
                   <span className="font-medium">{t("tech.jobDetail.estTotal")}</span>
-                  <span className="font-display text-lg font-bold text-amber">
-                    {money(Number(job.invoice?.total ?? (1.5 * Number(job.technician.hourlyRate) + job.parts.reduce((s, p) => s + Number(p.unitPrice) * p.quantity, 0) + Number(job.technician.travelFeeBase)) * 1.09))}
-                  </span>
+                  <span className="font-display text-lg font-bold text-amber">{money(totalAmount)}</span>
                 </div>
+                {totalAmount === null && (
+                  <p className="text-[11px] text-muted-foreground">
+                    {isFa ? "جمع نهایی پس از تأیید منشأ مبالغ و تعرفه‌ها نمایش داده می‌شود." : "The final total appears after the amounts and rate card are verified."}
+                  </p>
+                )}
               </div>
               {job.status === "REPAIRING" && (
                 <Button onClick={advance} className="mt-3 w-full bg-amber text-black hover:bg-amber/90">
@@ -417,7 +433,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
   );
 }
 
-function EstLine({ label, amount, moneyFn }: { label: string; amount: number; moneyFn: (n: number) => string }) {
+function EstLine({ label, amount, moneyFn }: { label: string; amount: number | null; moneyFn: (n: unknown) => string }) {
   return (
     <div className="flex items-center justify-between text-muted-foreground">
       <span>{label}</span>
