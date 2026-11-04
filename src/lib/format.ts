@@ -22,18 +22,25 @@ export function fmtMoney(amount: unknown, currency = "IRR", lang: "en" | "fa" = 
     : typeof amount === "string" && amount.trim() !== ""
       ? Number(amount)
       : Number.NaN;
-  if (!Number.isFinite(numericAmount)) return "—";
+  if (!Number.isFinite(numericAmount) || Math.abs(numericAmount) > Number.MAX_SAFE_INTEGER) return "—";
   if (currency === "IRR" && !Number.isSafeInteger(numericAmount)) return "—";
 
-  const symbol = currency === "IRR" ? "﷼" : c.symbol;
+  // The canonical stored unit is IRR. Persian UI presents Toman (IRR / 10)
+  // without rounding; English UI keeps the canonical Rial amount.
+  const displayAmount = currency === "IRR" && lang === "fa"
+    ? numericAmount / 10
+    : numericAmount;
+  const symbol = currency === "IRR" && lang === "en" ? "﷼" : c.symbol;
   const formatted = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 0,
-    maximumFractionDigits: currency === "IRR" ? 0 : 2,
-  }).format(numericAmount);
+    maximumFractionDigits: currency === "IRR" ? (lang === "fa" ? 1 : 0) : 2,
+  }).format(displayAmount);
 
   if (lang === "fa") {
     const persianFormatted = toPersianDigits(formatted.replace(/,/g, "،"));
-    return `${symbol}${persianFormatted}`;
+    return currency === "IRR"
+      ? `${persianFormatted} تومان`
+      : `${symbol}${persianFormatted}`;
   }
 
   return `${symbol}${formatted}`;
