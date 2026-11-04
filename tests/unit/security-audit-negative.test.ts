@@ -139,7 +139,19 @@ async function mintUserToken(
   role: "CUSTOMER" | "TECHNICIAN" | "ADMIN" | "FLEET_MANAGER" | "PARTNER",
   phone: string | null = null,
 ): Promise<string> {
-  return createSession({ userId, role, phone, isGuest: false });
+  const token = await createSession({ userId, role, phone, isGuest: false });
+  mockSessionFindUnique.mockResolvedValueOnce({
+    id: "sess_test",
+    userId,
+    tokenHash: "test-hash",
+    device: null,
+    ip: null,
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    revokedAt: null,
+    createdAt: new Date(),
+    user: { status: "ACTIVE", role },
+  });
+  return token;
 }
 
 beforeEach(() => {
@@ -158,6 +170,7 @@ beforeEach(() => {
     expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // tomorrow
     revokedAt: null,
     createdAt: new Date(),
+    user: { status: "ACTIVE", role: "CUSTOMER" },
   });
   mockSessionCreate.mockResolvedValue({});
   mockSessionUpdateMany.mockResolvedValue({ count: 0 });
@@ -477,7 +490,7 @@ describe("SEC-21: admin auth rejects user-shaped JWTs", () => {
   });
 
   it("rejects a user JWT when ADMIN_JWT_SECRET is set (full secret isolation)", async () => {
-    vi.stubEnv("JWT_SECRET", "user-secret");
+    vi.stubEnv("JWT_SECRET", "user-secret-for-session-test-at-least-32-bytes");
     vi.stubEnv("ADMIN_JWT_SECRET", "admin-secret-different-with-at-least-32-bytes");
     vi.stubEnv("NODE_ENV", "production");
 

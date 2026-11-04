@@ -84,7 +84,7 @@ export async function verifyAdminToken(
   token: string
 ): Promise<(AdminSession & { sessionVersion: number }) | null> {
   try {
-    const { payload } = await jwtVerify(token, getAdminSecret());
+    const { payload } = await jwtVerify(token, getAdminSecret(), { algorithms: ["HS256"] });
     const adminId = payload.adminId;
     const role = payload.role;
     const sessionVersion = payload.sessionVersion;
@@ -242,7 +242,9 @@ export async function getAdminFromRequest(req: Request): Promise<AdminSession | 
  */
 export async function ensureDefaultAdmin() {
   const db = await getDbForLib();
-  const count = await db.adminUser.count();
+  const count = await db.adminUser.count({
+    where: { role: { in: ["ADMIN", "SUPER_ADMIN"] } },
+  });
   if (count > 0) return;
 
   if (process.env.NODE_ENV === "production") {
@@ -250,9 +252,9 @@ export async function ensureDefaultAdmin() {
     const bootstrapUsername = process.env.ADMIN_BOOTSTRAP_USERNAME || "admin";
     const bootstrapEmail = process.env.ADMIN_BOOTSTRAP_EMAIL || "admin@mekanix.ir";
 
-    if (!bootstrapPassword) {
+    if (!bootstrapPassword || bootstrapPassword.length < 16) {
       console.warn(
-        "⚠ No admin user found. Set ADMIN_BOOTSTRAP_PASSWORD env var to create the initial admin."
+        "⚠ No valid admin user found. Set ADMIN_BOOTSTRAP_PASSWORD to a secret with at least 16 characters to create the initial admin."
       );
       return;
     }

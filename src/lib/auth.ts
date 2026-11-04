@@ -39,6 +39,12 @@ function getSecret(): Uint8Array {
     // Dev-only fallback — NEVER in production
     return encoder.encode("mekanix-dev-secret-change-in-production");
   }
+  if (
+    process.env.NODE_ENV === "production" &&
+    new TextEncoder().encode(secret).length < 32
+  ) {
+    throw new Error("JWT_SECRET must contain at least 32 bytes in production");
+  }
   return encoder.encode(secret);
 }
 
@@ -136,16 +142,28 @@ export async function verifySession(token: string): Promise<Session | null> {
   //    (bad signature, expired, malformed), nothing else matters.
   let payload;
   try {
-    ({ payload } = await jwtVerify(token, getSecret()));
+    ({ payload } = await jwtVerify(token, getSecret(), { algorithms: ["HS256"] }));
   } catch {
     return null;
   }
 
+  const allowedRoles = new Set<Session["role"]>([
+    "CUSTOMER",
+    "TECHNICIAN",
+    "ADMIN",
+    "FLEET_MANAGER",
+    "PARTNER",
+  ]);
+  if (typeof payload.userId !== "string" || payload.userId.length === 0) return null;
+  if (typeof payload.role !== "string" || !allowedRoles.has(payload.role as Session["role"])) return null;
+  if (payload.phone !== null && typeof payload.phone !== "string") return null;
+  if (typeof payload.isGuest !== "boolean") return null;
+
   const session: Session = {
-    userId: payload.userId as string,
+    userId: payload.userId,
     role: payload.role as Session["role"],
     phone: payload.phone as string | null,
-    isGuest: payload.isGuest as boolean,
+    isGuest: payload.isGuest,
   };
 
   // 2. Check the Session DB for revocation.
@@ -162,11 +180,25 @@ export async function verifySession(token: string): Promise<Session | null> {
     const tokenHash = hashToken(token);
     const sessionRecord = await db.session.findUnique({
       where: { tokenHash },
+      include: {
+        user: {
+          select: { status: true, role: true },
+        },
+      },
     });
 
     if (!sessionRecord) return null;                  // not in DB → revoked or never existed
     if (sessionRecord.revokedAt) return null;         // explicitly revoked
     if (sessionRecord.expiresAt.getTime() < Date.now()) return null; // expired
+
+    // Session validity is subordinate to the current account state. A
+    // suspended/pending/deleted account must lose API access immediately,
+    // even when its JWT and Session row have not expired or been revoked.
+    if (!sessionRecord.user || sessionRecord.user.status !== "ACTIVE") return null;
+
+    // Role changes must also take effect immediately. Do not continue to
+    // authorize using a stale role embedded in a long-lived JWT.
+    if (sessionRecord.user.role !== session.role) return null;
   } catch (e) {
     console.error("[auth] Failed to query Session DB:", e);
     // Fail-closed in production: DB error → reject session.

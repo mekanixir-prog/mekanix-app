@@ -37,6 +37,7 @@ const mockSessionFindUnique = vi.fn().mockResolvedValue({
   expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // tomorrow
   revokedAt: null,
   createdAt: new Date(),
+  user: { status: "ACTIVE", role: "CUSTOMER" },
 });
 const mockSessionCreate = vi.fn().mockResolvedValue({});
 const mockSessionUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
@@ -87,12 +88,24 @@ function authedReq(url: string, token: string | null): Request {
 }
 
 async function mintToken(role: "CUSTOMER" | "TECHNICIAN" | "ADMIN"): Promise<string> {
-  return createSession({
+  const token = await createSession({
     userId: `user_${role.toLowerCase()}`,
     role,
     phone: "+989121234567",
     isGuest: false,
   });
+  mockSessionFindUnique.mockResolvedValueOnce({
+    id: "sess_1",
+    userId: `user_${role.toLowerCase()}`,
+    tokenHash: "hash-placeholder",
+    device: null,
+    ip: null,
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    revokedAt: null,
+    createdAt: new Date(),
+    user: { status: "ACTIVE", role },
+  });
+  return token;
 }
 
 beforeEach(() => {

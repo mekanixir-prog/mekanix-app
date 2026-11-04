@@ -64,6 +64,8 @@ const PAYLOAD: Session = {
 function validSessionRecord(overrides: Partial<{
   revokedAt: Date | null;
   expiresAt: Date;
+  status: "ACTIVE" | "SUSPENDED" | "PENDING";
+  role: Session["role"];
 }> = {}) {
   return {
     id: "sess_1",
@@ -74,6 +76,10 @@ function validSessionRecord(overrides: Partial<{
     expiresAt: overrides.expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000),
     revokedAt: overrides.revokedAt ?? null,
     createdAt: new Date(),
+    user: {
+      status: overrides.status ?? "ACTIVE",
+      role: overrides.role ?? "CUSTOMER",
+    },
   };
 }
 
@@ -166,7 +172,7 @@ describe("createSession — DB record creation", () => {
     const originalNodeEnv = process.env.NODE_ENV;
     const originalJwtSecret = process.env.JWT_SECRET;
     (process.env as Record<string, string>).NODE_ENV = "production";
-    (process.env as Record<string, string>).JWT_SECRET = "test-jwt-secret-for-unit-test";
+    (process.env as Record<string, string>).JWT_SECRET = "test-jwt-secret-for-unit-test-with-32-bytes-minimum";
     try {
       mockSessionCreate.mockRejectedValueOnce(new Error("DB down"));
       await expect(createSession(PAYLOAD)).rejects.toThrow("Failed to create session record");
@@ -204,6 +210,44 @@ describe("verifySession — DB revocation checks", () => {
 
     const result = await verifySession(token);
     expect(result).toBeNull();
+  });
+
+  it("returns null immediately when the account is suspended", async () => {
+    const token = await createSession(PAYLOAD);
+    mockSessionFindUnique.mockResolvedValueOnce(
+      validSessionRecord({ status: "SUSPENDED" })
+    );
+
+    await expect(verifySession(token)).resolves.toBeNull();
+  });
+
+  it("returns null for pending accounts", async () => {
+    const token = await createSession(PAYLOAD);
+    mockSessionFindUnique.mockResolvedValueOnce(
+      validSessionRecord({ status: "PENDING" })
+    );
+
+    await expect(verifySession(token)).resolves.toBeNull();
+  });
+
+  it("rejects a token when the persisted role no longer matches the JWT role", async () => {
+    const token = await createSession(PAYLOAD);
+    mockSessionFindUnique.mockResolvedValueOnce(
+      validSessionRecord({ role: "TECHNICIAN" })
+    );
+
+    await expect(verifySession(token)).resolves.toBeNull();
+  });
+
+  it("queries the current account status and role with the session record", async () => {
+    const token = await createSession(PAYLOAD);
+    mockSessionFindUnique.mockResolvedValueOnce(validSessionRecord());
+
+    await verifySession(token);
+    expect(mockSessionFindUnique).toHaveBeenCalledWith({
+      where: { tokenHash: expect.any(String) },
+      include: { user: { select: { status: true, role: true } } },
+    });
   });
 
   it("returns null when revokedAt is set (explicitly revoked)", async () => {
