@@ -65,6 +65,7 @@ const existingInvoice = {
   status: "SENT",
   total: 1200,
   currency: "IRR",
+  financialUnitStatus: "VERIFIED_IRR",
 };
 
 const pricingJob = {
@@ -107,41 +108,35 @@ describe("POST /api/invoices lifecycle", () => {
     expect(mocks.invoiceCreate).not.toHaveBeenCalled();
   });
 
-  it("returns the winning invoice when concurrent issuance loses the unique jobId race", async () => {
-    mocks.invoiceFindUnique
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(existingInvoice);
-    mocks.jobFindUnique
-      .mockResolvedValueOnce(pricingJob)
-      .mockResolvedValueOnce(refreshedJob);
-    const uniqueError = Object.assign(new Error("unique constraint"), { code: "P2002" });
-    mocks.invoiceCreate.mockRejectedValueOnce(uniqueError);
-
+  it("blocks new invoice issuance until the fixed-labor rate card is implemented", async () => {
+    mocks.invoiceFindUnique.mockResolvedValueOnce(null);
     const response = await createInvoice(postRequest({ jobId: "job-1" }));
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(existingInvoice);
-    expect(mocks.invoiceCreate).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "FIXED_LABOR_RATE_CARD_NOT_IMPLEMENTED" });
+    expect(mocks.invoiceCreate).not.toHaveBeenCalled();
     expect(mocks.notificationCreate).not.toHaveBeenCalled();
   });
 
-  it("rejects malformed tax settings instead of persisting a corrupt invoice total", async () => {
+  it("does not evaluate legacy hourly tax while fixed-labor pricing is unavailable", async () => {
     mocks.invoiceFindUnique.mockResolvedValueOnce(null);
     mocks.taxFindUnique.mockResolvedValueOnce({ value: "0.09garbage" });
 
     const response = await createInvoice(postRequest({ jobId: "job-1" }));
-    expect(mocks.jobFindUnique).toHaveBeenCalledTimes(1);
-    expect(mocks.taxFindUnique).toHaveBeenCalledTimes(1);
-    expect(await response.json()).toMatchObject({ error: "تنظیمات مالیات نامعتبر است" });
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "FIXED_LABOR_RATE_CARD_NOT_IMPLEMENTED" });
+    expect(mocks.jobFindUnique).not.toHaveBeenCalled();
+    expect(mocks.taxFindUnique).not.toHaveBeenCalled();
     expect(mocks.invoiceCreate).not.toHaveBeenCalled();
   });
 
-  it("does not issue an invoice before the job reaches post-repair approval", async () => {
+  it("keeps all new invoice creation blocked until fixed-labor pricing is implemented", async () => {
     mocks.invoiceFindUnique.mockResolvedValueOnce(null);
     mocks.jobFindUnique.mockResolvedValueOnce({ ...pricingJob, status: "IN_SERVICE" });
 
     const response = await createInvoice(postRequest({ jobId: "job-1" }));
     expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "FIXED_LABOR_RATE_CARD_NOT_IMPLEMENTED" });
+    expect(mocks.jobFindUnique).not.toHaveBeenCalled();
     expect(mocks.invoiceCreate).not.toHaveBeenCalled();
   });
 
@@ -149,7 +144,7 @@ describe("POST /api/invoices lifecycle", () => {
     mocks.invoiceFindUnique.mockResolvedValueOnce(null);
 
     const response = await createInvoice(postRequest({ jobId: "job-1", laborHours: "2" }));
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(409);
     expect(mocks.invoiceCreate).not.toHaveBeenCalled();
   });
 });
