@@ -1,7 +1,7 @@
 // MEKANIX — OTP Crypto
 // Works in both Node.js and Cloudflare Workers (nodejs_compat).
 
-import { createHmac, randomInt } from "node:crypto";
+import { createHash, createHmac, randomInt } from "node:crypto";
 
 // Generate a 6-digit OTP code using a cryptographically secure PRNG.
 export function generateOtpCode(): string {
@@ -47,6 +47,5 @@ export function hashOtpPhone(phone: string): string {
 
 // Generic non-secret hash for identifiers that are already public/non-secret.
 export function hashSha256(input: string): string {
-  const { createHash } = require("node:crypto") as typeof import("node:crypto");
   return createHash("sha256").update(input).digest("hex");
 }
