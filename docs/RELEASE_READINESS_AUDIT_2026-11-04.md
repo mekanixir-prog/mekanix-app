@@ -10,20 +10,22 @@ This report supersedes earlier point-in-time release snapshots. It does not clai
 
 ## 1. Executive decision
 
-The last fully green main baseline `147d5485ee0dfd2dc5795f6000dd38b35c808c07` passed all eight workflows. Withdrawal hardening PR #129 then passed all eight applicable PR checks and merged as `dae8fe53bf8c5c776ed939d665a8a146619162db`; at the time of this refresh, seven active main checks had passed and Docker E2E was still running. Dependabot PRs #124, #125 and #126 then passed their applicable PR checks and merged sequentially, producing current main `db0f3361c3158764c47cfeb48d5b9dafadc90610`. Fresh main checks for this newest commit are queued/running. Do not treat earlier green checks as checks on the newest SHA:
+The last fully green main baseline `147d5485ee0dfd2dc5795f6000dd38b35c808c07` passed all eight workflows. Withdrawal hardening PR #129 then passed all eight applicable PR checks and merged as `dae8fe53bf8c5c776ed939d665a8a146619162db`. Dependabot PRs #124, #125 and #126 then passed their applicable PR checks and merged sequentially, producing current main `db0f3361c3158764c47cfeb48d5b9dafadc90610`.
 
-| Workflow | Result |
+A fresh read of the GitHub Checks API for the exact current-main SHA `db0f3361c3158764c47cfeb48d5b9dafadc90610` confirms **8 successful checks and 1 skipped check**. The skipped item is `Prepare dependency remediation branch`; it is not counted as a successful workflow and is not treated as a failure. The eight successful checks are:
+
+| Check run | Result |
 |---|---|
-| CI | PASS |
-| Docker E2E | PASS |
-| PostgreSQL CI | PASS |
-| Production readiness | PASS |
-| Cloudflare Build | PASS |
-| CodeQL Security Analysis | PASS |
-| Secret Scan | PASS |
-| Dependency Security Audit | PASS |
+| OpenNext → Cloudflare Worker | PASS |
+| Analyze JavaScript and TypeScript | PASS |
+| Audit the committed lockfile (no auto-fix) | PASS |
+| Scan repository history for exposed secrets | PASS |
+| PostgreSQL Migration + Build | PASS |
+| Docker Build + Compose + Health | PASS |
+| Lint + TypeCheck + Test | PASS |
+| quality | PASS |
 
-Evidence for the last fully green baseline: [main CI](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330037), [Docker E2E](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330042), [PostgreSQL CI](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330122), [Production readiness](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330214), [Secret Scan](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330126), [Dependency Security Audit](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330239), [CodeQL](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330259), [Cloudflare Build](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330545). Current main `dae8fe53bf8c` is under a fresh full workflow run.
+[Exact current-main check-run evidence](https://github.com/mekanixir-prog/mekanix-app/commit/db0f3361c3158764c47cfeb48d5b9dafadc90610/checks). Historical workflow links below refer to earlier baselines and must not be read as evidence for the current SHA.
 
 **Interpretation:** green CI proves the configured checks passed against this commit and their test environments. It does not prove live SMS, real gateway callbacks, production secrets, DNS/TLS, remote database state, actual bank payout, backup restoration, or business-owner acceptance.
 
