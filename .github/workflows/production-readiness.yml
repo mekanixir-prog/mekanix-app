@@ -19,6 +19,8 @@ jobs:
         with:
           bun-version: '1.4.4'
       - run: bun install --frozen-lockfile
+      - name: Audit locked dependencies
+        run: bun audit --audit-level=moderate
       - run: bunx prisma generate
       - name: Repository hygiene
         run: bash scripts/check-hygiene.sh
