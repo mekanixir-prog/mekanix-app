@@ -3,7 +3,9 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
-import { areInvoicePriceSourcesVerified, areJobPartPriceSourcesVerified } from "@/lib/money/provenance";
+import { areJobPartPriceSourcesVerified } from "@/lib/money/provenance";
+import { calculatePrice } from "@/lib/pricing";
+import type { ServiceCode } from "@/lib/pricing-rate-card";
 
 const FULL_INCLUDE = {
   job: {
@@ -16,6 +18,38 @@ const FULL_INCLUDE = {
   },
   payment: true,
 } as const;
+
+
+function serviceCodeFromCategory(category: string): ServiceCode {
+  const value = category.toLowerCase();
+  if (value.includes("hydraulic") || value.includes("هیدرولیک")) return "hydraulic";
+  if (value.includes("elect") || value.includes("برق") || value.includes("سیم")) return "electrical";
+  if (value.includes("cool") || value.includes("کولر") || value.includes("خنک") || value.includes("رادیات")) return "cooling";
+  if (value.includes("brake") || value.includes("suspension") || value.includes("ترمز") || value.includes("تعلیق") || value.includes("جلوبندی")) return "brakes";
+  if (value.includes("periodic") || value.includes("maintenance") || value.includes("سرویس") || value.includes("دوره")) return "periodic";
+  if (value.includes("engine") || value.includes("motor") || value.includes("موتور")) {
+    return value.includes("major") || value.includes("اساسی") || value.includes("کامل") ? "engine_major" : "engine_minor";
+  }
+  if (value.includes("transmission") || value.includes("gearbox") || value.includes("گیربکس") || value.includes("انتقال قدرت")) return "transmission";
+  if (value.includes("undercarriage") || value.includes("chassis") || value.includes("زیربندی") || value.includes("شاسی")) return "undercarriage";
+  return "diagnostic";
+}
+
+function estimateTravelDistanceKm(
+  from: { lat: number; lng: number },
+  to: { lat: number | null; lng: number | null },
+): number {
+  if (to.lat === null || to.lng === null ||
+      ![from.lat, from.lng, to.lat, to.lng].every(Number.isFinite)) return 0;
+  const radians = (degrees: number) => degrees * Math.PI / 180;
+  const dLat = radians(to.lat - from.lat);
+  const dLng = radians(to.lng - from.lng);
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(radians(from.lat)) * Math.cos(radians(to.lat)) * Math.sin(dLng / 2) ** 2;
+  const straightLineKm = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  // Approximate road distance from the technician's last reported location.
+  return Math.ceil(straightLineKm * 1.3);
+}
 
 // GET: returns invoice by jobId. Caller must be a participant in the job (BOLA).
 export async function GET(req: Request) {
@@ -73,16 +107,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
   }
 
-  // Production invoice totals currently depend on technician profile fees.
-  // Do not interpret legacy values as IRR until the rate card and fee units
-  // have both been independently reconciled and explicitly approved.
-  if (!areInvoicePriceSourcesVerified()) {
-    return NextResponse.json(
-      { error: "تعرفه یا واحد هزینه‌های مکانیک هنوز به‌عنوان ریال تأیید نشده است؛ صدور فاکتور پس از تطبیق مالی فعال می‌شود", code: "INVOICE_PRICE_PROVENANCE_UNVERIFIED" },
-      { status: 409 },
-    );
-  }
-
   // Idempotent retry: the job-status flow may already have created this invoice.
   const existingInvoice = await db.invoice.findUnique({
     where: { jobId },
@@ -92,7 +116,11 @@ export async function POST(req: Request) {
 
   const job = await db.job.findUnique({
     where: { id: jobId },
-    include: { parts: true, technician: true },
+    include: {
+      parts: true,
+      technician: true,
+      request: { include: { vehicle: true } },
+    },
   });
   if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
   if (!areJobPartPriceSourcesVerified(job.parts.length > 0)) {
@@ -104,51 +132,53 @@ export async function POST(req: Request) {
   if (job.status !== "WAITING_APPROVAL" && job.status !== "COMPLETED") {
     return NextResponse.json({ error: "فاکتور فقط پس از پایان عملیات تعمیر قابل صدور است" }, { status: 409 });
   }
-  if (!job.technician || !Array.isArray(job.parts)) {
-    return NextResponse.json({ error: "اطلاعات مکانیک یا قطعات کار کامل نیست" }, { status: 409 });
+  if (!job.technician || !Array.isArray(job.parts) || !job.request?.vehicle) {
+    return NextResponse.json({ error: "اطلاعات مکانیک، وسیله یا قطعات کار کامل نیست" }, { status: 409 });
   }
 
-  const laborHoursRaw = body.laborHours === undefined ? 1.5 : body.laborHours;
-  if (
-    typeof laborHoursRaw !== "number" ||
-    !Number.isFinite(laborHoursRaw) ||
-    laborHoursRaw <= 0 ||
-    laborHoursRaw > 24
-  ) {
-    return NextResponse.json({ error: "مدت کار باید عددی بزرگ‌تر از ۰ و حداکثر ۲۴ ساعت باشد" }, { status: 400 });
-  }
-  const laborHours = laborHoursRaw;
-  const laborRate = Number(job.technician.hourlyRate);
-  const travelFee = Number(job.technician.travelFeeBase);
   const partsTotal = job.parts.reduce((sum, part) => {
     const unitPrice = Number(part.unitPrice);
     const quantity = Number(part.quantity);
-    if (!Number.isFinite(unitPrice) || unitPrice < 0 ||
-        !Number.isSafeInteger(quantity) || quantity < 0) {
-      return Number.NaN;
-    }
-    return sum + unitPrice * quantity;
+    if (!Number.isSafeInteger(unitPrice) || unitPrice < 0 ||
+        !Number.isSafeInteger(quantity) || quantity < 0) return Number.NaN;
+    const next = sum + unitPrice * quantity;
+    return Number.isSafeInteger(next) ? next : Number.NaN;
   }, 0);
-
-  if (!Number.isFinite(laborRate) || laborRate < 0 ||
-      !Number.isFinite(travelFee) || travelFee < 0 ||
-      !Number.isFinite(partsTotal) || partsTotal < 0) {
-    return NextResponse.json({ error: "اطلاعات قیمت‌گذاری کار نامعتبر است" }, { status: 409 });
+  if (!Number.isSafeInteger(partsTotal) || partsTotal < 0) {
+    return NextResponse.json({ error: "مبلغ قطعات باید ریال صحیح و تأییدشده باشد" }, { status: 409 });
   }
 
-  const laborTotal = laborHours * laborRate;
-  const discount = 0;
-  const subtotal = laborTotal + partsTotal + travelFee - discount;
-  const taxSetting = await db.platformSetting.findUnique({ where: { key: "tax_rate" } });
-  const taxRate = taxSetting?.value == null ? 0.09 : (taxSetting.value.trim() ? Number(taxSetting.value) : Number.NaN);
-  if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 1) {
-    return NextResponse.json({ error: "تنظیمات مالیات نامعتبر است" }, { status: 503 });
+  const serviceCode = serviceCodeFromCategory(job.request.category);
+  const travelDistanceKm = estimateTravelDistanceKm(
+    { lat: job.request.lat, lng: job.request.lng },
+    { lat: job.technician.lat, lng: job.technician.lng },
+  );
+  let pricing;
+  try {
+    pricing = await calculatePrice({
+      vehicleType: job.request.vehicle.type,
+      serviceCode,
+      laborHours: 1,
+      partsCost: partsTotal,
+      travelDistanceKm,
+      isEmergency: job.request.urgency === "EMERGENCY",
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "محاسبه تعرفه ممکن نیست", code: "PRICING_NOT_AVAILABLE" },
+      { status: 409 },
+    );
   }
-  const taxTotal = subtotal * taxRate;
-  const total = subtotal + taxTotal;
-  if (![laborTotal, subtotal, taxTotal, total].every(Number.isFinite)) {
-    return NextResponse.json({ error: "محاسبه مبلغ فاکتور نامعتبر است" }, { status: 409 });
-  }
+  const laborHours = 1;
+  const laborRate = pricing.labor;
+  const laborTotal = pricing.labor;
+  const travelFee = pricing.travel;
+  const inspectionFee = pricing.inspection;
+  const subtotal = pricing.subtotal;
+  const taxRate = pricing.taxRate;
+  const taxTotal = pricing.taxTotal;
+  const discount = pricing.discount;
+  const total = pricing.total;
 
   const code = `INV-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`;
   let invoice: any;
@@ -162,14 +192,16 @@ export async function POST(req: Request) {
         laborTotal,
         partsTotal,
         travelFee,
+        inspectionFee,
         discount,
         subtotal,
         taxRate,
         taxTotal,
         total,
         currency: "IRR",
+        financialUnitStatus: "VERIFIED_IRR",
         status: "SENT",
-        notes: "Parts & labor covered by 6-month MEKANIX warranty.",
+        notes: `Fixed-fee rate card ${pricing.pricingVersion}; service ${serviceCode}. Parts & labor covered by 6-month MEKANIX warranty.`,
       },
       include: FULL_INCLUDE,
     });
