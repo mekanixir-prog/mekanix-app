@@ -23,7 +23,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     include: {
       package: { include: { items: true } },
       timeline: { orderBy: { timestamp: "asc" } },
-      findings: true,
+      findings: { include: { approvals: true } },
       approvals: true,
       partUsages: true,
       healthReport: true,
