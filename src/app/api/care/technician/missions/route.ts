@@ -62,5 +62,5 @@ export async function GET(req: Request) {
     },
     orderBy: { createdAt: "desc" },
   });
-  return NextResponse.json(missions.map((mission) => ({ ...mission, package: maskFinancialFields(mission.package, ["basePrice"]) })));
+  return NextResponse.json(missions.map((mission) => ({ ...mission, package: mission.package ? maskFinancialFields(mission.package, ["basePrice"]) : mission.package })));
 }
