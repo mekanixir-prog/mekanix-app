@@ -109,7 +109,7 @@ describe("CARE extra proposal route", () => {
     expect(mocks.notificationCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({
         userId: "customer-user",
-        body: expect.stringContaining("320000 تومان"),
+        body: expect.stringContaining("پیشنهاد هزینه ثبت شد و پس از تأیید واحد مالی قابل بررسی است"),
       }),
     });
   });
