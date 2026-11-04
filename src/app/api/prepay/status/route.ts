@@ -39,7 +39,11 @@ export async function GET(req: Request) {
   });
   if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
 
-  const safeJob = maskFinancialFields(job as unknown as Record<string, unknown>, [\n    "inspectionFee", "travelFee", "platformCommission", "netEarnings",\n  ]);\n\n  const [prepayTxn, commissionTxn, holdLedger, commissionLedger] = await Promise.all([
+  const safeJob = maskFinancialFields(job as unknown as Record<string, unknown>, [
+    "inspectionFee", "travelFee", "platformCommission", "netEarnings",
+  ]);
+
+  const [prepayTxn, commissionTxn, holdLedger, commissionLedger] = await Promise.all([
     db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${job.id}:PREPAY` }, select: { id: true } }),
     db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${job.id}:COMMISSION` }, select: { id: true } }),
     db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_HOLD` }, select: { id: true } }),
@@ -57,7 +61,8 @@ export async function GET(req: Request) {
         inspectionFee: safeJob.inspectionFee == null ? null : String(safeJob.inspectionFee),
         travelFee: safeJob.travelFee == null ? null : String(safeJob.travelFee),
         commission: safeJob.platformCommission == null ? null : String(safeJob.platformCommission),
-        net: safeJob.netEarnings == null ? null : String(safeJob.netEarnings),\n        financialUnitStatus: safeJob.financialUnitStatus,
+        net: safeJob.netEarnings == null ? null : String(safeJob.netEarnings),
+        financialUnitStatus: safeJob.financialUnitStatus,
       },
     });
   }
