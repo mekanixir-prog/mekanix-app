@@ -81,7 +81,11 @@ export function validatePricingRateCard(value: unknown): Omit<PricingRateCard, "
     discounts: { maxManualDiscountBps: int(value.discounts.maxManualDiscountBps, "discounts.maxManualDiscountBps", 0, 5000) },
   };
 }
-export function normalizeVehicleAssetClass(vehicleType: string): AssetClass { return vehicleType === "CAR" ? "passenger" : "heavy"; }
+export function normalizeVehicleAssetClass(vehicleType: string): AssetClass {
+  if (vehicleType === "CAR") return "passenger";
+  if (["TRUCK", "BUS", "EXCAVATOR", "LOADER", "BULLDOZER", "GRADER", "AGRI", "INDUSTRIAL"].includes(vehicleType)) return "heavy";
+  throw new Error("این نوع وسیله در نرخ‌نامه تأییدشده پشتیبانی نمی‌شود");
+}
 export async function getPricingRateCard(): Promise<PricingRateCard> {
   const db = await getDbForLib();
   const row = await db.platformSetting.findUnique({ where: { key: PRICING_RATE_CARD_KEY } });
