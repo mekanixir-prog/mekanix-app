@@ -134,6 +134,8 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
     expect(booking?.pricingSnapshotId).toBeTruthy();
     bookingIds.push(booking!.id);
     expect(await db!.pricingSnapshot.count({ where: { bookingId: booking!.id } })).toBe(1);
+    const snapshot = await db!.pricingSnapshot.findUnique({ where: { bookingId: booking!.id } });
+    expect(Number(snapshot?.emergencyPrice)).toBe(0);
     expect(await db!.serviceTimelineEvent.count({
       where: { idempotencyKey: `care-booking:${input.idempotencyKey}:created` },
     })).toBe(1);
