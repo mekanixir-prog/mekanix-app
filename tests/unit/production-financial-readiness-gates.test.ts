@@ -12,6 +12,8 @@ vi.mock("@/lib/payment-provider", () => ({ getPaymentProviderStatus: mocks.payme
 import { checkProductionGates } from "@/app/api/ready/route";
 
 function approveAllFinancialGates() {
+  vi.stubEnv("JWT_SECRET", "production-user-jwt-secret-at-least-32-bytes");
+  vi.stubEnv("ADMIN_JWT_SECRET", "production-admin-jwt-secret-at-least-32-bytes");
   vi.stubEnv("OTP_HASH_SECRET", "production-otp-secret-at-least-32-bytes-long");
   vi.stubEnv("MEKANIX_PRICING_IRR_APPROVED", "true");
   vi.stubEnv("MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED", "true");
@@ -45,6 +47,8 @@ describe("production financial readiness gates", () => {
     const reasons = gates.map((gate) => gate.reason);
 
     expect(gates.every((gate) => !gate.ok)).toBe(true);
+    expect(reasons).toContain("JWT_SECRET is missing or shorter than 32 bytes.");
+    expect(reasons).toContain("ADMIN_JWT_SECRET is missing or shorter than 32 bytes.");
     expect(reasons).toContain("Dedicated OTP_HASH_SECRET is missing or shorter than 32 bytes.");
     expect(reasons).toContain("IRR pricing policy has not been explicitly approved.");
     expect(reasons).toContain("Legacy technician fee units have not been reconciled and verified as IRR.");
