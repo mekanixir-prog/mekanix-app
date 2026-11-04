@@ -25,12 +25,15 @@ export async function createWithdrawalWithPrisma(
   db: PrismaClient,
   input: WithdrawalInput,
 ): Promise<boolean> {
+  if (!Number.isSafeInteger(input.amount) || input.amount <= 0) return false;
   return db.$transaction(async (tx) => {
     const existing = await tx.withdrawalRequest.findUnique({
       where: { idempotencyKey: input.idempotencyKey },
       select: { id: true },
     });
     if (existing) return false;
+    const walletBefore = await tx.wallet.findUnique({ where: { id: input.walletId }, select: { balance: true, financialUnitStatus: true } });
+    if (!walletBefore || walletBefore.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(walletBefore.balance)) return false;
 
     const debit = await tx.wallet.updateMany({
       where: { id: input.walletId, financialUnitStatus: "VERIFIED_IRR", balance: { gte: input.amount } },
@@ -88,6 +91,7 @@ export async function createWithdrawalWithD1(
   d1: D1Database,
   input: WithdrawalInput,
 ): Promise<boolean> {
+  if (!Number.isSafeInteger(input.amount) || input.amount <= 0) return false;
   const at = input.requestedAt.toISOString();
   const ledgerKey = `withdrawal:${input.idempotencyKey}:LEDGER`;
   const assertOneChange = () =>
@@ -100,7 +104,8 @@ export async function createWithdrawalWithD1(
          "bankName", "shebaNumber", "status", "idempotencyKey", "requestedAt", "financialUnitStatus")
       SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'REQUESTED', ?, ?, 'VERIFIED_IRR'
       FROM "Wallet"
-      WHERE "id" = ? AND "financialUnitStatus" = 'VERIFIED_IRR' AND "balance" >= ?
+      WHERE "id" = ? AND "financialUnitStatus" = 'VERIFIED_IRR'
+        AND "balance" = CAST("balance" AS INTEGER) AND abs("balance") <= 9007199254740991 AND "balance" >= ?
       ON CONFLICT("idempotencyKey") DO NOTHING
     `).bind(
       crypto.randomUUID(), input.code, input.walletId, input.amount,
@@ -111,7 +116,8 @@ export async function createWithdrawalWithD1(
     d1.prepare(`
       UPDATE "Wallet"
       SET "balance" = "balance" - ?, "updatedAt" = ?
-      WHERE "id" = ? AND "financialUnitStatus" = 'VERIFIED_IRR' AND "balance" >= ? AND changes() = 1
+      WHERE "id" = ? AND "financialUnitStatus" = 'VERIFIED_IRR'
+        AND "balance" = CAST("balance" AS INTEGER) AND abs("balance") <= 9007199254740991 AND "balance" >= ? AND changes() = 1
     `).bind(input.amount, at, input.walletId, input.amount),
     assertOneChange(),
     d1.prepare(`
