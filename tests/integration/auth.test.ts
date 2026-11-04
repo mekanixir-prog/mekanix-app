@@ -91,8 +91,7 @@ vi.mock("@/lib/rate-limit", () => ({
 // ──────────── Import route handlers (after mocks are hoisted) ────────────
 import { POST as otpSendPOST } from "@/app/api/auth/otp/send/route";
 import { POST as otpVerifyPOST } from "@/app/api/auth/otp/verify/route";
-import { hashOtpCode } from "@/lib/otp-crypto";
-import { createHash } from "node:crypto";
+import { hashOtpCode, hashOtpPhone } from "@/lib/otp-crypto";
 
 // ──────────── Helpers ────────────
 function jsonReq(url: string, body: unknown): Request {
@@ -105,6 +104,7 @@ function jsonReq(url: string, body: unknown): Request {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("OTP_HASH_SECRET", "integration-test-secret-with-at-least-32-bytes");
   mockRateLimitAsync.mockResolvedValue({ success: true, resetMs: 60_000 });
   mockGetClientId.mockReturnValue("127.0.0.1");
   // Restore default mock implementations after each test
@@ -140,20 +140,16 @@ describe("integration — POST /api/auth/otp/send", () => {
 
     // SECURITY regression check: the plaintext `code` returned to the client
     // must NOT be what gets persisted to the DB. The DB column should hold
-    // the SHA-256 hex digest (64 lowercase hex chars), so a read-only DB
-    // leak cannot reveal usable codes.
+    // a keyed HMAC hex digest (64 lowercase hex chars), so a database-only
+    // leak cannot enumerate the six-digit OTP space.
     const createCall = mockOtpCreate.mock.calls[0][0] as {
       data: { phone: string; code: string; expiresAt: Date };
     };
     expect(createCall.data.phone).toBe("+989121234567");
     expect(createCall.data.code).toHaveLength(64);
     expect(createCall.data.code).toMatch(/^[0-9a-f]{64}$/);
-    // The persisted hash must equal SHA-256(body.code) — i.e. the two
-    // operations share the same hashing helper.
+    // The persisted verifier must equal the keyed HMAC derived by the shared helper.
     expect(createCall.data.code).toBe(hashOtpCode(body.code));
-    expect(createCall.data.code).toBe(
-      createHash("sha256").update(body.code).digest("hex")
-    );
     // And it must NOT be the plaintext code itself.
     expect(createCall.data.code).not.toBe(body.code);
   });
@@ -164,7 +160,7 @@ describe("integration — POST /api/auth/otp/send", () => {
     });
     const res = await otpSendPOST(req);
     expect(res.status).toBe(200);
-    expect(mockRateLimitAsync).toHaveBeenNthCalledWith(1, "otp-send:phone:+989121234567", 5, 10 * 60 * 1000);
+    expect(mockRateLimitAsync).toHaveBeenNthCalledWith(1, `otp-send:phone:${hashOtpPhone("+989121234567")}`, 5, 10 * 60 * 1000);
     expect(mockRateLimitAsync).toHaveBeenNthCalledWith(2, "otp-send:ip:127.0.0.1", 20, 60 * 60 * 1000);
   });
 
@@ -322,8 +318,8 @@ describe("integration — POST /api/auth/otp/verify", () => {
     expect(mockOtpFindFirst).not.toHaveBeenCalled();
     expect(mockOtpUpdate).not.toHaveBeenCalled();
 
-    // SECURITY regression check: the verify route must hash the user-supplied
-    // code with SHA-256 before looking it up — the DB column holds the hash,
+    // SECURITY regression check: the verify route must HMAC the user-supplied
+    // code before looking it up — the DB column holds the verifier,
     // not the plaintext code. Assert updateMany was called with the digest
     // (NOT the plaintext) in the WHERE clause.
     const updateManyCall = mockOtpUpdateMany.mock.calls[0][0] as {
