@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type { JobStatus as PrismaJobStatus } from "@prisma/client";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
+import { maskJobFinancialData } from "@/lib/money/financial-read-mask";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
 import {
   type AtomicInvoiceInput,
@@ -359,5 +360,5 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   }
 
-  return NextResponse.json(job);
+  return NextResponse.json(maskJobFinancialData(job as unknown as Record<string, unknown>));
 }
