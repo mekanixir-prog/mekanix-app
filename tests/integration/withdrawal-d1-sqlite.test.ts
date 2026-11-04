@@ -50,7 +50,12 @@ function makeD1() {
       try {
         sqlite.exec("BEGIN");
         const results = items.map(({ sql, values }) => {
-          const result = sqlite.prepare(sql).run(...(values as never[]));
+          const statement = sqlite.prepare(sql);
+          if (/^\\s*SELECT/i.test(sql)) {
+            statement.get(...(values as never[]));
+            return { meta: { changes: 0 } };
+          }
+          const result = statement.run(...(values as never[]));
           return { meta: { changes: Number(result.changes) } };
         });
         sqlite.exec("COMMIT");
