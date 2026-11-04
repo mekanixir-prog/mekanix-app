@@ -255,8 +255,10 @@ export async function updateWithdrawalWithD1(
         SELECT "walletId" FROM "WithdrawalRequest"
         WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?
       ) AND "financialUnitStatus" = 'VERIFIED_IRR'
-        AND "totalWithdrawn" = CAST("totalWithdrawn" AS INTEGER) AND abs("totalWithdrawn") <= 9007199254740991 AND changes() = 1
-    `).bind(input.withdrawalId, payoutReference, at, input.withdrawalId, payoutReference),
+        AND "totalWithdrawn" = CAST("totalWithdrawn" AS INTEGER) AND abs("totalWithdrawn") <= 9007199254740991
+        AND "totalWithdrawn" <= 9007199254740991 - (SELECT "amount" FROM "WithdrawalRequest" WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?)
+        AND changes() = 1
+    `).bind(input.withdrawalId, payoutReference, at, input.withdrawalId, payoutReference, input.withdrawalId, payoutReference),
     assertOneChange(),
   ];
   try {
