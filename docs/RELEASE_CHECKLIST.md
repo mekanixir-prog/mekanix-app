@@ -1,7 +1,7 @@
 # MEKANIX — Release Checklist
 
 **Status date:** 2026-11-04  
-**Current main baseline:** `147d5485ee0dfd2dc5795f6000dd38b35c808c07`  
+**Current main baseline:** `dae8fe53bf8c5c776ed939d665a8a146619162db`  
 **Release decision:** <strong>NO-GO</strong> — code hardening and release evidence remain incomplete.
 
 This replaces the historical checklist snapshots from October. Do not use old “Release Candidate — all checks passed” or old staging/load-test claims as current release evidence.
@@ -132,7 +132,7 @@ This section records changes after the previous 2026-11-03 checklist snapshot. T
 
 ### Withdrawal hardening
 
-- [ ] PR #129 — bank-only/valid-Sheba creation and D1 rollback guards, preserving the current integer-IRR production gate; merge only after all exact-head CI, PostgreSQL, Docker/D1 and Cloudflare checks pass.
+- [x] PR #129 — bank-only/valid-Sheba creation and D1 rollback guards, preserving the current integer-IRR production gate; all eight applicable PR checks passed and merged as `dae8fe53bf8c5c776ed939d665a8a146619162db`.
 
 ### Repository-level governance
 
@@ -144,6 +144,7 @@ This section records changes after the previous 2026-11-03 checklist snapshot. T
 
 - [ ] Issue #24 — complete authoritative payment attempts, provider initiation/verification, callback idempotency, purpose-specific fulfillment, and invoice-to-technician ledger/escrow settlement.
 - [ ] Issue #81 — classify and reconcile historical money provenance under the owner-approved integer-IRR contract. Unknown rows remain quarantined; no blanket conversion.
+- [ ] Issue #130 — remove FX-based IRR formatting, mask unverified wallet/invoice reads, and enforce safe-integer IRR at writers.
 - [ ] Issue #99 — obtain owner-approved rate cards, tax, commission/escrow, VIP prices, CARE boundary and withdrawal policy.
 - [ ] Do not merge PRs #71/#73 independently. PR #73's USD/decimal withdrawal policy conflicts with the integer-IRR contract. PR #78 is a large stale stacked branch and must be split/rebased into bounded changes before review.
 
