@@ -2,6 +2,7 @@ import { PARTICIPANT_USER_SELECT } from "@/lib/user-select";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
+import { maskJobFinancialData } from "@/lib/money/financial-read-mask";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -70,5 +71,5 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       tracking: true,
     },
   });
-  return NextResponse.json(fresh);
+  return NextResponse.json(maskJobFinancialData(fresh as unknown as Record<string, unknown>));
 }
