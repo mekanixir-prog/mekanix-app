@@ -137,6 +137,34 @@ export async function GET() {
     const db = await getDbForLib();
     await db.$queryRaw`SELECT 1`;
     checks.database = true;
+
+    if (process.env.NODE_ENV === "production") {
+      // OTP/payment/withdrawal throttles depend on the shared D1/DB-backed
+      // RateLimit table. A healthy database connection alone is insufficient.
+      try {
+        await db.rateLimit.count();
+        checks.sharedRateLimitStore = true;
+      } catch {
+        checks.sharedRateLimitStore = false;
+        errors.push("Shared rate-limit store is unavailable");
+      }
+
+      // Require a valid admin account, or a sufficiently strong bootstrap
+      // secret that can provision the first SUPER_ADMIN on the first login.
+      try {
+        const adminCount = await db.adminUser.count({
+          where: { role: { in: ["ADMIN", "SUPER_ADMIN"] } },
+        });
+        const bootstrapPassword = process.env.ADMIN_BOOTSTRAP_PASSWORD ?? "";
+        checks.adminProvisioning = adminCount > 0 || bootstrapPassword.length >= 16;
+        if (!checks.adminProvisioning) {
+          errors.push("No valid admin exists and ADMIN_BOOTSTRAP_PASSWORD is missing or shorter than 16 characters");
+        }
+      } catch {
+        checks.adminProvisioning = false;
+        errors.push("Admin provisioning status is unavailable");
+      }
+    }
   } catch (error: unknown) {
     checks.database = false;
     const detail = error instanceof Error ? error.message : "DB check failed";
