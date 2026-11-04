@@ -35,7 +35,7 @@ export async function updateWithdrawalWithPrisma(
     if (input.action === "APPROVED") {
       if (withdrawal.status !== "REQUESTED") return false;
       const result = await tx.withdrawalRequest.updateMany({
-        where: { id: withdrawal.id, status: "REQUESTED" },
+        where: { id: withdrawal.id, status: "REQUESTED", financialUnitStatus: "VERIFIED_IRR" },
         data: { status: "APPROVED", reviewerId: input.adminId, adminNotes: input.adminNotes },
       });
       return result.count === 1;
@@ -44,7 +44,7 @@ export async function updateWithdrawalWithPrisma(
     if (input.action === "REJECTED") {
       if (withdrawal.status !== "REQUESTED" && withdrawal.status !== "APPROVED") return false;
       const transition = await tx.withdrawalRequest.updateMany({
-        where: { id: withdrawal.id, status: { in: ["REQUESTED", "APPROVED"] } },
+        where: { id: withdrawal.id, status: { in: ["REQUESTED", "APPROVED"] }, financialUnitStatus: "VERIFIED_IRR" },
         data: {
           status: "REJECTED",
           reviewerId: input.adminId,
@@ -55,7 +55,7 @@ export async function updateWithdrawalWithPrisma(
       if (transition.count !== 1) return false;
 
       const walletUpdate = await tx.wallet.updateMany({
-        where: { id: withdrawal.walletId },
+        where: { id: withdrawal.walletId, financialUnitStatus: "VERIFIED_IRR" },
         data: { balance: { increment: withdrawal.amount } },
       });
       if (walletUpdate.count !== 1) {
@@ -92,7 +92,7 @@ export async function updateWithdrawalWithPrisma(
     }
     const payoutId = crypto.randomUUID();
     const transition = await tx.withdrawalRequest.updateMany({
-      where: { id: withdrawal.id, status: "APPROVED" },
+      where: { id: withdrawal.id, status: "APPROVED", financialUnitStatus: "VERIFIED_IRR" },
       data: {
         status: "PAID",
         reviewerId: input.adminId,
@@ -118,7 +118,7 @@ export async function updateWithdrawalWithPrisma(
       },
     });
     const walletUpdate = await tx.wallet.updateMany({
-      where: { id: withdrawal.walletId },
+      where: { id: withdrawal.walletId, financialUnitStatus: "VERIFIED_IRR" },
       data: { totalWithdrawn: { increment: withdrawal.amount } },
     });
     if (walletUpdate.count !== 1) {
@@ -243,7 +243,7 @@ export async function updateWithdrawalWithD1(
       WHERE "id" = (
         SELECT "walletId" FROM "WithdrawalRequest"
         WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?
-      ) AND changes() = 1
+      ) AND "financialUnitStatus" = 'VERIFIED_IRR' AND changes() = 1
     `).bind(input.withdrawalId, payoutReference, at, input.withdrawalId, payoutReference),
     assertOneChange(),
   ];
