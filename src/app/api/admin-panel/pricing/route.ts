@@ -23,10 +23,17 @@ export async function PUT(req: Request) {
   if (!session) return NextResponse.json({ error: "احراز هویت مدیر الزامی است" }, { status: 401 });
   let body: unknown;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "بدنه درخواست نامعتبر است" }, { status: 400 }); }
-  if (!body || typeof body !== "object" || Array.isArray(body) || !("rateCard" in body)) return NextResponse.json({ error: "نرخ‌نامه ارسال نشده است" }, { status: 400 });
+  if (!body || typeof body !== "object" || Array.isArray(body) || !("rateCard" in body) || !("expectedVersion" in body)) return NextResponse.json({ error: "نرخ‌نامه یا نسخه مورد انتظار ارسال نشده است" }, { status: 400 });
   try {
+    const expectedVersion = (body as { expectedVersion: unknown }).expectedVersion;
+    if (typeof expectedVersion !== "number" || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) {
+      return NextResponse.json({ error: "نسخه مورد انتظار نامعتبر است" }, { status: 400 });
+    }
     const db = await getDbForLib();
     const before = await read(db);
+    if (before.current.version !== expectedVersion) {
+      return NextResponse.json({ error: "نرخ‌نامه توسط مدیر دیگری تغییر کرده است؛ صفحه را تازه‌سازی کنید" }, { status: 409 });
+    }
     const clean = validatePricingRateCard((body as { rateCard: unknown }).rateCard);
     const now = new Date().toISOString();
     const current: PricingRateCard = {
