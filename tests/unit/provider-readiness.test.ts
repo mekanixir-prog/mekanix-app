@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const dbMocks = vi.hoisted(() => ({ queryRaw: vi.fn() }));
 vi.mock("@/lib/db-access", () => ({
@@ -93,6 +93,18 @@ describe("payment provider live readiness", () => {
 });
 
 describe("production readiness gates", () => {
+  beforeEach(() => {
+    // These tests isolate provider/database behavior. The separate
+    // production-financial-readiness-gates suite verifies missing IRR controls.
+    vi.stubEnv("MEKANIX_PRICING_IRR_APPROVED", "true");
+    vi.stubEnv("MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED", "true");
+    vi.stubEnv("MEKANIX_JOB_PART_IRR_PROVENANCE_VERIFIED", "true");
+    vi.stubEnv("MEKANIX_WITHDRAWAL_IRR_POLICY_APPROVED", "true");
+    vi.stubEnv("MEKANIX_WITHDRAWAL_MIN_IRR", "10000");
+    vi.stubEnv("MEKANIX_WITHDRAWAL_MAX_IRR", "100000000");
+    vi.stubEnv("MEKANIX_WITHDRAWAL_IRR_PROVENANCE_VERIFIED", "true");
+    vi.stubEnv("WALLET_RELEASE_SCHEDULED", "true");
+  });
   it("blocks production until both SMS and payment are genuinely live-ready", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("SMS_PROVIDER", "kavenegar");
