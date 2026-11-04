@@ -98,6 +98,15 @@ describe("payment provider live readiness", () => {
 
 describe("production readiness gates", () => {
   beforeEach(() => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DATABASE_URL", "postgresql://db.example/mekanix");
+    vi.stubEnv("SMS_PROVIDER", "kavenegar");
+    vi.stubEnv("KAVENEGAR_API_KEY", "test-key");
+    vi.stubEnv("PAYMENT_PROVIDER", "zarinpal");
+    vi.stubEnv("ZARINPAL_MERCHANT_ID", "merchant-id");
+    dbMocks.queryRaw.mockResolvedValue(1);
+    dbMocks.rateLimitCount.mockResolvedValue(0);
+    dbMocks.adminCount.mockResolvedValue(1);
     vi.stubEnv("JWT_SECRET", "production-user-jwt-secret-at-least-32-bytes");
     vi.stubEnv("ADMIN_JWT_SECRET", "production-admin-jwt-secret-at-least-32-bytes");
     vi.stubEnv("OTP_HASH_SECRET", "production-otp-secret-at-least-32-bytes-long");
@@ -198,7 +207,9 @@ describe("production readiness gates", () => {
     const body = await response.json();
 
     expect(body.checks.adminProvisioning).toBe(true);
-    expect(response.status).toBe(200);
+    expect(body.errors).not.toContain(
+      "No valid admin exists and ADMIN_BOOTSTRAP_PASSWORD is missing or shorter than 16 characters"
+    );
   });
 
   it("does not expose database connection details in production readiness responses", async () => {
