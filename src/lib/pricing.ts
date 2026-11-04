@@ -32,6 +32,7 @@
 
 import Decimal from "decimal.js";
 import { getDbForLib } from "./db-access";
+import { assertIrrInteger } from "./money/irr";
 
 /**
  * Production pricing is fail-closed until the canonical IRR rate card has
@@ -112,12 +113,26 @@ const VEHICLE_TYPE_MULTIPLIERS: Record<string, number> = {
 // yields a Decimal that exactly represents the rounded integer; toNumber()
 // then converts without precision loss.
 function round(dec: Decimal): number {
-  return dec.round().toNumber();
+  const amount = dec.round().toNumber();
+  assertIrrInteger(amount, "Calculated price");
+  return amount;
 }
 
 export async function calculatePrice(input: PricingInput): Promise<PricingBreakdown> {
   if (!isProductionPricingApproved()) {
     throw new Error("Production IRR pricing is disabled until the canonical rate card is approved");
+  }
+
+  if (!Number.isFinite(input.laborHours) || input.laborHours < 0) {
+    throw new RangeError("Labor hours must be a finite non-negative number");
+  }
+  assertIrrInteger(input.partsCost, "Parts cost");
+  if (!Number.isFinite(input.travelDistanceKm) || input.travelDistanceKm < 0) {
+    throw new RangeError("Travel distance must be a finite non-negative number");
+  }
+  const vipPercent = input.vipDiscountPercent ?? 0;
+  if (!Number.isFinite(vipPercent) || vipPercent < 0 || vipPercent > 100) {
+    throw new RangeError("VIP discount percent must be between 0 and 100");
   }
 
     const db = await getDbForLib();
