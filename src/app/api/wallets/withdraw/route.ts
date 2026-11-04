@@ -6,6 +6,7 @@ import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { createWithdrawalAtomically } from "@/lib/withdrawal-atomic";
 import { isValidIranianSheba } from "@/lib/iranian-iban";
 import { getApprovedIrrWithdrawalPolicy, isValidIrrWithdrawalAmount } from "@/lib/money/withdrawal-policy";
+import { isSafeStoredIrrAmount, maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 export async function POST(req: Request) {
   const session = await requireAuth(req);
@@ -83,10 +84,13 @@ export async function POST(req: Request) {
   const db = await getDbForLib();
   const wallet = await db.wallet.findUnique({
     where: { technicianId: technician.id },
-    select: { id: true, balance: true },
+    select: { id: true, balance: true, financialUnitStatus: true },
   });
   if (!wallet) {
     return NextResponse.json({ error: "کیف پول یافت نشد" }, { status: 404 });
+  }
+  if (wallet.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(wallet.balance)) {
+    return NextResponse.json({ error: "منشأ مالی موجودی کیف پول تأیید نشده است؛ برداشت تا زمان تطبیق سوابق مسدود است", code: "WALLET_FINANCIAL_PROVENANCE_UNVERIFIED" }, { status: 503 });
   }
 
   // A retry with the same key returns the original request and never debits again.
@@ -99,7 +103,7 @@ export async function POST(req: Request) {
         existing.bankName !== bankName || existing.shebaNumber !== shebaNumber) {
       return NextResponse.json({ error: "کلید درخواست قبلاً برای عملیات دیگری استفاده شده است" }, { status: 409 });
     }
-    return NextResponse.json({ withdrawal: existing, newBalance: Number(wallet.balance), idempotent: true });
+    return NextResponse.json({ withdrawal: maskFinancialFields(existing, ["amount"]), newBalance: Number(wallet.balance), idempotent: true });
   }
 
   const clientId = getClientId(req);
@@ -161,7 +165,7 @@ export async function POST(req: Request) {
         data: {
           userId: session.userId,
           type: "withdrawal_requested",
-          title: `درخواست برداشت ${amount} ثبت شد`,
+          title: "درخواست برداشت ثبت شد",
           body: "درخواست برداشت شما ثبت شد و در انتظار تأیید است.",
           category: "payment",
           link: "technician/earnings",
@@ -171,7 +175,7 @@ export async function POST(req: Request) {
       // A notification failure must not turn a committed withdrawal into an apparent failure.
     }
 
-    return NextResponse.json({ withdrawal, newBalance });
+    return NextResponse.json({ withdrawal: maskFinancialFields(withdrawal, ["amount"]), newBalance });
   } catch (error) {
     // A concurrent request may win the unique idempotency key. Resolve it as a safe retry.
     const raced = await db.withdrawalRequest.findUnique({ where: { idempotencyKey } }).catch(() => null);
@@ -180,7 +184,7 @@ export async function POST(req: Request) {
         raced.bankName === bankName && raced.shebaNumber === shebaNumber) {
       const currentWallet = await db.wallet.findUnique({ where: { id: wallet.id }, select: { balance: true } });
       return NextResponse.json({
-        withdrawal: raced,
+        withdrawal: maskFinancialFields(raced, ["amount"]),
         newBalance: currentWallet ? Number(currentWallet.balance) : Number(wallet.balance),
         idempotent: true,
       });
