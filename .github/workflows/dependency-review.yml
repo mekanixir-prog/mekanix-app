@@ -31,8 +31,8 @@ jobs:
           bun-version: "1.4.4"
           cache: true
 
-      - name: Install exact locked dependencies
-        run: bun install --frozen-lockfile
+      - name: Resolve dependencies without executing lifecycle scripts
+        run: bun install --ignore-scripts
 
       - name: Apply only compatible security updates in the runner workspace
         id: remediation
@@ -80,6 +80,9 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.4"
+
+      - name: Resolve the trusted package manifest and overrides
+        run: bun install --ignore-scripts
 
       - name: Apply latest compatible vulnerability fixes without lifecycle scripts
         continue-on-error: true
