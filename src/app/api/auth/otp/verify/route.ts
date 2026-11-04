@@ -4,7 +4,7 @@ import { createSession } from "@/lib/auth";
 import { validateBody } from "@/lib/api-helpers";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { otpVerifySchema } from "@/lib/schemas";
-import { hashOtpCode } from "@/lib/otp-crypto";
+import { hashOtpCode, hashOtpPhone } from "@/lib/otp-crypto";
 import { AUTH_USER_SELECT } from "@/lib/user-select";
 
 const TECHNICIAN_INCLUDE = {
@@ -48,13 +48,48 @@ export async function POST(req: Request) {
   const code = body.data.code;
   const name = body.data.name;
 
-  // Hash the user-supplied code with the same SHA-256 used at send time so we
-  // can match against the stored digest. The DB only ever holds the hash —
-  // see `src/lib/otp-crypto.ts`. Note: this also means any OTP rows created
-  // before this change (which stored plaintext codes) will simply fail to
-  // match — the user will get a 400 and can request a new code. That's the
-  // correct, secure behavior; we do NOT fall back to plaintext lookup.
-  const codeHash = hashOtpCode(code);
+  // A per-phone budget complements the per-IP budget: attackers can spread
+  // guesses across many IP addresses. HMAC the identifier before storing it.
+  let phoneRateLimitKey: string;
+  try {
+    phoneRateLimitKey = hashOtpPhone(phone);
+  } catch {
+    return NextResponse.json(
+      { error: "سرویس احراز هویت موقتاً آماده نیست" },
+      { status: 503, headers: { "Retry-After": "60" } }
+    );
+  }
+
+  const phoneLimited = await rateLimitAsync(
+    `otp-verify:phone:${phoneRateLimitKey}`,
+    5,
+    10 * 60 * 1000
+  );
+  if (phoneLimited.unavailable) {
+    return NextResponse.json(
+      { error: "سرویس محدودسازی درخواست موقتاً در دسترس نیست" },
+      { status: 503, headers: { "Retry-After": "30" } }
+    );
+  }
+  if (!phoneLimited.success) {
+    return NextResponse.json(
+      { error: "تعداد تلاش‌های کد تأیید برای این شماره بیش از حد است" },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(phoneLimited.resetMs / 1000)) } }
+    );
+  }
+
+  // Match the keyed HMAC produced at send time. Existing pending SHA-256
+  // OTP rows are intentionally not accepted after deployment; users can
+  // request a fresh code. Never fall back to an unkeyed legacy digest.
+  let codeHash: string;
+  try {
+    codeHash = hashOtpCode(code);
+  } catch {
+    return NextResponse.json(
+      { error: "سرویس احراز هویت موقتاً آماده نیست" },
+      { status: 503, headers: { "Retry-After": "60" } }
+    );
+  }
 
   const db = await getDbForLib();
 
@@ -68,8 +103,8 @@ export async function POST(req: Request) {
   // from consumed:false → consumed:true ONLY if it is still unconsumed AND
   // not expired. count === 1 means we won the race; count === 0 means the
   // code was already used/expired/invalid — same 400 error as before.
-  // Note: WHERE clause uses `code: codeHash` because the DB stores the hash,
-  // not the plaintext code.
+  // Note: WHERE clause uses `code: codeHash` because the DB stores the keyed
+  // verifier, not the plaintext code.
   const now = new Date();
   const consumed = await db.otpCode.updateMany({
     where: {
