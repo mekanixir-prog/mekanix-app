@@ -74,7 +74,7 @@ function makeD1() {
         sqlite.exec("BEGIN");
         const results = items.map(({ sql, values }) => {
           const statement = sqlite.prepare(sql);
-          if (/^\\s*SELECT/i.test(sql)) {
+          if (/^\s*SELECT/i.test(sql)) {
             statement.get(...(values as never[]));
             return { meta: { changes: 0 } };
           }
