@@ -3,6 +3,9 @@ name: Dependency Security Audit
 on:
   pull_request:
     branches: [main]
+    paths:
+      - package.json
+      - bun.lock
   push:
     branches: [main, security/automated-code-scanning]
   schedule:
