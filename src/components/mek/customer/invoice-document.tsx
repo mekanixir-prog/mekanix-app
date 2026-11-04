@@ -124,8 +124,7 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
             <tbody>
               <tr className="border-t border-border">
                 <td className="px-4 py-2.5">
-                  <span className="font-medium">{t("invoice.document.laborRow")}</span>
-                  <span className="ml-2 text-[11px] text-muted-foreground">{t("invoice.document.laborLine").replace("{hours}", fmtHours(inv.laborHours)).replace("{rate}", money(Number(inv.laborRate)))}</span>
+                  <span className="font-medium">{t("invoice.laborFixed")}</span>
                 </td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{fmtHours(inv.laborHours)}{t("common.hourShort")}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.laborRate))}</td>
@@ -147,6 +146,12 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
                 <td className="px-4 py-2.5 text-right tabular-nums">{isFa ? toPersianDigits(1) : "1"}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.travelFee))}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.travelFee))}</td>
+              </tr>
+              <tr className="border-t border-border">
+                <td className="px-4 py-2.5"><span className="font-medium">{t("invoice.inspectionFee")}</span></td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{isFa ? toPersianDigits(1) : "1"}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.inspectionFee))}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.inspectionFee))}</td>
               </tr>
             </tbody>
           </table>
