@@ -98,6 +98,7 @@ function makeD1() {
       "jobId" TEXT,
       "description" TEXT NOT NULL,
       "amount" REAL NOT NULL,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "status" TEXT NOT NULL,
       "idempotencyKey" TEXT UNIQUE,
       "requestFingerprint" TEXT,
