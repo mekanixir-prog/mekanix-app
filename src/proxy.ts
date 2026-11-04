@@ -22,27 +22,30 @@ export function proxy(req: NextRequest) {
   if (process.env.NODE_ENV === "production") {
     res.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
   }
-  // Note: X-Frame-Options: SAMEORIGIN is intentionally NOT set on any
-  // environment. CSP frame-ancestors * is the modern equivalent and
-  // allows the Z AI preview gateway (cross-origin) to embed the page.
-  // Setting X-Frame-Options: SAMEORIGIN would override the permissive
-  // CSP and break the preview panel.
-  // In dev: allow all frame ancestors so preview panel works.
-  // In production: ALSO allow all frame ancestors — the Worker runs in
-  // production mode but we still need the Z AI preview gateway to embed
-  // the page in an iframe. The CSP 'self' would block cross-origin
-  // embedding (the gateway is on *.space-z.ai, the Worker is localhost).
-  // Cross-origin embedding of a public marketing page is safe here; the
-  // sensitive admin/payment routes are protected by auth, not by CSP.
+  // Restrict production embedding to our own origin and the known preview
+  // gateway. A wildcard frame-ancestors policy allows arbitrary sites to
+  // frame authenticated pages and creates a clickjacking surface.
+  const isProduction = process.env.NODE_ENV === "production";
   const csp = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.socket.io",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "form-action 'self'",
+    isProduction
+      ? "script-src 'self' 'unsafe-inline' https://cdn.socket.io"
+      : "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.socket.io",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com data:",
-    "img-src 'self' data: blob: https: http:",
-    "connect-src 'self' ws: wss: https: http:",
+    isProduction
+      ? "img-src 'self' data: blob: https:"
+      : "img-src 'self' data: blob: https: http:",
+    isProduction
+      ? "connect-src 'self' wss: https:"
+      : "connect-src 'self' ws: wss: https: http:",
     "worker-src 'self' blob:",
-    "frame-ancestors *",
+    isProduction
+      ? "frame-ancestors 'self' https://*.space-z.ai"
+      : "frame-ancestors 'self' https://*.space-z.ai http://localhost:* http://127.0.0.1:*",
   ].join("; ");
   res.headers.set("Content-Security-Policy", csp);
 
