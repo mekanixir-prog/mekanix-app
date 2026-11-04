@@ -426,3 +426,15 @@ describe("POST /api/auth/logout — endpoint", () => {
     expect(mockSessionUpdateMany).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("verifySession — deleted account", () => {
+  it("rejects a session when its related user record no longer exists", async () => {
+    const token = await createSession(PAYLOAD);
+    mockSessionFindUnique.mockResolvedValueOnce({
+      ...validSessionRecord(),
+      user: null,
+    });
+
+    await expect(verifySession(token)).resolves.toBeNull();
+  });
+});
