@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { generateOtpCode, hashOtpCode, hashOtpPhone } from "@/lib/otp-crypto";
 
@@ -16,7 +17,7 @@ describe("OTP keyed hashing", () => {
     const code = "123456";
     const digest = hashOtpCode(code);
     expect(digest).toMatch(/^[a-f0-9]{64}$/);
-    expect(digest).not.toBe("8d969eef6ecad3c29a3a629280e686cff8ca7a2e6c6a3f7b5b0f0e9e5f3f6b7a");
+    expect(digest).not.toBe(createHash("sha256").update(code).digest("hex"));
   });
 
   it("changes OTP digests when the secret rotates", () => {
@@ -30,7 +31,7 @@ describe("OTP keyed hashing", () => {
   it("uses domain separation for phone rate-limit identifiers", () => {
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("OTP_HASH_SECRET", "test-secret-with-at-least-32-bytes-123");
-    expect(hashOtpPhone("09123456789")).not.toBe(hashOtpCode("091234"));
+    expect(hashOtpPhone("123456")).not.toBe(hashOtpCode("123456"));
     expect(hashOtpPhone("09123456789")).toBe(hashOtpPhone("09123456789"));
   });
 
