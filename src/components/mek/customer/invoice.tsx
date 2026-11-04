@@ -162,7 +162,13 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
       </div>
 
       {/* Payment */}
-      {invoice && !financialReady && invoice.status !== "PAID" && (\n        <div className="rounded-lg border border-amber/30 bg-amber/5 p-3 text-xs text-muted-foreground">\n          {isFa ? "مبالغ این فاکتور تا تأیید منشأ مالی قابل نمایش یا پرداخت نیستند." : "Invoice amounts are unavailable until their financial provenance is verified."}\n        </div>\n      )}\n\n      {invoice && invoice.status !== "PAID" && financialReady && (
+      {invoice && !financialReady && invoice.status !== "PAID" && (
+        <div className="rounded-lg border border-amber/30 bg-amber/5 p-3 text-xs text-muted-foreground">
+          {isFa ? "مبالغ این فاکتور تا تأیید منشأ مالی قابل نمایش یا پرداخت نیستند." : "Invoice amounts are unavailable until their financial provenance is verified."}
+        </div>
+      )}
+
+      {invoice && invoice.status !== "PAID" && financialReady && (
         <div className="rounded-xl border border-border bg-card p-5">
           <div className="flex items-center gap-2">
             <Lock className="size-4 text-amber" />
