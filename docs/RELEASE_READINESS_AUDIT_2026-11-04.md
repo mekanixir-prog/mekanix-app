@@ -126,18 +126,25 @@ Preserve the existing containment: `POST /api/payments` remains production-disab
 
 ### Issue #99 — commercial policy
 
-[Issue #99](https://github.com/mekanixir-prog/mekanix-app/issues/99) remains open and requires explicit owner decisions for:
+[Issue #99](https://github.com/mekanixir-prog/mekanix-app/issues/99) remains open. Earlier MEKANIX decisions establish these product constraints:
 
-- Separate rate cards for heavy machinery and passenger vehicles.
-- Labor, inspection, visit, per-kilometer, emergency and regional pricing.
+- Heavy machinery is the priority service category.
+- Passenger support is limited to non-Iranian vehicles; Iran Khodro and Saipa are excluded.
+- Technician labor/wage calculation is fixed-fee.
+- VIP is annual and includes free periodic service visits only; repairs and parts are not free.
+
+The following values and policies still require explicit owner decisions:
+
+- Separate approved IRR rate cards for heavy machinery and the supported foreign passenger-vehicle segment.
+- Labor, inspection, visit, per-kilometer, emergency and regional prices.
 - Tax basis/rate and integer-IRR rounding.
-- Platform commission basis and rounding.
+- Platform commission percentage, calculation base and rounding. A prior 15% example was illustrative, not approved.
 - Technician gross/net, escrow hold and release conditions.
-- VIP plan prices, duration, benefits, renewals and refunds.
+- Annual VIP price, renewal/refund terms and whether any benefit beyond free periodic visits is approved.
 - Integer-IRR withdrawal minimum/maximum, bank-only payout policy and fees.
 - CARE's Toman input contract and exactly-once conversion boundary.
 
-Existing seed values and pricing-engine defaults are not approved production prices.
+A sample 2,700,000-Toman service total and a 15% commission were examples, not production prices or owner approvals. Existing seed values and pricing-engine defaults are not approved production prices.
 
 ### Issue #24 — authoritative payment lifecycle
 
