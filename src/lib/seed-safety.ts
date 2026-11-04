@@ -24,6 +24,25 @@ export const SEED_PROTECTED_MODEL_DELEGATES = [
   "walletReleaseGuard",
 ] as const;
 
+/**
+ * Refuse demo setup unless the operator explicitly opts in on a disposable
+ * local database. NODE_ENV alone is not a reliable production boundary:
+ * shell sessions and one-off commands may not inherit the app's runtime env.
+ */
+export function assertDemoSetupAllowed(
+  nodeEnv: string | undefined,
+  allowDemoSetup: string | undefined,
+): void {
+  if (nodeEnv === "production") {
+    throw new Error("Demo database setup is disabled in production. No schema push or seed was run.");
+  }
+  if (allowDemoSetup !== "true") {
+    throw new Error(
+      "Demo database setup requires MEKANIX_ALLOW_DEMO_SETUP=true and a disposable local database. No schema push or seed was run.",
+    );
+  }
+}
+
 type CountDelegate = { count: () => Promise<number> };
 
 export async function assertDatabaseEmptyForDemoSeed(db: unknown): Promise<void> {

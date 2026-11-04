@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   assertDatabaseEmptyForDemoSeed,
+  assertDemoSetupAllowed,
   SEED_PROTECTED_MODEL_DELEGATES,
 } from "@/lib/seed-safety";
 
@@ -14,6 +15,18 @@ function makeDb(counts: Record<string, number> = {}) {
 }
 
 describe("demo seed safety guard", () => {
+  it("always refuses demo setup in production, even with the opt-in flag", () => {
+    expect(() => assertDemoSetupAllowed("production", "true")).toThrow(/disabled in production/);
+  });
+
+  it("requires an explicit opt-in when NODE_ENV is unset or non-production", () => {
+    expect(() => assertDemoSetupAllowed(undefined, undefined)).toThrow(/MEKANIX_ALLOW_DEMO_SETUP=true/);
+    expect(() => assertDemoSetupAllowed("development", undefined)).toThrow(/MEKANIX_ALLOW_DEMO_SETUP=true/);
+    expect(() => assertDemoSetupAllowed("test", "false")).toThrow(/MEKANIX_ALLOW_DEMO_SETUP=true/);
+    expect(() => assertDemoSetupAllowed("development", "true")).not.toThrow();
+    expect(() => assertDemoSetupAllowed("test", "true")).not.toThrow();
+  });
+
   it("allows seeding only when every application table is empty", async () => {
     const db = makeDb();
     await expect(assertDatabaseEmptyForDemoSeed(db)).resolves.toBeUndefined();
