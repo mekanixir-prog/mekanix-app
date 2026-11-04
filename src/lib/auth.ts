@@ -39,6 +39,12 @@ function getSecret(): Uint8Array {
     // Dev-only fallback — NEVER in production
     return encoder.encode("mekanix-dev-secret-change-in-production");
   }
+  if (
+    process.env.NODE_ENV === "production" &&
+    new TextEncoder().encode(secret).length < 32
+  ) {
+    throw new Error("JWT_SECRET must contain at least 32 bytes in production");
+  }
   return encoder.encode(secret);
 }
 
