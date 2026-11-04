@@ -79,6 +79,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
   // S3 FIX: validate user.status BEFORE stripping FORBIDDEN_FIELDS.
   const requestedUserStatus = body.status;
   const requestedWithdrawalStatus = body.status;
+  const requestedPaymentStatus = body.status;
   const requestedWithdrawalAdminNotes = body.adminNotes;
   const requestedWithdrawalReference = body.transactionReference;
   if (resource === "customers" && requestedUserStatus !== undefined) {
@@ -279,7 +280,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     const allowed = RESOURCE_ALLOWED_FIELDS.payments ?? ALLOWED_FIELDS.review;
     const safe = sanitizeInput(body, allowed);
     // Validate payment status if provided
-    if (typeof body.status === "string" && !(VALID_PAYMENT_STATUSES as readonly string[]).includes(body.status)) {
+    if (typeof requestedPaymentStatus === "string" && !(VALID_PAYMENT_STATUSES as readonly string[]).includes(requestedPaymentStatus)) {
       return NextResponse.json(
         { error: `status باید یکی از ${VALID_PAYMENT_STATUSES.join("، ")} باشد` },
         { status: 400 }
@@ -288,7 +289,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     // SEC-4: snapshot BEFORE.
     const before = await db.payment.findUnique({ where: { id } });
     if (!before) return NextResponse.json({ error: "پرداخت یافت نشد" }, { status: 404 });
-    if (safe.status !== undefined) {
+    if (requestedPaymentStatus !== undefined) {
       return NextResponse.json(
         { error: "تغییر وضعیت پرداخت از ویرایش عمومی مدیر مجاز نیست؛ همهٔ انتقال‌ها باید از چرخهٔ پرداختِ دارای مدرک معتبر عبور کنند", code: "PAYMENT_STATUS_REQUIRES_VERIFIED_LIFECYCLE" },
         { status: 409 },
