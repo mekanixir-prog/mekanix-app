@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
+import { getJobPartAmountError } from "@/lib/money/job-part-amount";
 
 async function ensureAssignedTechOrAdmin(session: any, jobId: string) {
   if (session.role === "ADMIN") return null;
@@ -40,23 +41,28 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "بدنه درخواست نامعتبر است" }, { status: 400 });
+  }
   if (typeof body.name !== "string" || !body.name.trim()) {
     return NextResponse.json({ error: "نام قطعه الزامی است" }, { status: 400 });
   }
-  if (typeof body.quantity === "number" && body.quantity <= 0) {
-    return NextResponse.json({ error: "تعداد باید بیشتر از صفر باشد" }, { status: 400 });
+
+  const amountError = getJobPartAmountError(body.quantity, body.unitPrice);
+  if (amountError === "PART_QUANTITY_MUST_BE_POSITIVE_INTEGER") {
+    return NextResponse.json({ error: "تعداد قطعه باید عدد صحیح مثبت باشد", code: amountError }, { status: 400 });
   }
-  if (typeof body.unitPrice === "number" && body.unitPrice < 0) {
-    return NextResponse.json({ error: "قیمت نامعتبر" }, { status: 400 });
+  if (amountError === "PART_UNIT_PRICE_MUST_BE_NON_NEGATIVE_INTEGER_IRR") {
+    return NextResponse.json({ error: "قیمت واحد قطعه باید عدد صحیح نامنفی به ریال باشد", code: amountError }, { status: 400 });
   }
 
   const part = await (await getDbForLib()).part.create({
     data: {
       jobId,
-      name: String(body.name).slice(0, 200),
+      name: body.name.trim().slice(0, 200),
       sku: typeof body.sku === "string" ? body.sku.slice(0, 100) : null,
-      quantity: typeof body.quantity === "number" ? Math.max(1, Math.floor(body.quantity)) : 1,
-      unitPrice: typeof body.unitPrice === "number" ? Math.max(0, body.unitPrice) : 0,
+      quantity: body.quantity,
+      unitPrice: body.unitPrice,
     },
   });
   return NextResponse.json(part);
