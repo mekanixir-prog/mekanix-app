@@ -120,7 +120,7 @@ export async function POST(req: Request) {
     include: {
       parts: true,
       technician: true,
-      tracking: { orderBy: { ts: "desc" }, take: 1 },
+      tracking: { orderBy: { ts: "asc" }, take: 1 },
       request: { include: { vehicle: true } },
     },
   });
@@ -154,11 +154,16 @@ export async function POST(req: Request) {
   if (!serviceCode) {
     return NextResponse.json({ error: "دسته خدمت در نرخ‌نامه تعریف نشده است؛ پیش از صدور فاکتور باید خدمت به کد تعرفه متصل شود", code: "SERVICE_RATE_MAPPING_REQUIRED" }, { status: 409 });
   }
-  const latestTrackedLocation = job.tracking[0] ?? job.technician;
-  const travelDistanceKm = estimateTravelDistanceKm(
-    { lat: latestTrackedLocation.lat, lng: latestTrackedLocation.lng },
-    { lat: job.request.lat, lng: job.request.lng },
-  );
+  // Charge extra distance only when a job-scoped route origin was recorded.
+  // Do not use the technician's latest GPS point at invoice time: it may be
+  // at the customer site and would understate the actual dispatch distance.
+  const dispatchOrigin = job.tracking[0];
+  const travelDistanceKm = dispatchOrigin
+    ? estimateTravelDistanceKm(
+        { lat: dispatchOrigin.lat, lng: dispatchOrigin.lng },
+        { lat: job.request.lat, lng: job.request.lng },
+      )
+    : 0;
   let pricing: Awaited<ReturnType<typeof calculatePrice>>;
   try {
     pricing = await calculatePrice({
