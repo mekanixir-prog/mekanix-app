@@ -145,7 +145,7 @@ This section records changes after the previous 2026-11-03 checklist snapshot. T
 - [ ] Issue #24 — complete authoritative payment attempts, provider initiation/verification, callback idempotency, purpose-specific fulfillment, and invoice-to-technician ledger/escrow settlement.
 - [ ] Issue #81 — classify and reconcile historical money provenance under the owner-approved integer-IRR contract. Unknown rows remain quarantined; no blanket conversion.
 - [ ] Issue #130 — remove FX-based IRR formatting, mask unverified wallet/invoice reads, and enforce safe-integer IRR at writers.
-- [ ] Issue #99 — obtain owner-approved rate cards, tax, commission/escrow, VIP prices, CARE boundary and withdrawal policy.
+- [ ] Issue #99 — approve fixed-fee labor and separate IRR rate cards for priority heavy machinery and supported foreign passenger vehicles (excluding Iran Khodro/Saipa); approve tax, commission/escrow, annual VIP price (free periodic visits only; repairs/parts excluded), CARE boundary and withdrawal policy. No illustrative 15% commission or sample prices may be treated as approved.
 - [x] PRs #71/#73 are closed; useful safe work from #71 was ported to #129, while #73's USD/decimal policy was not ported. PR #78 remains a stale large branch and must be split/rebased into bounded changes before review.
 
 ### Launch infrastructure remains deliberately deferred
