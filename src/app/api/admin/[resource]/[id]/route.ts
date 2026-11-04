@@ -179,7 +179,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
         id: true, code: true, walletId: true, amount: true, financialUnitStatus: true, method: true,
         status: true, requestedAt: true, processedAt: true, reviewerId: true,
         adminNotes: true, txnId: true, shebaNumber: true,
-        wallet: { select: { technician: { select: { userId: true } } } },
+        wallet: { select: { financialUnitStatus: true, technician: { select: { userId: true } } } },
       },
     });
     if (!before) return NextResponse.json({ error: "درخواست برداشت پیدا نشد" }, { status: 404 });
@@ -190,6 +190,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     if (before.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(before.amount)) {
       return NextResponse.json(
         { error: "سوابق برداشت هنوز از نظر منشأ و واحد ریال تأیید نشده‌اند", code: "WITHDRAWAL_FINANCIAL_PROVENANCE_UNVERIFIED" },
+        { status: 503 },
+      );
+    }
+    if (before.wallet.financialUnitStatus !== "VERIFIED_IRR") {
+      return NextResponse.json(
+        { error: "وضعیت مالی کیف پول برای عملیات برداشت تأیید نشده است", code: "WALLET_FINANCIAL_PROVENANCE_UNVERIFIED" },
         { status: 503 },
       );
     }
