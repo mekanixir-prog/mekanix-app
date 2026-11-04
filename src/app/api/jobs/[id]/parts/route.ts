@@ -63,6 +63,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       sku: typeof body.sku === "string" ? body.sku.slice(0, 100) : null,
       quantity: body.quantity,
       unitPrice: body.unitPrice,
+      financialUnitStatus: "VERIFIED_IRR",
     },
   });
   return NextResponse.json(part);
