@@ -161,58 +161,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     );
   }
 
-  let invoiceInput: AtomicInvoiceInput | null = null;
-  if (status === "WAITING_APPROVAL" && !existing.invoice) {
-    const laborHours = extra.laborHours ?? 1.5;
-    const laborRate = Number(existing.technician.hourlyRate);
-    const travelFee = Number(existing.technician.travelFeeBase);
-    const partsTotal = existing.parts.reduce((sum, part) => {
-      const unitPrice = Number(part.unitPrice);
-      const quantity = Number(part.quantity);
-      if (!Number.isFinite(unitPrice) || unitPrice < 0 ||
-          !Number.isSafeInteger(quantity) || quantity < 0) {
-        return Number.NaN;
-      }
-      return sum + unitPrice * quantity;
-    }, 0);
-
-    if (!Number.isFinite(laborRate) || laborRate < 0 ||
-        !Number.isFinite(travelFee) || travelFee < 0 ||
-        !Number.isFinite(partsTotal) || partsTotal < 0) {
-      return NextResponse.json({ error: "اطلاعات قیمت‌گذاری کار نامعتبر است" }, { status: 409 });
-    }
-
-    const subtotal = laborHours * laborRate + partsTotal + travelFee;
-    const taxSetting = await db.platformSetting.findUnique({ where: { key: "tax_rate" } });
-    const taxRate = taxSetting?.value == null ? 0.09 : (taxSetting.value.trim() ? Number(taxSetting.value) : Number.NaN);
-    if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 1) {
-      return NextResponse.json({ error: "تنظیمات مالیات نامعتبر است" }, { status: 503 });
-    }
-    const taxTotal = subtotal * taxRate;
-    const total = subtotal + taxTotal;
-    if (![subtotal, taxTotal, total].every(Number.isFinite)) {
-      return NextResponse.json({ error: "محاسبه مبلغ فاکتور نامعتبر است" }, { status: 409 });
-    }
-
-    invoiceInput = {
-      id: crypto.randomUUID(),
-      code: `INV-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`,
-      jobId: id,
-      laborHours,
-      laborRate,
-      laborTotal: laborHours * laborRate,
-      partsTotal,
-      travelFee,
-      subtotal,
-      taxRate,
-      taxTotal,
-      discount: 0,
-      total,
-      currency: "IRR",
-      status: "SENT" as const,
-      notes: "Parts covered by 6-month warranty.",
-    };
-  }
   const holdUntil = status === "COMPLETED"
     ? new Date(Date.now() + HOLD_HOURS * 60 * 60 * 1000)
     : null;
