@@ -99,7 +99,7 @@ describe("admin withdrawal D1 transaction integration", () => {
     await expect(updateWithdrawalWithD1(d1 as any, {
       withdrawalId: "wd-1", action: "REJECTED", adminId: "admin-1",
       adminNotes: null, at: new Date("2026-10-30T10:00:00.000Z"),
-    })).rejects.toThrow();
+    })).resolves.toBe(false);
     expect(sqlite.prepare('SELECT "status" FROM "WithdrawalRequest" WHERE "id" = ?').get("wd-1"))
       .toEqual({ status: "REQUESTED" });
     expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletLedger"').get()).toEqual({ n: 0 });
@@ -118,6 +118,36 @@ describe("admin withdrawal D1 transaction integration", () => {
     expect(sqlite.prepare('SELECT "totalWithdrawn" FROM "Wallet" WHERE "id" = ?').get("wallet-1"))
       .toEqual({ totalWithdrawn: 500 });
     expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletTransaction"').get()).toEqual({ n: 1 });
+  });
+
+  it("rolls back rejection when the wallet refund update changes zero rows", async () => {
+    sqlite.exec(`CREATE TRIGGER "skip_withdrawal_refund" BEFORE UPDATE OF "balance" ON "Wallet"
+      BEGIN SELECT RAISE(IGNORE); END;`);
+    await expect(updateWithdrawalWithD1(d1 as any, {
+      withdrawalId: "wd-1", action: "REJECTED", adminId: "admin-1",
+      adminNotes: null, at: new Date("2026-10-30T10:00:00.000Z"),
+    })).resolves.toBe(false);
+    expect(sqlite.prepare('SELECT "status" FROM "WithdrawalRequest" WHERE "id" = ?').get("wd-1"))
+      .toEqual({ status: "REQUESTED" });
+    expect(sqlite.prepare('SELECT "balance" FROM "Wallet" WHERE "id" = ?').get("wallet-1"))
+      .toEqual({ balance: 1000 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletLedger"').get()).toEqual({ n: 0 });
+  });
+
+  it("rolls back payout state and payout ledger when the wallet aggregate update changes zero rows", async () => {
+    sqlite.prepare('UPDATE "WithdrawalRequest" SET "status" = ? WHERE "id" = ?').run("APPROVED", "wd-1");
+    sqlite.exec(`CREATE TRIGGER "skip_total_withdrawn" BEFORE UPDATE OF "totalWithdrawn" ON "Wallet"
+      BEGIN SELECT RAISE(IGNORE); END;`);
+    await expect(updateWithdrawalWithD1(d1 as any, {
+      withdrawalId: "wd-1", action: "PAID", adminId: "admin-1",
+      adminNotes: null, payoutReference: "BANK-TRX-2026-0003",
+      at: new Date("2026-10-30T10:00:00.000Z"),
+    })).resolves.toBe(false);
+    expect(sqlite.prepare('SELECT "status" FROM "WithdrawalRequest" WHERE "id" = ?').get("wd-1"))
+      .toEqual({ status: "APPROVED" });
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletTransaction"').get()).toEqual({ n: 0 });
+    expect(sqlite.prepare('SELECT "totalWithdrawn" FROM "Wallet" WHERE "id" = ?').get("wallet-1"))
+      .toEqual({ totalWithdrawn: 0 });
   });
 
   it("rolls back PAID status if the payout transaction cannot satisfy its wallet foreign key", async () => {
