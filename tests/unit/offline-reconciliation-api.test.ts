@@ -63,9 +63,9 @@ describe("read-only offline reconciliation endpoints", () => {
   it("reports a withdrawal as committed only when it belongs to the authenticated technician", async () => {
     mocks.withdrawal.mockResolvedValue({
       id: "wd-1", walletId: "wallet-1", code: "WD-1001", amount: 500,
-      status: "REQUESTED", requestedAt: new Date("2026-10-31T10:00:00Z"), processedAt: null,
+      financialUnitStatus: "VERIFIED_IRR", status: "REQUESTED", requestedAt: new Date("2026-10-31T10:00:00Z"), processedAt: null,
     });
-    mocks.withdrawalLedger.mockResolvedValue({ id: "ledger-1", referenceId: "wd-1", amount: -500 });
+    mocks.withdrawalLedger.mockResolvedValue({ id: "ledger-1", referenceId: "wd-1", amount: -500, financialUnitStatus: "VERIFIED_IRR" });
     const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
@@ -144,12 +144,12 @@ describe("read-only offline reconciliation endpoints", () => {
   it("reports prepay committed only when the job marker and all four financial records exist", async () => {
     mocks.auth.mockResolvedValue(customerSession);
     mocks.job.mockResolvedValue({
-      id: "job-1", code: "JOB-1001", prepayPaid: true,
+      id: "job-1", code: "JOB-1001", prepayPaid: true, financialUnitStatus: "VERIFIED_IRR",
       prepayPaidAt: new Date("2026-10-31T10:00:00Z"),
       inspectionFee: 100, travelFee: 20, platformCommission: 12, netEarnings: 108,
     });
-    mocks.walletTxn.mockResolvedValue({ id: "txn" });
-    mocks.ledger.mockResolvedValue({ id: "ledger" });
+    mocks.walletTxn.mockResolvedValue({ id: "txn", financialUnitStatus: "VERIFIED_IRR" });
+    mocks.ledger.mockResolvedValue({ id: "ledger", financialUnitStatus: "VERIFIED_IRR" });
     const response = await getPrepayStatus(request("/api/prepay/status?jobId=job-1"));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
@@ -170,7 +170,7 @@ describe("read-only offline reconciliation endpoints", () => {
   it("returns reconciliation-required for an inconsistent partial financial state", async () => {
     mocks.auth.mockResolvedValue(customerSession);
     mocks.job.mockResolvedValue({
-      id: "job-1", code: "JOB-1001", prepayPaid: true,
+      id: "job-1", code: "JOB-1001", prepayPaid: true, financialUnitStatus: "VERIFIED_IRR",
       prepayPaidAt: new Date(), inspectionFee: 100, travelFee: 20,
       platformCommission: 12, netEarnings: 108,
     });
