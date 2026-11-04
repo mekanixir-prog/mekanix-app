@@ -28,7 +28,9 @@ function serviceCodeFromCategory(category: string): ServiceCode | null {
   if (value.includes("brake") || value.includes("suspension") || value.includes("ترمز") || value.includes("تعلیق") || value.includes("جلوبندی")) return "brakes";
   if (value.includes("periodic") || value.includes("maintenance") || value.includes("سرویس") || value.includes("دوره")) return "periodic";
   if (value.includes("engine") || value.includes("motor") || value.includes("موتور")) {
-    return value.includes("major") || value.includes("اساسی") || value.includes("کامل") ? "engine_major" : "engine_minor";
+    if (value.includes("major") || value.includes("اساسی") || value.includes("کامل")) return "engine_major";
+    if (value.includes("minor") || value.includes("جزئی") || value.includes("سبک")) return "engine_minor";
+    return null;
   }
   if (value.includes("transmission") || value.includes("gearbox") || value.includes("گیربکس") || value.includes("انتقال قدرت")) return "transmission";
   if (value.includes("undercarriage") || value.includes("chassis") || value.includes("زیربندی") || value.includes("شاسی")) return "undercarriage";
