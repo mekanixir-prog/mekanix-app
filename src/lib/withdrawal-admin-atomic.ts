@@ -31,8 +31,8 @@ export async function updateWithdrawalWithPrisma(
     if (withdrawal.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(withdrawal.amount) || Number(withdrawal.amount) <= 0) return false;
     const walletProvenance = await tx.wallet.findUnique({ where: { id: withdrawal.walletId }, select: { financialUnitStatus: true, balance: true, totalWithdrawn: true } });
     if (walletProvenance?.financialUnitStatus !== "VERIFIED_IRR") return false;
-    if (input.action === "REJECTED" && !isSafeStoredIrrAmount(walletProvenance.balance)) return false;
-    if (input.action === "PAID" && !isSafeStoredIrrAmount(walletProvenance.totalWithdrawn)) return false;
+    if (input.action === "REJECTED" && (!isSafeStoredIrrAmount(walletProvenance.balance) || !Number.isSafeInteger(Number(walletProvenance.balance) + Number(withdrawal.amount)))) return false;
+    if (input.action === "PAID" && (!isSafeStoredIrrAmount(walletProvenance.totalWithdrawn) || !Number.isSafeInteger(Number(walletProvenance.totalWithdrawn) + Number(withdrawal.amount)))) return false;
 
     if (input.action === "APPROVED") {
       if (withdrawal.status !== "REQUESTED") return false;
