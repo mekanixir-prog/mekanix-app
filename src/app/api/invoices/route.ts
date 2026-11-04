@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
-import { areInvoicePriceSourcesVerified, areJobPartPriceSourcesVerified } from "@/lib/money/provenance";
+import { areInvoicePriceSourcesVerified } from "@/lib/money/provenance";
 import { maskInvoiceFinancialData } from "@/lib/money/financial-read-mask";
 
 const FULL_INCLUDE = {
