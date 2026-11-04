@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main, "fix/**", "feat/**"]
 
+permissions:
+  contents: read
+
 jobs:
   docker-deploy-test:
     name: Docker Build + Compose + Health
