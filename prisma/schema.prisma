@@ -1262,6 +1262,7 @@ model PricingSnapshot {
   servicePrice    Decimal    @default(0)
   visitPrice      Decimal    @default(0)
   inspectionPrice Decimal  @default(0)
+  emergencyPrice  Decimal  @default(0)
   laborPrice      Decimal    @default(0)
   partsPrice      Decimal    @default(0)
   discount        Decimal    @default(0)
