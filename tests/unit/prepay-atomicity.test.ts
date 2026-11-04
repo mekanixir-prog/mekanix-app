@@ -124,7 +124,7 @@ describe("atomic prepay recording", () => {
     expect(d1.batch).toHaveBeenCalledTimes(1);
     expect(d1.batch.mock.calls[0][0]).toHaveLength(15);
     expect(statements[5].sql).toContain("changes() = 1");
-    expect(statements[2].sql).toContain('"idempotencyKey"');
+    expect(statements[4].sql).toContain('"idempotencyKey"');
     expect(statements[8].sql).toContain("'HOLD'");
     expect(statements[10].sql).toContain("financialUnitStatus");
   });
