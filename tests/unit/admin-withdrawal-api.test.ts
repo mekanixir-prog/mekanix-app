@@ -211,7 +211,7 @@ describe("admin withdrawal API", () => {
     expect(response.status).toBe(409);
     expect(mocks.notify).not.toHaveBeenCalled();
   });
-  it.each(["SUCCEEDED", "REFUNDED"])(
+  it.each(["PENDING", "SUCCEEDED", "FAILED", "REFUNDED"])(
     "does not allow generic admin PATCH to force a verified payment into %s",
     async (status) => {
       mocks.paymentFind.mockResolvedValue({
