@@ -75,8 +75,8 @@ function makeD1() {
 }
 
 function seed(sqlite: DatabaseSync, pendingBalance = 1000) {
-  sqlite.prepare('undefined') .run("wallet-1", 2000, pendingBalance);
-  sqlite.prepare('INSERT INTO "WalletTransaction" ("id", "walletId", "financialUnitStatus", "netAmount", "status", "holdUntil") VALUES (?, ?, 'VERIFIED_IRR', ?, ?, ?)').run(
+  sqlite.prepare(`INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "pendingBalance") VALUES (?, 'VERIFIED_IRR', ?, ?)`).run("wallet-1", 2000, pendingBalance);
+  sqlite.prepare(`INSERT INTO "WalletTransaction" ("id", "walletId", "financialUnitStatus", "netAmount", "status", "holdUntil") VALUES (?, ?, 'VERIFIED_IRR', ?, ?, ?)`).run(
     "txn-1", "wallet-1", 1000, "PENDING", "2026-10-30T09:00:00.000Z"
   );
 }
@@ -125,8 +125,8 @@ describe("atomic escrow release D1 SQLite integration", () => {
 
   it("does not release a negative net amount", async () => {
     const { sqlite, d1 } = makeD1(); databases.push(sqlite);
-    sqlite.prepare('undefined').run("wallet-1", 2000, 1000);
-    sqlite.prepare('INSERT INTO "WalletTransaction" ("id", "walletId", "financialUnitStatus", "netAmount", "status", "holdUntil") VALUES (?, ?, 'VERIFIED_IRR', ?, ?, ?)').run(
+    sqlite.prepare(`INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "pendingBalance") VALUES (?, 'VERIFIED_IRR', ?, ?)`).run("wallet-1", 2000, 1000);
+    sqlite.prepare(`INSERT INTO "WalletTransaction" ("id", "walletId", "financialUnitStatus", "netAmount", "status", "holdUntil") VALUES (?, ?, 'VERIFIED_IRR', ?, ?, ?)`).run(
       "txn-negative", "wallet-1", -100, "PENDING", "2026-10-30T09:00:00.000Z"
     );
     await expect(releaseWalletTransactionWithD1(d1 as never, "wallet-1", "txn-negative", new Date("2026-10-30T10:00:00.000Z"))).rejects.toThrow();
