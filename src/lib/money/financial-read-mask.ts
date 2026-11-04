@@ -69,25 +69,26 @@ export function isSafeStoredIrrAmount(value: unknown): boolean {
  * VERIFIED_IRR record with conflicting currency or invalid stored amounts is
  * returned as QUARANTINED for the caller; this function never mutates storage.
  */
-export function maskFinancialFields<T extends FinancialRecord>(
+export function maskFinancialFields<T extends object>(
   record: T,
   fields: readonly string[],
   currencyField?: string,
 ): T {
-  const currency = currencyField ? record[currencyField] : undefined;
-  const verified = isVerifiedIrrRecord(record.financialUnitStatus, currency) &&
-    fields.every((field) => isSafeStoredIrrAmount(record[field]));
+  const source = record as FinancialRecord;
+  const currency = currencyField ? source[currencyField] : undefined;
+  const verified = isVerifiedIrrRecord(source.financialUnitStatus, currency) &&
+    fields.every((field) => isSafeStoredIrrAmount(source[field]));
 
   if (verified) return record;
 
-  const claimedVerified = record.financialUnitStatus === "VERIFIED_IRR";
-  const status = record.financialUnitStatus === "QUARANTINED" || claimedVerified
+  const claimedVerified = source.financialUnitStatus === "VERIFIED_IRR";
+  const status = source.financialUnitStatus === "QUARANTINED" || claimedVerified
     ? "QUARANTINED"
     : "UNVERIFIED";
-  const masked: FinancialRecord = { ...record, financialUnitStatus: status };
+  const masked: FinancialRecord = { ...source, financialUnitStatus: status };
 
   for (const field of fields) {
-    if (record[field] !== null && record[field] !== undefined) {
+    if (source[field] !== null && source[field] !== undefined) {
       masked[field] = null;
     }
   }
@@ -95,54 +96,58 @@ export function maskFinancialFields<T extends FinancialRecord>(
   return masked as T;
 }
 
-export function maskWalletFinancialData<T extends FinancialRecord>(wallet: T): T {
+export function maskWalletFinancialData<T extends object>(wallet: T): T {
+  const source = wallet as FinancialRecord;
   const masked = maskFinancialFields(wallet, WALLET_FIELDS);
-  const transactions = Array.isArray(wallet.transactions)
-    ? wallet.transactions.map((transaction) =>
+  const transactions = Array.isArray(source.transactions)
+    ? source.transactions.map((transaction) =>
         maskFinancialFields(transaction as FinancialRecord, WALLET_TRANSACTION_FIELDS),
       )
-    : wallet.transactions;
-  const withdrawals = Array.isArray(wallet.withdrawals)
-    ? wallet.withdrawals.map((withdrawal) =>
+    : source.transactions;
+  const withdrawals = Array.isArray(source.withdrawals)
+    ? source.withdrawals.map((withdrawal) =>
         maskFinancialFields(withdrawal as FinancialRecord, ["amount"]),
       )
-    : wallet.withdrawals;
+    : source.withdrawals;
 
   return { ...masked, transactions, withdrawals } as T;
 }
 
-function maskInvoiceFields<T extends FinancialRecord>(invoice: T): T {
+function maskInvoiceFields<T extends object>(invoice: T): T {
+  const source = invoice as FinancialRecord;
   const masked = maskFinancialFields(invoice, INVOICE_FIELDS, "currency");
-  if (!invoice.payment || typeof invoice.payment !== "object") return masked;
+  if (!source.payment || typeof source.payment !== "object") return masked;
   return {
     ...masked,
     payment: maskFinancialFields(
-      invoice.payment as FinancialRecord,
+      source.payment as FinancialRecord,
       ["amount"],
       "currency",
     ),
   } as T;
 }
 
-export function maskJobFinancialData<T extends FinancialRecord>(job: T): T {
+export function maskJobFinancialData<T extends object>(job: T): T {
+  const source = job as FinancialRecord;
   const masked = maskFinancialFields(job, JOB_FIELDS);
-  const technician = job.technician && typeof job.technician === "object"
-    ? maskFinancialFields(job.technician as FinancialRecord, TECHNICIAN_FEE_FIELDS)
-    : job.technician;
-  const parts = Array.isArray(job.parts)
-    ? job.parts.map((part) => maskFinancialFields(part as FinancialRecord, ["unitPrice"]))
-    : job.parts;
-  const invoice = job.invoice && typeof job.invoice === "object"
-    ? maskInvoiceFields(job.invoice as FinancialRecord)
-    : job.invoice;
+  const technician = source.technician && typeof source.technician === "object"
+    ? maskFinancialFields(source.technician as FinancialRecord, TECHNICIAN_FEE_FIELDS)
+    : source.technician;
+  const parts = Array.isArray(source.parts)
+    ? source.parts.map((part) => maskFinancialFields(part as FinancialRecord, ["unitPrice"]))
+    : source.parts;
+  const invoice = source.invoice && typeof source.invoice === "object"
+    ? maskInvoiceFields(source.invoice as FinancialRecord)
+    : source.invoice;
 
   return { ...masked, technician, parts, invoice } as T;
 }
 
-export function maskInvoiceFinancialData<T extends FinancialRecord>(invoice: T): T {
+export function maskInvoiceFinancialData<T extends object>(invoice: T): T {
+  const source = invoice as FinancialRecord;
   const masked = maskInvoiceFields(invoice);
-  const job = invoice.job && typeof invoice.job === "object"
-    ? maskJobFinancialData(invoice.job as FinancialRecord)
-    : invoice.job;
+  const job = source.job && typeof source.job === "object"
+    ? maskJobFinancialData(source.job as FinancialRecord)
+    : source.job;
   return { ...masked, job } as T;
 }
