@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { createWithdrawalAtomically } from "@/lib/withdrawal-atomic";
+import { getApprovedIrrWithdrawalPolicy, isValidIrrWithdrawalAmount } from "@/lib/money/withdrawal-policy";
 
 export async function POST(req: Request) {
   const session = await requireAuth(req);
@@ -25,6 +26,14 @@ export async function POST(req: Request) {
   }
 
   const amount = typeof body.amount === "number" ? body.amount : Number.NaN;
+  const production = process.env.NODE_ENV === "production";
+  const withdrawalPolicy = production ? getApprovedIrrWithdrawalPolicy() : null;
+  if (production && !withdrawalPolicy) {
+    return NextResponse.json(
+      { error: "سیاست حداقل و حداکثر برداشت ریالی هنوز تصویب و پیکربندی نشده است", code: "IRR_WITHDRAWAL_POLICY_UNAPPROVED" },
+      { status: 503 },
+    );
+  }
   const method = typeof body.method === "string" && body.method.trim()
     ? body.method.trim()
     : "card";
@@ -35,8 +44,16 @@ export async function POST(req: Request) {
   const idempotencyKey = (req.headers.get("idempotency-key") ||
     (typeof body.idempotencyKey === "string" ? body.idempotencyKey : "")).trim();
 
-  if (!Number.isFinite(amount) || amount <= 0 || amount > 10_000) {
-    return NextResponse.json({ error: "مبلغ نامعتبر است" }, { status: 400 });
+  const validAmount = production
+    ? isValidIrrWithdrawalAmount(amount, withdrawalPolicy!)
+    : Number.isSafeInteger(amount) && amount > 0 && amount <= 10_000;
+  if (!validAmount) {
+    return NextResponse.json(
+      { error: production
+        ? "مبلغ باید عدد صحیح ریالی و در محدوده مصوب برداشت باشد"
+        : "مبلغ باید عدد صحیح مثبت باشد" },
+      { status: 400 },
+    );
   }
   if (!idempotencyKey || idempotencyKey.length < 8 || idempotencyKey.length > 128) {
     return NextResponse.json(

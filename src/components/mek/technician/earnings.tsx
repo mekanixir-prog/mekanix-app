@@ -59,7 +59,6 @@ type WithdrawalReq = {
   processedAt: string | null;
 };
 
-const MIN_WITHDRAWAL = 5; // USD
 
 export function TechnicianEarnings({ user }: { user: DemoUser }) {
   const { t, isFa, money, lang } = useT();
@@ -117,8 +116,8 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
 
   const submitWithdraw = async () => {
     const amt = parseFloat(withdrawAmount);
-    if (!amt || amt < MIN_WITHDRAWAL) {
-      toast.error(t("tech.earnings.withdrawMin").replace("{amount}", `$${MIN_WITHDRAWAL}`));
+    if (!Number.isSafeInteger(amt) || amt <= 0) {
+      toast.error(t("tech.earnings.withdrawInvalidIrr", "مبلغ برداشت باید عدد صحیح مثبت به ریال باشد"));
       return;
     }
     if (amt > balance) {
@@ -202,15 +201,10 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
             <Button
               className="w-full bg-amber text-black hover:bg-amber/90"
               onClick={() => setWithdrawOpen(true)}
-              disabled={balance < MIN_WITHDRAWAL}
+              disabled={balance <= 0}
             >
               <Banknote className="mr-2 size-4" /> {t("tech.earnings.withdrawNow")}
             </Button>
-            {balance < MIN_WITHDRAWAL && (
-              <p className="text-center text-[10px] text-muted-foreground">
-                {t("tech.earnings.withdrawMin").replace("{amount}", `$${MIN_WITHDRAWAL}`)}
-              </p>
-            )}
           </div>
           <div className="mt-3">
             <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{t("tech.earnings.trend14")}</p>
@@ -357,12 +351,12 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
               <Label className="text-xs">{t("tech.earnings.withdrawAmount")}</Label>
               <Input
                 type="number"
-                min={MIN_WITHDRAWAL}
+                min={1}
                 max={balance}
                 value={withdrawAmount}
                 onChange={(e) => { withdrawalIdempotencyKey.current = null; setWithdrawAmount(e.target.value); }}
                 className="mt-1"
-                placeholder={`Min $${MIN_WITHDRAWAL}`}
+                placeholder={isFa ? "مبلغ به ریال" : "Amount in IRR"}
               />
             </div>
             <div>
