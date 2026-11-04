@@ -9,7 +9,7 @@ describe("fmtMoney", () => {
 
   it("preserves the declared USD currency for Persian and English users", () => {
     expect(fmtMoney(1_250.5, "USD", "en")).toBe("$1,250.50");
-    expect(fmtMoney(1_250.5, "USD", "fa")).toBe("$۱۲۵۰.۵۰");
+    expect(fmtMoney(1_250.5, "USD", "fa")).toBe("$۱،۲۵۰.۵۰");
   });
 
   it("does not silently coerce missing, non-finite, fractional, or unsafe IRR values", () => {
