@@ -1,7 +1,7 @@
 # MEKANIX — Release Checklist
 
 **Status date:** 2026-11-04  
-**Current main baseline:** `e03f84da91db464edd2ca6ae32fdd156174c948b`  
+**Current main baseline:** `147d5485ee0dfd2dc5795f6000dd38b35c808c07`  
 **Release decision:** <strong>NO-GO</strong> — code hardening and release evidence remain incomplete.
 
 This replaces the historical checklist snapshots from October. Do not use old “Release Candidate — all checks passed” or old staging/load-test claims as current release evidence.
@@ -128,7 +128,11 @@ This section records changes after the previous 2026-11-03 checklist snapshot. T
 - [x] PR #113 — same-origin admin CSRF defense-in-depth reviewed and squash-merged as `e03f84da91db464edd2ca6ae32fdd156174c948b`; fresh main workflows are running.
 - [x] PR #115 — closed as superseded: current main already checks the related User's status and role in the Session query. Deleted-user regression coverage is carried by PR #127.
 - [x] PR #116 — closed as superseded: current main already uses canonicalized keyed-HMAC per-phone OTP throttling at 5 attempts per 10 minutes. PR #127 adds tests for that existing behavior.
-- [ ] PR #127 — test-only coverage for the shared per-phone OTP verification limiter's unavailable-store (503) path; merge only after all applicable checks pass on its exact head.
+- [x] PR #127 — shared per-phone OTP verification limiter unavailable-store (503) regression test; all seven applicable checks passed and the PR merged as `147d5485ee0dfd2dc5795f6000dd38b35c808c07`.
+
+### Withdrawal hardening
+
+- [ ] PR #129 — bank-only/valid-Sheba creation and D1 rollback guards, preserving the current integer-IRR production gate; merge only after all exact-head CI, PostgreSQL, Docker/D1 and Cloudflare checks pass.
 
 ### Repository-level governance
 
