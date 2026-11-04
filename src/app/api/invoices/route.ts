@@ -119,7 +119,7 @@ export async function POST(req: Request) {
     include: {
       parts: true,
       technician: true,
-      tracking: { orderBy: { ts: "asc" }, take: 1 },
+      tracking: { orderBy: { ts: "desc" }, take: 1 },
       request: { include: { vehicle: true } },
     },
   });
@@ -150,9 +150,9 @@ export async function POST(req: Request) {
   }
 
   const serviceCode = serviceCodeFromCategory(job.request.category);
-  const firstTrackedLocation = job.tracking[0] ?? job.technician;
+  const latestTrackedLocation = job.tracking[0] ?? job.technician;
   const travelDistanceKm = estimateTravelDistanceKm(
-    { lat: firstTrackedLocation.lat, lng: firstTrackedLocation.lng },
+    { lat: latestTrackedLocation.lat, lng: latestTrackedLocation.lng },
     { lat: job.request.lat, lng: job.request.lng },
   );
   let pricing: Awaited<ReturnType<typeof calculatePrice>>;
