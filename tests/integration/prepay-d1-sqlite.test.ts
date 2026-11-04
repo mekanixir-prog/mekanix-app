@@ -10,6 +10,7 @@ function makeD1() {
     CREATE TABLE "Job" (
       "id" TEXT PRIMARY KEY,
       "technicianId" TEXT NOT NULL,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "prepayPaid" INTEGER NOT NULL DEFAULT 0,
       "prepayPaidAt" TEXT,
       "inspectionFee" REAL,
@@ -22,6 +23,8 @@ function makeD1() {
     CREATE TABLE "Wallet" (
       "id" TEXT PRIMARY KEY,
       "technicianId" TEXT NOT NULL UNIQUE,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
+      "balance" REAL NOT NULL DEFAULT 0,
       "pendingBalance" REAL NOT NULL DEFAULT 0,
       "totalEarned" REAL NOT NULL DEFAULT 0,
       "totalCommission" REAL NOT NULL DEFAULT 0,
@@ -40,6 +43,7 @@ function makeD1() {
       "holdUntil" TEXT,
       "description" TEXT NOT NULL,
       "idempotencyKey" TEXT NOT NULL UNIQUE,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "createdAt" TEXT NOT NULL
     );
     CREATE TABLE "WalletLedger" (
@@ -53,6 +57,7 @@ function makeD1() {
       "referenceId" TEXT NOT NULL,
       "description" TEXT NOT NULL,
       "idempotencyKey" TEXT NOT NULL UNIQUE,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "createdAt" TEXT NOT NULL
     );
   `);
@@ -85,7 +90,7 @@ function makeD1() {
 function seed(sqlite: DatabaseSync) {
   sqlite.prepare('INSERT INTO "Job" ("id", "technicianId", "prepayPaid") VALUES (?, ?, 0)')
     .run("job-1", "tech-1");
-  sqlite.prepare('INSERT INTO "Wallet" ("id", "technicianId", "pendingBalance", "totalEarned", "totalCommission", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?, ?)')
+  sqlite.prepare('INSERT INTO "Wallet" ("id", "technicianId", "financialUnitStatus", "balance", "pendingBalance", "totalEarned", "totalCommission", "createdAt", "updatedAt") VALUES (?, ?, 'VERIFIED_IRR', 0, ?, ?, ?, ?, ?)')
     .run("wallet-1", "tech-1", 100, 0, 0, "2026-10-30T00:00:00.000Z", "2026-10-30T00:00:00.000Z");
 }
 
