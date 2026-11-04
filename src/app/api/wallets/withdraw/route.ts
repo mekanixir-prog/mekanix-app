@@ -145,10 +145,10 @@ export async function POST(req: Request) {
           withdrawal.bankName !== bankName || withdrawal.shebaNumber !== shebaNumber) {
         return NextResponse.json({ error: "کلید درخواست قبلاً برای عملیات دیگری استفاده شده است" }, { status: 409 });
       }
-      const currentWallet = await db.wallet.findUnique({ where: { id: wallet.id }, select: { balance: true } });
+      const currentWallet = await db.wallet.findUnique({ where: { id: wallet.id }, select: { balance: true, financialUnitStatus: true } });
       return NextResponse.json({
-        withdrawal,
-        newBalance: currentWallet ? Number(currentWallet.balance) : Number(wallet.balance),
+        withdrawal: maskFinancialFields(withdrawal, ["amount"]),
+        newBalance: currentWallet?.financialUnitStatus === "VERIFIED_IRR" && isSafeStoredIrrAmount(currentWallet.balance) ? Number(currentWallet.balance) : null,
         idempotent: true,
       });
     }
@@ -156,8 +156,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "موجودی کافی نیست یا درخواست هم‌زمان ثبت شده است" }, { status: 400 });
     }
 
-    const updatedWallet = await db.wallet.findUnique({ where: { id: wallet.id }, select: { balance: true } });
-    const newBalance = updatedWallet ? Number(updatedWallet.balance) : Number(wallet.balance) - amount;
+    const updatedWallet = await db.wallet.findUnique({ where: { id: wallet.id }, select: { balance: true, financialUnitStatus: true } });
+    const newBalance = updatedWallet?.financialUnitStatus === "VERIFIED_IRR" && isSafeStoredIrrAmount(updatedWallet.balance)
+      ? Number(updatedWallet.balance)
+      : null;
 
     // Notifications are deliberately outside the financial transaction.
     try {
@@ -182,10 +184,10 @@ export async function POST(req: Request) {
     if (raced && raced.walletId === wallet.id && Number(raced.amount) === amount &&
         raced.method === method && raced.cardNumber === maskedCardNumber &&
         raced.bankName === bankName && raced.shebaNumber === shebaNumber) {
-      const currentWallet = await db.wallet.findUnique({ where: { id: wallet.id }, select: { balance: true } });
+      const currentWallet = await db.wallet.findUnique({ where: { id: wallet.id }, select: { balance: true, financialUnitStatus: true } });
       return NextResponse.json({
         withdrawal: maskFinancialFields(raced, ["amount"]),
-        newBalance: currentWallet ? Number(currentWallet.balance) : Number(wallet.balance),
+        newBalance: currentWallet?.financialUnitStatus === "VERIFIED_IRR" && isSafeStoredIrrAmount(currentWallet.balance) ? Number(currentWallet.balance) : null,
         idempotent: true,
       });
     }
