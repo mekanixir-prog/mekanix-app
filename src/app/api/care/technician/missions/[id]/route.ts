@@ -39,7 +39,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   }
   return NextResponse.json({
     ...mission,
-    package: maskFinancialFields(mission.package, ["basePrice"]),
+    package: mission.package ? maskFinancialFields(mission.package, ["basePrice"]) : mission.package,
     findings: mission.findings.map((finding) => ({ ...finding, approvals: finding.approvals.map((approval) => maskFinancialFields(approval, ["partPrice", "laborPrice", "totalPrice"])) })),
     partUsages: mission.partUsages.map((part) => maskFinancialFields(part, ["unitPrice", "totalPrice"])),
   });
