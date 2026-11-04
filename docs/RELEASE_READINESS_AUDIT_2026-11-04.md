@@ -2,7 +2,7 @@
 
 **Audit date:** 2026-11-04  
 **Audited branch:** `main`  
-**Exact code baseline:** `2bf40e8642019550b2710bb171f2fd5ebe4116e8`  
+**Current main baseline:** `e03f84da91db464edd2ca6ae32fdd156174c948b`  
 **Repository:** [mekanixir-prog/mekanix-app](https://github.com/mekanixir-prog/mekanix-app)  
 **Release decision:** **NO-GO** — the current mainline is CI-green, but financial integrity, release evidence, and repository governance are not complete.
 
@@ -10,7 +10,7 @@ This report supersedes earlier point-in-time release snapshots. It does not clai
 
 ## 1. Executive decision
 
-The main branch is in a strong automated-build state. All eight workflows passed on the exact baseline commit:
+The last fully green main baseline was `2bf40e8642019550b2710bb171f2fd5ebe4116e8`; all eight workflows passed on that exact commit. After the security hardening PR #113 was merged, current `main` advanced to `e03f84da91db464edd2ca6ae32fdd156174c948b`. Fresh main-branch workflows for this new commit were still running at the time of this audit update. Do not treat the earlier eight green checks as checks on the new commit:
 
 | Workflow | Result |
 |---|---|
@@ -23,7 +23,7 @@ The main branch is in a strong automated-build state. All eight workflows passed
 | Secret Scan | PASS |
 | Dependency Security Audit | PASS |
 
-Evidence: [main CI](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330037), [Docker E2E](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330042), [PostgreSQL CI](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330122), [Production readiness](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330214), [Secret Scan](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330126), [Dependency Security Audit](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330239), [CodeQL](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330259), [Cloudflare Build](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330545).
+Evidence for the last fully green baseline: [main CI](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330037), [Docker E2E](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330042), [PostgreSQL CI](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330122), [Production readiness](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330214), [Secret Scan](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330126), [Dependency Security Audit](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330239), [CodeQL](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330259), [Cloudflare Build](https://github.com/mekanixir-prog/mekanix-app/actions/runs/41799330545). Current main `e03f84da91db` is under a fresh full workflow run.
 
 **Interpretation:** green CI proves the configured checks passed against this commit and their test environments. It does not prove live SMS, real gateway callbacks, production secrets, DNS/TLS, remote database state, actual bank payout, backup restoration, or business-owner acceptance.
 
@@ -65,6 +65,7 @@ Do not require a second approval until a second maintainer exists. Configure an 
 
 ### Merged
 
+- **PR #113** — cookie-authenticated admin mutations now pass through the same-origin/CSRF helper before any write. The standalone admin cookie remains scoped to `/api/admin-panel`; generic `/api/admin` routes continue to support bearer-token sessions. The PR was reviewed, its seven applicable checks passed on its exact head, and it was squash-merged as `e03f84da91db464edd2ca6ae32fdd156174c948b`.
 - **PR #112** — historical withdrawal actions are blocked unless withdrawal IRR provenance has been explicitly verified. Merged as `ad1f6af246369bfc071a28dc68589c3f6a0d1331`.
 - **PR #120** — production readiness now requires strong user/admin/OTP secrets, shared rate-limit availability, admin provisioning, approved IRR pricing/provenance, withdrawal policy/provenance, and escrow-worker readiness. Merged as baseline `2bf40e8642019550b2710bb171f2fd5ebe4116e8`.
 
