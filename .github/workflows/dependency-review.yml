@@ -21,9 +21,10 @@ concurrency:
 
 jobs:
   audit:
-    name: Audit and propose safe locked dependency updates
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
+    name: Audit the committed lockfile (no auto-fix)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -32,41 +33,16 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.4"
-          cache: true
 
-      - name: Resolve dependencies without executing lifecycle scripts
-        run: bun install --ignore-scripts
+      - name: Install exact locked dependencies without lifecycle scripts
+        run: bun install --frozen-lockfile --ignore-scripts
 
-      - name: Apply only compatible security updates in the runner workspace
-        id: remediation
-        continue-on-error: true
-        run: bun audit fix --ignore-scripts
-
-      - name: Audit the resulting lockfile
-        id: audit
-        continue-on-error: true
+      - name: Fail on moderate or higher vulnerabilities in the committed lockfile
         run: bun audit --audit-level=moderate
-
-      - name: Upload reviewed dependency update candidate
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dependency-remediation-${{ github.sha }}
-          path: |
-            package.json
-            bun.lock
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Fail if known moderate-or-higher vulnerabilities remain
-        if: steps.audit.outcome == 'failure'
-        run: |
-          echo "Known moderate-or-higher vulnerabilities remain after compatible automated updates."
-          exit 1
 
   dependency-remediation:
     if: github.event_name == 'push' && github.ref == 'refs/heads/security/automated-code-scanning' && github.actor == 'mekanixir-prog'
-    name: Prepare dependency remediation PR
+    name: Prepare dependency remediation branch
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
