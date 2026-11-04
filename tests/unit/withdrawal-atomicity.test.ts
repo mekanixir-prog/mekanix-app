@@ -71,7 +71,7 @@ describe("atomic withdrawal creation", () => {
   it("does not create a withdrawal when the conditional debit loses the race", async () => {
     const tx = {
       withdrawalRequest: { findUnique: vi.fn().mockResolvedValue(null), create: vi.fn() },
-      wallet: { updateMany: vi.fn().mockResolvedValue({ count: 0 }), findUnique: vi.fn() },
+      wallet: { updateMany: vi.fn().mockResolvedValue({ count: 0 }), findUnique: vi.fn().mockResolvedValue({ balance: 2000, financialUnitStatus: "VERIFIED_IRR" }) },
       walletLedger: { create: vi.fn() },
     };
     const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
