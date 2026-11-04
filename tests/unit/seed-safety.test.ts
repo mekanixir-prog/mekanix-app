@@ -15,10 +15,16 @@ function makeDb(counts: Record<string, number> = {}) {
 }
 
 describe("demo seed safety guard", () => {
-  it("refuses the setup command before schema push in production", () => {
-    expect(() => assertDemoSetupAllowed("production")).toThrow(/disabled in production/);
-    expect(() => assertDemoSetupAllowed("development")).not.toThrow();
-    expect(() => assertDemoSetupAllowed("test")).not.toThrow();
+  it("always refuses demo setup in production, even with the opt-in flag", () => {
+    expect(() => assertDemoSetupAllowed("production", "true")).toThrow(/disabled in production/);
+  });
+
+  it("requires an explicit opt-in when NODE_ENV is unset or non-production", () => {
+    expect(() => assertDemoSetupAllowed(undefined, undefined)).toThrow(/MEKANIX_ALLOW_DEMO_SETUP=true/);
+    expect(() => assertDemoSetupAllowed("development", undefined)).toThrow(/MEKANIX_ALLOW_DEMO_SETUP=true/);
+    expect(() => assertDemoSetupAllowed("test", "false")).toThrow(/MEKANIX_ALLOW_DEMO_SETUP=true/);
+    expect(() => assertDemoSetupAllowed("development", "true")).not.toThrow();
+    expect(() => assertDemoSetupAllowed("test", "true")).not.toThrow();
   });
 
   it("allows seeding only when every application table is empty", async () => {
