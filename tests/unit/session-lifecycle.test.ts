@@ -172,7 +172,7 @@ describe("createSession — DB record creation", () => {
     const originalNodeEnv = process.env.NODE_ENV;
     const originalJwtSecret = process.env.JWT_SECRET;
     (process.env as Record<string, string>).NODE_ENV = "production";
-    (process.env as Record<string, string>).JWT_SECRET = "test-jwt-secret-for-unit-test";
+    (process.env as Record<string, string>).JWT_SECRET = "test-jwt-secret-for-unit-test-with-32-bytes-minimum";
     try {
       mockSessionCreate.mockRejectedValueOnce(new Error("DB down"));
       await expect(createSession(PAYLOAD)).rejects.toThrow("Failed to create session record");
