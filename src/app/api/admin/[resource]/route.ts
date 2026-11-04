@@ -75,7 +75,11 @@ const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
       include: { fromUser: { select: ADMIN_USER_SELECT }, technician: { include: { user: { select: ADMIN_USER_SELECT } } }, job: true },
       orderBy: { createdAt: "desc" },
     });
-    return list.map((review) => ({ ...review, job: review.job ? maskJobFinancialData(review.job) : review.job }));
+    return list.map((review) => ({
+      ...review,
+      job: review.job ? maskJobFinancialData(review.job) : review.job,
+      technician: review.technician ? { ...review.technician, ...maskFinancialFields(review.technician, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]) } : review.technician,
+    }));
   },
   vehicles: async (db) => {
     const list = await db.vehicle.findMany({
@@ -93,7 +97,12 @@ const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
       orderBy: { createdAt: "desc" },
       include: { user: { select: { ...ADMIN_USER_SELECT, technician: true } } },
     });
-    return list;
+    return list.map((application) => ({
+      ...application,
+      user: application.user?.technician
+        ? { ...application.user, technician: maskFinancialFields(application.user.technician, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]) }
+        : application.user,
+    }));
   },
 };
 
