@@ -94,6 +94,7 @@ describe("payment provider live readiness", () => {
 
 describe("production readiness gates", () => {
   beforeEach(() => {
+    vi.stubEnv("OTP_HASH_SECRET", "production-otp-secret-at-least-32-bytes-long");
     // These tests isolate provider/database behavior. The separate
     // production-financial-readiness-gates suite verifies missing IRR controls.
     vi.stubEnv("MEKANIX_PRICING_IRR_APPROVED", "true");
