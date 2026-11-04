@@ -71,7 +71,7 @@ describe("admin withdrawal D1 transaction integration", () => {
         try {
           const results = statements.map(({ sql, values }) => {
             const statement = sqlite.prepare(sql);
-            if (/^\\s*SELECT/i.test(sql)) {
+            if (/^\s*SELECT/i.test(sql)) {
               statement.get(...values);
               return { meta: { changes: 0 } };
             }
