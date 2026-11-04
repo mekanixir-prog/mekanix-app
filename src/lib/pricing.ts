@@ -131,7 +131,8 @@ export async function calculatePrice(input: PricingInput): Promise<PricingBreakd
   if (fixedLabor === null || fixedLabor === undefined) {
     throw new Error("این خدمت برای گروه وسیله انتخاب‌شده در نرخ‌نامه تعریف نشده است");
   }
-  const labor = new Decimal(assertIrrInteger(fixedLabor, "Fixed labor fee") ? fixedLabor : fixedLabor);
+  assertIrrInteger(fixedLabor, "Fixed labor fee");
+  const labor = new Decimal(fixedLabor);
   const inspection = new Decimal(card.fees[assetClass].inspectionIrr);
   const distance = new Decimal(input.travelDistanceKm);
   const includedKm = new Decimal(card.fees[assetClass].includedKm);
