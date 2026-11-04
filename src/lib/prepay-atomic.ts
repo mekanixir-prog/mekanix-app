@@ -48,6 +48,12 @@ export async function recordPrepayWithPrisma(
     });
     if (wallet.financialUnitStatus !== "VERIFIED_IRR" ||
         ![wallet.balance, wallet.pendingBalance, wallet.totalEarned, wallet.totalCommission].every(isSafeStoredIrrAmount)) return false;
+    const nextAggregates = [
+      Number(wallet.pendingBalance) + input.net,
+      Number(wallet.totalEarned) + input.gross,
+      Number(wallet.totalCommission) + input.commission,
+    ];
+    if (!nextAggregates.every(Number.isSafeInteger)) return false;
 
     const jobUpdate = await tx.job.updateMany({
       where: { id: input.jobId, prepayPaid: false },
