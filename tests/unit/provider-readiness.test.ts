@@ -1,9 +1,13 @@
 // @vitest-environment node
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const dbMocks = vi.hoisted(() => ({ queryRaw: vi.fn() }));
+const dbMocks = vi.hoisted(() => ({ queryRaw: vi.fn(), rateLimitCount: vi.fn(), adminCount: vi.fn() }));
 vi.mock("@/lib/db-access", () => ({
-  getDbForLib: async () => ({ $queryRaw: dbMocks.queryRaw }),
+  getDbForLib: async () => ({
+    $queryRaw: dbMocks.queryRaw,
+    rateLimit: { count: dbMocks.rateLimitCount },
+    adminUser: { count: dbMocks.adminCount },
+  }),
 }));
 import { getPaymentProviderStatus } from "@/lib/payment-provider";
 import { getSmsProviderStatus } from "@/lib/sms-provider";
@@ -93,6 +97,30 @@ describe("payment provider live readiness", () => {
 });
 
 describe("production readiness gates", () => {
+  beforeEach(() => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DATABASE_URL", "postgresql://db.example/mekanix");
+    vi.stubEnv("SMS_PROVIDER", "kavenegar");
+    vi.stubEnv("KAVENEGAR_API_KEY", "test-key");
+    vi.stubEnv("PAYMENT_PROVIDER", "zarinpal");
+    vi.stubEnv("ZARINPAL_MERCHANT_ID", "merchant-id");
+    dbMocks.queryRaw.mockResolvedValue(1);
+    dbMocks.rateLimitCount.mockResolvedValue(0);
+    dbMocks.adminCount.mockResolvedValue(1);
+    vi.stubEnv("JWT_SECRET", "production-user-jwt-secret-at-least-32-bytes");
+    vi.stubEnv("ADMIN_JWT_SECRET", "production-admin-jwt-secret-at-least-32-bytes");
+    vi.stubEnv("OTP_HASH_SECRET", "production-otp-secret-at-least-32-bytes-long");
+    // These tests isolate provider/database behavior. The separate
+    // production-financial-readiness-gates suite verifies missing IRR controls.
+    vi.stubEnv("MEKANIX_PRICING_IRR_APPROVED", "true");
+    vi.stubEnv("MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED", "true");
+    vi.stubEnv("MEKANIX_JOB_PART_IRR_PROVENANCE_VERIFIED", "true");
+    vi.stubEnv("MEKANIX_WITHDRAWAL_IRR_POLICY_APPROVED", "true");
+    vi.stubEnv("MEKANIX_WITHDRAWAL_MIN_IRR", "10000");
+    vi.stubEnv("MEKANIX_WITHDRAWAL_MAX_IRR", "100000000");
+    vi.stubEnv("MEKANIX_WITHDRAWAL_IRR_PROVENANCE_VERIFIED", "true");
+    vi.stubEnv("WALLET_RELEASE_SCHEDULED", "true");
+  });
   it("blocks production until both SMS and payment are genuinely live-ready", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("SMS_PROVIDER", "kavenegar");
@@ -144,6 +172,44 @@ describe("production readiness gates", () => {
     vi.stubEnv("SMS_PROVIDER", "console");
     vi.stubEnv("PAYMENT_PROVIDER", "simulator");
     expect(checkProductionGates()).toEqual([]);
+  });
+
+  it("blocks production readiness when the shared rate-limit table is unavailable", async () => {
+    dbMocks.rateLimitCount.mockRejectedValue(new Error("RateLimit table missing"));
+
+    const response = await readyGET();
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.checks.sharedRateLimitStore).toBe(false);
+    expect(body.errors).toContain("Shared rate-limit store is unavailable");
+  });
+
+  it("blocks production readiness when no admin exists and bootstrap password is weak", async () => {
+    dbMocks.adminCount.mockResolvedValue(0);
+    vi.stubEnv("ADMIN_BOOTSTRAP_PASSWORD", "short");
+
+    const response = await readyGET();
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.checks.adminProvisioning).toBe(false);
+    expect(body.errors).toContain(
+      "No valid admin exists and ADMIN_BOOTSTRAP_PASSWORD is missing or shorter than 16 characters"
+    );
+  });
+
+  it("allows admin provisioning readiness with a valid existing admin or strong bootstrap secret", async () => {
+    dbMocks.adminCount.mockResolvedValue(0);
+    vi.stubEnv("ADMIN_BOOTSTRAP_PASSWORD", "a-long-unique-bootstrap-secret");
+
+    const response = await readyGET();
+    const body = await response.json();
+
+    expect(body.checks.adminProvisioning).toBe(true);
+    expect(body.errors).not.toContain(
+      "No valid admin exists and ADMIN_BOOTSTRAP_PASSWORD is missing or shorter than 16 characters"
+    );
   });
 
   it("does not expose database connection details in production readiness responses", async () => {

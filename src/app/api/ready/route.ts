@@ -31,6 +31,85 @@ export function checkProductionGates(): GateResult[] {
     });
   }
 
+  const jwtSecret = process.env.JWT_SECRET ?? "";
+  const adminJwtSecret = process.env.ADMIN_JWT_SECRET ?? "";
+  if (new TextEncoder().encode(jwtSecret).length < 32) {
+    gates.push({
+      ok: false,
+      reason: "JWT_SECRET is missing or shorter than 32 bytes.",
+    });
+  }
+  if (new TextEncoder().encode(adminJwtSecret).length < 32) {
+    gates.push({
+      ok: false,
+      reason: "ADMIN_JWT_SECRET is missing or shorter than 32 bytes.",
+    });
+  }
+
+  const otpHashSecret = process.env.OTP_HASH_SECRET ?? "";
+  if (new TextEncoder().encode(otpHashSecret).length < 32) {
+    gates.push({
+      ok: false,
+      reason: "Dedicated OTP_HASH_SECRET is missing or shorter than 32 bytes.",
+    });
+  }
+
+  // Financial release gates are intentionally independent of provider health.
+  // A healthy database/provider must never make legacy or unapproved money
+  // paths appear production-ready.
+  if (process.env.MEKANIX_PRICING_IRR_APPROVED !== "true") {
+    gates.push({
+      ok: false,
+      reason: "IRR pricing policy has not been explicitly approved.",
+    });
+  }
+
+  if (process.env.MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED !== "true") {
+    gates.push({
+      ok: false,
+      reason: "Legacy technician fee units have not been reconciled and verified as IRR.",
+    });
+  }
+
+  // Conservative gate: legacy JobPart rows may not carry reliable currency
+  // provenance. Do not infer their unit from locale or historical display.
+  if (process.env.MEKANIX_JOB_PART_IRR_PROVENANCE_VERIFIED !== "true") {
+    gates.push({
+      ok: false,
+      reason: "Legacy job-part prices have not been reconciled and verified as IRR.",
+    });
+  }
+
+  const minWithdrawalIrr = Number(process.env.MEKANIX_WITHDRAWAL_MIN_IRR);
+  const maxWithdrawalIrr = Number(process.env.MEKANIX_WITHDRAWAL_MAX_IRR);
+  const withdrawalPolicyValid =
+    process.env.MEKANIX_WITHDRAWAL_IRR_POLICY_APPROVED === "true" &&
+    Number.isSafeInteger(minWithdrawalIrr) &&
+    Number.isSafeInteger(maxWithdrawalIrr) &&
+    minWithdrawalIrr > 0 &&
+    maxWithdrawalIrr >= minWithdrawalIrr;
+
+  if (!withdrawalPolicyValid) {
+    gates.push({
+      ok: false,
+      reason: "Owner-approved integer-IRR withdrawal limits are missing or invalid.",
+    });
+  }
+
+  if (process.env.MEKANIX_WITHDRAWAL_IRR_PROVENANCE_VERIFIED !== "true") {
+    gates.push({
+      ok: false,
+      reason: "Historical withdrawal records have not been reconciled to integer IRR.",
+    });
+  }
+
+  if (process.env.WALLET_RELEASE_SCHEDULED !== "true") {
+    gates.push({
+      ok: false,
+      reason: "Scheduled escrow release worker has not been deployed and verified.",
+    });
+  }
+
   const dbUrl = process.env.DATABASE_URL ?? "";
   if (dbUrl.startsWith("file:")) {
     gates.push({
@@ -58,6 +137,34 @@ export async function GET() {
     const db = await getDbForLib();
     await db.$queryRaw`SELECT 1`;
     checks.database = true;
+
+    if (process.env.NODE_ENV === "production") {
+      // OTP/payment/withdrawal throttles depend on the shared D1/DB-backed
+      // RateLimit table. A healthy database connection alone is insufficient.
+      try {
+        await db.rateLimit.count();
+        checks.sharedRateLimitStore = true;
+      } catch {
+        checks.sharedRateLimitStore = false;
+        errors.push("Shared rate-limit store is unavailable");
+      }
+
+      // Require a valid admin account, or a sufficiently strong bootstrap
+      // secret that can provision the first SUPER_ADMIN on the first login.
+      try {
+        const adminCount = await db.adminUser.count({
+          where: { role: { in: ["ADMIN", "SUPER_ADMIN"] } },
+        });
+        const bootstrapPassword = process.env.ADMIN_BOOTSTRAP_PASSWORD ?? "";
+        checks.adminProvisioning = adminCount > 0 || bootstrapPassword.length >= 16;
+        if (!checks.adminProvisioning) {
+          errors.push("No valid admin exists and ADMIN_BOOTSTRAP_PASSWORD is missing or shorter than 16 characters");
+        }
+      } catch {
+        checks.adminProvisioning = false;
+        errors.push("Admin provisioning status is unavailable");
+      }
+    }
   } catch (error: unknown) {
     checks.database = false;
     const detail = error instanceof Error ? error.message : "DB check failed";
