@@ -40,7 +40,7 @@ vi.mock("@/lib/db-access", () => ({
   })),
 }));
 
-import { POST as createInvoice } from "@/app/api/invoices/route";
+import { GET as getInvoice, POST as createInvoice } from "@/app/api/invoices/route";
 import { PATCH as patchInvoice } from "@/app/api/invoices/[id]/route";
 
 function postRequest(body: unknown) {
@@ -264,5 +264,60 @@ describe("PATCH /api/invoices/[id] status transitions", () => {
     expect(response.status).toBe(200);
     expect(mocks.invoiceUpdateMany).toHaveBeenCalledTimes(1);
     expect(await response.json()).toMatchObject({ status: "SENT" });
+  });
+});
+
+
+describe("GET /api/invoices financial provenance", () => {
+  it("masks unverified invoice, payment, job, technician, and part amounts", async () => {
+    mocks.auth.mockResolvedValue({ userId: "customer-1", role: "CUSTOMER" });
+    mocks.invoiceFindUnique.mockResolvedValueOnce({
+      ...existingInvoice,
+      financialUnitStatus: "UNVERIFIED",
+      laborTotal: 8000,
+      partsTotal: 2000,
+      subtotal: 10000,
+      total: 10000,
+      payment: {
+        id: "payment-1",
+        financialUnitStatus: "UNVERIFIED",
+        currency: "IRR",
+        amount: 10000,
+      },
+      job: {
+        id: "job-1",
+        financialUnitStatus: "UNVERIFIED",
+        travelFee: 500,
+        technician: {
+          id: "tech-1",
+          financialUnitStatus: "UNVERIFIED",
+          hourlyRate: 300,
+        },
+        parts: [{
+          id: "part-1",
+          financialUnitStatus: "UNVERIFIED",
+          unitPrice: 2000,
+        }],
+      },
+    });
+
+    const response = await getInvoice(new Request(
+      "https://mekanix.test/api/invoices?jobId=job-1",
+    ));
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload).toMatchObject({
+      financialUnitStatus: "UNVERIFIED",
+      laborTotal: null,
+      partsTotal: null,
+      total: null,
+      payment: { amount: null, financialUnitStatus: "UNVERIFIED" },
+      job: {
+        travelFee: null,
+        technician: { hourlyRate: null },
+        parts: [{ unitPrice: null }],
+      },
+    });
+    expect(mocks.participant).toHaveBeenCalledWith(expect.any(Object), "job-1");
   });
 });
