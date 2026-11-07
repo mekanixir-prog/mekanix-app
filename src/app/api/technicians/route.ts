@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireRole } from "@/lib/auth";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 const techInclude = {
   specialties: true,
@@ -69,7 +70,7 @@ export async function GET(req: Request) {
       .sort((a, b) => (a._dist as number) - (b._dist as number));
   }
 
-  return NextResponse.json(techs);
+  return NextResponse.json(techs.map((tech) => maskFinancialFields(tech, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"])));
 }
 
 // POST: create technician profile — ADMIN ONLY
@@ -103,5 +104,5 @@ export async function POST(req: Request) {
       ...techInclude,
     },
   });
-  return NextResponse.json(tech);
+  return NextResponse.json(maskFinancialFields(tech, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]));
 }

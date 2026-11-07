@@ -60,6 +60,7 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
 
   const parts = job.parts;
   const mediaUrls = parseMedia(job.request.mediaUrls);
+  const financialReady = invoice?.financialUnitStatus === "VERIFIED_IRR" && invoice.total != null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-4" dir={isFa ? "rtl" : "ltr"}>
@@ -117,8 +118,8 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
                           {p.sku && <span className="ml-2 font-mono text-[10px] text-muted-foreground">{p.sku}</span>}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">{isFa ? toPersianDigits(p.quantity) : p.quantity}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{money(Number(p.unitPrice))}</td>
-                        <td className="px-3 py-2 text-right font-medium tabular-nums">{money(Number(p.unitPrice) * p.quantity)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{money(p.unitPrice == null ? null : Number(p.unitPrice))}</td>
+                        <td className="px-3 py-2 text-right font-medium tabular-nums">{money(p.unitPrice == null ? null : Number(p.unitPrice) * p.quantity)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -142,16 +143,16 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
         {invoice && (
           <div className="border-t border-border bg-muted/20 p-5">
             <div className="mx-auto max-w-xs space-y-1.5 text-sm">
-              <Line label={t("invoice.labor")} value={`${isFa ? toPersianDigits(invoice.laborHours) : invoice.laborHours}${t("common.hourShort")} × ${money(Number(invoice.laborRate))}`} amount={Number(invoice.laborTotal)} moneyFn={money} />
-              <Line label={t("invoice.partsMaterials")} amount={Number(invoice.partsTotal)} moneyFn={money} />
-              <Line label={t("invoice.travelFee")} amount={Number(invoice.travelFee)} moneyFn={money} />
+              <Line label={t("invoice.labor")} value={`${isFa ? toPersianDigits(invoice.laborHours) : invoice.laborHours}${t("common.hourShort")} × ${money(invoice.laborRate == null ? null : Number(invoice.laborRate))}`} amount={invoice.laborTotal == null ? null : Number(invoice.laborTotal)} moneyFn={money} />
+              <Line label={t("invoice.partsMaterials")} amount={invoice.partsTotal == null ? null : Number(invoice.partsTotal)} moneyFn={money} />
+              <Line label={t("invoice.travelFee")} amount={invoice.travelFee == null ? null : Number(invoice.travelFee)} moneyFn={money} />
               <div className="border-t border-border pt-1.5" />
-              <Line label={t("invoice.subtotal")} amount={Number(invoice.subtotal)} muted moneyFn={money} />
-              <Line label={t("invoice.tax", undefined).replace("{rate}", isFa ? toPersianDigits(Math.round(Number(invoice.taxRate) * 100)) : String(Math.round(Number(invoice.taxRate) * 100)))} amount={Number(invoice.taxTotal)} muted moneyFn={money} />
+              <Line label={t("invoice.subtotal")} amount={invoice.subtotal == null ? null : Number(invoice.subtotal)} muted moneyFn={money} />
+              <Line label={t("invoice.tax", undefined).replace("{rate}", isFa ? toPersianDigits(Math.round(Number(invoice.taxRate) * 100)) : String(Math.round(Number(invoice.taxRate) * 100)))} amount={invoice.taxTotal == null ? null : Number(invoice.taxTotal)} muted moneyFn={money} />
               {Number(invoice.discount) > 0 && <Line label={t("invoice.discount")} amount={-Number(invoice.discount)} muted tone="emerald" moneyFn={money} />}
               <div className="flex items-center justify-between border-t border-border pt-2">
                 <span className="font-display text-base font-semibold">{t("invoice.total")}</span>
-                <span className="font-display text-xl font-bold text-amber">{money(Number(invoice.total))}</span>
+                <span className="font-display text-xl font-bold text-amber">{money(invoice.total == null ? null : Number(invoice.total))}</span>
               </div>
             </div>
           </div>
@@ -161,7 +162,13 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
       </div>
 
       {/* Payment */}
-      {invoice && invoice.status !== "PAID" && (
+      {invoice && !financialReady && invoice.status !== "PAID" && (
+        <div className="rounded-lg border border-amber/30 bg-amber/5 p-3 text-xs text-muted-foreground">
+          {isFa ? "مبالغ این فاکتور تا تأیید منشأ مالی قابل نمایش یا پرداخت نیستند." : "Invoice amounts are unavailable until their financial provenance is verified."}
+        </div>
+      )}
+
+      {invoice && invoice.status !== "PAID" && financialReady && (
         <div className="rounded-xl border border-border bg-card p-5">
           <div className="flex items-center gap-2">
             <Lock className="size-4 text-amber" />
@@ -219,7 +226,7 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
   );
 }
 
-function Line({ label, value, amount, muted, tone, moneyFn }: { label: string; value?: string; amount: number; muted?: boolean; tone?: string; moneyFn: (n: number) => string }) {
+function Line({ label, value, amount, muted, tone, moneyFn }: { label: string; value?: string; amount: number | null; muted?: boolean; tone?: string; moneyFn: (n: unknown) => string }) {
   return (
     <div className="flex items-center justify-between">
       <span className={muted ? "text-muted-foreground" : "text-foreground"}>

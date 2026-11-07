@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
+import { isSafeStoredIrrAmount, maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 // GET: list user's referrals + stats.
 // referrerId is derived from the session — the `userId` query param is IGNORED (BOLA protection).
@@ -16,14 +17,16 @@ export async function GET(req: Request) {
     orderBy: { createdAt: "desc" },
     include: { referredUser: true },
   });
+  const allRewardsVerified = referrals.every((referral) => referral.financialUnitStatus === "VERIFIED_IRR" && isSafeStoredIrrAmount(referral.rewardAmount));
+  const safeReferrals = referrals.map((referral) => maskFinancialFields(referral, ["rewardAmount"]));
   const stats = {
     total: referrals.length,
     signedUp: referrals.filter((r) => r.status === "signed_up" || r.status === "first_job" || r.status === "rewarded").length,
     firstJob: referrals.filter((r) => r.status === "first_job" || r.status === "rewarded").length,
-    earned: referrals.filter((r) => r.rewardClaimed).reduce((s, r) => s + Number(r.rewardAmount), 0),
-    available: referrals.filter((r) => r.status === "first_job" && !r.rewardClaimed).reduce((s, r) => s + Number(r.rewardAmount), 0),
+    earned: allRewardsVerified ? referrals.filter((r) => r.rewardClaimed).reduce((s, r) => s + Number(r.rewardAmount), 0) : null,
+    available: allRewardsVerified ? referrals.filter((r) => r.status === "first_job" && !r.rewardClaimed).reduce((s, r) => s + Number(r.rewardAmount), 0) : null,
   };
-  return NextResponse.json({ referrals, stats });
+  return NextResponse.json({ referrals: safeReferrals, stats });
 }
 
 // POST: get-or-create a referral code for the authenticated user.
@@ -81,6 +84,10 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "ارجاع به خود مجاز نیست" }, { status: 400 });
   }
 
+  if (referral.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(referral.rewardAmount)) {
+    return NextResponse.json({ error: "منشأ مالی پاداش ارجاع تأیید نشده است", code: "REFERRAL_REWARD_PROVENANCE_UNVERIFIED" }, { status: 409 });
+  }
+
   if (referral.status !== "first_job" || referral.rewardClaimed) {
     return NextResponse.json({ error: "این پاداش قابل دریافت نیست" }, { status: 400 });
   }
@@ -97,7 +104,7 @@ export async function PATCH(req: Request) {
         userId: updated.referrerId,
         type: "referral_rewarded",
         title: "Referral reward claimed!",
-        body: `You earned ${Number(updated.rewardAmount)} IRR from your referral.`,
+        body: `Your referral reward ${updated.code} has been claimed.`,
         category: "system",
         link: "customer/referral",
       },
@@ -105,5 +112,5 @@ export async function PATCH(req: Request) {
   } catch (e) {
     console.error("[referral/claim] Failed to create notification (reward still claimed):", e);
   }
-  return NextResponse.json({ ok: true, referral: updated });
+  return NextResponse.json({ ok: true, referral: maskFinancialFields(updated, ["rewardAmount"]) });
 }

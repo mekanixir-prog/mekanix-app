@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { createVipSubscriptionAtomically } from "@/lib/vip-subscription-atomic";
+import { isSafeStoredIrrAmount, maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 // Subscribe the authenticated user to a VIP plan.
 // userId is derived from the session — NEVER from the request body (BOLA fix).
@@ -43,6 +44,9 @@ export async function POST(req: Request) {
   if (!plan || !plan.active) {
     return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
   }
+  if (plan.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(plan.priceIrr)) {
+    return NextResponse.json({ error: "قیمت طرح VIP هنوز از نظر منشأ مالی تأیید نشده است", code: "VIP_PLAN_PRICE_UNVERIFIED" }, { status: 409 });
+  }
 
   // 3. Validate paymentId — must be a real SUCCEEDED payment by this user
   //    that covers the plan price. This closes the free-VIP bypass.
@@ -55,6 +59,8 @@ export async function POST(req: Request) {
     !payment ||
     payment.userId !== userId ||
     payment.status !== "SUCCEEDED" ||
+    payment.financialUnitStatus !== "VERIFIED_IRR" ||
+    !isSafeStoredIrrAmount(payment.amount) ||
     payment.currency !== "IRR" ||
     !payment.gatewayLogId ||
     Number(payment.amount) < Number(plan.priceIrr)
@@ -72,6 +78,8 @@ export async function POST(req: Request) {
     !gatewayLog ||
     gatewayLog.userId !== userId ||
     gatewayLog.status !== "VERIFIED" ||
+    gatewayLog.financialUnitStatus !== "VERIFIED_IRR" ||
+    !isSafeStoredIrrAmount(gatewayLog.amount) ||
     gatewayLog.purpose !== "vip" ||
     gatewayLog.paymentId !== payment.id ||
     gatewayLog.currency !== payment.currency ||
@@ -134,5 +142,5 @@ export async function POST(req: Request) {
     console.error("[vip/subscribe] Failed to create notification (subscription still created):", e);
   }
 
-  return NextResponse.json({ ok: true, subscription: sub });
+  return NextResponse.json({ ok: true, subscription: sub ? { ...sub, plan: maskFinancialFields(sub.plan, ["priceIrr"]) } : sub });
 }

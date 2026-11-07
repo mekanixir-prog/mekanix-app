@@ -7,6 +7,7 @@ import { requestFingerprint } from "@/lib/idempotency";
 import { calculatePrice } from "@/lib/pricing";
 import { checkVipStatus } from "@/lib/vip";
 import { wantsLite, liteResponse } from "@/lib/lite-response";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 import {
   CareBookingIdempotencyConflict,
   createCareBookingAtomically,
@@ -123,5 +124,9 @@ export async function GET(req: Request) {
   });
 
   const lite = wantsLite(req);
-  return NextResponse.json(liteResponse(bookings, lite));
+  const maskedBookings = bookings.map((booking) => ({
+    ...booking,
+    package: booking.package ? maskFinancialFields(booking.package, ["basePrice"]) : booking.package,
+  }));
+  return NextResponse.json(liteResponse(maskedBookings, lite));
 }

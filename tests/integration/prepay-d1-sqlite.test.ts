@@ -10,6 +10,7 @@ function makeD1() {
     CREATE TABLE "Job" (
       "id" TEXT PRIMARY KEY,
       "technicianId" TEXT NOT NULL,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "prepayPaid" INTEGER NOT NULL DEFAULT 0,
       "prepayPaidAt" TEXT,
       "inspectionFee" REAL,
@@ -22,6 +23,8 @@ function makeD1() {
     CREATE TABLE "Wallet" (
       "id" TEXT PRIMARY KEY,
       "technicianId" TEXT NOT NULL UNIQUE,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
+      "balance" REAL NOT NULL DEFAULT 0,
       "pendingBalance" REAL NOT NULL DEFAULT 0,
       "totalEarned" REAL NOT NULL DEFAULT 0,
       "totalCommission" REAL NOT NULL DEFAULT 0,
@@ -40,6 +43,7 @@ function makeD1() {
       "holdUntil" TEXT,
       "description" TEXT NOT NULL,
       "idempotencyKey" TEXT NOT NULL UNIQUE,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "createdAt" TEXT NOT NULL
     );
     CREATE TABLE "WalletLedger" (
@@ -53,6 +57,7 @@ function makeD1() {
       "referenceId" TEXT NOT NULL,
       "description" TEXT NOT NULL,
       "idempotencyKey" TEXT NOT NULL UNIQUE,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "createdAt" TEXT NOT NULL
     );
   `);
@@ -68,7 +73,12 @@ function makeD1() {
       try {
         sqlite.exec("BEGIN");
         const results = items.map(({ sql, values }) => {
-          const result = sqlite.prepare(sql).run(...(values as never[]));
+          const statement = sqlite.prepare(sql);
+          if (/^\s*SELECT/i.test(sql)) {
+            statement.get(...(values as never[]));
+            return { meta: { changes: 0 } };
+          }
+          const result = statement.run(...(values as never[]));
           return { meta: { changes: Number(result.changes) } };
         });
         sqlite.exec("COMMIT");
@@ -85,7 +95,7 @@ function makeD1() {
 function seed(sqlite: DatabaseSync) {
   sqlite.prepare('INSERT INTO "Job" ("id", "technicianId", "prepayPaid") VALUES (?, ?, 0)')
     .run("job-1", "tech-1");
-  sqlite.prepare('INSERT INTO "Wallet" ("id", "technicianId", "pendingBalance", "totalEarned", "totalCommission", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?, ?)')
+  sqlite.prepare(`INSERT INTO "Wallet" ("id", "technicianId", "financialUnitStatus", "balance", "pendingBalance", "totalEarned", "totalCommission", "createdAt", "updatedAt") VALUES (?, ?, 'VERIFIED_IRR', 0, ?, ?, ?, ?, ?)`)
     .run("wallet-1", "tech-1", 100, 0, 0, "2026-10-30T00:00:00.000Z", "2026-10-30T00:00:00.000Z");
 }
 
@@ -116,6 +126,20 @@ describe("atomic prepay D1 SQLite integration", () => {
     expect(sqlite.prepare('SELECT "kind", "status", "netAmount" FROM "WalletTransaction" ORDER BY "kind"').all())
       .toEqual([{ kind: "COMMISSION", status: "COMPLETED", netAmount: -100 }, { kind: "PREPAY", status: "PENDING", netAmount: 900 }]);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 2 });
+  });
+
+  it("rolls back the paid marker when the existing wallet lacks verified IRR provenance", async () => {
+    const { sqlite, d1 } = makeD1(); databases.push(sqlite); seed(sqlite);
+    sqlite.prepare('UPDATE "Wallet" SET "financialUnitStatus" = ? WHERE "id" = ?')
+      .run("UNVERIFIED", "wallet-1");
+
+    await expect(recordPrepayWithD1(d1 as never, input)).resolves.toBe(false);
+    expect(sqlite.prepare('SELECT "prepayPaid" FROM "Job" WHERE "id" = ?').get("job-1"))
+      .toEqual({ prepayPaid: 0 });
+    expect(sqlite.prepare('SELECT "pendingBalance", "totalEarned", "totalCommission" FROM "Wallet" WHERE "id" = ?').get("wallet-1"))
+      .toEqual({ pendingBalance: 100, totalEarned: 0, totalCommission: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletTransaction"').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
   });
 
   it("does not apply the financial writes again on a retry after a completed prepay", async () => {

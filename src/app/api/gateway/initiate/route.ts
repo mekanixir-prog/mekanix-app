@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
+import { isSafeStoredIrrAmount } from "@/lib/money/financial-read-mask";
 
 // ⚠️ DEV MODE: Amount comes from client in dev mode for testing.
 // In production, this route returns 404 — real gateway integration
@@ -19,7 +20,7 @@ export async function POST(req: Request) {
   const body = await req.json();
   const { amount, purpose, description, mobile, cardNumber } = body;
 
-  if (!amount || amount <= 0) {
+  if (!isSafeStoredIrrAmount(amount) || typeof amount !== "number" || amount <= 0) {
     return NextResponse.json({ error: "مبلغ معتبر الزامی است" }, { status: 400 });
   }
 
@@ -38,6 +39,7 @@ export async function POST(req: Request) {
       userId: session.userId, // server-authoritative — NOT from client
       amount,
       currency: "IRR",
+      financialUnitStatus: "VERIFIED_IRR",
       gateway: "SHAPARAK_SIM",
       status: "REDIRECTED",
       purpose: purpose || "vip",

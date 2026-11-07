@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 // Public-facing technician fields — never expose sensitive data.
 const PUBLIC_USER_FIELDS = {
@@ -38,7 +39,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     },
   });
   if (!tech) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(tech);
+  return NextResponse.json(maskFinancialFields(tech, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]));
 }
 
 // PATCH /api/technicians/[id]
@@ -102,5 +103,5 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       specialties: true,
     },
   });
-  return NextResponse.json(updated);
+  return NextResponse.json(maskFinancialFields(updated, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]));
 }

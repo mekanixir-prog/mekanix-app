@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireBookingParticipant } from "@/lib/care-auth";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 // GET /api/care/bookings/[id] — booking details
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -22,7 +23,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     include: {
       package: { include: { items: true } },
       timeline: { orderBy: { timestamp: "asc" } },
-      findings: true,
+      findings: { include: { approvals: true } },
       approvals: true,
       partUsages: true,
       healthReport: true,
@@ -41,5 +42,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       })
     : null;
 
-  return NextResponse.json({ ...booking, pricing });
+  const maskedBooking = {
+    ...booking,
+    package: booking.package ? maskFinancialFields(booking.package, ["basePrice"]) : booking.package,
+    approvals: booking.approvals.map((approval) => maskFinancialFields(approval, ["partPrice", "laborPrice", "totalPrice"])),
+    partUsages: booking.partUsages.map((part) => maskFinancialFields(part, ["unitPrice", "totalPrice"])),
+    findings: booking.findings.map((finding) => ({ ...finding, approvals: finding.approvals.map((approval) => maskFinancialFields(approval, ["partPrice", "laborPrice", "totalPrice"])) })),
+  };
+  const maskedPricing = pricing ? maskFinancialFields(pricing, ["servicePrice", "visitPrice", "laborPrice", "partsPrice", "discount", "taxTotal", "total"], "currency") : pricing;
+  return NextResponse.json({ ...maskedBooking, pricing: maskedPricing });
 }

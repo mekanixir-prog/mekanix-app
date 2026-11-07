@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { sanitizeInput, ALLOWED_FIELDS } from "@/lib/auth";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 // GET: list insurance policies for the authenticated user (+ their claims).
 // userId is derived from session — the `userId` query param is IGNORED (BOLA protection).
@@ -24,7 +25,10 @@ export async function GET(req: Request) {
     orderBy: { createdAt: "desc" },
     include: { vehicle: true, claims: { orderBy: { createdAt: "desc" } } },
   });
-  return NextResponse.json(policies);
+  return NextResponse.json(policies.map((policy) => ({
+    ...maskFinancialFields(policy, ["premiumAmount", "coverageAmount"]),
+    claims: policy.claims.map((claim) => maskFinancialFields(claim, ["amount"])),
+  })));
 }
 
 // POST: add a new insurance policy.
@@ -86,5 +90,5 @@ export async function POST(req: Request) {
     },
     include: { vehicle: true },
   });
-  return NextResponse.json(policy);
+  return NextResponse.json(maskFinancialFields(policy, ["premiumAmount", "coverageAmount"]));
 }
