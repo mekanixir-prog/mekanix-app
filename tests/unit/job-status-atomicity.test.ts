@@ -197,9 +197,11 @@ describe("atomic job status writer", () => {
     expect(d1.batch).toHaveBeenCalledTimes(1);
     expect(d1.batch.mock.calls[0][0]).toHaveLength(5);
     expect(statements[0].sql).toContain('UPDATE "Job"');
-    expect(statements[0].values.slice(-5)).toEqual([
+    expect(statements[0].sql).toContain('"updatedAt" = ?');
+    expect(statements[0].values.slice(-6)).toEqual([
       input.jobId,
       input.currentStatus,
+      input.expectedUpdatedAt.toISOString(),
       input.actorTechnicianId,
       input.requestId,
       input.technicianId,
