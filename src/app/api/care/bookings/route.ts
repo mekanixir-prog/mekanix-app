@@ -90,7 +90,7 @@ export async function POST(req: Request) {
       { status: 409 },
     );
   }
-  if (expectedPricingVersion && expectedPricingVersion !== pricing.pricingVersion) {
+  if (expectedPricingVersion !== pricing.pricingVersion) {
     return NextResponse.json(
       { error: "نرخ‌نامه پس از نمایش پیش‌فاکتور تغییر کرده است؛ لطفاً مبلغ جدید را بررسی کنید", code: "PRICING_VERSION_CHANGED" },
       { status: 409 },
