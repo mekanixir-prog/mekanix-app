@@ -190,3 +190,52 @@ This section records changes after the previous 2026-11-03 checklist snapshot. T
 - [ ] VPS/hosting, production domain/DNS/HTTPS, live SMS and payment credentials remain scheduled for shortly before launch.
 - [ ] Integration contracts and deployment runbooks must be ready now; isolated staging, remote D1/Cron verification, backup/restore, rollback, monitoring, real-provider smoke tests and business E2E remain mandatory before public launch.
 
+
+
+## Follow-up audit — 2026-11-07 (supersedes earlier PR #137 checklist status)
+
+**Exact code head reviewed:** `33d462502bb609e92cf3e2734e733a9ccf65e663`  
+**PR #137:** open, Draft, branch `feat/admin-editable-irr-rate-card`; GitHub reports 370 commits ahead of `main`, 0 behind, 146 changed files. This is not a merge approval.  
+**Production decision:** NO-GO. No production host, domain, DNS/TLS, remote D1, SMS provider, payment gateway, or production secret was activated or changed.
+
+### Completed in the current candidate branch
+
+- [x] `PricingInput.serviceCode` is required; pricing no longer silently falls back to diagnostic pricing.
+- [x] Customer approval accepts only Boolean input and cannot be combined with arbitrary job-status changes.
+- [x] Job flow enforces a verified IRR estimate and customer consent before actual repair and completion. The pre-estimate preparation stage remains distinct in the technician UI; parts are editable only before the estimate is issued and are locked afterward.
+- [x] Prisma and D1 atomic status writers enforce compare-and-set transitions; issuing an estimate resets customer approval, and starting repair from `WAITING_APPROVAL` requires the stored approval flag.
+- [x] Invoice completion is rejected without a verified IRR estimate and recorded customer approval.
+- [x] Session and OTP verification responses now use the same fail-closed technician-fee masking projection.
+- [x] Service requests require a previously registered vehicle; the D1 insert rechecks ownership and supported passenger/heavy scope at the write boundary to close a preflight/write race.
+- [x] Tests cover the approval lifecycle, bypass attempts, D1 race conditions, OTP/session financial masking, and registered-vehicle requirements.
+- [x] The current branch includes the financial-read work from PR #136. Read-path review covered technician list/detail, session and OTP, job list/detail, invoice GET/POST, wallet/withdrawal, prepay, VIP plan/subscription, and CARE booking pricing projections.
+
+### Exact-head workflow evidence (code head above)
+
+| Workflow | Run ID | Result |
+|---|---:|---|
+| CI — Lint + TypeCheck + Test | 42347387500 | success |
+| Production readiness | 42347387395 | success |
+| PostgreSQL CI — Migration + Build | 42347387562 | success |
+| Cloudflare Build | 42347387614 | success |
+| CodeQL Security Analysis | 42347387448 | success |
+| Secret Scan | 42347387466 | success |
+| Docker E2E — Compose + Health | 42347387459 | in progress at audit time |
+
+Any subsequent commit, including a documentation-only change, requires a fresh exact-head workflow check before the candidate can be called green.
+
+### PR #136 disposition
+
+PR #136 remains open and Draft, but it is stale/diverged from `main` (160 commits ahead, 2 behind). All 76 files changed by PR #136 are also changed in PR #137: 47 have identical Git blobs and 29 have newer/different blobs in PR #137. A follow-up review comment was posted on PR #136 (review ID `5810569703`) recommending that it not be merged independently and that its financial-read work be reviewed in PR #137. Close PR #136 only after confirming there is no unique change to port.
+
+### Remaining NO-GO gates
+
+- [ ] Enable the existing `main` repository ruleset. GitHub reports `enforcement=disabled`; its required status-check list is empty. Configure required checks to match actual workflow triggers.
+- [ ] Review the full 146-file PR #137 diff and both SQLite/D1 and PostgreSQL migration tracks; consider a deliberate squash strategy after review. Do not merge automatically.
+- [ ] Obtain owner approval for exact passenger/heavy tariff values, service-region policy, effective date, and the extra-distance method (current Haversine × 1.3 is not a routing-provider measurement).
+- [ ] Complete the authoritative payment-attempt/provider-verification/fulfillment lifecycle, invoice settlement, commission, technician wallet credit, escrow release, refunds, reconciliation, and payout evidence. Simulator routes remain unavailable in production.
+- [ ] Reconcile legacy financial provenance without guessing historical units or mass-converting ambiguous records.
+- [ ] Complete isolated remote staging for D1 migrations, backup/restore, Cron/escrow observation, real SMS delivery, and payment-provider sandbox round-trip.
+- [ ] Complete the remaining end-to-end customer, technician, admin, CARE, warranty, recovery, and notification scenarios.
+- [ ] Obtain a final independent review and record a Go/No-Go decision against one exact Release Candidate SHA.
+
