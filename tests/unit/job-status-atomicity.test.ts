@@ -152,6 +152,7 @@ describe("atomic job status writer", () => {
       invoice,
     })).resolves.toBeUndefined();
     expect(tx.invoice.create).toHaveBeenCalledWith({ data: invoice });
+    expect(invoice).toMatchObject({ inspectionFee: 6_000_000, emergencyFee: 0, financialUnitStatus: "VERIFIED_IRR" });
   });
 
   it("sets the escrow hold in the same transaction as job completion", async () => {
@@ -249,7 +250,13 @@ describe("atomic job status writer", () => {
 
     expect(d1.batch.mock.calls[0][0]).toHaveLength(4);
     expect(statements[2].sql).toContain('INSERT INTO "Invoice"');
+    expect(statements[2].sql).toContain('"inspectionFee"');
+    expect(statements[2].sql).toContain('"emergencyFee"');
+    expect(statements[2].sql).toContain('"financialUnitStatus"');
+    expect(statements[2].values).toHaveLength(24);
     expect(statements[2].values).toContain("invoice-1");
+    expect(statements[2].values).toContain(6_000_000);
+    expect(statements[2].values).toContain("VERIFIED_IRR");
     expect(statements[3].sql).toContain("json_extract");
   });
 
