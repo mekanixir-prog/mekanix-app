@@ -54,6 +54,7 @@ beforeEach(() => {
   mocks.job.mockResolvedValue({
     id: "job-1", code: "JOB-1001", prepayPaid: false, prepayPaidAt: null,
     inspectionFee: 100, travelFee: 20, platformCommission: 12, netEarnings: 108,
+    financialUnitStatus: "VERIFIED_IRR",
   });
   mocks.walletTxn.mockResolvedValue(null);
   mocks.ledger.mockResolvedValue(null);
@@ -147,6 +148,7 @@ describe("read-only offline reconciliation endpoints", () => {
       id: "job-1", code: "JOB-1001", prepayPaid: true,
       prepayPaidAt: new Date("2026-10-31T10:00:00Z"),
       inspectionFee: 100, travelFee: 20, platformCommission: 12, netEarnings: 108,
+      financialUnitStatus: "VERIFIED_IRR",
     });
     mocks.walletTxn.mockResolvedValue({ id: "txn" });
     mocks.ledger.mockResolvedValue({ id: "ledger" });
@@ -172,7 +174,7 @@ describe("read-only offline reconciliation endpoints", () => {
     mocks.job.mockResolvedValue({
       id: "job-1", code: "JOB-1001", prepayPaid: true,
       prepayPaidAt: new Date(), inspectionFee: 100, travelFee: 20,
-      platformCommission: 12, netEarnings: 108,
+      platformCommission: 12, netEarnings: 108, financialUnitStatus: "VERIFIED_IRR",
     });
     mocks.walletTxn.mockResolvedValueOnce({ id: "txn" }).mockResolvedValueOnce(null);
     mocks.ledger.mockResolvedValueOnce({ id: "ledger" }).mockResolvedValueOnce(null);
