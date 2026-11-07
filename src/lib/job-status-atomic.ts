@@ -25,12 +25,15 @@ export type AtomicInvoiceInput = {
   laborTotal: number;
   partsTotal: number;
   travelFee: number;
+  inspectionFee: number;
+  emergencyFee: number;
   subtotal: number;
   taxRate: number;
   taxTotal: number;
   discount: number;
   total: number;
   currency: string;
+  financialUnitStatus: "VERIFIED_IRR";
   status: "SENT";
   notes: string;
 };
@@ -188,9 +191,9 @@ async function transitionWithD1(
       d1.prepare(
         'INSERT INTO "Invoice"' +
         ' ("id", "code", "jobId", "laborHours", "laborRate", "laborTotal", "partsTotal",' +
-        ' "travelFee", "subtotal", "taxRate", "taxTotal", "discount", "total", "currency",' +
-        ' "status", "notes", "createdAt", "updatedAt")' +
-        ' SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?' +
+        ' "travelFee", "inspectionFee", "emergencyFee", "subtotal", "taxRate", "taxTotal", "discount", "total", "currency",' +
+        ' "financialUnitStatus", "status", "notes", "createdAt", "updatedAt")' +
+        ' SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?' +
         ' WHERE EXISTS (SELECT 1 FROM "Job" j WHERE j."id" = ? AND j."status" = ?)' +
         ' AND NOT EXISTS (SELECT 1 FROM "Invoice" i WHERE i."jobId" = ?)'
       ).bind(
@@ -202,12 +205,15 @@ async function transitionWithD1(
         invoice.laborTotal,
         invoice.partsTotal,
         invoice.travelFee,
+        invoice.inspectionFee,
+        invoice.emergencyFee,
         invoice.subtotal,
         invoice.taxRate,
         invoice.taxTotal,
         invoice.discount,
         invoice.total,
         invoice.currency,
+        invoice.financialUnitStatus,
         invoice.status,
         invoice.notes,
         now,
