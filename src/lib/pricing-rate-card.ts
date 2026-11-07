@@ -83,7 +83,7 @@ export function validatePricingRateCard(value: unknown): Omit<PricingRateCard, "
 }
 export function normalizeVehicleAssetClass(vehicleType: string): AssetClass {
   if (vehicleType === "CAR") return "passenger";
-  if (["TRUCK", "BUS", "EXCAVATOR", "LOADER", "BULLDOZER", "GRADER", "AGRI", "INDUSTRIAL", "OTHER"].includes(vehicleType)) return "heavy";
+  if (["TRUCK", "BUS", "EXCAVATOR", "LOADER", "BULLDOZER", "GRADER", "AGRI", "INDUSTRIAL"].includes(vehicleType)) return "heavy";
   throw new Error("این نوع وسیله در نرخ‌نامه تأییدشده پشتیبانی نمی‌شود");
 }
 export async function getPricingRateCard(): Promise<PricingRateCard> {

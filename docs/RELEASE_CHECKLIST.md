@@ -239,3 +239,29 @@ PR #136 remains open and Draft, but it is stale/diverged from `main` (160 commit
 - [ ] Complete the remaining end-to-end customer, technician, admin, CARE, warranty, recovery, and notification scenarios.
 - [ ] Obtain a final independent review and record a Go/No-Go decision against one exact Release Candidate SHA.
 
+
+
+## 7. Current exact-head update — 2026-11-07 (supersedes stale status above)
+
+**Current release decision remains NO-GO.** The earlier status text in this checklist describing the technician state-machine guard and financial read masking as incomplete is historical and must not be used as the current code assessment.
+
+- PR #137 remains open and Draft on `feat/admin-editable-irr-rate-card`, head `17ec5722d0e513b56753e065cd0f486a133fe73a`; it is not merged.
+- PR #138 is open, not merged, on `fix/release-guards-atomic-status-other-type`, head `f5088381cf2cfe836672ec0bbf94805934fe68a7`, based on the PR #137 head above.
+- All five checks on the exact PR #138 head completed successfully: Lint + TypeCheck + Test, Quality / Build, PostgreSQL Migration + Build, OpenNext → Cloudflare Worker, and Docker Build + Compose + Health. Docker verified PostgreSQL backend selection and production OTP fail-closed behavior without a real SMS provider.
+- The test workflow reports 104 test files passed, 994 tests passed, and 14 skipped. Four test files are excluded/skipped from that run; do not interpret this as proof that every repository test file ran.
+- PR #138 closes the remaining atomic technician-transition boundary gap, rejects technician identity mismatch at the atomic writer, and fails closed for ambiguous `OTHER` asset pricing.
+- The current candidate branch also records payout settlement through a zero-delta `PAYOUT` WalletLedger audit event in the same transaction/batch as the payout state and aggregate update. This records settlement without debiting the already-debited spendable balance a second time; Prisma and D1 rollback/idempotency tests cover the path.
+- Current candidate code includes wallet and invoice financial-read masking. This supersedes older unchecked statements above that these read masks were absent. Historical money-unit provenance and full reconciliation remain unresolved.
+- The current candidate has no evidence of a live external payment-provider lifecycle, remote D1 staging, real SMS delivery, or production deployment. CI does not replace those tests.
+
+### Remaining release blockers after PR #138 CI
+
+- [ ] Review the full PR #137 diff and both SQLite/D1 and PostgreSQL migration tracks; do not merge automatically.
+- [ ] Complete the authoritative payment attempt, provider verification, signed callback, idempotent fulfillment, invoice settlement, commission, technician wallet credit, escrow release, refund, reconciliation, and payout-evidence lifecycle (Issue #24).
+- [ ] Reconcile historical financial provenance record-by-record; quarantine unknown units and never mass-convert ambiguous records (Issue #81).
+- [ ] Obtain owner approval for actual passenger/heavy tariffs, service regions, distance calculation, tax, commission, VIP pricing/coverage, and withdrawal policy (Issue #99).
+- [ ] Enable repository branch governance and required checks; the current main ruleset was previously observed disabled (Issue #121). Re-read settings before treating this as changed.
+- [ ] Complete customer/technician/admin/CARE/warranty/refund/recovery/notification E2E, authorization/IDOR review, isolated staging, backup/restore, rollback, monitoring, and final independent review.
+- [ ] Re-run all applicable checks on the final exact Release Candidate SHA after any code or documentation edit.
+
+**Safety:** PR #138 has not been merged. PR #137 has not been merged. No production host, domain, SMS provider, payment credentials, production secrets, or public deployment has been activated.

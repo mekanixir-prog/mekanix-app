@@ -61,7 +61,27 @@ function isTechnicianReleaseTransition(status: string) {
   return status === "COMPLETED" || isRequestTerminalTransition(status);
 }
 
+const TECHNICIAN_TRANSITIONS: Record<string, readonly string[]> = {
+  ACCEPTED: ["REQUESTED"],
+  EN_ROUTE: ["ACCEPTED"],
+  ARRIVED: ["EN_ROUTE", "ACCEPTED"],
+  DIAGNOSING: ["ARRIVED", "EN_ROUTE", "ACCEPTED"],
+  REPAIRING: ["DIAGNOSING", "WAITING_APPROVAL"],
+  WAITING_APPROVAL: ["REPAIRING"],
+  COMPLETED: ["REPAIRING"],
+  REJECTED: ["REQUESTED"],
+};
+
 function assertRoleTransition(input: AtomicJobStatusInput) {
+  if (input.actorRole === "TECHNICIAN") {
+    if (!input.actorTechnicianId || input.actorTechnicianId !== input.technicianId) {
+      throw new JobStatusConflictError();
+    }
+    if (!TECHNICIAN_TRANSITIONS[input.nextStatus]?.includes(input.currentStatus)) {
+      throw new JobStatusConflictError();
+    }
+  }
+
   const isCustomerActor = input.actorRole === "CUSTOMER" || input.actorRole === "FLEET_MANAGER";
   if (input.updates.customerApproved !== undefined && !isCustomerActor) {
     throw new JobStatusConflictError();
