@@ -147,6 +147,7 @@ describe("POST /api/invoices lifecycle", () => {
       taxTotal: 0,
       total: 19_000_200,
       currency: "IRR",
+      pricingVersion: "rate-card-1",
       financialUnitStatus: "VERIFIED_IRR",
     });
   });
