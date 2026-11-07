@@ -40,27 +40,52 @@ export function CareDetail() {
 
   async function handleApprove(approvalId: string) {
     const token = localStorage.getItem("mekanix-token");
-    await fetch(`/api/care/bookings/${params.bookingId}/approve-extra`, {
-      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ approvalId }),
-    });
-    toast.success(isFa ? "تأیید شد" : "Approved");
-    setLoading(true);
-    // reload
-    fetch(`/api/care/bookings/${params.bookingId}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.json()).then((d) => { if (!d.error) setBooking(d); }).finally(() => setLoading(false));
+    try {
+      const response = await fetch(`/api/care/bookings/${params.bookingId}/approve-extra`, {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ approvalId }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(result.error ?? (isFa ? "تأیید پیشنهاد انجام نشد" : "The proposal could not be approved"));
+        return;
+      }
+      toast.success(isFa ? "تأیید شد" : "Approved");
+      setLoading(true);
+      const refreshed = await fetch(`/api/care/bookings/${params.bookingId}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await refreshed.json();
+      if (refreshed.ok && !data.error) setBooking(data);
+      else toast.error(data.error ?? (isFa ? "به‌روزرسانی سفارش ناموفق بود" : "Could not refresh the booking"));
+    } catch {
+      toast.error(isFa ? "ارتباط با سرور ناموفق بود" : "Server connection failed");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleReject(approvalId: string) {
     const token = localStorage.getItem("mekanix-token");
-    await fetch(`/api/care/bookings/${params.bookingId}/reject-extra`, {
-      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ approvalId }),
-    });
-    toast.success(isFa ? "رد شد" : "Rejected");
-    setLoading(true);
-    fetch(`/api/care/bookings/${params.bookingId}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.json()).then((d) => { if (!d.error) setBooking(d); }).finally(() => setLoading(false));
+    try {
+      const response = await fetch(`/api/care/bookings/${params.bookingId}/reject-extra`, {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ approvalId }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(result.error ?? (isFa ? "رد پیشنهاد انجام نشد" : "The proposal could not be rejected"));
+        return;
+      }
+      toast.success(isFa ? "رد شد" : "Rejected");
+      setLoading(true);
+      const refreshed = await fetch(`/api/care/bookings/${params.bookingId}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await refreshed.json();
+      if (refreshed.ok && !data.error) setBooking(data);
+      else toast.error(data.error ?? (isFa ? "به‌روزرسانی سفارش ناموفق بود" : "Could not refresh the booking"));
+    } catch {
+      toast.error(isFa ? "ارتباط با سرور ناموفق بود" : "Server connection failed");
+    } finally {
+      setLoading(false);
+    }
   }
 
   const statusLabels: Record<string, { fa: string; en: string }> = {
@@ -105,8 +130,15 @@ export function CareDetail() {
                 </div>
                 <span className="font-display text-lg font-bold text-amber">{moneyIrr(ap.totalPrice)}</span>
               </div>
+              {ap.financialUnitStatus !== "VERIFIED_IRR" && (
+                <p className="mt-2 text-xs text-amber-700 dark:text-amber-300" role="status">
+                  {isFa
+                    ? "مبلغ این پیشنهاد هنوز به ریال تطبیق داده نشده است؛ تأیید آن تا زمان بررسی مالی غیرفعال است."
+                    : "This proposal's amount has not been verified as IRR; approval is disabled pending reconciliation."}
+                </p>
+              )}
               <div className="mt-3 flex gap-2">
-                <Button size="sm" onClick={() => handleApprove(ap.id)} className="bg-emerald-600 text-white hover:bg-emerald-700">
+                <Button size="sm" disabled={ap.financialUnitStatus !== "VERIFIED_IRR" || ap.totalPrice == null} onClick={() => handleApprove(ap.id)} className="bg-emerald-600 text-white hover:bg-emerald-700">
                   <CheckCircle2 className="me-1.5 size-3.5" /> {isFa ? "تأیید" : "Approve"}
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => handleReject(ap.id)} className="text-red-500 hover:bg-red-500/10">
