@@ -180,7 +180,7 @@ describe("admin withdrawal D1 transaction integration", () => {
       withdrawalId: "wd-1", action: "PAID", adminId: "admin-1",
       adminNotes: null, payoutReference: "BANK-TRX-2026-0004",
       at: new Date("2026-10-30T10:00:00.000Z"),
-    })).rejects.toThrow(/malformed JSON/i);
+    })).resolves.toBe(false);
     expect(sqlite.prepare('SELECT "status" FROM "WithdrawalRequest" WHERE "id" = ?').get("wd-1"))
       .toEqual({ status: "APPROVED" });
     expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletTransaction"').get()).toEqual({ n: 0 });
