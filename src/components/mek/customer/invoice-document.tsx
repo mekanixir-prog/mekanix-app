@@ -21,7 +21,7 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
   const invoiceFinancialReady = inv?.financialUnitStatus === "VERIFIED_IRR" && inv.currency === "IRR";
   const money = (value: number) => {
     const amount = Number(value);
-    if (!invoiceFinancialReady || !Number.isSafeInteger(amount) || amount < 0) return "—";
+    if (!invoiceFinancialReady || !Number.isSafeInteger(amount)) return "—";
     return `${formatTomanFromIrr(amount, isFa ? "fa-IR" : "en-US")} ${isFa ? "تومان" : "Toman"}`;
   };
 
@@ -164,6 +164,7 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
           </table>
         </div>
 
+        {!invoiceFinancialReady && <div role="alert" className="mt-4 rounded-lg border border-amber/30 bg-amber/5 p-3 text-xs leading-6 text-muted-foreground">{isFa ? "واحد پول این فاکتور تأیید نشده است؛ مبالغ تا زمان تطبیق نمایش داده نمی‌شوند." : "Invoice currency provenance is unverified; amounts are hidden until reconciliation."}</div>}
         {/* Totals */}
         <div className="mt-4 flex justify-end">
           <div className="w-full max-w-xs space-y-1.5 text-sm">
