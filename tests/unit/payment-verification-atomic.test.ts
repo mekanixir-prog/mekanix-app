@@ -46,7 +46,7 @@ describe("atomic verified gateway payment persistence", () => {
       status: "SUCCEEDED", financialUnitStatus: "VERIFIED_IRR",
     });
     mockLogUpdateMany.mockResolvedValue({ count: 1 });
-    mockOutboxUpsert.mockResolvedValue({ eventType: "PAYMENT_SUCCEEDED", aggregateType: "Payment", aggregateId: "payment-1" });
+    mockOutboxUpsert.mockImplementation(async ({ create }: { create: Record<string, unknown> }) => create);
     mockTransaction.mockImplementation(async (callback: () => Promise<unknown>) => callback());
   });
 
