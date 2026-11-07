@@ -30,10 +30,10 @@ export function PaymentGatewayDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   amount: number; // Display-only fallback; server resolves the payable IRR amount from planId.
-  purpose: "vip";
+  purpose: "vip" | "prepay";
   description?: string;
-  planId: string;
-  onSuccess?: (paymentId: string, amount: number) => void;
+  planId?: string;
+  onSuccess?: (paymentId: string, amount: number) => Promise<number | void> | number | void;
 }) {
   const { t, isFa, money } = useT();
   const [stage, setStage] = useState<Stage>("form");
@@ -72,6 +72,18 @@ export function PaymentGatewayDialog({
   };
 
   const initiate = async () => {
+    if (purpose === "prepay") {
+      setServerAmount(amount);
+      setCode("SIMULATED-PREPAY");
+      setRef("LOCAL-SIMULATOR");
+      setStage("otp");
+      return;
+    }
+    if (!planId) {
+      toast.error(t("pay.gateway.failed"));
+      setStage("failed");
+      return;
+    }
     if (card.replace(/\D/g, "").length < 16) {
       toast.error(t("pay.gateway.cardNumber"));
       return;
@@ -86,7 +98,7 @@ export function PaymentGatewayDialog({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          purpose,
+          purpose: "vip",
           planId,
           mobile,
           cardNumber: card,
@@ -112,6 +124,17 @@ export function PaymentGatewayDialog({
     }
     setStage("processing");
     try {
+      if (purpose === "prepay") {
+        const confirmedAmount = await onSuccess?.("SIMULATED-PREPAY", serverAmount ?? amount);
+        if (typeof confirmedAmount === "number" && Number.isFinite(confirmedAmount)) {
+          setServerAmount(confirmedAmount);
+        }
+        setPaymentId("SIMULATED-PREPAY");
+        setStage("done");
+        toast.success(t("pay.gateway.success"));
+        return;
+      }
+
       const res = await authFetch("/api/gateway/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -119,10 +142,14 @@ export function PaymentGatewayDialog({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      const confirmedAmount = Number(data.amount);
+      const fulfilledAmount = await onSuccess?.(data.paymentId, confirmedAmount);
+      if (typeof fulfilledAmount === "number" && Number.isFinite(fulfilledAmount)) {
+        setServerAmount(fulfilledAmount);
+      }
       setPaymentId(data.paymentId);
       setStage("done");
       toast.success(t("pay.gateway.success"));
-      if (onSuccess) onSuccess(data.paymentId, data.amount);
     } catch (e: any) {
       toast.error(e.message ?? t("pay.gateway.failed"));
       setStage("failed");
@@ -154,48 +181,51 @@ export function PaymentGatewayDialog({
         <AnimatePresence mode="wait">
           {stage === "form" && (
             <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3">
-              <div>
-                <Label className="text-xs">{t("pay.gateway.bank")}</Label>
-                <Select value={bank} onValueChange={setBank}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="mellat">{t("pay.gateway.bank.mellat")}</SelectItem>
-                    <SelectItem value="melli">{t("pay.gateway.bank.melli")}</SelectItem>
-                    <SelectItem value="saderat">{t("pay.gateway.bank.saderat")}</SelectItem>
-                    <SelectItem value="tejarat">{t("pay.gateway.bank.tejarat")}</SelectItem>
-                    <SelectItem value="sepah">{t("pay.gateway.bank.sepah")}</SelectItem>
-                    <SelectItem value="other">{t("pay.gateway.bank.other")}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs">{t("pay.gateway.cardNumber")}</Label>
-                <div className="mt-1 relative">
-                  <Input
-                    value={card}
-                    onChange={(e) => setCard(formatCard(e.target.value))}
-                    placeholder="1234 5678 9012 3456"
-                    inputMode="numeric"
-                    className="pl-9 font-mono"
-                    maxLength={19}
-                  />
-                  <CreditCard className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                </div>
-              </div>
-              <div>
-                <Label className="text-xs">{t("pay.gateway.cardHolder")}</Label>
-                <Input value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} placeholder="ALI REZAEI" className="mt-1 uppercase" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
+              {purpose === "vip" && (
                 <div>
-                  <Label className="text-xs">{t("pay.gateway.expiry")}</Label>
-                  <Input value={expiry} onChange={(e) => setExpiry(formatExpiry(e.target.value))} placeholder="12/26" inputMode="numeric" className="mt-1 font-mono" maxLength={5} />
+                  <Label className="text-xs">{t("pay.gateway.bank")}</Label>
+                  <Select value={bank} onValueChange={setBank}>
+                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mellat">{t("pay.gateway.bank.mellat")}</SelectItem>
+                      <SelectItem value="melli">{t("pay.gateway.bank.melli")}</SelectItem>
+                      <SelectItem value="saderat">{t("pay.gateway.bank.saderat")}</SelectItem>
+                      <SelectItem value="tejarat">{t("pay.gateway.bank.tejarat")}</SelectItem>
+                      <SelectItem value="sepah">{t("pay.gateway.bank.sepah")}</SelectItem>
+                      <SelectItem value="other">{t("pay.gateway.bank.other")}</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
-                  <Label className="text-xs">{t("pay.gateway.cvv")}</Label>
-                  <Input value={cvv} onChange={(e) => setCvv(e.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="123" inputMode="numeric" type="password" className="mt-1 font-mono" maxLength={4} />
+                  <Label className="text-xs">{t("pay.gateway.cardNumber")}</Label>
+                  <div className="mt-1 relative">
+                    <Input
+                      value={card}
+                      onChange={(e) => setCard(formatCard(e.target.value))}
+                      placeholder="1234 5678 9012 3456"
+                      inputMode="numeric"
+                      className="pl-9 font-mono"
+                      maxLength={19}
+                    />
+                    <CreditCard className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  </div>
                 </div>
-              </div>
+                <div>
+                  <Label className="text-xs">{t("pay.gateway.cardHolder")}</Label>
+                  <Input value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} placeholder="ALI REZAEI" className="mt-1 uppercase" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs">{t("pay.gateway.expiry")}</Label>
+                    <Input value={expiry} onChange={(e) => setExpiry(formatExpiry(e.target.value))} placeholder="12/26" inputMode="numeric" className="mt-1 font-mono" maxLength={5} />
+                  </div>
+                  <div>
+                    <Label className="text-xs">{t("pay.gateway.cvv")}</Label>
+                    <Input value={cvv} onChange={(e) => setCvv(e.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="123" inputMode="numeric" type="password" className="mt-1 font-mono" maxLength={4} />
+                  </div>
+                </div>
+  
+              )}
               <div>
                 <Label className="text-xs">{t("pay.gateway.mobile")}</Label>
                 <Input value={mobile} onChange={(e) => setMobile(e.target.value.replace(/\D/g, "").slice(0, 11))} placeholder="09123456789" inputMode="numeric" className="mt-1 font-mono" />
