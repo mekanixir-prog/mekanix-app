@@ -5,12 +5,18 @@ import { writeAuditLog } from "@/lib/admin-api";
 import { DEFAULT_PRICING_RATE_CARD, PRICING_RATE_CARD_KEY, validatePricingRateCard, type PricingRateCard } from "@/lib/pricing-rate-card";
 
 type Stored = { current: PricingRateCard; history: PricingRateCard[] };
-async function read(db: Awaited<ReturnType<typeof getDbForLib>>): Promise<Stored> {
-  const row = await db.platformSetting.findUnique({ where: { key: PRICING_RATE_CARD_KEY } });
+type StoredSettingRow = { value: string } | null;
+
+function decodeStored(row: StoredSettingRow): Stored {
   if (!row) return { current: DEFAULT_PRICING_RATE_CARD, history: [] };
   const value = JSON.parse(row.value) as Partial<Stored>;
   if (!value.current || !Array.isArray(value.history)) throw new Error("ساختار نرخ‌نامه نامعتبر است");
   return { current: value.current, history: value.history.slice(0, 20) };
+}
+
+async function read(db: Awaited<ReturnType<typeof getDbForLib>>): Promise<Stored> {
+  const row = await db.platformSetting.findUnique({ where: { key: PRICING_RATE_CARD_KEY } });
+  return decodeStored(row);
 }
 export async function GET(req: Request) {
   if (!await getAdminFromRequest(req)) return NextResponse.json({ error: "احراز هویت مدیر الزامی است" }, { status: 401 });
@@ -30,7 +36,11 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: "نسخه مورد انتظار نامعتبر است" }, { status: 400 });
     }
     const db = await getDbForLib();
-    const before = await read(db);
+    // Keep the exact row used for both version derivation and the later CAS.
+    // Re-reading after audit would let a concurrent writer's new value become
+    // the CAS predicate while this request still writes from an older version.
+    const existingRow = await db.platformSetting.findUnique({ where: { key: PRICING_RATE_CARD_KEY } });
+    const before = decodeStored(existingRow);
     if (before.current.version !== expectedVersion) {
       return NextResponse.json({ error: "نرخ‌نامه توسط مدیر دیگری تغییر کرده است؛ صفحه را تازه‌سازی کنید" }, { status: 409 });
     }
@@ -46,7 +56,6 @@ export async function PUT(req: Request) {
     } catch {
       return NextResponse.json({ error: "ثبت سابقه حسابرسی ممکن نیست؛ نرخ‌نامه ذخیره نشد" }, { status: 503 });
     }
-    const existingRow = await db.platformSetting.findUnique({ where: { key: PRICING_RATE_CARD_KEY } });
     if (existingRow) {
       const changed = await db.platformSetting.updateMany({
         where: { key: PRICING_RATE_CARD_KEY, value: existingRow.value },
