@@ -73,22 +73,29 @@ const commissionLedger = {
   financialUnitStatus: "VERIFIED_IRR",
 };
 
-function makeDb(rows = {}) {
+type RowOverrides = {
+  prepay?: typeof prepayTransaction | null;
+  commission?: typeof commissionTransaction | null;
+  hold?: typeof holdLedger | null;
+  commissionLedger?: typeof commissionLedger | null;
+};
+
+function makeDb(rows: RowOverrides = {}) {
   return {
     job: { findUnique: vi.fn().mockResolvedValue(job) },
     walletTransaction: {
       findUnique: vi.fn()
         .mockImplementation(async ({ where }: { where: { idempotencyKey: string } }) =>
           where.idempotencyKey.endsWith(":PREPAY")
-            ? (rows.prepay ?? prepayTransaction)
-            : (rows.commission ?? commissionTransaction)),
+            ? (rows.prepay === undefined ? prepayTransaction : rows.prepay)
+            : (rows.commission === undefined ? commissionTransaction : rows.commission)),
     },
     walletLedger: {
       findUnique: vi.fn()
         .mockImplementation(async ({ where }: { where: { idempotencyKey: string } }) =>
           where.idempotencyKey.endsWith(":LEDGER_HOLD")
-            ? (rows.hold ?? holdLedger)
-            : (rows.commissionLedger ?? commissionLedger)),
+            ? (rows.hold === undefined ? holdLedger : rows.hold)
+            : (rows.commissionLedger === undefined ? commissionLedger : rows.commissionLedger)),
     },
   };
 }
