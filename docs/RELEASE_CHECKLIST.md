@@ -1,7 +1,8 @@
 # MEKANIX — Release Checklist
 
-**Status date:** 2026-11-04  
-**Current main baseline:** `db0f3361c3158764c47cfeb48d5b9dafadc90610`  
+**Status date:** 2026-11-07  
+**Current main baseline:** `10080473dd6b87ec725a5c6c22803f5d5d872342`  
+**Open release candidate:** PR #137 — `feat/admin-editable-irr-rate-card` (not merged)  
 **Release decision:** <strong>NO-GO</strong> — code hardening and release evidence remain incomplete.
 
 This replaces the historical checklist snapshots from October. Do not use old “Release Candidate — all checks passed” or old staging/load-test claims as current release evidence.
@@ -33,6 +34,20 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - [ ] Reconcile environment variable schema, production Docker/Worker build, health/readiness, logging, monitoring, and operational runbooks.
 - [ ] Produce a Release Candidate with all applicable CI/security/build workflows green on the exact same commit; require the always-on PR checks and record path-filtered Cloudflare/dependency checks where applicable.
 
+
+### PR #137 — editable IRR rate card and customer quote
+
+- [x] Separate fixed-fee schedules implemented for supported foreign passenger vehicles and heavy machinery; unsupported asset classes fail closed.
+- [x] Admin rate-card editor, optimistic versioning, history, server validation, and audit logging implemented. Persisted money values are integer IRR; admin tariff entry is Toman.
+- [x] Production pricing remains disabled until explicit owner approval through `MEKANIX_PRICING_IRR_APPROVED=true`; saving a proposed card does not activate it.
+- [x] CARE customer preview now requests a server-calculated quote from the same rate-card engine, formats verified IRR as Toman, and pins the quote version when booking.
+- [x] Legacy hardcoded CARE preview amounts, the unapproved 9% tax display, and unsupported six-month warranty promises removed from the reviewed booking/invoice copy. VIP copy now describes periodic visits only; repairs and parts are excluded.
+- [x] Ambiguous CARE service types are rejected instead of silently falling back to diagnostic pricing.
+- [ ] All seven required workflows must pass on the final PR head after the last code/documentation change; a prior green SHA is not sufficient.
+- [ ] Owner must review and explicitly approve the actual passenger/heavy rate values. Heavy-equipment estimates still require regional technician/supplier sampling.
+- [ ] Approve or replace the current extra-distance estimation method (Haversine × 1.3); it is not a navigation-provider route measurement.
+- [ ] Review the full PR diff and both provider migration tracks before merge. PR #137 remains open and unmerged.
+
 ### Recently merged security work
 
 - PR #90: `802e91de00c148c7d7981a68702fe873e181ace9`.
@@ -43,11 +58,18 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - PR #101: `5c191f7efdea278611a9a65f39d481072ed37189` — demo seed and auto-seed safety.
 - PR #103: `406f72b9c726e4d305ccfffc11ca9f6f01c5d50d` — verified-IRR Toman presentation helper.
 
+
+### Repository merge governance — current check
+
+- [ ] Enable the existing `main` ruleset. The ruleset exists but GitHub currently reports `enforcement: disabled`; the `main` branch is not protected and has no required status checks.
+- [ ] Configure required checks to match workflow triggers. Path-filtered workflows must not be required unconditionally unless their trigger policy is changed.
+- [ ] Keep the single-maintainer workflow usable; do not require a second approval unless a second maintainer is available and an explicit administrator bypass is configured.
+
 ### Current financial blockers
 - [ ] Issue #24 — authoritative real-provider lifecycle is not wired; current invoice/gateway/prepay routes are simulator-only and production-disabled.
 - [ ] Issue #81 — integer IRR is approved, but legacy row provenance, mixed-unit seed values, wallet/invoice read masking, and payout reconciliation remain unresolved.
 - [ ] Issue #130 — Persian IRR formatting still passes through mutable USD FX; wallet/invoice GET paths expose unverified amounts; safe-integer writer enforcement is incomplete.
-- [ ] Issue #99 — preserve confirmed scope: fixed-fee labor, heavy machinery priority, non-Iranian passenger vehicles only (exclude Iran Khodro/Saipa), annual VIP with free periodic visits only (repairs/parts not free). Actual rate cards, tax, commission, escrow/release, VIP price/refunds and withdrawal limits remain owner decisions. Prior 15%/sample-price examples are not approved.
+- [ ] Issue #99 — preserve confirmed scope: fixed-fee labor, heavy machinery priority, non-Iranian passenger vehicles only (exclude Iran Khodro/Saipa), annual VIP with free periodic visits only (repairs/parts not free). PR #137 supplies an initial editable proposal only; its actual amounts, heavy-equipment calibration, tax, commission, escrow/release, VIP price/refunds and withdrawal limits remain owner decisions. Prior 15%/sample-price examples are not approved.
 - [ ] Technician invoice earnings are not yet credited to the wallet through a complete idempotent escrow/commission flow.
 - [ ] Do not activate live payment, wallet top-up, withdrawal, or bank payout until these are resolved.
 
