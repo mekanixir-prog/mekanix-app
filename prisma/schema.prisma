@@ -1011,7 +1011,7 @@ model WalletLedger {
   id              String   @id @default(cuid())
   walletId        String
   wallet          Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  type            String   // CREDIT | DEBIT | HOLD | RELEASE | REFUND | COMMISSION | WITHDRAWAL
+  type            String   // CREDIT | DEBIT | HOLD | RELEASE | REFUND | COMMISSION | WITHDRAWAL | PAYOUT (zero-delta settlement audit event)
   amount          Decimal    @default(0)
   balanceBefore   Decimal    @default(0)
   balanceAfter    Decimal    @default(0)
