@@ -61,6 +61,25 @@ function isTechnicianReleaseTransition(status: string) {
   return status === "COMPLETED" || isRequestTerminalTransition(status);
 }
 
+function assertRoleTransition(input: AtomicJobStatusInput) {
+  if (input.actorRole !== "CUSTOMER" && input.actorRole !== "FLEET_MANAGER") return;
+
+  const updateKeys = Object.keys(input.updates);
+  const approvalOnly =
+    input.currentStatus === "WAITING_APPROVAL" &&
+    input.nextStatus === input.currentStatus &&
+    input.updates.customerApproved === true &&
+    updateKeys.every((key) => key === "customerApproved");
+  const allowedCancellation =
+    input.nextStatus === "CANCELLED" &&
+    ["REQUESTED", "ACCEPTED", "EN_ROUTE"].includes(input.currentStatus) &&
+    updateKeys.length === 0;
+
+  if (!approvalOnly && !allowedCancellation) {
+    throw new JobStatusConflictError();
+  }
+}
+
 async function transitionWithPrisma(db: PrismaClient, input: AtomicJobStatusInput) {
   await db.$transaction(async (tx) => {
     const requestTransition = isRequestTerminalTransition(input.nextStatus);
@@ -273,6 +292,7 @@ export async function transitionJobStatusAtomically(
   db: PrismaClient,
   input: AtomicJobStatusInput,
 ): Promise<void> {
+  assertRoleTransition(input);
   const d1 = await getD1Binding();
   if (d1) return transitionWithD1(d1, input);
   return transitionWithPrisma(db, input);
