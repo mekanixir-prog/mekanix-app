@@ -1,8 +1,11 @@
 # MEKANIX — Release Checklist
 
-**Status date:** 2026-11-04  
-**Current main baseline:** `db0f3361c3158764c47cfeb48d5b9dafadc90610`  
-**Release decision:** <strong>NO-GO</strong> — code hardening and release evidence remain incomplete.
+**Status date:** 2026-11-07  
+**Current main baseline:** `10080473dd6b87ec725a5c6c22803f5d5d872342`  
+**Open release candidate:** PR #137 — `feat/admin-editable-irr-rate-card` (not merged)  
+**Release decision:** <strong>NO-GO</strong> — CI is green on the current pricing candidate, but state-machine authorization, financial read masking, legacy provenance, payment lifecycle, commercial approval and isolated staging remain incomplete.
+
+**PR #137 status:** Draft (2026-11-07). It was returned to Draft after review found that customer approval can be combined with an arbitrary job status, non-Boolean approval values are coerced to `true`, and invoice/wallet read paths still lack complete provenance masking. All seven required workflows passed on exact PR head `92eb29b255946c5a3ffa6374ce47bd0d52f253f9`; this does not override the review blockers.
 
 This replaces the historical checklist snapshots from October. Do not use old “Release Candidate — all checks passed” or old staging/load-test claims as current release evidence.
 
@@ -33,6 +36,29 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - [ ] Reconcile environment variable schema, production Docker/Worker build, health/readiness, logging, monitoring, and operational runbooks.
 - [ ] Produce a Release Candidate with all applicable CI/security/build workflows green on the exact same commit; require the always-on PR checks and record path-filtered Cloudflare/dependency checks where applicable.
 
+
+### PR #137 — editable IRR rate card and customer quote
+
+- [x] Separate fixed-fee schedules implemented for supported foreign passenger vehicles and heavy machinery; unsupported asset classes fail closed.
+- [x] Admin rate-card editor, optimistic versioning, history, and server validation implemented. Every rate-change attempt is audited before the setting write; if audit persistence fails, the save is blocked with HTTP 503. Persisted money values are integer IRR; admin tariff entry is Toman.
+- [x] Production pricing remains disabled until explicit owner approval through `MEKANIX_PRICING_IRR_APPROVED=true`; saving a proposed card does not activate it.
+- [x] CARE customer preview now requests a server-calculated quote from the same rate-card engine, formats verified IRR as Toman, and pins the quote version when booking. API schema now requires that version; omitting it cannot bypass the stale-quote guard.
+- [x] Legacy hardcoded CARE preview amounts, the unapproved 9% tax display, and unsupported six-month warranty promises removed from the reviewed booking/invoice copy. VIP copy now describes periodic visits only; repairs and parts are excluded.
+- [x] Ambiguous CARE service types are rejected instead of silently falling back to diagnostic pricing.
+- [x] Admin rate-card writes compare-and-set against the original row read; concurrent admin updates return 409 rather than overwriting each other, with a regression test.
+- [x] Feature branch synchronized with `main`; zero commits behind.
+- [ ] Make `customerApproved` accept Boolean values only; reject strings/numbers instead of coercing with `Boolean(value)`.
+- [ ] Prevent customer approval requests from changing `status`; enforce role-specific state transitions in both the route and atomic Prisma/D1 writer.
+- [ ] Add provenance masking to `GET /api/invoices` including nested payment/parts, and to wallet/withdrawal reads; PR #136 is still Draft and diverged from current main.
+- [ ] Make `serviceCode` required in the pricing-engine contract; remove the legacy diagnostic fallback or prove every remaining caller is explicit.
+- [x] All seven required workflows passed on exact final PR head `92eb29b255946c5a3ffa6374ce47bd0d52f253f9` (CI `42337964172`, Production readiness `42337964175`, Docker E2E `42337964188`, PostgreSQL CI `42337964200`, Cloudflare Build `42337964205`, CodeQL `42337964192`, Secret Scan `42337964182`). The validated code-tree SHA is `0b6b319b040031f4d68d0dcda2965a3fd0cb39bd`; the synchronization merge commit is `a00017bc86896630e26f39045da8bf8d3b50b703`. The PR is now Draft because code-review blockers remain.
+- [ ] Owner must review and explicitly approve the actual passenger/heavy rate values. Heavy-equipment estimates still require regional technician/supplier sampling.
+- [ ] Fix customer approval route/atomic state-machine authorization before merging PR #137; review references: `5810169420`, `5810173066`.
+- [ ] Complete invoice/wallet provenance masking before any financial read path is enabled; review reference: `5810161985`.
+
+- [ ] Approve or replace the current extra-distance estimation method (Haversine × 1.3); it is not a navigation-provider route measurement.
+- [ ] Review the full PR diff and both provider migration tracks before merge. PR #137 remains open and unmerged.
+
 ### Recently merged security work
 
 - PR #90: `802e91de00c148c7d7981a68702fe873e181ace9`.
@@ -43,11 +69,18 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - PR #101: `5c191f7efdea278611a9a65f39d481072ed37189` — demo seed and auto-seed safety.
 - PR #103: `406f72b9c726e4d305ccfffc11ca9f6f01c5d50d` — verified-IRR Toman presentation helper.
 
+
+### Repository merge governance — current check
+
+- [ ] Enable the existing `main` ruleset. The ruleset exists but GitHub currently reports `enforcement: disabled`; the `main` branch is not protected and has no required status checks.
+- [ ] Configure required checks to match workflow triggers. Path-filtered workflows must not be required unconditionally unless their trigger policy is changed.
+- [ ] Keep the single-maintainer workflow usable; do not require a second approval unless a second maintainer is available and an explicit administrator bypass is configured.
+
 ### Current financial blockers
-- [ ] Issue #24 — authoritative real-provider lifecycle is not wired; current invoice/gateway/prepay routes are simulator-only and production-disabled.
-- [ ] Issue #81 — integer IRR is approved, but legacy row provenance, mixed-unit seed values, wallet/invoice read masking, and payout reconciliation remain unresolved.
-- [ ] Issue #130 — Persian IRR formatting still passes through mutable USD FX; wallet/invoice GET paths expose unverified amounts; safe-integer writer enforcement is incomplete.
-- [ ] Issue #99 — preserve confirmed scope: fixed-fee labor, heavy machinery priority, non-Iranian passenger vehicles only (exclude Iran Khodro/Saipa), annual VIP with free periodic visits only (repairs/parts not free). Actual rate cards, tax, commission, escrow/release, VIP price/refunds and withdrawal limits remain owner decisions. Prior 15%/sample-price examples are not approved.
+- [ ] Issue #24 — provider adapters exist but the authoritative payment-attempt → provider initiation/verification → purpose-specific fulfillment → invoice/technician ledger/escrow lifecycle is not wired end-to-end. Simulator routes are production-disabled; no live credentials are needed during current development.
+- [ ] Issue #81 — integer IRR is approved, but record-level legacy provenance, mixed-unit seed values, wallet/invoice read masking, and payout reconciliation remain unresolved. Do not infer units from magnitude or bulk-convert unknown records.
+- [ ] Issue #130 — current `fmtMoney` no longer applies live USD FX to IRR on main. Remaining work: connect exact `formatTomanFromIrr` only after provenance validation if Toman-only Persian display is retained; unknown currency must not silently fall back to USD; wallet/invoice GET paths still expose unverified nested amounts; safe-integer writer enforcement remains incomplete.
+- [ ] Issue #99 — preserve confirmed scope: fixed-fee labor, heavy machinery priority, non-Iranian passenger vehicles only (exclude Iran Khodro/Saipa), annual VIP with free periodic visits only (repairs/parts not free). PR #137 supplies an initial editable proposal only; its actual amounts, heavy-equipment calibration, tax, commission, escrow/release, VIP price/refunds and withdrawal limits remain owner decisions. Prior 15%/sample-price examples are not approved.
 - [ ] Technician invoice earnings are not yet credited to the wallet through a complete idempotent escrow/commission flow.
 - [ ] Do not activate live payment, wallet top-up, withdrawal, or bank payout until these are resolved.
 
@@ -156,4 +189,53 @@ This section records changes after the previous 2026-11-03 checklist snapshot. T
 
 - [ ] VPS/hosting, production domain/DNS/HTTPS, live SMS and payment credentials remain scheduled for shortly before launch.
 - [ ] Integration contracts and deployment runbooks must be ready now; isolated staging, remote D1/Cron verification, backup/restore, rollback, monitoring, real-provider smoke tests and business E2E remain mandatory before public launch.
+
+
+
+## Follow-up audit — 2026-11-07 (supersedes earlier PR #137 checklist status)
+
+**Exact code head reviewed:** `33d462502bb609e92cf3e2734e733a9ccf65e663`  
+**PR #137:** open, Draft, branch `feat/admin-editable-irr-rate-card`; GitHub reports 370 commits ahead of `main`, 0 behind, 146 changed files. This is not a merge approval.  
+**Production decision:** NO-GO. No production host, domain, DNS/TLS, remote D1, SMS provider, payment gateway, or production secret was activated or changed.
+
+### Completed in the current candidate branch
+
+- [x] `PricingInput.serviceCode` is required; pricing no longer silently falls back to diagnostic pricing.
+- [x] Customer approval accepts only Boolean input and cannot be combined with arbitrary job-status changes.
+- [x] Job flow enforces a verified IRR estimate and customer consent before actual repair and completion. The pre-estimate preparation stage remains distinct in the technician UI; parts are editable only before the estimate is issued and are locked afterward.
+- [x] Prisma and D1 atomic status writers enforce compare-and-set transitions; issuing an estimate resets customer approval, and starting repair from `WAITING_APPROVAL` requires the stored approval flag.
+- [x] Invoice completion is rejected without a verified IRR estimate and recorded customer approval.
+- [x] Session and OTP verification responses now use the same fail-closed technician-fee masking projection.
+- [x] Service requests require a previously registered vehicle; the D1 insert rechecks ownership and supported passenger/heavy scope at the write boundary to close a preflight/write race.
+- [x] Tests cover the approval lifecycle, bypass attempts, D1 race conditions, OTP/session financial masking, and registered-vehicle requirements.
+- [x] The current branch includes the financial-read work from PR #136. Read-path review covered technician list/detail, session and OTP, job list/detail, invoice GET/POST, wallet/withdrawal, prepay, VIP plan/subscription, and CARE booking pricing projections.
+
+### Exact-head workflow evidence (code head above)
+
+| Workflow | Run ID | Result |
+|---|---:|---|
+| CI — Lint + TypeCheck + Test | 42347387500 | success |
+| Production readiness | 42347387395 | success |
+| PostgreSQL CI — Migration + Build | 42347387562 | success |
+| Cloudflare Build | 42347387614 | success |
+| CodeQL Security Analysis | 42347387448 | success |
+| Secret Scan | 42347387466 | success |
+| Docker E2E — Compose + Health | 42347387459 | in progress at audit time |
+
+Any subsequent commit, including a documentation-only change, requires a fresh exact-head workflow check before the candidate can be called green.
+
+### PR #136 disposition
+
+PR #136 remains open and Draft, but it is stale/diverged from `main` (160 commits ahead, 2 behind). All 76 files changed by PR #136 are also changed in PR #137: 47 have identical Git blobs and 29 have newer/different blobs in PR #137. A follow-up review comment was posted on PR #136 (review ID `5810569703`) recommending that it not be merged independently and that its financial-read work be reviewed in PR #137. Close PR #136 only after confirming there is no unique change to port.
+
+### Remaining NO-GO gates
+
+- [ ] Enable the existing `main` repository ruleset. GitHub reports `enforcement=disabled`; its required status-check list is empty. Configure required checks to match actual workflow triggers.
+- [ ] Review the full 146-file PR #137 diff and both SQLite/D1 and PostgreSQL migration tracks; consider a deliberate squash strategy after review. Do not merge automatically.
+- [ ] Obtain owner approval for exact passenger/heavy tariff values, service-region policy, effective date, and the extra-distance method (current Haversine × 1.3 is not a routing-provider measurement).
+- [ ] Complete the authoritative payment-attempt/provider-verification/fulfillment lifecycle, invoice settlement, commission, technician wallet credit, escrow release, refunds, reconciliation, and payout evidence. Simulator routes remain unavailable in production.
+- [ ] Reconcile legacy financial provenance without guessing historical units or mass-converting ambiguous records.
+- [ ] Complete isolated remote staging for D1 migrations, backup/restore, Cron/escrow observation, real SMS delivery, and payment-provider sandbox round-trip.
+- [ ] Complete the remaining end-to-end customer, technician, admin, CARE, warranty, recovery, and notification scenarios.
+- [ ] Obtain a final independent review and record a Go/No-Go decision against one exact Release Candidate SHA.
 

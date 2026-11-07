@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { isSafeStoredIrrAmount } from "@/lib/money/financial-read-mask";
 
 type Action = "APPROVED" | "REJECTED" | "PAID";
 type Input = {
@@ -24,14 +25,19 @@ export async function updateWithdrawalWithPrisma(
   return db.$transaction(async (tx) => {
     const withdrawal = await tx.withdrawalRequest.findUnique({
       where: { id: input.withdrawalId },
-      select: { id: true, walletId: true, amount: true, status: true },
+      select: { id: true, walletId: true, amount: true, status: true, financialUnitStatus: true },
     });
     if (!withdrawal) throw new Error("درخواست برداشت پیدا نشد");
+    if (withdrawal.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(withdrawal.amount) || Number(withdrawal.amount) <= 0) return false;
+    const walletProvenance = await tx.wallet.findUnique({ where: { id: withdrawal.walletId }, select: { financialUnitStatus: true, balance: true, totalWithdrawn: true } });
+    if (walletProvenance?.financialUnitStatus !== "VERIFIED_IRR") return false;
+    if (input.action === "REJECTED" && (!isSafeStoredIrrAmount(walletProvenance.balance) || !Number.isSafeInteger(Number(walletProvenance.balance) + Number(withdrawal.amount)))) return false;
+    if (input.action === "PAID" && (!isSafeStoredIrrAmount(walletProvenance.totalWithdrawn) || !Number.isSafeInteger(Number(walletProvenance.totalWithdrawn) + Number(withdrawal.amount)))) return false;
 
     if (input.action === "APPROVED") {
       if (withdrawal.status !== "REQUESTED") return false;
       const result = await tx.withdrawalRequest.updateMany({
-        where: { id: withdrawal.id, status: "REQUESTED" },
+        where: { id: withdrawal.id, status: "REQUESTED", financialUnitStatus: "VERIFIED_IRR" },
         data: { status: "APPROVED", reviewerId: input.adminId, adminNotes: input.adminNotes },
       });
       return result.count === 1;
@@ -40,7 +46,7 @@ export async function updateWithdrawalWithPrisma(
     if (input.action === "REJECTED") {
       if (withdrawal.status !== "REQUESTED" && withdrawal.status !== "APPROVED") return false;
       const transition = await tx.withdrawalRequest.updateMany({
-        where: { id: withdrawal.id, status: { in: ["REQUESTED", "APPROVED"] } },
+        where: { id: withdrawal.id, status: { in: ["REQUESTED", "APPROVED"] }, financialUnitStatus: "VERIFIED_IRR" },
         data: {
           status: "REJECTED",
           reviewerId: input.adminId,
@@ -51,7 +57,7 @@ export async function updateWithdrawalWithPrisma(
       if (transition.count !== 1) return false;
 
       const walletUpdate = await tx.wallet.updateMany({
-        where: { id: withdrawal.walletId },
+        where: { id: withdrawal.walletId, financialUnitStatus: "VERIFIED_IRR" },
         data: { balance: { increment: withdrawal.amount } },
       });
       if (walletUpdate.count !== 1) {
@@ -59,9 +65,9 @@ export async function updateWithdrawalWithPrisma(
       }
       const wallet = await tx.wallet.findUnique({
         where: { id: withdrawal.walletId },
-        select: { balance: true },
+        select: { balance: true, financialUnitStatus: true },
       });
-      if (!wallet) throw new Error("کیف پول پس از بازگشت وجه پیدا نشد");
+      if (!wallet || wallet.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(wallet.balance)) throw new Error("کیف پول پس از بازگشت وجه از نظر مالی معتبر نیست");
 
       await tx.walletLedger.create({
         data: {
@@ -74,6 +80,7 @@ export async function updateWithdrawalWithPrisma(
           referenceId: withdrawal.id,
           description: `Refund for rejected withdrawal ${withdrawal.id}`,
           idempotencyKey: `withdrawal:${withdrawal.id}:REJECT_REFUND`,
+          financialUnitStatus: "VERIFIED_IRR",
           createdBy: input.adminId,
         },
       });
@@ -87,7 +94,7 @@ export async function updateWithdrawalWithPrisma(
     }
     const payoutId = crypto.randomUUID();
     const transition = await tx.withdrawalRequest.updateMany({
-      where: { id: withdrawal.id, status: "APPROVED" },
+      where: { id: withdrawal.id, status: "APPROVED", financialUnitStatus: "VERIFIED_IRR" },
       data: {
         status: "PAID",
         reviewerId: input.adminId,
@@ -109,10 +116,11 @@ export async function updateWithdrawalWithPrisma(
         netAmount: -Number(withdrawal.amount),
         description: `Payout for withdrawal ${withdrawal.id}; bank reference ${payoutReference}`,
         idempotencyKey: `withdrawal:${withdrawal.id}:PAYOUT`,
+        financialUnitStatus: "VERIFIED_IRR",
       },
     });
     const walletUpdate = await tx.wallet.updateMany({
-      where: { id: withdrawal.walletId },
+      where: { id: withdrawal.walletId, financialUnitStatus: "VERIFIED_IRR" },
       data: { totalWithdrawn: { increment: withdrawal.amount } },
     });
     if (walletUpdate.count !== 1) {
@@ -140,7 +148,9 @@ export async function updateWithdrawalWithD1(
       d1.prepare(`
         UPDATE "WithdrawalRequest"
         SET "status" = 'APPROVED', "reviewerId" = ?, "adminNotes" = ?
-        WHERE "id" = ? AND "status" = 'REQUESTED'
+        WHERE "id" = ? AND "status" = 'REQUESTED' AND "financialUnitStatus" = 'VERIFIED_IRR'
+          AND "amount" > 0 AND "amount" = CAST("amount" AS INTEGER) AND abs("amount") <= 9007199254740991
+          AND EXISTS (SELECT 1 FROM "Wallet" w WHERE w."id" = "WithdrawalRequest"."walletId" AND w."financialUnitStatus" = 'VERIFIED_IRR')
       `).bind(input.adminId, input.adminNotes, input.withdrawalId),
     ]);
     return result[0]?.meta?.changes === 1;
@@ -151,7 +161,9 @@ export async function updateWithdrawalWithD1(
       d1.prepare(`
         UPDATE "WithdrawalRequest"
         SET "status" = 'REJECTED', "reviewerId" = ?, "adminNotes" = ?, "processedAt" = ?
-        WHERE "id" = ? AND "status" IN ('REQUESTED', 'APPROVED')
+        WHERE "id" = ? AND "status" IN ('REQUESTED', 'APPROVED') AND "financialUnitStatus" = 'VERIFIED_IRR'
+          AND "amount" > 0 AND "amount" = CAST("amount" AS INTEGER) AND abs("amount") <= 9007199254740991
+          AND EXISTS (SELECT 1 FROM "Wallet" w WHERE w."id" = "WithdrawalRequest"."walletId" AND w."financialUnitStatus" = 'VERIFIED_IRR')
       `).bind(input.adminId, input.adminNotes, at, input.withdrawalId),
       assertOneChange(),
       d1.prepare(`
@@ -163,18 +175,21 @@ export async function updateWithdrawalWithD1(
         WHERE "id" = (
           SELECT "walletId" FROM "WithdrawalRequest"
           WHERE "id" = ? AND "status" = 'REJECTED' AND "processedAt" = ?
-        ) AND changes() = 1
-      `).bind(input.withdrawalId, at, at, input.withdrawalId, at),
+        ) AND "financialUnitStatus" = 'VERIFIED_IRR'
+          AND "balance" = CAST("balance" AS INTEGER) AND abs("balance") <= 9007199254740991
+          AND "balance" <= 9007199254740991 - (SELECT "amount" FROM "WithdrawalRequest" WHERE "id" = ? AND "status" = 'REJECTED' AND "processedAt" = ?)
+          AND changes() = 1
+      `).bind(input.withdrawalId, at, at, input.withdrawalId, at, input.withdrawalId, at),
       assertOneChange(),
       d1.prepare(`
         INSERT INTO "WalletLedger"
           ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
-           "referenceType", "referenceId", "description", "idempotencyKey", "createdBy", "createdAt")
+           "referenceType", "referenceId", "description", "idempotencyKey", "createdBy", "createdAt", "financialUnitStatus")
         SELECT ?, wr."walletId", 'REFUND',
                CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END,
                (SELECT "balance" FROM "Wallet" WHERE "id" = wr."walletId") - wr."amount",
                (SELECT "balance" FROM "Wallet" WHERE "id" = wr."walletId"),
-               'Withdrawal', wr."id", ?, ?, ?, ?
+               'Withdrawal', wr."id", ?, ?, ?, ?, 'VERIFIED_IRR'
         FROM "WithdrawalRequest" wr
         WHERE wr."id" = ? AND wr."status" = 'REJECTED' AND wr."processedAt" = ?
       `).bind(
@@ -207,16 +222,18 @@ export async function updateWithdrawalWithD1(
       UPDATE "WithdrawalRequest"
       SET "status" = 'PAID', "reviewerId" = ?, "adminNotes" = ?,
           "processedAt" = ?, "txnId" = ?
-      WHERE "id" = ? AND "status" = 'APPROVED'
+      WHERE "id" = ? AND "status" = 'APPROVED' AND "financialUnitStatus" = 'VERIFIED_IRR'
+        AND "amount" > 0 AND "amount" = CAST("amount" AS INTEGER) AND abs("amount") <= 9007199254740991
+        AND EXISTS (SELECT 1 FROM "Wallet" w WHERE w."id" = "WithdrawalRequest"."walletId" AND w."financialUnitStatus" = 'VERIFIED_IRR')
     `).bind(input.adminId, input.adminNotes, at, payoutReference, input.withdrawalId),
     assertOneChange(),
     d1.prepare(`
       INSERT INTO "WalletTransaction"
         ("id", "walletId", "kind", "status", "grossAmount", "commissionAmount",
-         "netAmount", "description", "idempotencyKey", "createdAt")
+         "netAmount", "description", "idempotencyKey", "createdAt", "financialUnitStatus")
       SELECT ?, wr."walletId", 'PAYOUT', 'COMPLETED',
              CASE WHEN changes() = 1 THEN wr."amount" ELSE NULL END, 0,
-             -wr."amount", ?, ?, ?
+             -wr."amount", ?, ?, ?, 'VERIFIED_IRR'
       FROM "WithdrawalRequest" wr
       WHERE wr."id" = ? AND wr."status" = 'PAID' AND wr."txnId" = ?
     `).bind(
@@ -237,8 +254,11 @@ export async function updateWithdrawalWithD1(
       WHERE "id" = (
         SELECT "walletId" FROM "WithdrawalRequest"
         WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?
-      ) AND changes() = 1
-    `).bind(input.withdrawalId, payoutReference, at, input.withdrawalId, payoutReference),
+      ) AND "financialUnitStatus" = 'VERIFIED_IRR'
+        AND "totalWithdrawn" = CAST("totalWithdrawn" AS INTEGER) AND abs("totalWithdrawn") <= 9007199254740991
+        AND "totalWithdrawn" <= 9007199254740991 - (SELECT "amount" FROM "WithdrawalRequest" WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?)
+        AND changes() = 1
+    `).bind(input.withdrawalId, payoutReference, at, input.withdrawalId, payoutReference, input.withdrawalId, payoutReference),
     assertOneChange(),
   ];
   try {

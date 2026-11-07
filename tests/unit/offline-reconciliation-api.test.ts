@@ -54,6 +54,7 @@ beforeEach(() => {
   mocks.job.mockResolvedValue({
     id: "job-1", code: "JOB-1001", prepayPaid: false, prepayPaidAt: null,
     inspectionFee: 100, travelFee: 20, platformCommission: 12, netEarnings: 108,
+    financialUnitStatus: "VERIFIED_IRR",
   });
   mocks.walletTxn.mockResolvedValue(null);
   mocks.ledger.mockResolvedValue(null);
@@ -63,9 +64,10 @@ describe("read-only offline reconciliation endpoints", () => {
   it("reports a withdrawal as committed only when it belongs to the authenticated technician", async () => {
     mocks.withdrawal.mockResolvedValue({
       id: "wd-1", walletId: "wallet-1", code: "WD-1001", amount: 500,
+      financialUnitStatus: "VERIFIED_IRR",
       status: "REQUESTED", requestedAt: new Date("2026-10-31T10:00:00Z"), processedAt: null,
     });
-    mocks.withdrawalLedger.mockResolvedValue({ id: "ledger-1", referenceId: "wd-1", amount: -500 });
+    mocks.withdrawalLedger.mockResolvedValue({ id: "ledger-1", referenceId: "wd-1", amount: -500, financialUnitStatus: "VERIFIED_IRR" });
     const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
@@ -75,6 +77,23 @@ describe("read-only offline reconciliation endpoints", () => {
     expect(mocks.withdrawal).toHaveBeenCalledWith(expect.objectContaining({
       where: { idempotencyKey: "idem_12345678" },
     }));
+  });
+
+  it("does not report a withdrawal committed when request and ledger provenance are unverified", async () => {
+    mocks.withdrawal.mockResolvedValue({
+      id: "wd-1", walletId: "wallet-1", code: "WD-1001", amount: 500,
+      financialUnitStatus: "VERIFIED_IRR",
+      status: "REQUESTED", requestedAt: new Date("2026-10-31T10:00:00Z"), processedAt: null,
+    });
+    mocks.withdrawalLedger.mockResolvedValue({
+      id: "ledger-1", referenceId: "wd-1", amount: -500, financialUnitStatus: "UNVERIFIED",
+    });
+    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      state: "RECONCILIATION_REQUIRED",
+      reason: "FINANCIAL_PROVENANCE_UNVERIFIED",
+    });
   });
 
   it("does not report a withdrawal committed when its debit ledger row is missing", async () => {
@@ -147,9 +166,46 @@ describe("read-only offline reconciliation endpoints", () => {
       id: "job-1", code: "JOB-1001", prepayPaid: true,
       prepayPaidAt: new Date("2026-10-31T10:00:00Z"),
       inspectionFee: 100, travelFee: 20, platformCommission: 12, netEarnings: 108,
+      financialUnitStatus: "VERIFIED_IRR",
     });
-    mocks.walletTxn.mockResolvedValue({ id: "txn" });
-    mocks.ledger.mockResolvedValue({ id: "ledger" });
+    mocks.walletTxn.mockImplementation(async (args: { where?: { idempotencyKey?: string } }) => {
+      const key = args.where?.idempotencyKey;
+      if (key === "prepay:job-1:PREPAY") {
+        return {
+          id: "txn-prepay", walletId: "wallet-1", jobId: "job-1",
+          kind: "PREPAY", status: "PENDING", grossAmount: 120,
+          commissionAmount: 12, netAmount: 108,
+          idempotencyKey: key, financialUnitStatus: "VERIFIED_IRR",
+        };
+      }
+      if (key === "prepay:job-1:COMMISSION") {
+        return {
+          id: "txn-commission", walletId: "wallet-1", jobId: "job-1",
+          kind: "COMMISSION", status: "COMPLETED", grossAmount: 0,
+          commissionAmount: 12, netAmount: -12,
+          idempotencyKey: key, financialUnitStatus: "VERIFIED_IRR",
+        };
+      }
+      return null;
+    });
+    mocks.ledger.mockImplementation(async (args: { where?: { idempotencyKey?: string } }) => {
+      const key = args.where?.idempotencyKey;
+      if (key === "prepay:job-1:LEDGER_HOLD") {
+        return {
+          id: "ledger-hold", walletId: "wallet-1", type: "HOLD", amount: 108,
+          balanceBefore: 0, balanceAfter: 108, referenceType: "Job", referenceId: "job-1",
+          idempotencyKey: key, financialUnitStatus: "VERIFIED_IRR",
+        };
+      }
+      if (key === "prepay:job-1:LEDGER_COMMISSION") {
+        return {
+          id: "ledger-commission", walletId: "wallet-1", type: "COMMISSION", amount: -12,
+          balanceBefore: 108, balanceAfter: 108, referenceType: "Job", referenceId: "job-1",
+          idempotencyKey: key, financialUnitStatus: "VERIFIED_IRR",
+        };
+      }
+      return null;
+    });
     const response = await getPrepayStatus(request("/api/prepay/status?jobId=job-1"));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
@@ -172,7 +228,7 @@ describe("read-only offline reconciliation endpoints", () => {
     mocks.job.mockResolvedValue({
       id: "job-1", code: "JOB-1001", prepayPaid: true,
       prepayPaidAt: new Date(), inspectionFee: 100, travelFee: 20,
-      platformCommission: 12, netEarnings: 108,
+      platformCommission: 12, netEarnings: 108, financialUnitStatus: "VERIFIED_IRR",
     });
     mocks.walletTxn.mockResolvedValueOnce({ id: "txn" }).mockResolvedValueOnce(null);
     mocks.ledger.mockResolvedValueOnce({ id: "ledger" }).mockResolvedValueOnce(null);

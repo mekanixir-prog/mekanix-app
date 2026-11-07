@@ -1,0 +1,135 @@
+import { describe, expect, it } from "vitest";
+import {
+  isSafeStoredIrrAmount,
+  maskFinancialFields,
+  maskInvoiceFinancialData,
+  maskJobFinancialData,
+  maskWalletFinancialData,
+} from "@/lib/money/financial-read-mask";
+
+describe("financial read masking", () => {
+  it("validates integer IRR values without rounding or unsafe Number coercion", () => {
+    expect(isSafeStoredIrrAmount(0)).toBe(true);
+    expect(isSafeStoredIrrAmount(-125)).toBe(true);
+    expect(isSafeStoredIrrAmount("9007199254740991")).toBe(true);
+    expect(isSafeStoredIrrAmount("12.5")).toBe(false);
+    expect(isSafeStoredIrrAmount("9007199254740992")).toBe(false);
+    expect(isSafeStoredIrrAmount("not-a-number")).toBe(false);
+    expect(isSafeStoredIrrAmount(null)).toBe(true);
+  });
+
+  it("masks all monetary fields when provenance is absent or unverified", () => {
+    const result = maskFinancialFields(
+      { id: "w1", financialUnitStatus: "UNVERIFIED", balance: "1200", label: "wallet" },
+      ["balance"],
+    );
+    expect(result).toMatchObject({
+      id: "w1",
+      financialUnitStatus: "UNVERIFIED",
+      balance: null,
+      label: "wallet",
+    });
+  });
+
+  it("preserves only safe integer IRR records with matching currency", () => {
+    const record = {
+      financialUnitStatus: "VERIFIED_IRR",
+      currency: "IRR",
+      amount: "125000",
+    };
+    expect(maskFinancialFields(record, ["amount"], "currency")).toEqual(record);
+  });
+
+  it("quarantines a verified invoice when its explicit currency field is missing", () => {
+    expect(maskFinancialFields(
+      { financialUnitStatus: "VERIFIED_IRR", amount: 125 },
+      ["amount"],
+      "currency",
+    )).toMatchObject({ financialUnitStatus: "QUARANTINED", amount: null });
+  });
+
+  it("quarantines conflicting currency and invalid amounts even when status claims verified", () => {
+    expect(maskFinancialFields(
+      { financialUnitStatus: "VERIFIED_IRR", currency: "USD", amount: 100 },
+      ["amount"],
+      "currency",
+    )).toMatchObject({ financialUnitStatus: "QUARANTINED", amount: null });
+
+    expect(maskFinancialFields(
+      { financialUnitStatus: "VERIFIED_IRR", amount: "12.75" },
+      ["amount"],
+    )).toMatchObject({ financialUnitStatus: "QUARANTINED", amount: null });
+  });
+
+  it("masks wallet aggregates, each transaction, and withdrawals independently", () => {
+    const wallet = maskWalletFinancialData({
+      id: "wallet-1",
+      financialUnitStatus: "UNVERIFIED",
+      balance: "100",
+      pendingBalance: "50",
+      totalEarned: "200",
+      totalCommission: "20",
+      totalWithdrawn: "30",
+      transactions: [{
+        id: "txn-1",
+        financialUnitStatus: "VERIFIED_IRR",
+        grossAmount: "100",
+        commissionAmount: "10",
+        netAmount: "90",
+      }, {
+        id: "txn-2",
+        financialUnitStatus: "UNVERIFIED",
+        grossAmount: "200",
+        commissionAmount: "20",
+        netAmount: "180",
+      }],
+      withdrawals: [{
+        id: "wd-1",
+        financialUnitStatus: "UNVERIFIED",
+        amount: "25",
+      }],
+    });
+
+    expect(wallet.balance).toBeNull();
+    expect(wallet.totalEarned).toBeNull();
+    expect(wallet.transactions[0].netAmount).toBe("90");
+    expect(wallet.transactions[1].netAmount).toBeNull();
+    expect(wallet.withdrawals[0].amount).toBeNull();
+  });
+
+  it("masks nested invoice, payment, technician, and part amounts", () => {
+    const invoice = maskInvoiceFinancialData({
+      id: "inv-1",
+      financialUnitStatus: "UNVERIFIED",
+      currency: "IRR",
+      total: "5000",
+      payment: { id: "pay-1", financialUnitStatus: "UNVERIFIED", currency: "IRR", amount: "5000" },
+      job: {
+        id: "job-1",
+        financialUnitStatus: "UNVERIFIED",
+        travelFee: "200",
+        technician: { id: "tech-1", financialUnitStatus: "UNVERIFIED", hourlyRate: "100" },
+        parts: [{ id: "part-1", financialUnitStatus: "UNVERIFIED", unitPrice: "300" }],
+      },
+    });
+
+    expect(invoice.total).toBeNull();
+    expect(invoice.payment.amount).toBeNull();
+    expect(invoice.job.travelFee).toBeNull();
+    expect(invoice.job.technician.hourlyRate).toBeNull();
+    expect(invoice.job.parts[0].unitPrice).toBeNull();
+  });
+
+  it("masks job reads using the same record-level rules", () => {
+    const job = maskJobFinancialData({
+      id: "job-2",
+      financialUnitStatus: "UNVERIFIED",
+      inspectionFee: "100",
+      invoice: { id: "inv-2", financialUnitStatus: "UNVERIFIED", currency: "IRR", total: "100" },
+      parts: [{ id: "part-2", financialUnitStatus: "VERIFIED_IRR", unitPrice: "75" }],
+    });
+    expect(job.inspectionFee).toBeNull();
+    expect(job.invoice.total).toBeNull();
+    expect(job.parts[0].unitPrice).toBe("75");
+  });
+});

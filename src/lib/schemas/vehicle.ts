@@ -1,3 +1,4 @@
+import { isVehicleInSupportedScope } from "@/lib/vehicle-scope";
 // MEKANIX — Zod schemas for vehicle / machinery request bodies.
 //
 // Used by:
@@ -50,6 +51,14 @@ export const vehicleCreateSchema = z.object({
   lng: z.number({ error: "طول جغرافیایی باید عدد باشد" }).min(-180, "طول جغرافیایی نامعتبر است").max(180, "طول جغرافیایی نامعتبر است").optional(),
   image: z.string().url("آدرس تصویر نامعتبر است").max(2048).optional(),
   notes: z.string().max(1000).optional(),
+}).superRefine((data, ctx) => {
+  if (!isVehicleInSupportedScope(data.type, data.make)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["make"],
+      message: "خودروهای ایران‌خودرو، سایپا و پارس‌خودرو در محدوده خدمات سواری MEKANIX نیستند",
+    });
+  }
 });
 
 export type VehicleCreateInput = z.infer<typeof vehicleCreateSchema>;
@@ -81,6 +90,15 @@ export const vehicleUpdateSchema = z
   })
   .refine((data) => Object.values(data).some((v) => v !== undefined), {
     message: "حداقل یک فیلد برای به‌روزرسانی الزامی است",
+  })
+  .superRefine((data, ctx) => {
+    if (data.type === "CAR" && data.make && !isVehicleInSupportedScope(data.type, data.make)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["make"],
+        message: "خودروهای ایران‌خودرو، سایپا و پارس‌خودرو در محدوده خدمات سواری MEKANIX نیستند",
+      });
+    }
   });
 
 export type VehicleUpdateInput = z.infer<typeof vehicleUpdateSchema>;

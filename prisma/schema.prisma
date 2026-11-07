@@ -389,12 +389,15 @@ model Invoice {
   laborTotal Decimal       @default(0)
   partsTotal Decimal       @default(0)
   travelFee  Decimal       @default(0)
+  inspectionFee Decimal       @default(0)
+  emergencyFee  Decimal       @default(0)
   subtotal   Decimal       @default(0)
   taxRate    Decimal       @default(0.09)
   taxTotal   Decimal       @default(0)
   discount   Decimal       @default(0)
   total      Decimal       @default(0)
   currency   String        @default("IRR")
+  pricingVersion String?
   notes      String?
   status     InvoiceStatus @default(DRAFT)
   createdAt  DateTime      @default(now())
@@ -1259,6 +1262,8 @@ model PricingSnapshot {
   bookingId       String?  @unique
   servicePrice    Decimal    @default(0)
   visitPrice      Decimal    @default(0)
+  inspectionPrice Decimal  @default(0)
+  emergencyPrice  Decimal  @default(0)
   laborPrice      Decimal    @default(0)
   partsPrice      Decimal    @default(0)
   discount        Decimal    @default(0)

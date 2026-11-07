@@ -14,7 +14,7 @@ vi.mock("@/lib/idempotency", () => {
 });
 
 import { IdempotencyConflictError } from "@/lib/idempotency";
-import { createServiceRequestAtomically } from "@/lib/service-request-atomic";
+import { createServiceRequestAtomically, ServiceRequestVehicleError } from "@/lib/service-request-atomic";
 import { createInsuranceClaimAtomically } from "@/lib/insurance-claim-atomic";
 
 const now = "2026-11-01T12:00:00.000Z";
@@ -24,10 +24,7 @@ const serviceInput = {
   code: "SR-INTEGRATION-001",
   customerId: "customer-1",
   actorUserId: "user-1",
-  vehicleId: null,
-  machineType: "EXCAVATOR",
-  make: "CAT",
-  model: "320",
+  vehicleId: "vehicle-1",
   category: "engine",
   urgency: "URGENT" as const,
   title: "Engine fault",
@@ -89,7 +86,8 @@ function makeD1() {
     CREATE TABLE "InsurancePolicy" (
       "id" TEXT PRIMARY KEY,
       "userId" TEXT NOT NULL,
-      "status" TEXT NOT NULL
+      "status" TEXT NOT NULL,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED'
     );
     CREATE TABLE "InsuranceClaim" (
       "id" TEXT PRIMARY KEY,
@@ -98,6 +96,7 @@ function makeD1() {
       "jobId" TEXT,
       "description" TEXT NOT NULL,
       "amount" REAL NOT NULL,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "status" TEXT NOT NULL,
       "idempotencyKey" TEXT UNIQUE,
       "requestFingerprint" TEXT,
@@ -130,8 +129,19 @@ function makeD1() {
   return { sqlite, d1 };
 }
 
+function seedServiceVehicle(sqlite: DatabaseSync) {
+  sqlite.prepare(`INSERT INTO "Vehicle" ("id", "customerId", "type", "make", "model", "year", "createdAt")
+    VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+    "vehicle-1", "customer-1", "EXCAVATOR", "CAT", "320", 2024, now
+  );
+}
+
 function makeDb(sqlite: DatabaseSync) {
   return {
+    vehicle: {
+      findUnique: async ({ where }: any) =>
+        sqlite.prepare('SELECT "id", "customerId", "type", "make" FROM "Vehicle" WHERE "id" = ?').get(where.id) ?? null,
+    },
     serviceRequest: {
       findUnique: async ({ where }: any) =>
         sqlite.prepare('SELECT "id", "requestFingerprint" FROM "ServiceRequest" WHERE "idempotencyKey" = ?')
@@ -144,7 +154,7 @@ function makeDb(sqlite: DatabaseSync) {
     },
     insurancePolicy: {
       findUnique: async ({ where }: any) =>
-        sqlite.prepare('SELECT "status" FROM "InsurancePolicy" WHERE "id" = ?')
+        sqlite.prepare('SELECT "status", "financialUnitStatus" FROM "InsurancePolicy" WHERE "id" = ?')
           .get(where.id) ?? null,
     },
   } as any;
@@ -158,9 +168,10 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
     for (const database of databases.splice(0)) database.close();
   });
 
-  it("creates the ad-hoc vehicle and service request exactly once under 100 concurrent retries", async () => {
+  it("creates one service request for a registered vehicle under 100 concurrent retries", async () => {
     const { sqlite, d1 } = makeD1();
     databases.push(sqlite);
+    seedServiceVehicle(sqlite);
     mocks.getD1Binding.mockResolvedValue(d1);
 
     const results = await Promise.all(
@@ -175,22 +186,47 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceRequest"').get()).toEqual({ count: 1 });
   });
 
-  it("rolls back the ad-hoc vehicle when the dependent request insert fails", async () => {
+  it("rechecks passenger vehicle scope in the D1 insert if the vehicle changes after preflight", async () => {
     const { sqlite, d1 } = makeD1();
     databases.push(sqlite);
+    seedServiceVehicle(sqlite);
+    sqlite.prepare('UPDATE "Vehicle" SET "type" = ?, "make" = ? WHERE "id" = ?')
+      .run("CAR", "IKCO", "vehicle-1");
+
+    // Simulate a supported preflight read followed by an out-of-scope stored
+    // value at the atomic SQL write boundary.
+    const db = makeDb(sqlite);
+    db.vehicle.findUnique = async () => ({
+      id: "vehicle-1",
+      customerId: "customer-1",
+      type: "CAR",
+      make: "Kerman Motor",
+    });
+    mocks.getD1Binding.mockResolvedValue(d1);
+
+    await expect(createServiceRequestAtomically(db, serviceInput))
+      .rejects.toBeInstanceOf(ServiceRequestVehicleError);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceRequest"').get()).toEqual({ count: 0 });
+  });
+
+  it("does not create a request when the registered vehicle request insert fails", async () => {
+    const { sqlite, d1 } = makeD1();
+    databases.push(sqlite);
+    seedServiceVehicle(sqlite);
     sqlite.exec(`CREATE TRIGGER "fail_service_request" BEFORE INSERT ON "ServiceRequest"
       BEGIN SELECT RAISE(ABORT, 'request insert failed'); END;`);
     mocks.getD1Binding.mockResolvedValue(d1);
 
     await expect(createServiceRequestAtomically(makeDb(sqlite), serviceInput))
       .rejects.toThrow("request insert failed");
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "Vehicle"').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "Vehicle"').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceRequest"').get()).toEqual({ count: 0 });
   });
 
   it("replays the same service request and rejects a reused key with a different fingerprint", async () => {
     const { sqlite, d1 } = makeD1();
     databases.push(sqlite);
+    seedServiceVehicle(sqlite);
     mocks.getD1Binding.mockResolvedValue(d1);
     const db = makeDb(sqlite);
 
@@ -209,8 +245,8 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
   it("creates and updates an insurance claim exactly once under 100 concurrent retries", async () => {
     const { sqlite, d1 } = makeD1();
     databases.push(sqlite);
-    sqlite.prepare('INSERT INTO "InsurancePolicy" ("id", "userId", "status") VALUES (?, ?, ?)')
-      .run("policy-1", "user-1", "active");
+    sqlite.prepare('INSERT INTO "InsurancePolicy" ("id", "userId", "status", "financialUnitStatus") VALUES (?, ?, ?, ?)')
+      .run("policy-1", "user-1", "active", "VERIFIED_IRR");
     mocks.getD1Binding.mockResolvedValue(d1);
 
     const results = await Promise.all(
@@ -222,15 +258,15 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
     expect(new Set(results.map((result) => result.id)).size).toBe(1);
     expect(results.filter((result) => result.created)).toHaveLength(1);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "InsuranceClaim"').get()).toEqual({ count: 1 });
-    expect(sqlite.prepare('SELECT "status" FROM "InsurancePolicy" WHERE "id" = ?').get("policy-1"))
-      .toEqual({ status: "claimed" });
+    expect(sqlite.prepare('SELECT "status", "financialUnitStatus" FROM "InsurancePolicy" WHERE "id" = ?').get("policy-1"))
+      .toEqual({ status: "claimed", financialUnitStatus: "VERIFIED_IRR" });
   });
 
   it("rolls back the claim insert when the policy status transition fails", async () => {
     const { sqlite, d1 } = makeD1();
     databases.push(sqlite);
-    sqlite.prepare('INSERT INTO "InsurancePolicy" ("id", "userId", "status") VALUES (?, ?, ?)')
-      .run("policy-1", "user-1", "active");
+    sqlite.prepare('INSERT INTO "InsurancePolicy" ("id", "userId", "status", "financialUnitStatus") VALUES (?, ?, ?, ?)')
+      .run("policy-1", "user-1", "active", "VERIFIED_IRR");
     sqlite.exec(`CREATE TRIGGER "fail_policy_update" BEFORE UPDATE ON "InsurancePolicy"
       BEGIN SELECT RAISE(ABORT, 'policy update failed'); END;`);
     mocks.getD1Binding.mockResolvedValue(d1);
@@ -238,21 +274,21 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
     await expect(createInsuranceClaimAtomically(makeDb(sqlite), claimInput))
       .rejects.toThrow("policy update failed");
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "InsuranceClaim"').get()).toEqual({ count: 0 });
-    expect(sqlite.prepare('SELECT "status" FROM "InsurancePolicy" WHERE "id" = ?').get("policy-1"))
-      .toEqual({ status: "active" });
+    expect(sqlite.prepare('SELECT "status", "financialUnitStatus" FROM "InsurancePolicy" WHERE "id" = ?').get("policy-1"))
+      .toEqual({ status: "active", financialUnitStatus: "VERIFIED_IRR" });
   });
 
   it("does not create a claim for an expired policy", async () => {
     const { sqlite, d1 } = makeD1();
     databases.push(sqlite);
-    sqlite.prepare('INSERT INTO "InsurancePolicy" ("id", "userId", "status") VALUES (?, ?, ?)')
-      .run("policy-1", "user-1", "expired");
+    sqlite.prepare('INSERT INTO "InsurancePolicy" ("id", "userId", "status", "financialUnitStatus") VALUES (?, ?, ?, ?)')
+      .run("policy-1", "user-1", "expired", "VERIFIED_IRR");
     mocks.getD1Binding.mockResolvedValue(d1);
 
     await expect(createInsuranceClaimAtomically(makeDb(sqlite), claimInput))
       .rejects.toThrow("no longer eligible");
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "InsuranceClaim"').get()).toEqual({ count: 0 });
-    expect(sqlite.prepare('SELECT "status" FROM "InsurancePolicy" WHERE "id" = ?').get("policy-1"))
-      .toEqual({ status: "expired" });
+    expect(sqlite.prepare('SELECT "status", "financialUnitStatus" FROM "InsurancePolicy" WHERE "id" = ?').get("policy-1"))
+      .toEqual({ status: "expired", financialUnitStatus: "VERIFIED_IRR" });
   });
 });

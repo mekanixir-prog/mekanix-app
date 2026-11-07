@@ -52,7 +52,7 @@ describe.skipIf(!postgresConfigured)("wallet escrow release PostgreSQL transacti
     const technician = await db!.technician.create({ data: { userId: user.id } });
     technicianIds.push(technician.id);
     const wallet = await db!.wallet.create({
-      data: { technicianId: technician.id, balance: 2000, pendingBalance },
+      data: { technicianId: technician.id, balance: 2000, pendingBalance, financialUnitStatus: "VERIFIED_IRR" },
     });
     walletIds.push(wallet.id);
     const transaction = await db!.walletTransaction.create({
@@ -60,6 +60,7 @@ describe.skipIf(!postgresConfigured)("wallet escrow release PostgreSQL transacti
         walletId: wallet.id,
         kind: "PREPAY",
         status: "PENDING",
+        financialUnitStatus: "VERIFIED_IRR",
         grossAmount: netAmount,
         commissionAmount: 0,
         netAmount,

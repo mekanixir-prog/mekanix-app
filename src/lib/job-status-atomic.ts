@@ -25,12 +25,16 @@ export type AtomicInvoiceInput = {
   laborTotal: number;
   partsTotal: number;
   travelFee: number;
+  inspectionFee: number;
+  emergencyFee: number;
   subtotal: number;
   taxRate: number;
   taxTotal: number;
   discount: number;
   total: number;
   currency: string;
+  pricingVersion: string;
+  financialUnitStatus: "VERIFIED_IRR";
   status: "SENT";
   notes: string;
 };
@@ -42,6 +46,7 @@ export type AtomicJobStatusInput = {
   actorRole: "TECHNICIAN" | "ADMIN" | "CUSTOMER" | "FLEET_MANAGER";
   actorTechnicianId: string | null;
   currentStatus: JobStatus;
+  expectedUpdatedAt: Date;
   nextStatus: JobStatus;
   updates: JobStatusScalarUpdates;
   invoice?: AtomicInvoiceInput | null;
@@ -56,16 +61,57 @@ function isTechnicianReleaseTransition(status: string) {
   return status === "COMPLETED" || isRequestTerminalTransition(status);
 }
 
+function assertRoleTransition(input: AtomicJobStatusInput) {
+  const isCustomerActor = input.actorRole === "CUSTOMER" || input.actorRole === "FLEET_MANAGER";
+  if (input.updates.customerApproved !== undefined && !isCustomerActor) {
+    throw new JobStatusConflictError();
+  }
+  if (input.nextStatus === "COMPLETED" && input.currentStatus !== "REPAIRING") {
+    throw new JobStatusConflictError();
+  }
+
+  const updateKeys = Object.keys(input.updates);
+  const approvalOnly =
+    isCustomerActor &&
+    input.currentStatus === "WAITING_APPROVAL" &&
+    input.nextStatus === input.currentStatus &&
+    input.updates.customerApproved === true &&
+    updateKeys.every((key) => key === "customerApproved");
+
+  // REPAIRING without an invoice is the pre-estimate parts-preparation stage;
+  // REPAIRING after customer approval is the actual repair stage.
+  if (input.nextStatus === "REPAIRING" && !["DIAGNOSING", "WAITING_APPROVAL"].includes(input.currentStatus)) {
+    throw new JobStatusConflictError();
+  }
+  if (input.nextStatus === "WAITING_APPROVAL" && input.currentStatus !== "REPAIRING" && !approvalOnly) {
+    throw new JobStatusConflictError();
+  }
+
+  if (isCustomerActor) {
+    const allowedCancellation =
+      input.nextStatus === "CANCELLED" &&
+      ["REQUESTED", "ACCEPTED", "EN_ROUTE"].includes(input.currentStatus) &&
+      updateKeys.length === 0;
+    if (!approvalOnly && !allowedCancellation) {
+      throw new JobStatusConflictError();
+    }
+  }
+}
+
 async function transitionWithPrisma(db: PrismaClient, input: AtomicJobStatusInput) {
   await db.$transaction(async (tx) => {
     const requestTransition = isRequestTerminalTransition(input.nextStatus);
     const jobWhere: any = {
       id: input.jobId,
       status: input.currentStatus,
+      updatedAt: input.expectedUpdatedAt,
     };
     if (input.actorRole === "TECHNICIAN") {
       if (!input.actorTechnicianId) throw new JobStatusConflictError();
       jobWhere.technicianId = input.actorTechnicianId;
+    }
+    if (input.currentStatus === "WAITING_APPROVAL" && input.nextStatus === "REPAIRING") {
+      jobWhere.customerApproved = true;
     }
     if (requestTransition) {
       jobWhere.request = {
@@ -73,9 +119,16 @@ async function transitionWithPrisma(db: PrismaClient, input: AtomicJobStatusInpu
       };
     }
 
+    const jobData = {
+      status: input.nextStatus,
+      ...(input.nextStatus === "WAITING_APPROVAL" && input.currentStatus !== "WAITING_APPROVAL"
+        ? { customerApproved: false }
+        : {}),
+      ...input.updates,
+    };
     const jobUpdate = await tx.job.updateMany({
       where: jobWhere,
-      data: { status: input.nextStatus, ...input.updates },
+      data: jobData,
     });
     if (jobUpdate.count !== 1) throw new JobStatusConflictError();
 
@@ -129,6 +182,10 @@ async function transitionWithD1(
   const assignments = ['"status" = ?', '"updatedAt" = ?'];
   const values: unknown[] = [input.nextStatus, now];
 
+  if (input.nextStatus === "WAITING_APPROVAL" && input.currentStatus !== "WAITING_APPROVAL") {
+    assignments.push('"customerApproved" = ?');
+    values.push(0);
+  }
   if (input.updates.startedAt) {
     assignments.push('"startedAt" = ?');
     values.push(input.updates.startedAt.toISOString());
@@ -152,11 +209,15 @@ async function transitionWithD1(
 
   let technicianGuard = "";
   let requestGuard = "";
-  values.push(input.jobId, input.currentStatus);
+  let approvalGuard = "";
+  values.push(input.jobId, input.currentStatus, input.expectedUpdatedAt.toISOString());
   if (input.actorRole === "TECHNICIAN") {
     if (!input.actorTechnicianId) throw new JobStatusConflictError();
     technicianGuard = ' AND "technicianId" = ?';
     values.push(input.actorTechnicianId);
+  }
+  if (input.currentStatus === "WAITING_APPROVAL" && input.nextStatus === "REPAIRING") {
+    approvalGuard = ' AND "customerApproved" = 1';
   }
   if (isRequestTerminalTransition(input.nextStatus)) {
     requestGuard = ' AND EXISTS (SELECT 1 FROM "ServiceRequest" r WHERE r."id" = ? AND r."matchedTechId" = ?)';
@@ -171,7 +232,7 @@ async function transitionWithD1(
   const statements = [
     d1.prepare(
       'UPDATE "Job" SET ' + assignments.join(", ") +
-      ' WHERE "id" = ? AND "status" = ?' + technicianGuard + requestGuard
+      ' WHERE "id" = ? AND "status" = ? AND "updatedAt" = ?' + technicianGuard + approvalGuard + requestGuard
     ).bind(...values),
     assertOneChange(),
   ];
@@ -188,9 +249,9 @@ async function transitionWithD1(
       d1.prepare(
         'INSERT INTO "Invoice"' +
         ' ("id", "code", "jobId", "laborHours", "laborRate", "laborTotal", "partsTotal",' +
-        ' "travelFee", "subtotal", "taxRate", "taxTotal", "discount", "total", "currency",' +
-        ' "status", "notes", "createdAt", "updatedAt")' +
-        ' SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?' +
+        ' "travelFee", "inspectionFee", "emergencyFee", "subtotal", "taxRate", "taxTotal", "discount", "total", "currency",' +
+        ' "pricingVersion", "financialUnitStatus", "status", "notes", "createdAt", "updatedAt")' +
+        ' SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?' +
         ' WHERE EXISTS (SELECT 1 FROM "Job" j WHERE j."id" = ? AND j."status" = ?)' +
         ' AND NOT EXISTS (SELECT 1 FROM "Invoice" i WHERE i."jobId" = ?)'
       ).bind(
@@ -202,12 +263,16 @@ async function transitionWithD1(
         invoice.laborTotal,
         invoice.partsTotal,
         invoice.travelFee,
+        invoice.inspectionFee,
+        invoice.emergencyFee,
         invoice.subtotal,
         invoice.taxRate,
         invoice.taxTotal,
         invoice.discount,
         invoice.total,
         invoice.currency,
+        invoice.pricingVersion,
+        invoice.financialUnitStatus,
         invoice.status,
         invoice.notes,
         now,
@@ -263,6 +328,7 @@ export async function transitionJobStatusAtomically(
   db: PrismaClient,
   input: AtomicJobStatusInput,
 ): Promise<void> {
+  assertRoleTransition(input);
   const d1 = await getD1Binding();
   if (d1) return transitionWithD1(d1, input);
   return transitionWithPrisma(db, input);

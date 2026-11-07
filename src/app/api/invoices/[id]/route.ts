@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant } from "@/lib/auth";
+import { maskInvoiceFinancialData } from "@/lib/money/financial-read-mask";
 
 // PATCH /api/invoices/[id]
 // Amounts and currency are server-authoritative. PAID is written only by the
@@ -15,7 +16,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const db = await getDbForLib();
   const inv = await db.invoice.findUnique({
     where: { id },
-    select: { id: true, jobId: true, status: true, total: true, currency: true, code: true },
+    select: { id: true, jobId: true, status: true, total: true, currency: true, code: true, financialUnitStatus: true },
   });
   if (!inv) return NextResponse.json({ error: "فاکتور یافت نشد" }, { status: 404 });
 
@@ -75,7 +76,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       where: { id },
       include: { job: true, payment: true },
     });
-    return NextResponse.json(fresh);
+    return NextResponse.json(fresh ? maskInvoiceFinancialData(fresh as unknown as Record<string, unknown>) : null);
   }
 
   if (statusTransitionRequested) {
@@ -93,7 +94,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       where: { id },
       include: { job: true, payment: true },
     });
-    return NextResponse.json(fresh);
+    return NextResponse.json(fresh ? maskInvoiceFinancialData(fresh as unknown as Record<string, unknown>) : null);
   }
 
   const updated = await db.invoice.update({
@@ -101,5 +102,5 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     data: allowedUpdates,
     include: { job: true, payment: true },
   });
-  return NextResponse.json(updated);
+  return NextResponse.json(maskInvoiceFinancialData(updated as unknown as Record<string, unknown>));
 }

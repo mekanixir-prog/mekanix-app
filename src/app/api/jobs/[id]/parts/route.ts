@@ -3,6 +3,8 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
 import { getJobPartAmountError } from "@/lib/money/job-part-amount";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { addJobPartBeforeInvoice, removeJobPartBeforeInvoice, JobPartMutationConflictError, JobPartNotFoundError } from "@/lib/job-parts-atomic";
 
 async function ensureAssignedTechOrAdmin(session: any, jobId: string) {
   if (session.role === "ADMIN") return null;
@@ -56,17 +58,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "قیمت واحد قطعه باید عدد صحیح نامنفی به ریال باشد", code: amountError }, { status: 400 });
   }
 
-  const part = await (await getDbForLib()).part.create({
-    data: {
+  const db = await getDbForLib();
+  try {
+    const part = await addJobPartBeforeInvoice(db, {
       jobId,
       name: body.name.trim().slice(0, 200),
       sku: typeof body.sku === "string" ? body.sku.slice(0, 100) : null,
       quantity: body.quantity,
       unitPrice: body.unitPrice,
-      financialUnitStatus: "VERIFIED_IRR",
-    },
-  });
-  return NextResponse.json(part);
+    });
+    return NextResponse.json(maskFinancialFields(part, ["unitPrice"]));
+  } catch (error) {
+    if (error instanceof JobPartMutationConflictError) {
+      return NextResponse.json(
+        { error: "ثبت یا تغییر قطعه فقط در مرحله آماده‌سازی برآورد و پیش از صدور پیش‌فاکتور مجاز است؛ تغییرات بعدی نیازمند برآورد و تأیید جداگانه است", code: "PARTS_LOCKED_AFTER_ESTIMATE" },
+        { status: 409 },
+      );
+    }
+    throw error;
+  }
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -91,13 +101,20 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     return NextResponse.json({ error: "partId الزامی است" }, { status: 400 });
   }
 
-  // Ensure the part actually belongs to this job (defense-in-depth)
   const db = await getDbForLib();
-  const part = await db.part.findUnique({ where: { id: body.partId }, select: { jobId: true } });
-  if (!part || part.jobId !== jobId) {
-    return NextResponse.json({ error: "قطعه متعلق به این کار نیست" }, { status: 404 });
+  try {
+    await removeJobPartBeforeInvoice(db, jobId, body.partId);
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    if (error instanceof JobPartNotFoundError) {
+      return NextResponse.json({ error: "قطعه متعلق به این کار نیست" }, { status: 404 });
+    }
+    if (error instanceof JobPartMutationConflictError) {
+      return NextResponse.json(
+        { error: "حذف قطعه پس از صدور پیش‌فاکتور مجاز نیست؛ تغییرات بعدی نیازمند برآورد و تأیید جداگانه است", code: "PARTS_LOCKED_AFTER_ESTIMATE" },
+        { status: 409 },
+      );
+    }
+    throw error;
   }
-
-  await db.part.delete({ where: { id: body.partId } });
-  return NextResponse.json({ ok: true });
 }

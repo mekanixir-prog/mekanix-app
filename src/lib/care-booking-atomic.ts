@@ -3,6 +3,8 @@ import type { PrismaClient } from "@prisma/client";
 type Pricing = {
   labor: number;
   travel: number;
+  inspection: number;
+  emergency: number;
   parts: number;
   discount: number;
   taxRate: number;
@@ -81,6 +83,9 @@ async function createWithPrisma(db: PrismaClient, input: CareBookingInput) {
         bookingId: booking.id,
         servicePrice: input.pricing.labor,
         visitPrice: input.pricing.travel,
+        inspectionPrice: input.pricing.inspection,
+        emergencyPrice: input.pricing.emergency,
+        financialUnitStatus: "VERIFIED_IRR",
         laborPrice: input.pricing.labor,
         partsPrice: input.pricing.parts,
         discount: input.pricing.discount,
@@ -139,16 +144,16 @@ async function createWithD1(d1: D1Database, input: CareBookingInput) {
     ),
     d1.prepare(`
       INSERT INTO "PricingSnapshot"
-        ("id", "bookingId", "servicePrice", "visitPrice", "laborPrice",
+        ("id", "bookingId", "servicePrice", "visitPrice", "inspectionPrice", "emergencyPrice", "laborPrice",
          "partsPrice", "discount", "taxRate", "taxTotal", "total",
-         "currency", "pricingVersion", "createdAt")
-      SELECT ?, "id", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+         "currency", "pricingVersion", "financialUnitStatus", "createdAt")
+      SELECT ?, "id", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       FROM "ServiceBooking"
       WHERE "idempotencyKey" = ? AND "requestFingerprint" = ?
       ON CONFLICT("bookingId") DO NOTHING
     `).bind(
-      snapshotId, p.labor, p.travel, p.labor, p.parts, p.discount,
-      p.taxRate, p.taxTotal, p.total, p.currency, p.pricingVersion, now,
+      snapshotId, p.labor, p.travel, p.inspection, p.emergency, p.labor, p.parts, p.discount,
+      p.taxRate, p.taxTotal, p.total, p.currency, p.pricingVersion, "VERIFIED_IRR", now,
       input.idempotencyKey, input.requestFingerprint
     ),
     d1.prepare(`

@@ -29,6 +29,8 @@ const input = {
   pricing: {
     labor: 50000,
     travel: 15000,
+    inspection: 0,
+    emergency: 0,
     parts: 0,
     discount: 0,
     taxRate: 0.09,
@@ -68,6 +70,8 @@ function makeD1() {
       "bookingId" TEXT UNIQUE,
       "servicePrice" REAL NOT NULL,
       "visitPrice" REAL NOT NULL,
+      "inspectionPrice" REAL NOT NULL,
+      "emergencyPrice" REAL NOT NULL,
       "laborPrice" REAL NOT NULL,
       "partsPrice" REAL NOT NULL,
       "discount" REAL NOT NULL,
@@ -76,6 +80,7 @@ function makeD1() {
       "total" REAL NOT NULL,
       "currency" TEXT NOT NULL,
       "pricingVersion" TEXT NOT NULL,
+      "financialUnitStatus" TEXT NOT NULL,
       "createdAt" TEXT NOT NULL,
       FOREIGN KEY ("bookingId") REFERENCES "ServiceBooking"("id")
     );
@@ -151,6 +156,7 @@ describe("CARE D1 booking atomicity — SQLite integration", () => {
     expect(new Set(results.map((booking) => booking.id)).size).toBe(1);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceBooking"').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "PricingSnapshot"').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT "emergencyPrice" FROM "PricingSnapshot"').get()).toEqual({ emergencyPrice: 0 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceTimelineEvent"').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT "pricingSnapshotId" FROM "ServiceBooking"').get()).toEqual({
       pricingSnapshotId: sqlite.prepare('SELECT "id" FROM "PricingSnapshot"').get()?.id,

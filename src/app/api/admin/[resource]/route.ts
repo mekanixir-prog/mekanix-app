@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { getAdminFromRequest } from "@/lib/admin-auth";
 import type { PrismaClient } from "@prisma/client";
+import { maskFinancialFields, maskInvoiceFinancialData, maskJobFinancialData } from "@/lib/money/financial-read-mask";
 
 // Each handler receives the db client (async-resolved per request) so it no
 // longer depends on the module-level sync `db` import (a stub in Workers).
@@ -19,7 +20,7 @@ const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
       include: { user: { select: ADMIN_USER_SELECT }, specialties: true, certifications: true },
       orderBy: { rating: "desc" },
     });
-    return list;
+    return list.map((technician) => maskFinancialFields(technician, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]));
   },
   jobs: async (db) => {
     const list = await db.job.findMany({
@@ -30,14 +31,17 @@ const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
       },
       orderBy: { createdAt: "desc" },
     });
-    return list;
+    return list.map((job) => maskJobFinancialData(job));
   },
   payments: async (db) => {
     const list = await db.payment.findMany({
       include: { invoice: { include: { job: true } }, user: { select: ADMIN_USER_SELECT } },
       orderBy: { createdAt: "desc" },
     });
-    return list;
+    return list.map((payment) => ({
+      ...maskFinancialFields(payment, ["amount"], "currency"),
+      invoice: payment.invoice ? maskInvoiceFinancialData(payment.invoice) : payment.invoice,
+    }));
   },
   withdrawals: async (db) => {
     return db.withdrawalRequest.findMany({
@@ -45,6 +49,7 @@ const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
         id: true,
         code: true,
         amount: true,
+        financialUnitStatus: true,
         method: true,
         cardNumber: true,
         bankName: true,
@@ -63,14 +68,21 @@ const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
         },
       },
       orderBy: { requestedAt: "desc" },
-    });
+    }).then((rows) => rows.map((row) => maskFinancialFields(row, ["amount"])));
   },
   reviews: async (db) => {
     const list = await db.review.findMany({
       include: { fromUser: { select: ADMIN_USER_SELECT }, technician: { include: { user: { select: ADMIN_USER_SELECT } } }, job: true },
       orderBy: { createdAt: "desc" },
     });
-    return list;
+    return list.map((review) => ({
+      ...review,
+      job: review.job ? maskJobFinancialData(review.job) : review.job,
+      technician: review.technician ? {
+        ...review.technician,
+        ...maskFinancialFields(review.technician, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]),
+      } : review.technician,
+    }));
   },
   vehicles: async (db) => {
     const list = await db.vehicle.findMany({
@@ -80,14 +92,20 @@ const HANDLERS: Record<string, (db: PrismaClient) => Promise<any[]>> = {
     return list;
   },
   categories: async (db) => {
-    return db.serviceCategory.findMany({ orderBy: { order: "asc" } });
+    const rows = await db.serviceCategory.findMany({ orderBy: { order: "asc" } });
+    return rows.map((row) => maskFinancialFields(row, ["basePrice"]));
   },
   applications: async (db) => {
     const list = await db.mechanicApplication.findMany({
       orderBy: { createdAt: "desc" },
       include: { user: { select: { ...ADMIN_USER_SELECT, technician: true } } },
     });
-    return list;
+    return list.map((application) => ({
+      ...application,
+      user: application.user?.technician
+        ? { ...application.user, technician: maskFinancialFields(application.user.technician, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]) }
+        : application.user,
+    }));
   },
 };
 

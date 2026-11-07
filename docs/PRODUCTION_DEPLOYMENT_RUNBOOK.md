@@ -21,12 +21,14 @@ From a clean checkout:
 ```bash
 git status --short
 git fetch origin
-git checkout feature/cloudflare-d1-validation
+git checkout main
+git pull --ff-only
+git checkout <approved-release-branch>
 git pull --ff-only
 git rev-parse HEAD
 ```
 
-Record the SHA. Verify the PR targets `main`, review the full diff, check the migration files, and confirm no unrelated generated files or secrets are included.
+Record the SHA. Verify the PR targets the current `main` tip and the release branch is not behind it. Review the full diff, check both migration tracks, and confirm no unrelated generated files or secrets are included. Do not merge from a stale branch.
 
 Run the same checks used by CI:
 

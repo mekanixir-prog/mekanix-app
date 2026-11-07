@@ -9,6 +9,7 @@ function makeD1() {
     PRAGMA foreign_keys = ON;
     CREATE TABLE "Wallet" (
       "id" TEXT PRIMARY KEY,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "balance" REAL NOT NULL,
       "pendingBalance" REAL NOT NULL,
       "updatedAt" TEXT
@@ -16,6 +17,7 @@ function makeD1() {
     CREATE TABLE "WalletTransaction" (
       "id" TEXT PRIMARY KEY,
       "walletId" TEXT NOT NULL REFERENCES "Wallet"("id"),
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "netAmount" REAL NOT NULL,
       "status" TEXT NOT NULL,
       "holdUntil" TEXT,
@@ -32,6 +34,7 @@ function makeD1() {
       "referenceId" TEXT,
       "description" TEXT,
       "idempotencyKey" TEXT UNIQUE,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "createdAt" TEXT NOT NULL
     );
     CREATE TABLE "WalletReleaseGuard" (
@@ -72,8 +75,8 @@ function makeD1() {
 }
 
 function seed(sqlite: DatabaseSync, pendingBalance = 1000) {
-  sqlite.prepare('INSERT INTO "Wallet" ("id", "balance", "pendingBalance") VALUES (?, ?, ?)').run("wallet-1", 2000, pendingBalance);
-  sqlite.prepare('INSERT INTO "WalletTransaction" ("id", "walletId", "netAmount", "status", "holdUntil") VALUES (?, ?, ?, ?, ?)').run(
+  sqlite.prepare(`INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "pendingBalance") VALUES (?, 'VERIFIED_IRR', ?, ?)`).run("wallet-1", 2000, pendingBalance);
+  sqlite.prepare(`INSERT INTO "WalletTransaction" ("id", "walletId", "financialUnitStatus", "netAmount", "status", "holdUntil") VALUES (?, ?, 'VERIFIED_IRR', ?, ?, ?)`).run(
     "txn-1", "wallet-1", 1000, "PENDING", "2026-10-30T09:00:00.000Z"
   );
 }
@@ -122,8 +125,8 @@ describe("atomic escrow release D1 SQLite integration", () => {
 
   it("does not release a negative net amount", async () => {
     const { sqlite, d1 } = makeD1(); databases.push(sqlite);
-    sqlite.prepare('INSERT INTO "Wallet" ("id", "balance", "pendingBalance") VALUES (?, ?, ?)').run("wallet-1", 2000, 1000);
-    sqlite.prepare('INSERT INTO "WalletTransaction" ("id", "walletId", "netAmount", "status", "holdUntil") VALUES (?, ?, ?, ?, ?)').run(
+    sqlite.prepare(`INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "pendingBalance") VALUES (?, 'VERIFIED_IRR', ?, ?)`).run("wallet-1", 2000, 1000);
+    sqlite.prepare(`INSERT INTO "WalletTransaction" ("id", "walletId", "financialUnitStatus", "netAmount", "status", "holdUntil") VALUES (?, ?, 'VERIFIED_IRR', ?, ?, ?)`).run(
       "txn-negative", "wallet-1", -100, "PENDING", "2026-10-30T09:00:00.000Z"
     );
     await expect(releaseWalletTransactionWithD1(d1 as never, "wallet-1", "txn-negative", new Date("2026-10-30T10:00:00.000Z"))).rejects.toThrow();
@@ -224,4 +227,23 @@ describe("atomic escrow release D1 SQLite integration", () => {
     expect(sqlite.prepare('SELECT "status" FROM "WalletTransaction" WHERE "id" = ?').get("txn-1")).toEqual({ status: "PENDING" });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
   });
+
+  it("does not release a pending transaction without verified IRR provenance", async () => {
+    const { sqlite, d1 } = makeD1(); databases.push(sqlite);
+    sqlite.prepare('INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "pendingBalance") VALUES (?, ?, ?, ?)').run(
+      "wallet-1", "VERIFIED_IRR", 2000, 1000
+    );
+    sqlite.prepare('INSERT INTO "WalletTransaction" ("id", "walletId", "financialUnitStatus", "netAmount", "status", "holdUntil") VALUES (?, ?, ?, ?, ?, ?)').run(
+      "txn-unverified", "wallet-1", "UNVERIFIED", 1000, "PENDING", "2026-10-30T09:00:00.000Z"
+    );
+
+    await expect(releaseWalletTransactionWithD1(
+      d1 as never, "wallet-1", "txn-unverified", new Date("2026-10-30T10:00:00.000Z")
+    )).rejects.toThrow();
+    expect(sqlite.prepare('SELECT "status" FROM "WalletTransaction" WHERE "id" = ?').get("txn-unverified")).toEqual({
+      status: "PENDING",
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
+  });
+
 });

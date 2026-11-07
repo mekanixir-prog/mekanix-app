@@ -10,6 +10,10 @@ const mocks = vi.hoisted(() => ({
   notificationCreate: vi.fn(),
   messageCreate: vi.fn(),
   taxFind: vi.fn(),
+  calculatePrice: vi.fn(),
+  partsVerified: vi.fn(),
+  serviceCode: vi.fn(),
+  travelDistance: vi.fn(),
 }));
 
 vi.mock("@/lib/api-helpers", () => ({ requireAuth: mocks.auth }));
@@ -25,6 +29,12 @@ vi.mock("@/lib/db-access", () => ({
     walletTransaction: { updateMany: vi.fn() },
     platformSetting: { findUnique: mocks.taxFind },
   }),
+}));
+vi.mock("@/lib/pricing", () => ({ calculatePrice: mocks.calculatePrice }));
+vi.mock("@/lib/money/provenance", () => ({ areJobPartPriceSourcesVerified: mocks.partsVerified }));
+vi.mock("@/lib/job-invoice-pricing", () => ({
+  serviceCodeFromCategory: mocks.serviceCode,
+  estimateTravelDistanceKm: mocks.travelDistance,
 }));
 vi.mock("@/lib/job-status-atomic", () => ({
   JobStatusConflictError: class JobStatusConflictError extends Error {},
@@ -59,13 +69,22 @@ beforeEach(() => {
   mocks.technicianSession.mockResolvedValue({ id: "tech-1" });
   mocks.jobFind.mockResolvedValueOnce({
     status: "REQUESTED",
+    updatedAt: new Date("2026-11-06T10:00:00.000Z"),
     technicianId: "tech-1",
     requestId: "request-1",
   }).mockResolvedValue(job);
   mocks.transition.mockResolvedValue(undefined);
   mocks.notificationCreate.mockResolvedValue({});
   mocks.messageCreate.mockResolvedValue({});
-  mocks.taxFind.mockResolvedValue({ value: "0.09" });
+  mocks.taxFind.mockResolvedValue(null);
+  mocks.calculatePrice.mockResolvedValue({
+    labor: 8_000_000, parts: 2_000_000, travel: 5_000_000, inspection: 600_000,
+    emergency: 0, discount: 0, subtotal: 15_600_000, taxRate: 0, taxTotal: 0,
+    total: 15_600_000, currency: "IRR", pricingVersion: "rate-card-7",
+  });
+  mocks.partsVerified.mockReturnValue(true);
+  mocks.serviceCode.mockReturnValue("diagnostic");
+  mocks.travelDistance.mockReturnValue(0);
 });
 
 describe("job status route delegates atomic state changes", () => {
@@ -96,24 +115,30 @@ describe("job status route delegates atomic state changes", () => {
     }));
   });
 
-  it("uses the configured validated tax rate when the repair enters customer approval", async () => {
+  it("uses fixed rate-card components when repair preparation enters customer approval", async () => {
     const repair = {
       status: "REPAIRING",
+      updatedAt: new Date("2026-11-06T10:00:00.000Z"),
       technicianId: "tech-1",
       requestId: "request-1",
       technician: {
         id: "tech-1",
-        hourlyRate: 200,
-        travelFeeBase: 50,
         user: { id: "technician-user", name: "Technician" },
       },
-      parts: [{ unitPrice: 100, quantity: 2 }],
+      parts: [{ unitPrice: 1_000_000, quantity: 2 }],
       invoice: null,
-      request: { customer: { user: { id: "customer-user", name: "Customer" } } },
+      request: {
+        category: "diagnostic",
+        urgency: "NORMAL",
+        lat: 35.7,
+        lng: 51.4,
+        vehicle: { type: "CAR" },
+        customer: { user: { id: "customer-user", name: "Customer" } },
+      },
+      tracking: [{ lat: 35.7, lng: 51.4 }],
     };
     mocks.jobFind.mockReset();
     mocks.jobFind.mockResolvedValueOnce(repair).mockResolvedValue(job);
-    mocks.taxFind.mockResolvedValueOnce({ value: "0.12" });
     const request = new Request("https://mekanix.test/api/jobs/job-1/status", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -122,35 +147,54 @@ describe("job status route delegates atomic state changes", () => {
 
     const response = await PATCH(request, { params: Promise.resolve({ id: "job-1" }) });
     expect(response.status).toBe(200);
+    expect(mocks.calculatePrice).toHaveBeenCalledWith({
+      vehicleType: "CAR", serviceCode: "diagnostic", laborHours: 0,
+      partsCost: 2_000_000, travelDistanceKm: 0, isEmergency: false,
+    });
     expect(mocks.transition).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
       invoice: expect.objectContaining({
-        laborHours: 1.5,
-        subtotal: 550,
-        taxRate: 0.12,
-        taxTotal: 66,
-        total: 616,
+        laborHours: 1,
+        laborRate: 8_000_000,
+        laborTotal: 8_000_000,
+        partsTotal: 2_000_000,
+        travelFee: 5_000_000,
+        inspectionFee: 600_000,
+        emergencyFee: 0,
+        subtotal: 15_600_000,
+        taxRate: 0,
+        taxTotal: 0,
+        total: 15_600_000,
+        currency: "IRR",
+        pricingVersion: "rate-card-7",
+        financialUnitStatus: "VERIFIED_IRR",
       }),
     }));
   });
 
-  it("fails closed when the configured tax rate is malformed", async () => {
+  it("fails closed when the rate-card calculator is unavailable during estimate preparation", async () => {
     const repair = {
       status: "REPAIRING",
       technicianId: "tech-1",
       requestId: "request-1",
       technician: {
         id: "tech-1",
-        hourlyRate: 200,
-        travelFeeBase: 50,
         user: { id: "technician-user", name: "Technician" },
       },
-      parts: [{ unitPrice: 100, quantity: 2 }],
+      parts: [{ unitPrice: 1_000_000, quantity: 2 }],
       invoice: null,
-      request: { customer: { user: { id: "customer-user", name: "Customer" } } },
+      request: {
+        category: "diagnostic",
+        urgency: "NORMAL",
+        lat: 35.7,
+        lng: 51.4,
+        vehicle: { type: "CAR" },
+        customer: { user: { id: "customer-user", name: "Customer" } },
+      },
+      tracking: [{ lat: 35.7, lng: 51.4 }],
     };
     mocks.jobFind.mockReset();
     mocks.jobFind.mockResolvedValueOnce(repair);
-    mocks.taxFind.mockResolvedValueOnce({ value: "0.09invalid" });
+    mocks.calculatePrice.mockRejectedValueOnce(new Error("Production pricing is not approved"));
     const request = new Request("https://mekanix.test/api/jobs/job-1/status", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -158,7 +202,7 @@ describe("job status route delegates atomic state changes", () => {
     });
 
     const response = await PATCH(request, { params: Promise.resolve({ id: "job-1" }) });
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(409);
     expect(mocks.transition).not.toHaveBeenCalled();
   });
 

@@ -4,6 +4,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { getCustomerFromSession, getTechnicianFromSession } from "@/lib/auth";
 import { wantsLite, liteResponse } from "@/lib/lite-response";
+import { maskJobFinancialData } from "@/lib/money/financial-read-mask";
 
 const include = {
   request: { include: { customer: { include: { user: { select: PARTICIPANT_USER_SELECT } } }, vehicle: true } },
@@ -45,5 +46,6 @@ export async function GET(req: Request) {
     include,
   });
   const lite = wantsLite(req);
-  return NextResponse.json(liteResponse(list, lite));
+  const maskedList = list.map((job) => maskJobFinancialData(job as unknown as Record<string, unknown>));
+  return NextResponse.json(liteResponse(maskedList, lite));
 }

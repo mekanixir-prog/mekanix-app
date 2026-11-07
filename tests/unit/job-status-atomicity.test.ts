@@ -16,6 +16,7 @@ const input = {
   actorRole: "TECHNICIAN" as const,
   actorTechnicianId: "technician-1",
   currentStatus: "REQUESTED",
+  expectedUpdatedAt: new Date("2026-11-06T10:00:00.000Z"),
   nextStatus: "REJECTED",
   updates: {},
 } as const;
@@ -40,6 +41,7 @@ describe("atomic job status writer", () => {
         id: input.jobId,
         status: input.currentStatus,
         technicianId: input.actorTechnicianId,
+        updatedAt: input.expectedUpdatedAt,
         request: { is: { id: input.requestId, matchedTechId: input.technicianId } },
       },
       data: { status: "REJECTED" },
@@ -109,7 +111,7 @@ describe("atomic job status writer", () => {
 
     await expect(transitionJobStatusAtomically(db, acceptedInput)).resolves.toBeUndefined();
     expect(tx.job.updateMany).toHaveBeenCalledWith({
-      where: { id: input.jobId, status: input.currentStatus, technicianId: input.actorTechnicianId },
+      where: { id: input.jobId, status: input.currentStatus, technicianId: input.actorTechnicianId, updatedAt: input.expectedUpdatedAt },
       data: { status: "ACCEPTED", startedAt: acceptedInput.updates.startedAt },
     });
     expect(tx.serviceRequest.updateMany).not.toHaveBeenCalled();
@@ -121,19 +123,23 @@ describe("atomic job status writer", () => {
       id: "invoice-1",
       code: "INV-123456789ABC",
       jobId: input.jobId,
-      laborHours: 1.5,
-      laborRate: 15,
-      laborTotal: 22.5,
-      partsTotal: 10,
-      travelFee: 3,
-      subtotal: 35.5,
-      taxRate: 0.09,
-      taxTotal: 3.195,
+      laborHours: 1,
+      laborRate: 18_000_000,
+      laborTotal: 18_000_000,
+      partsTotal: 10_000_000,
+      travelFee: 5_000_000,
+      inspectionFee: 6_000_000,
+      emergencyFee: 0,
+      subtotal: 39_000_000,
+      taxRate: 0,
+      taxTotal: 0,
       discount: 0,
-      total: 38.695,
+      total: 39_000_000,
       currency: "IRR",
+      pricingVersion: "rate-card-2",
+      financialUnitStatus: "VERIFIED_IRR" as const,
       status: "SENT" as const,
-      notes: "Parts covered by 6-month warranty.",
+      notes: "Fixed-fee rate card rate-card-2; service periodic. Warranty terms follow the approved service agreement.",
     };
     const tx = {
       job: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
@@ -145,10 +151,16 @@ describe("atomic job status writer", () => {
 
     await expect(transitionJobStatusAtomically(db, {
       ...input,
+      currentStatus: "REPAIRING",
       nextStatus: "WAITING_APPROVAL",
       invoice,
     })).resolves.toBeUndefined();
+    expect(tx.job.updateMany).toHaveBeenCalledWith({
+      where: { id: input.jobId, status: "REPAIRING", technicianId: input.actorTechnicianId, updatedAt: input.expectedUpdatedAt },
+      data: { status: "WAITING_APPROVAL", customerApproved: false },
+    });
     expect(tx.invoice.create).toHaveBeenCalledWith({ data: invoice });
+    expect(invoice).toMatchObject({ inspectionFee: 6_000_000, emergencyFee: 0, financialUnitStatus: "VERIFIED_IRR" });
   });
 
   it("sets the escrow hold in the same transaction as job completion", async () => {
@@ -173,6 +185,85 @@ describe("atomic job status writer", () => {
     });
   });
 
+  it("requires a stored customer approval before a technician can start repair", async () => {
+    const tx = {
+      job: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      serviceRequest: { updateMany: vi.fn() },
+      technician: { updateMany: vi.fn() },
+    };
+    const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)) } as any;
+
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      currentStatus: "WAITING_APPROVAL",
+      nextStatus: "REPAIRING",
+      updates: {},
+    })).resolves.toBeUndefined();
+    expect(tx.job.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: input.jobId,
+        status: "WAITING_APPROVAL",
+        technicianId: input.actorTechnicianId,
+        updatedAt: input.expectedUpdatedAt,
+        customerApproved: true,
+      },
+      data: { status: "REPAIRING" },
+    });
+  });
+
+  it("does not allow a technician to set the customer approval flag", async () => {
+    const db = { $transaction: vi.fn() } as any;
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      updates: { customerApproved: true },
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("does not allow completion directly from WAITING_APPROVAL", async () => {
+    const db = { $transaction: vi.fn() } as any;
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      currentStatus: "WAITING_APPROVAL",
+      nextStatus: "COMPLETED",
+      updates: { completedAt: new Date("2026-11-07T10:00:00.000Z") },
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects job completion before the repair stage", async () => {
+    const db = { $transaction: vi.fn() } as any;
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      currentStatus: "DIAGNOSING",
+      nextStatus: "COMPLETED",
+      updates: { completedAt: new Date("2026-11-07T10:00:00.000Z") },
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("allows a customer to record approval without changing the waiting status", async () => {
+    const tx = {
+      job: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      serviceRequest: { updateMany: vi.fn() },
+      technician: { updateMany: vi.fn() },
+    };
+    const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)) } as any;
+
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      actorRole: "CUSTOMER",
+      actorTechnicianId: null,
+      currentStatus: "WAITING_APPROVAL",
+      nextStatus: "WAITING_APPROVAL",
+      updates: { customerApproved: true },
+    })).resolves.toBeUndefined();
+    expect(tx.job.updateMany).toHaveBeenCalledWith({
+      where: { id: input.jobId, status: "WAITING_APPROVAL", updatedAt: input.expectedUpdatedAt },
+      data: { status: "WAITING_APPROVAL", customerApproved: true },
+    });
+  });
+
   it("uses one D1 batch for job, request, and technician updates", async () => {
     const statements: Array<{ sql: string; values: unknown[] }> = [];
     const d1 = {
@@ -191,9 +282,11 @@ describe("atomic job status writer", () => {
     expect(d1.batch).toHaveBeenCalledTimes(1);
     expect(d1.batch.mock.calls[0][0]).toHaveLength(5);
     expect(statements[0].sql).toContain('UPDATE "Job"');
-    expect(statements[0].values.slice(-5)).toEqual([
+    expect(statements[0].sql).toContain('"updatedAt" = ?');
+    expect(statements[0].values.slice(-6)).toEqual([
       input.jobId,
       input.currentStatus,
+      input.expectedUpdatedAt.toISOString(),
       input.actorTechnicianId,
       input.requestId,
       input.technicianId,
@@ -220,30 +313,44 @@ describe("atomic job status writer", () => {
       id: "invoice-1",
       code: "INV-123456789ABC",
       jobId: input.jobId,
-      laborHours: 1.5,
-      laborRate: 15,
-      laborTotal: 22.5,
-      partsTotal: 10,
-      travelFee: 3,
-      subtotal: 35.5,
-      taxRate: 0.09,
-      taxTotal: 3.195,
+      laborHours: 1,
+      laborRate: 18_000_000,
+      laborTotal: 18_000_000,
+      partsTotal: 10_000_000,
+      travelFee: 5_000_000,
+      inspectionFee: 6_000_000,
+      emergencyFee: 0,
+      subtotal: 39_000_000,
+      taxRate: 0,
+      taxTotal: 0,
       discount: 0,
-      total: 38.695,
+      total: 39_000_000,
       currency: "IRR",
+      pricingVersion: "rate-card-2",
+      financialUnitStatus: "VERIFIED_IRR" as const,
       status: "SENT" as const,
-      notes: "Parts covered by 6-month warranty.",
+      notes: "Fixed-fee rate card rate-card-2; service periodic. Warranty terms follow the approved service agreement.",
     };
 
     await expect(transitionJobStatusAtomically({} as any, {
       ...input,
+      currentStatus: "REPAIRING",
       nextStatus: "WAITING_APPROVAL",
       invoice,
     })).resolves.toBeUndefined();
 
     expect(d1.batch.mock.calls[0][0]).toHaveLength(4);
+    expect(statements[0].sql).toContain('"customerApproved" = ?');
+    expect(statements[0].values).toContain(0);
     expect(statements[2].sql).toContain('INSERT INTO "Invoice"');
+    expect(statements[2].sql).toContain('"inspectionFee"');
+    expect(statements[2].sql).toContain('"emergencyFee"');
+    expect(statements[2].sql).toContain('"financialUnitStatus"');
+    expect(statements[2].values).toHaveLength(25);
     expect(statements[2].values).toContain("invoice-1");
+    expect(statements[2].values).toContain(6_000_000);
+    expect(statements[2].values).toContain("VERIFIED_IRR");
+    expect(statements[2].values).toContain("rate-card-2");
     expect(statements[3].sql).toContain("json_extract");
   });
 
@@ -270,5 +377,46 @@ describe("atomic job status writer", () => {
 
     await expect(transitionJobStatusAtomically(db, input))
       .rejects.toBeInstanceOf(JobStatusConflictError);
+  });
+
+  it("allows customer approval only as a same-status approval mutation", async () => {
+    const tx = {
+      job: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      serviceRequest: { updateMany: vi.fn() },
+      technician: { updateMany: vi.fn() },
+    };
+    const db = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
+    } as any;
+    const approvalInput = {
+      ...input,
+      actorRole: "CUSTOMER" as const,
+      actorTechnicianId: null,
+      currentStatus: "WAITING_APPROVAL" as const,
+      nextStatus: "WAITING_APPROVAL" as const,
+      updates: { customerApproved: true },
+    };
+
+    await expect(transitionJobStatusAtomically(db, approvalInput)).resolves.toBeUndefined();
+    expect(tx.job.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ status: "WAITING_APPROVAL" }),
+      data: { status: "WAITING_APPROVAL", customerApproved: true },
+    }));
+  });
+
+  it("rejects a customer attempt to complete a job through approval before any database write", async () => {
+    const db = { $transaction: vi.fn() } as any;
+    const invalidInput = {
+      ...input,
+      actorRole: "CUSTOMER" as const,
+      actorTechnicianId: null,
+      currentStatus: "WAITING_APPROVAL" as const,
+      nextStatus: "COMPLETED" as const,
+      updates: { customerApproved: true },
+    };
+
+    await expect(transitionJobStatusAtomically(db, invalidInput))
+      .rejects.toBeInstanceOf(JobStatusConflictError);
+    expect(db.$transaction).not.toHaveBeenCalled();
   });
 });
