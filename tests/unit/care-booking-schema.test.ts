@@ -4,6 +4,7 @@ import { careBookingSchema } from "@/lib/schemas/care";
 const validBooking = {
   vehicleId: "vehicle-123",
   location: "Tehran",
+  expectedPricingVersion: "rate-card-1",
 };
 
 describe("CARE booking pricing contract", () => {
@@ -17,6 +18,11 @@ describe("CARE booking pricing contract", () => {
       ...validBooking,
       serviceType: "emergency",
     }).success).toBe(false);
+  });
+
+  it("requires a quote version before a booking can be created", () => {
+    const { expectedPricingVersion: _version, ...withoutVersion } = validBooking;
+    expect(careBookingSchema.safeParse(withoutVersion).success).toBe(false);
   });
 
   it("accepts the rate-card version returned by the quote endpoint", () => {
