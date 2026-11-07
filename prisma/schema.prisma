@@ -397,6 +397,7 @@ model Invoice {
   discount   Decimal       @default(0)
   total      Decimal       @default(0)
   currency   String        @default("IRR")
+  pricingVersion String?
   notes      String?
   status     InvoiceStatus @default(DRAFT)
   createdAt  DateTime      @default(now())
