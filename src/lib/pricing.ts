@@ -68,7 +68,7 @@ export interface PricingBreakdown {
   inspection: number;
   emergency: number;
   discount: number;
-  /** Subtotal BEFORE discount (= labor + parts + travel + emergency). */
+  /** Subtotal BEFORE discount (= labor + parts + travel + inspection + emergency). */
   subtotal: number;
   taxRate: number;
   taxTotal: number;
