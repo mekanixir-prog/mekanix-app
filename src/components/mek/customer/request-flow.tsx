@@ -192,7 +192,6 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
       const payload = {
         customerId: customer.customer.id,
         vehicleId: registeredVehicleId,
-        machineType: type,
         category,
         urgency,
         title: title.trim(),
