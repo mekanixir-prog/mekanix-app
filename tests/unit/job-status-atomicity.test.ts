@@ -323,11 +323,14 @@ describe("atomic job status writer", () => {
 
     await expect(transitionJobStatusAtomically({} as any, {
       ...input,
+      currentStatus: "DIAGNOSING",
       nextStatus: "WAITING_APPROVAL",
       invoice,
     })).resolves.toBeUndefined();
 
     expect(d1.batch.mock.calls[0][0]).toHaveLength(4);
+    expect(statements[0].sql).toContain('"customerApproved" = ?');
+    expect(statements[0].values).toContain(0);
     expect(statements[2].sql).toContain('INSERT INTO "Invoice"');
     expect(statements[2].sql).toContain('"inspectionFee"');
     expect(statements[2].sql).toContain('"emergencyFee"');
