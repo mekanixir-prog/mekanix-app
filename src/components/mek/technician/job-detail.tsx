@@ -66,9 +66,6 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
     return amount === null ? "—" : `${formatTomanFromIrr(amount, locale)} ${isFa ? "تومان" : "Toman"}`;
   };
   const invoiceFinancialReady = job?.invoice?.financialUnitStatus === "VERIFIED_IRR" && job.invoice.currency === "IRR";
-  const partsFinancialReady = job ? job.parts.every((part) => part.financialUnitStatus === "VERIFIED_IRR" && safeInteger(part.unitPrice) !== null) : false;
-  const partsTotalIrr = job ? job.parts.reduce((sum, part) => sum + Number(part.unitPrice) * part.quantity, 0) : 0;
-  const partsTotalReady = partsFinancialReady && Number.isSafeInteger(partsTotalIrr);
 
   const load = useCallback(async () => {
     if (!params.jobId) return;
@@ -335,7 +332,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                     <div key={p.id} className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm">
                       <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
                       <span className="text-[11px] text-muted-foreground">×{isFa ? toPersianDigits(p.quantity) : p.quantity}</span>
-                      <span className="tabular-nums text-amber">{money(Number(p.unitPrice))}</span>
+                      <span className="tabular-nums text-amber">{p.financialUnitStatus === "VERIFIED_IRR" ? money(p.unitPrice) : "—"}</span>
                       {job.status === "REPAIRING" && !job.invoice && <button onClick={() => removePart(p.id)} className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
                         <Trash2 className="size-3" />
                       </button>}
@@ -443,10 +440,10 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
 }
 
 function safeInteger(value: unknown): number | null {
-  if (typeof value === "number") return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  if (typeof value === "number") return Number.isSafeInteger(value) ? value : null;
   if (typeof value === "string" && /^\\d+(?:\\.0+)?$/.test(value)) {
     const parsed = Number(value);
-    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+    return Number.isSafeInteger(parsed) ? parsed : null;
   }
   return null;
 }
