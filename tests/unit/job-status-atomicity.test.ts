@@ -41,6 +41,7 @@ describe("atomic job status writer", () => {
         id: input.jobId,
         status: input.currentStatus,
         technicianId: input.actorTechnicianId,
+        updatedAt: input.expectedUpdatedAt,
         request: { is: { id: input.requestId, matchedTechId: input.technicianId } },
       },
       data: { status: "REJECTED" },
@@ -110,7 +111,7 @@ describe("atomic job status writer", () => {
 
     await expect(transitionJobStatusAtomically(db, acceptedInput)).resolves.toBeUndefined();
     expect(tx.job.updateMany).toHaveBeenCalledWith({
-      where: { id: input.jobId, status: input.currentStatus, technicianId: input.actorTechnicianId },
+      where: { id: input.jobId, status: input.currentStatus, technicianId: input.actorTechnicianId, updatedAt: input.expectedUpdatedAt },
       data: { status: "ACCEPTED", startedAt: acceptedInput.updates.startedAt },
     });
     expect(tx.serviceRequest.updateMany).not.toHaveBeenCalled();
