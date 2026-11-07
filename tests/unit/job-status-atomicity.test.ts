@@ -134,6 +134,7 @@ describe("atomic job status writer", () => {
       discount: 0,
       total: 39_000_000,
       currency: "IRR",
+      pricingVersion: "rate-card-2",
       financialUnitStatus: "VERIFIED_IRR" as const,
       status: "SENT" as const,
       notes: "Fixed-fee rate card rate-card-2; service periodic. Warranty terms follow the approved service agreement.",
@@ -253,7 +254,7 @@ describe("atomic job status writer", () => {
     expect(statements[2].sql).toContain('"inspectionFee"');
     expect(statements[2].sql).toContain('"emergencyFee"');
     expect(statements[2].sql).toContain('"financialUnitStatus"');
-    expect(statements[2].values).toHaveLength(24);
+    expect(statements[2].values).toHaveLength(25);
     expect(statements[2].values).toContain("invoice-1");
     expect(statements[2].values).toContain(6_000_000);
     expect(statements[2].values).toContain("VERIFIED_IRR");
