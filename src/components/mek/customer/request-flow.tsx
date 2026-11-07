@@ -104,6 +104,7 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
   const { t, isFa, cat, type: typeLabel, money } = useT();
   const lang = isFa ? "fa" : "en";
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [vehiclesLoaded, setVehiclesLoaded] = useState(false);
   const [vehicleId, setVehicleId] = useState<string | undefined>(params.vehicleId);
   const [type, setType] = useState<string>(params.type ?? (machineMode === "heavy" ? "TRUCK" : "CAR"));
   const [category, setCategory] = useState<string>("");
@@ -125,16 +126,24 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
   const allowedTypes = typesForMode(machineMode);
 
   useEffect(() => {
-    if (customer.customer)
-      api.listVehicles(customer.customer.id).then((v) => {
-        const eligible = v.filter((x) => allowedTypes.includes(x.type) && isVehicleInSupportedScope(x.type, x.make));
-        setVehicles(eligible);
-        setVehicleId((current) =>
-          current && eligible.some((vehicle) => vehicle.id === current)
-            ? current
-            : eligible.length === 1 ? eligible[0].id : undefined
-        );
-      });
+    setVehiclesLoaded(false);
+    if (customer.customer) {
+      api.listVehicles(customer.customer.id)
+        .then((v) => {
+          const eligible = v.filter((x) => allowedTypes.includes(x.type) && isVehicleInSupportedScope(x.type, x.make));
+          setVehicles(eligible);
+          setVehicleId((current) =>
+            current && eligible.some((vehicle) => vehicle.id === current)
+              ? current
+              : eligible.length === 1 ? eligible[0].id : undefined
+          );
+        })
+        .catch(() => setVehicles([]))
+        .finally(() => setVehiclesLoaded(true));
+    } else {
+      setVehicles([]);
+      setVehiclesLoaded(true);
+    }
   }, [customer, machineMode]);
 
   const readFileAsDataURL = (file: File): Promise<string> =>
@@ -160,6 +169,10 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
     if (auth.isGuest) { setGuestBlock(true); return; }
     if (!category) { toast.error(t("req.error.category")); return; }
     if (!title.trim()) { toast.error(t("req.error.title")); return; }
+    if (!vehiclesLoaded) {
+      toast.error(isFa ? "در حال دریافت فهرست وسایل..." : "Loading your registered vehicles...");
+      return;
+    }
     const registeredVehicleId = vehicleId ?? (vehicles.length === 1 ? vehicles[0].id : undefined);
     if (!registeredVehicleId) {
       toast.error(isFa
@@ -239,7 +252,7 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
           {/* Machine */}
           <div className="rounded-xl border border-border bg-card p-4">
             <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.machine")}</Label>
-            {vehicles.length === 0 && (
+            {vehiclesLoaded && vehicles.length === 0 && (
               <div className="mt-3 rounded-lg border border-amber/30 bg-amber/5 p-3" role="status">
                 <p className="text-sm text-foreground">
                   {isFa
