@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 // Read-only reconciliation lookup. It never creates or mutates a wallet/request.
 export async function GET(req: Request) {
@@ -32,6 +33,7 @@ export async function GET(req: Request) {
         walletId: true,
         code: true,
         amount: true,
+        financialUnitStatus: true,
         status: true,
         requestedAt: true,
         processedAt: true,
@@ -39,7 +41,7 @@ export async function GET(req: Request) {
     }),
     db.walletLedger.findUnique({
       where: { idempotencyKey: `withdrawal:${key}:LEDGER` },
-      select: { id: true, referenceId: true, amount: true },
+      select: { id: true, referenceId: true, amount: true, financialUnitStatus: true },
     }),
   ]);
 
@@ -74,12 +76,14 @@ export async function GET(req: Request) {
     }, { status: 409 });
   }
 
+  const safeWithdrawal = maskFinancialFields(request!, ["amount"]);
   return NextResponse.json({
     state: "COMMITTED",
     withdrawal: {
       id: request!.id,
       code: request!.code,
-      amount: String(request!.amount),
+      amount: safeWithdrawal.amount == null ? null : String(safeWithdrawal.amount),
+      financialUnitStatus: safeWithdrawal.financialUnitStatus,
       status: request!.status,
       requestedAt: request!.requestedAt,
       processedAt: request!.processedAt,
