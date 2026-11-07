@@ -222,6 +222,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       discount: pricing.discount,
       total: pricing.total,
       currency: "IRR",
+      pricingVersion: pricing.pricingVersion,
       financialUnitStatus: "VERIFIED_IRR",
       status: "SENT" as const,
       notes: `Fixed-fee rate card ${pricing.pricingVersion}; service ${serviceCode}; estimated technician travel ${travelDistanceKm} km. Warranty terms, if applicable, follow the separately approved service agreement.`,
