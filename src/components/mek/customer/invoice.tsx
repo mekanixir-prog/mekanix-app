@@ -26,7 +26,7 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
   const invoiceFinancialReady = invoice?.financialUnitStatus === "VERIFIED_IRR" && invoice.currency === "IRR";
   const money = (value: number) => {
     const amount = Number(value);
-    if (!invoiceFinancialReady || !Number.isSafeInteger(amount) || amount < 0) return "—";
+    if (!invoiceFinancialReady || !Number.isSafeInteger(amount)) return "—";
     return `${formatTomanFromIrr(amount, isFa ? "fa-IR" : "en-US")} ${isFa ? "تومان" : "Toman"}`;
   };
 
