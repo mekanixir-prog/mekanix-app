@@ -188,8 +188,8 @@ The local VIP simulator now uses a server-owned plan snapshot rather than trusti
 - The initiation request supplies only the VIP plan identifier and non-financial display/contact fields. The amount, currency, payer, and purpose are resolved or assigned by the server.
 - The plan must be active, marked `VERIFIED_IRR`, and have a positive safe-integer IRR price within the configured local simulator limit.
 - `PaymentGatewayLog.targetPlanId` binds the attempt to the exact VIP plan. New SQLite/D1 and PostgreSQL migrations add this nullable field and index; existing historical logs remain unbound.
-- Verification reloads the persisted plan and checks its current active/provenance state and exact price against the immutable attempt amount before creating a Payment.
-- VIP activation requires the verified gateway attempt's `targetPlanId` to equal the requested plan and requires exact equality between payment amount and plan price. Overpayment and cross-plan reuse are rejected.
+- Verification reloads the persisted plan and checks its current active/provenance state. The amount on the gateway attempt remains the price snapshot captured at initiation; later plan-price edits do not rewrite an in-flight attempt.
+- VIP activation requires the verified gateway attempt's `targetPlanId` to equal the requested plan and exact equality between the Payment amount and its gateway-attempt amount. Cross-plan reuse and Payment/attempt amount mismatch are rejected.
 - The dialog no longer sends client `userId`, amount, card CVV, or expiry to the server. The server response amount is used for the confirmation display.
 - The simulator UI and route are explicitly VIP-only; invoice, prepay and wallet-top-up are not silently treated as supported by this path.
 
