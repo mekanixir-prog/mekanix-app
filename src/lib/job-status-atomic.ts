@@ -69,6 +69,7 @@ function assertRoleTransition(input: AtomicJobStatusInput) {
   if (input.currentStatus === "WAITING_APPROVAL" && input.nextStatus === "COMPLETED") {
     throw new JobStatusConflictError();
   }
+
   const updateKeys = Object.keys(input.updates);
   const approvalOnly =
     isCustomerActor &&
@@ -83,14 +84,15 @@ function assertRoleTransition(input: AtomicJobStatusInput) {
   if (input.nextStatus === "WAITING_APPROVAL" && input.currentStatus !== "DIAGNOSING" && !approvalOnly) {
     throw new JobStatusConflictError();
   }
-  if (isCustomerActor && !approvalOnly) {
-  const allowedCancellation =
-    input.nextStatus === "CANCELLED" &&
-    ["REQUESTED", "ACCEPTED", "EN_ROUTE"].includes(input.currentStatus) &&
-    updateKeys.length === 0;
 
-  if (!approvalOnly && !allowedCancellation) {
-    throw new JobStatusConflictError();
+  if (isCustomerActor) {
+    const allowedCancellation =
+      input.nextStatus === "CANCELLED" &&
+      ["REQUESTED", "ACCEPTED", "EN_ROUTE"].includes(input.currentStatus) &&
+      updateKeys.length === 0;
+    if (!approvalOnly && !allowedCancellation) {
+      throw new JobStatusConflictError();
+    }
   }
 }
 
