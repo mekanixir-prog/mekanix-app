@@ -234,7 +234,7 @@ export async function updateWithdrawalWithD1(
     ];
     try {
       const results = await d1.batch(statements);
-      return [0, 2, 4, 6].every((index) => results[index]?.meta?.changes === 1);
+      return [0, 2, 4].every((index) => results[index]?.meta?.changes === 1);
     } catch (error) {
       if (error instanceof Error && /malformed JSON/i.test(error.message)) return false;
       throw error;
@@ -319,7 +319,7 @@ export async function updateWithdrawalWithD1(
   ];
   try {
     const results = await d1.batch(statements);
-    return [0, 2, 4].every((index) => results[index]?.meta?.changes === 1);
+    return [0, 2, 4, 6].every((index) => results[index]?.meta?.changes === 1);
   } catch (error) {
     if (error instanceof Error && /malformed JSON/i.test(error.message)) return false;
     throw error;
