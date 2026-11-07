@@ -154,6 +154,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       { status: 409 },
     );
   }
+  if (targetStatus === "REPAIRING" && existing.status === "WAITING_APPROVAL" && !existing.invoice) {
+    return NextResponse.json(
+      { error: "پیش‌فاکتور قابل تأیید برای این کار یافت نشد", code: "REPAIR_ESTIMATE_REQUIRED" },
+      { status: 409 },
+    );
+  }
+  if (targetStatus === "REPAIRING" && existing.status === "DIAGNOSING" && existing.invoice) {
+    return NextResponse.json(
+      { error: "این کار پیش‌فاکتور صادرشده دارد؛ تأیید مشتری باید از مسیر بررسی برآورد ثبت شود", code: "CUSTOMER_APPROVAL_REQUIRED" },
+      { status: 409 },
+    );
+  }
   if (targetStatus === "REPAIRING" && existing.status === "WAITING_APPROVAL" && existing.customerApproved !== true) {
     return NextResponse.json(
       { error: "شروع تعمیر تا زمان تأیید پیش‌فاکتور توسط مشتری مجاز نیست", code: "CUSTOMER_APPROVAL_REQUIRED" },
