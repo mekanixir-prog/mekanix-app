@@ -192,7 +192,7 @@ describe("job status D1 SQLite transaction", () => {
     sqlite.prepare('UPDATE "Job" SET "customerApproved" = 1 WHERE "id" = ?').run("job-1");
     await expect(transitionJobStatusAtomically({} as any, startRepair)).resolves.toBeUndefined();
     expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
-      .toEqual({ status: "DIAGNOSING" });
+      .toEqual({ status: "REPAIRING" });
   });
 
   it("serializes a D1 part edit against the status transition and prevents a stale invoice", async () => {
@@ -223,7 +223,7 @@ describe("job status D1 SQLite transaction", () => {
       invoice,
     })).rejects.toBeInstanceOf(JobStatusConflictError);
     expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
-      .toEqual({ status: "REPAIRING" });
+      .toEqual({ status: "DIAGNOSING" });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "Invoice" WHERE "jobId" = ?').get("job-1"))
       .toEqual({ count: 0 });
   });
