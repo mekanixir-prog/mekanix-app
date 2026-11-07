@@ -9,6 +9,7 @@ type VerifiedGatewayPaymentInput = {
   paymentCode: string;
   amount: number;
   targetPlanId: string;
+  legacyPaymentId?: string;
   verifiedAt: Date;
 };
 
@@ -55,16 +56,20 @@ export async function recordVerifiedGatewayPaymentAtomically(
   if (d1) {
     const now = input.verifiedAt.toISOString();
     const eventId = crypto.randomUUID();
-    const paymentInsert = d1.prepare(
-      'INSERT INTO "Payment" ("id", "code", "invoiceId", "userId", "amount", "currency", "method", "status", "financialUnitStatus", "gatewayLogId", "createdAt") ' +
-      'SELECT ?, ?, NULL, ?, ?, \'IRR\', \'card\', \'SUCCEEDED\', \'VERIFIED_IRR\', ?, ? ' +
-      'WHERE EXISTS (SELECT 1 FROM "PaymentGatewayLog" WHERE "id" = ? AND "userId" = ? AND "purpose" = \'vip\' AND "targetPlanId" = ? AND "amount" = ? AND "currency" = \'IRR\' AND "financialUnitStatus" = \'VERIFIED_IRR\' AND "status" IN (\'REDIRECTED\', \'VERIFIED\')) ' +
-      'ON CONFLICT("gatewayLogId") DO NOTHING'
-    ).bind(
-      input.paymentId, input.paymentCode, input.userId, input.amount,
-      input.gatewayLogId, now, input.gatewayLogId, input.userId,
-      input.targetPlanId, input.amount,
-    );
+    const paymentWrite = input.legacyPaymentId
+      ? d1.prepare(
+          'UPDATE "Payment" SET "gatewayLogId" = ? WHERE "id" = ? AND "userId" = ? AND "amount" = ? AND "currency" = \'IRR\' AND "status" = \'SUCCEEDED\' AND "financialUnitStatus" = \'VERIFIED_IRR\' AND "gatewayLogId" IS NULL'
+        ).bind(input.gatewayLogId, input.legacyPaymentId, input.userId, input.amount)
+      : d1.prepare(
+          'INSERT INTO "Payment" ("id", "code", "invoiceId", "userId", "amount", "currency", "method", "status", "financialUnitStatus", "gatewayLogId", "createdAt") ' +
+          'SELECT ?, ?, NULL, ?, ?, \'IRR\', \'card\', \'SUCCEEDED\', \'VERIFIED_IRR\', ?, ? ' +
+          'WHERE EXISTS (SELECT 1 FROM "PaymentGatewayLog" WHERE "id" = ? AND "userId" = ? AND "purpose" = \'vip\' AND "targetPlanId" = ? AND "amount" = ? AND "currency" = \'IRR\' AND "financialUnitStatus" = \'VERIFIED_IRR\' AND "status" IN (\'REDIRECTED\', \'VERIFIED\')) ' +
+          'ON CONFLICT("gatewayLogId") DO NOTHING'
+        ).bind(
+          input.paymentId, input.paymentCode, input.userId, input.amount,
+          input.gatewayLogId, now, input.gatewayLogId, input.userId,
+          input.targetPlanId, input.amount,
+        );
 
     const linkAndVerify = d1.prepare(
       'UPDATE "PaymentGatewayLog" SET "status" = \'VERIFIED\', "financialUnitStatus" = \'VERIFIED_IRR\', ' +
@@ -100,7 +105,7 @@ export async function recordVerifiedGatewayPaymentAtomically(
       'THEN 1 ELSE json_extract(\'not-json\', \'$\') END'
     ).bind(eventKey, input.targetPlanId, input.gatewayLogId, input.userId, input.amount, input.targetPlanId);
 
-    await d1.batch([paymentInsert, linkAndVerify, outboxInsert, assertVerifiedAndEnqueued]);
+    await d1.batch([paymentWrite, linkAndVerify, outboxInsert, assertVerifiedAndEnqueued]);
     const row = await d1.prepare('SELECT "id" FROM "Payment" WHERE "gatewayLogId" = ?').bind(input.gatewayLogId).first<{ id: string }>();
     if (!row?.id) throw new Error("Atomic gateway verification did not produce a Payment");
     return row.id;
@@ -119,6 +124,26 @@ export async function recordVerifiedGatewayPaymentAtomically(
     }
 
     let payment = await tx.payment.findUnique({ where: { gatewayLogId: input.gatewayLogId } });
+    if (!payment && input.legacyPaymentId) {
+      const legacyPayment = await tx.payment.findUnique({ where: { id: input.legacyPaymentId } });
+      if (!isMatchingPayment(legacyPayment, input) || legacyPayment.gatewayLogId) {
+        throw new Error("Legacy Payment cannot be safely bound to this gateway attempt");
+      }
+      const bound = await tx.payment.updateMany({
+        where: {
+          id: input.legacyPaymentId,
+          userId: input.userId,
+          amount: input.amount,
+          currency: "IRR",
+          status: "SUCCEEDED",
+          financialUnitStatus: "VERIFIED_IRR",
+          gatewayLogId: null,
+        },
+        data: { gatewayLogId: input.gatewayLogId },
+      });
+      if (bound.count !== 1) throw new Error("Legacy Payment was concurrently bound to another gateway attempt");
+      payment = await tx.payment.findUnique({ where: { gatewayLogId: input.gatewayLogId } });
+    }
     if (!payment) {
       payment = await tx.payment.create({
         data: {
