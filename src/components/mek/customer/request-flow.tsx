@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { isVehicleInSupportedScope } from "@/lib/vehicle-scope";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronRight, ChevronLeft, Loader2, MapPin, Camera, Upload, Search, Star,
@@ -38,7 +39,7 @@ export function RequestType({ customer }: { customer: DemoUser }) {
   useEffect(() => {
     if (customer.customer)
       api.listVehicles(customer.customer.id)
-        .then((v) => setVehicles(v.filter((x) => allowedTypes.includes(x.type))))
+        .then((v) => setVehicles(v.filter((x) => allowedTypes.includes(x.type) && isVehicleInSupportedScope(x.type, x.make))))
         .catch(() => setVehicles([]));
   }, [customer, machineMode]);
 
@@ -125,7 +126,15 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
 
   useEffect(() => {
     if (customer.customer)
-      api.listVehicles(customer.customer.id).then((v) => setVehicles(v.filter((x) => allowedTypes.includes(x.type))));
+      api.listVehicles(customer.customer.id).then((v) => {
+        const eligible = v.filter((x) => allowedTypes.includes(x.type) && isVehicleInSupportedScope(x.type, x.make));
+        setVehicles(eligible);
+        setVehicleId((current) =>
+          current && eligible.some((vehicle) => vehicle.id === current)
+            ? current
+            : eligible.length === 1 ? eligible[0].id : undefined
+        );
+      });
   }, [customer, machineMode]);
 
   const readFileAsDataURL = (file: File): Promise<string> =>
@@ -151,7 +160,13 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
     if (auth.isGuest) { setGuestBlock(true); return; }
     if (!category) { toast.error(t("req.error.category")); return; }
     if (!title.trim()) { toast.error(t("req.error.title")); return; }
-    if (!vehicleId && !type) { toast.error(t("req.error.machine")); return; }
+    const registeredVehicleId = vehicleId ?? (vehicles.length === 1 ? vehicles[0].id : undefined);
+    if (!registeredVehicleId) {
+      toast.error(isFa
+        ? "برای ثبت درخواست، ابتدا وسیله خود را ثبت و سپس آن را انتخاب کنید."
+        : "Register and select a vehicle before submitting a service request.");
+      return;
+    }
     if (!customer.customer?.id) {
       // Should not happen because OTP verify + session route auto-create Customer,
       // but if it does, fail gracefully with a clear message instead of a TypeError.
@@ -163,7 +178,7 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
       // Keep coordinates and Idempotency-Key stable across retries of the same payload.
       const payload = {
         customerId: customer.customer.id,
-        vehicleId: vehicleId ?? vehicles[0]?.id,
+        vehicleId: registeredVehicleId,
         machineType: type,
         category,
         urgency,
@@ -224,6 +239,18 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
           {/* Machine */}
           <div className="rounded-xl border border-border bg-card p-4">
             <Label className="text-xs uppercase tracking-wide text-muted-foreground">{t("req.field.machine")}</Label>
+            {vehicles.length === 0 && (
+              <div className="mt-3 rounded-lg border border-amber/30 bg-amber/5 p-3" role="status">
+                <p className="text-sm text-foreground">
+                  {isFa
+                    ? "هنوز وسیله واجد شرایطی ثبت نکرده‌اید. ابتدا ماشین یا دستگاه خود را ثبت کنید تا بتوانید درخواست خدمت بفرستید."
+                    : "No eligible registered vehicle found. Add your vehicle or machine before requesting service."}
+                </p>
+                <Button type="button" size="sm" className="mt-3 bg-amber text-black hover:bg-amber/90" onClick={() => go("vehicles")}>
+                  {isFa ? "ثبت وسیله" : "Register vehicle"}
+                </Button>
+              </div>
+            )}
             {selectedVehicle ? (
               <div className="mt-2 flex items-center gap-3 rounded-lg border border-amber/30 bg-amber/5 p-3">
                 <div className="grid size-10 place-items-center rounded-lg border border-border bg-background">
