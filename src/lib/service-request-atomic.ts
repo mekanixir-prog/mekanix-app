@@ -89,6 +89,27 @@ async function createWithD1(
 
   const now = new Date().toISOString();
   const requestId = crypto.randomUUID();
+  // Re-check the vehicle's supported scope in the INSERT statement itself.
+  // The preflight lookup above is for a clear error; this SQL predicate closes
+  // the race if the vehicle is edited between the lookup and the D1 write.
+  const normalizedMakeSql = `lower(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(v."make", ' ', ''), '-', ''), '_', ''), '.', ''), '(', ''), ')', ''), '‌', ''), '‏', ''), 'ي', 'ی'), 'ك', 'ک'))`;
+  const inScopeSql = `(
+    v."type" <> 'CAR' OR (
+      ${normalizedMakeSql} NOT IN (
+        'ایرانخودرو', 'گروهایرانخودرو', 'irankhodro', 'irankhodroikco', 'ikco',
+        'سایپا', 'گروهسایپا', 'saipa', 'پارسخودرو', 'parskhodro', 'گروهسایپاپارسخودرو'
+      )
+      AND ${normalizedMakeSql} NOT LIKE 'ایرانخودرو%'
+      AND ${normalizedMakeSql} NOT LIKE '%گروهایرانخودرو%'
+      AND ${normalizedMakeSql} NOT LIKE 'سایپا%'
+      AND ${normalizedMakeSql} NOT LIKE '%گروهسایپا%'
+      AND ${normalizedMakeSql} NOT LIKE 'پارسخودرو%'
+      AND ${normalizedMakeSql} NOT LIKE 'irankhodro%'
+      AND ${normalizedMakeSql} NOT LIKE 'saipa%'
+      AND ${normalizedMakeSql} NOT LIKE 'parskhodro%'
+    )
+  )`;
+
   const statement = d1.prepare(`
     INSERT INTO "ServiceRequest"
       ("id", "code", "customerId", "vehicleId", "category", "urgency", "title",
@@ -97,6 +118,7 @@ async function createWithD1(
     SELECT ?, ?, ?, v."id", ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?
     FROM "Vehicle" v
     WHERE v."id" = ? AND v."customerId" = ?
+      AND ${inScopeSql}
       AND NOT EXISTS (SELECT 1 FROM "ServiceRequest" WHERE "idempotencyKey" = ?)
     ON CONFLICT("idempotencyKey") DO NOTHING
   `).bind(
@@ -113,12 +135,9 @@ async function createWithD1(
     select: { id: true, requestFingerprint: true },
   });
   if (!existing) {
-    const vehicle = await db.vehicle.findUnique({
-      where: { id: input.vehicleId },
-      select: { id: true, customerId: true, type: true, make: true },
-    });
-    if (!vehicle || vehicle.customerId !== input.customerId || !isVehicleInSupportedScope(vehicle.type, vehicle.make)) throw new ServiceRequestVehicleError();
-    throw new Error("D1 batch completed without a readable service request");
+    // A zero-row INSERT means the vehicle no longer satisfies the ownership
+    // or scope predicate (or was removed) after the preflight lookup.
+    throw new ServiceRequestVehicleError();
   }
   assertFingerprint(existing, input.requestFingerprint);
   return { id: existing.id, created: (insertResult?.meta?.changes ?? 0) > 0 };
