@@ -161,4 +161,51 @@ describe("job status approval estimate uses the fixed rate card", () => {
     expect(mocks.calculatePrice).not.toHaveBeenCalled();
     expect(mocks.transition).not.toHaveBeenCalled();
   });
+
+  it("allows a customer to approve an estimate without changing the job status", async () => {
+    mocks.auth.mockResolvedValue({ userId: "customer-user-1", role: "CUSTOMER" });
+    const waitingApproval = { ...beforeJob, status: "WAITING_APPROVAL" };
+    const updated = { ...updatedJob, status: "WAITING_APPROVAL" };
+    mocks.jobFindUnique.mockReset().mockResolvedValueOnce(waitingApproval).mockResolvedValueOnce(updated);
+
+    const response = await PATCH(request({ customerApproved: true }), {
+      params: Promise.resolve({ id: "job-1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.transition).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
+      actorRole: "CUSTOMER",
+      currentStatus: "WAITING_APPROVAL",
+      nextStatus: "WAITING_APPROVAL",
+      updates: { customerApproved: true },
+    }));
+  });
+
+  it("rejects non-Boolean customer approval values", async () => {
+    mocks.auth.mockResolvedValue({ userId: "customer-user-1", role: "CUSTOMER" });
+    const response = await PATCH(request({ customerApproved: "false" }), {
+      params: Promise.resolve({ id: "job-1" }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: "CUSTOMER_APPROVAL_INVALID" });
+    expect(mocks.jobFindUnique).not.toHaveBeenCalled();
+    expect(mocks.transition).not.toHaveBeenCalled();
+  });
+
+  it("rejects a customer approval combined with a job status jump", async () => {
+    mocks.auth.mockResolvedValue({ userId: "customer-user-1", role: "CUSTOMER" });
+    mocks.jobFindUnique.mockReset().mockResolvedValueOnce({
+      ...beforeJob,
+      status: "WAITING_APPROVAL",
+    });
+
+    const response = await PATCH(request({
+      status: "COMPLETED",
+      customerApproved: true,
+    }), { params: Promise.resolve({ id: "job-1" }) });
+
+    expect(response.status).toBe(403);
+    expect(mocks.transition).not.toHaveBeenCalled();
+  });
 });
