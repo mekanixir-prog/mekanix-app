@@ -97,6 +97,36 @@ describe("VIP gateway simulator verification", () => {
     }));
   });
 
+  it("repairs a verified legacy Payment and enqueues its durable event", async () => {
+    mockGatewayFindUnique.mockResolvedValue({
+      id: "gateway-legacy",
+      code: "PG-legacy",
+      userId: "customer-1",
+      status: "VERIFIED",
+      amount: 100_000,
+      currency: "IRR",
+      financialUnitStatus: "VERIFIED_IRR",
+      purpose: "vip",
+      targetPlanId: "plan-1",
+      paymentId: "payment-legacy",
+      verifiedAt: new Date("2026-11-01T10:00:00.000Z"),
+    });
+    mockPaymentFindUnique.mockImplementation(async ({ where }: { where: { gatewayLogId?: string; id?: string } }) =>
+      where.id ? {
+        id: "payment-legacy", code: "PAY-legacy", userId: "customer-1", amount: 100_000,
+        currency: "IRR", status: "SUCCEEDED", financialUnitStatus: "VERIFIED_IRR", gatewayLogId: null,
+      } : null
+    );
+    mockRecordVerifiedPayment.mockResolvedValue("payment-legacy");
+    const response = await POST(request({ code: "PG-legacy", otp: "1234" }));
+    expect(response.status).toBe(200);
+    expect(mockRecordVerifiedPayment).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      gatewayLogId: "gateway-legacy",
+      legacyPaymentId: "payment-legacy",
+      paymentId: "payment-legacy",
+    }));
+  });
+
   it("rejects a legacy/unbound gateway log without a target plan", async () => {
     mockGatewayFindUnique.mockResolvedValue({
       id: "gateway-legacy",
