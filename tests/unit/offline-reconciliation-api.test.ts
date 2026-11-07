@@ -64,9 +64,10 @@ describe("read-only offline reconciliation endpoints", () => {
   it("reports a withdrawal as committed only when it belongs to the authenticated technician", async () => {
     mocks.withdrawal.mockResolvedValue({
       id: "wd-1", walletId: "wallet-1", code: "WD-1001", amount: 500,
+      financialUnitStatus: "VERIFIED_IRR",
       status: "REQUESTED", requestedAt: new Date("2026-10-31T10:00:00Z"), processedAt: null,
     });
-    mocks.withdrawalLedger.mockResolvedValue({ id: "ledger-1", referenceId: "wd-1", amount: -500 });
+    mocks.withdrawalLedger.mockResolvedValue({ id: "ledger-1", referenceId: "wd-1", amount: -500, financialUnitStatus: "VERIFIED_IRR" });
     const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
@@ -76,6 +77,23 @@ describe("read-only offline reconciliation endpoints", () => {
     expect(mocks.withdrawal).toHaveBeenCalledWith(expect.objectContaining({
       where: { idempotencyKey: "idem_12345678" },
     }));
+  });
+
+  it("does not report a withdrawal committed when request and ledger provenance are unverified", async () => {
+    mocks.withdrawal.mockResolvedValue({
+      id: "wd-1", walletId: "wallet-1", code: "WD-1001", amount: 500,
+      financialUnitStatus: "VERIFIED_IRR",
+      status: "REQUESTED", requestedAt: new Date("2026-10-31T10:00:00Z"), processedAt: null,
+    });
+    mocks.withdrawalLedger.mockResolvedValue({
+      id: "ledger-1", referenceId: "wd-1", amount: -500, financialUnitStatus: "UNVERIFIED",
+    });
+    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      state: "RECONCILIATION_REQUIRED",
+      reason: "FINANCIAL_PROVENANCE_UNVERIFIED",
+    });
   });
 
   it("does not report a withdrawal committed when its debit ledger row is missing", async () => {
