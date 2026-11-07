@@ -7,10 +7,20 @@ import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/use-t";
 import { toast } from "sonner";
 import { toPersianDigits } from "@/lib/format";
+import { formatTomanFromIrr } from "@/lib/money/irr";
 
 export function CareDetail() {
   const { params, back, go } = useApp();
-  const { t, isFa, money } = useT();
+  const { isFa } = useT();
+  const locale = isFa ? "fa-IR" : "en-US";
+  const moneyIrr = (value: unknown) => {
+    const amount = safeInteger(value);
+    return amount === null ? "—" : `${formatTomanFromIrr(amount, locale)} ${isFa ? "تومان" : "Toman"}`;
+  };
+  const moneyToman = (value: unknown) => {
+    const amount = safeInteger(value);
+    return amount === null ? "—" : `${new Intl.NumberFormat(locale).format(amount)} ${isFa ? "تومان" : "Toman"}`;
+  };
   const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -93,11 +103,11 @@ export function CareDetail() {
               <div className="mt-2 flex items-center justify-between">
                 <div className="text-sm">
                   <span className="text-muted-foreground">{isFa ? "قطعه:" : "Part:"} </span>
-                  <span className="font-medium">{money(ap.partPrice * ap.quantity)}</span>
+                  <span className="font-medium">{moneyToman(Number(ap.partPrice) * Number(ap.quantity))}</span>
                   <span className="ms-3 text-muted-foreground">{isFa ? "اجرت:" : "Labor:"} </span>
-                  <span className="font-medium">{money(ap.laborPrice)}</span>
+                  <span className="font-medium">{moneyToman(ap.laborPrice)}</span>
                 </div>
-                <span className="font-display text-lg font-bold text-amber">{money(ap.totalPrice)}</span>
+                <span className="font-display text-lg font-bold text-amber">{moneyToman(ap.totalPrice)}</span>
               </div>
               <div className="mt-3 flex gap-2">
                 <Button size="sm" onClick={() => handleApprove(ap.id)} className="bg-emerald-600 text-white hover:bg-emerald-700">
@@ -126,14 +136,21 @@ export function CareDetail() {
         {/* Pricing */}
         {booking.pricing && (
           <div className="border-t border-border pt-3 space-y-1.5">
-            <PriceLine label={isFa ? "سرویس" : "Service"} amount={booking.pricing.servicePrice} money={money} />
-            <PriceLine label={isFa ? "مراجعه" : "Visit"} amount={booking.pricing.visitPrice} money={money} />
-            <PriceLine label={isFa ? "اجرت" : "Labor"} amount={booking.pricing.laborPrice} money={money} muted />
-            <PriceLine label={isFa ? "قطعات" : "Parts"} amount={booking.pricing.partsPrice} money={money} muted />
-            <div className="flex items-center justify-between border-t border-border pt-2">
-              <span className="font-bold">{isFa ? "مبلغ نهایی" : "Total"}</span>
-              <span className="font-display text-lg font-bold text-amber">{money(booking.pricing.total)}</span>
-            </div>
+            {booking.pricing.financialUnitStatus === "VERIFIED_IRR" && booking.pricing.currency === "IRR" ? <>
+              <PriceLine label={isFa ? "دستمزد ثابت" : "Fixed labor"} amount={booking.pricing.laborPrice} money={moneyIrr} />
+              <PriceLine label={isFa ? "اعزام" : "Dispatch"} amount={booking.pricing.visitPrice} money={moneyIrr} />
+              <PriceLine label={isFa ? "بازدید و عیب‌یابی" : "Inspection"} amount={booking.pricing.inspectionPrice} money={moneyIrr} />
+              {safeInteger(booking.pricing.emergencyPrice) !== 0 && <PriceLine label={isFa ? "هزینه فوریت" : "Emergency surcharge"} amount={booking.pricing.emergencyPrice} money={moneyIrr} />}
+              <PriceLine label={isFa ? "قطعات" : "Parts"} amount={booking.pricing.partsPrice} money={moneyIrr} muted />
+              {safeInteger(booking.pricing.discount) > 0 && <PriceLine label={isFa ? "تخفیف" : "Discount"} amount={booking.pricing.discount} money={moneyIrr} muted />}
+              {safeInteger(booking.pricing.taxTotal) > 0 && <PriceLine label={isFa ? "مالیات" : "Tax"} amount={booking.pricing.taxTotal} money={moneyIrr} muted />}
+              <div className="flex items-center justify-between border-t border-border pt-2">
+                <span className="font-bold">{isFa ? "مبلغ نهایی" : "Total"}</span>
+                <span className="font-display text-lg font-bold text-amber">{moneyIrr(booking.pricing.total)}</span>
+              </div>
+            </> : <p className="rounded-lg bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
+              {isFa ? "واحد پول این سابقه مالی هنوز تأیید نشده است؛ مبلغ تا زمان تطبیق نمایش داده نمی‌شود." : "The currency provenance for this historical amount is not verified; it is hidden until reconciled."}
+            </p>}
           </div>
         )}
       </div>
@@ -198,7 +215,16 @@ function InfoRow({ icon: Icon, label, value }: { icon: any; label: string; value
   );
 }
 
-function PriceLine({ label, amount, money, muted }: { label: string; amount: number; money: (n: number) => string; muted?: boolean }) {
+function safeInteger(value: unknown): number | null {
+  if (typeof value === "number") return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  if (typeof value === "string" && /^\\d+(?:\\.0+)?$/.test(value)) {
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+  }
+  return null;
+}
+
+function PriceLine({ label, amount, money, muted }: { label: string; amount: unknown; money: (n: unknown) => string; muted?: boolean }) {
   return (
     <div className="flex items-center justify-between">
       <span className={muted ? "text-muted-foreground" : ""}>{label}</span>
