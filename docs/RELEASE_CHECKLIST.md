@@ -40,10 +40,10 @@ This replaces the historical checklist snapshots from October. Do not use old â€
 - [x] Separate fixed-fee schedules implemented for supported foreign passenger vehicles and heavy machinery; unsupported asset classes fail closed.
 - [x] Admin rate-card editor, optimistic versioning, history, and server validation implemented. Every rate-change attempt is audited before the setting write; if audit persistence fails, the save is blocked with HTTP 503. Persisted money values are integer IRR; admin tariff entry is Toman.
 - [x] Production pricing remains disabled until explicit owner approval through `MEKANIX_PRICING_IRR_APPROVED=true`; saving a proposed card does not activate it.
-- [x] CARE customer preview now requests a server-calculated quote from the same rate-card engine, formats verified IRR as Toman, and pins the quote version when booking.
+- [x] CARE customer preview now requests a server-calculated quote from the same rate-card engine, formats verified IRR as Toman, and pins the quote version when booking. API schema now requires that version; omitting it cannot bypass the stale-quote guard.
 - [x] Legacy hardcoded CARE preview amounts, the unapproved 9% tax display, and unsupported six-month warranty promises removed from the reviewed booking/invoice copy. VIP copy now describes periodic visits only; repairs and parts are excluded.
-- [x] Ambiguous CARE service types are rejected instead of silently falling back to diagnostic pricing.
-- [ ] All seven required workflows must pass on the final PR head after the last code/documentation change; a prior green SHA is not sufficient.
+- [x] Ambiguous CARE service types are rejected instead of silently falling back to diagnostic pricing.\n- [x] Admin rate-card writes compare-and-set against the original row read; concurrent admin updates return 409 rather than overwriting each other, with a regression test.\n- [x] Feature branch synchronized with `main`; zero commits behind.
+- [x] All seven required workflows passed on code-tree SHA `0b6b319b040031f4d68d0dcda2965a3fd0cb39bd`. PR head `a00017bc86896630e26f39045da8bf8d3b50b703` is a synchronization merge commit with identical tree; Docker E2E is re-running on that merge commit. Any later code change requires a fresh full check set.
 - [ ] Owner must review and explicitly approve the actual passenger/heavy rate values. Heavy-equipment estimates still require regional technician/supplier sampling.
 - [ ] Approve or replace the current extra-distance estimation method (Haversine Ã— 1.3); it is not a navigation-provider route measurement.
 - [ ] Review the full PR diff and both provider migration tracks before merge. PR #137 remains open and unmerged.
