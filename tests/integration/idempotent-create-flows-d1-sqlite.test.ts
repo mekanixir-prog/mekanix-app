@@ -140,7 +140,7 @@ function makeDb(sqlite: DatabaseSync) {
   return {
     vehicle: {
       findUnique: async ({ where }: any) =>
-        sqlite.prepare('SELECT "id", "customerId" FROM "Vehicle" WHERE "id" = ?').get(where.id) ?? null,
+        sqlite.prepare('SELECT "id", "customerId", "type", "make" FROM "Vehicle" WHERE "id" = ?').get(where.id) ?? null,
     },
     serviceRequest: {
       findUnique: async ({ where }: any) =>
