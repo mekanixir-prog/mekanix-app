@@ -53,8 +53,7 @@ export async function POST(req: Request) {
     !targetPlan ||
     !targetPlan.active ||
     targetPlan.financialUnitStatus !== "VERIFIED_IRR" ||
-    !isSafeStoredIrrAmount(targetPlan.priceIrr) ||
-    Number(targetPlan.priceIrr) !== Number(log.amount)
+    !isSafeStoredIrrAmount(targetPlan.priceIrr)
   ) {
     return NextResponse.json({ error: "طرح یا مبلغ تلاش پرداخت دیگر قابل تأیید نیست", code: "VIP_PLAN_SNAPSHOT_MISMATCH" }, { status: 409 });
   }
