@@ -1,3 +1,4 @@
+import { isPaymentSimulatorRouteEnabled } from "@/lib/payment-simulator-guard";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
@@ -17,7 +18,7 @@ import { isSafeStoredIrrAmount, maskFinancialFields } from "@/lib/money/financia
 export async function POST(req: Request) {
   // 1. Production guard — fail closed. This route is dev-only simulation
   //    until a real payment gateway integration exists.
-  if (process.env.NODE_ENV === "production") {
+  if (!isPaymentSimulatorRouteEnabled()) {
     return new NextResponse(null, { status: 404 });
   }
 
