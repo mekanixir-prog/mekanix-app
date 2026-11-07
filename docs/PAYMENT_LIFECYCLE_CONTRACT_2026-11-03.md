@@ -216,3 +216,5 @@ This is a local simulator safety improvement, not a production payment attempt/o
 - The outbox table is durable storage, not a completed worker. No dispatcher, provider callback verification, signed webhook, retries/backoff, dead-letter operator UI, reconciliation scheduler, or refund workflow is claimed by this change.
 - Outbox consumers must claim events safely, apply bounded retries, and use the event idempotency key to deduplicate side effects before any external notification or subscription fulfillment.
 - The current simulator's OTP remains test-only and is not evidence of a real provider settlement.
+
+- A legacy simulator callback that already has a verified, user-owned Payment linked by `PaymentGatewayLog.paymentId` may be repaired only if the Payment is SUCCEEDED, IRR-provenanced, amount-equal, and has no conflicting `gatewayLogId`. The repair binds that exact Payment to the gateway attempt and writes the same idempotent outbox event atomically. If the Payment is already bound elsewhere or any invariant differs, recovery fails closed.
