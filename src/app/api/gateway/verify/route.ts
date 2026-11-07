@@ -96,8 +96,18 @@ export async function POST(req: Request) {
     if (!legacyPayment || legacyPayment.userId !== session.userId || legacyPayment.status !== "SUCCEEDED" || legacyPayment.currency !== "IRR" || legacyPayment.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(legacyPayment.amount) || Number(legacyPayment.amount) !== Number(log.amount)) {
       return NextResponse.json({ error: "رکورد پرداخت قبلی قابل تطبیق نیست؛ بررسی دستی لازم است" }, { status: 409 });
     }
+    const paymentId = await recordVerifiedGatewayPaymentAtomically(db, {
+      gatewayLogId: log.id,
+      userId: session.userId,
+      paymentId: legacyPayment.id,
+      paymentCode: legacyPayment.code,
+      legacyPaymentId: legacyPayment.id,
+      amount: Number(log.amount),
+      targetPlanId: log.targetPlanId,
+      verifiedAt: log.verifiedAt ?? new Date(),
+    });
     return NextResponse.json({
-      ok: true, paymentId: legacyPayment.id, amount: Number(legacyPayment.amount),
+      ok: true, paymentId, amount: Number(legacyPayment.amount),
       purpose: log.purpose, alreadyVerified: true,
     });
   }
