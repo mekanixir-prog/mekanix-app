@@ -1,3 +1,4 @@
+import { isPaymentSimulatorRouteEnabled } from "@/lib/payment-simulator-guard";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
@@ -28,7 +29,7 @@ import { isSafeStoredIrrAmount, maskFinancialFields } from "@/lib/money/financia
 // MIGRATION: Uses getDbForLib() instead of direct db import.
 
 export async function POST(req: Request) {
-  if (process.env.NODE_ENV === "production") {
+  if (!isPaymentSimulatorRouteEnabled()) {
     return new NextResponse(null, { status: 404 });
   }
   const session = await requireAuth(req);
