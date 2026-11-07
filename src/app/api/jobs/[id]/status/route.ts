@@ -109,6 +109,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     where: { id },
     select: {
       status: true,
+      updatedAt: true,
       technicianId: true,
       requestId: true,
       code: true,
@@ -260,6 +261,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       invoice: invoiceInput,
       holdUntil,
       currentStatus: existing.status as PrismaJobStatus,
+      expectedUpdatedAt: existing.updatedAt,
       nextStatus: (status ?? existing.status) as PrismaJobStatus,
       updates,
     });
