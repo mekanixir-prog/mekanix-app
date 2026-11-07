@@ -5,6 +5,7 @@ import { recordVerifiedGatewayPaymentAtomically } from "@/lib/payment-verificati
 const mockLogFindUnique = vi.fn();
 const mockPaymentFindUnique = vi.fn();
 const mockPaymentCreate = vi.fn();
+const mockPaymentUpdateMany = vi.fn();
 const mockLogUpdateMany = vi.fn();
 const mockOutboxUpsert = vi.fn();
 const mockTransaction = vi.fn();
@@ -16,7 +17,7 @@ vi.mock("@/lib/idempotency", () => ({
 function makeDb() {
   const tx = {
     paymentGatewayLog: { findUnique: (...args: unknown[]) => mockLogFindUnique(...args), updateMany: (...args: unknown[]) => mockLogUpdateMany(...args) },
-    payment: { findUnique: (...args: unknown[]) => mockPaymentFindUnique(...args), create: (...args: unknown[]) => mockPaymentCreate(...args) },
+    payment: { findUnique: (...args: unknown[]) => mockPaymentFindUnique(...args), create: (...args: unknown[]) => mockPaymentCreate(...args), updateMany: (...args: unknown[]) => mockPaymentUpdateMany(...args) },
     paymentOutboxEvent: { upsert: (...args: unknown[]) => mockOutboxUpsert(...args) },
   };
   return { $transaction: (callback: (client: typeof tx) => Promise<unknown>) => mockTransaction(() => callback(tx)) } as never;
@@ -41,6 +42,7 @@ describe("atomic verified gateway payment persistence", () => {
       status: "REDIRECTED", verifiedAt: null,
     });
     mockPaymentFindUnique.mockResolvedValue(null);
+    mockPaymentUpdateMany.mockResolvedValue({ count: 1 });
     mockPaymentCreate.mockResolvedValue({
       id: "payment-1", userId: "customer-1", amount: 100_000, currency: "IRR",
       status: "SUCCEEDED", financialUnitStatus: "VERIFIED_IRR",
@@ -82,6 +84,28 @@ describe("atomic verified gateway payment persistence", () => {
     expect(result).toBe("payment-1");
     expect(mockPaymentCreate).not.toHaveBeenCalled();
     expect(mockOutboxUpsert).toHaveBeenCalledTimes(1);
+  });
+
+  it("binds a valid legacy Payment and emits the outbox event atomically", async () => {
+    const legacy = {
+      id: "payment-legacy", userId: "customer-1", amount: 100_000, currency: "IRR",
+      status: "SUCCEEDED", financialUnitStatus: "VERIFIED_IRR", gatewayLogId: null,
+    };
+    mockPaymentFindUnique.mockImplementation(async ({ where }: { where: { gatewayLogId?: string; id?: string } }) =>
+      where.id ? legacy : { ...legacy, id: "payment-legacy", gatewayLogId: "gateway-1" }
+    );
+    const result = await recordVerifiedGatewayPaymentAtomically(makeDb(), {
+      ...input, paymentId: "payment-legacy", legacyPaymentId: "payment-legacy",
+    });
+    expect(result).toBe("payment-legacy");
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
+    expect(mockPaymentUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: "payment-legacy", gatewayLogId: null }),
+      data: { gatewayLogId: "gateway-1" },
+    }));
+    expect(mockOutboxUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ aggregateId: "payment-legacy" }),
+    }));
   });
 
   it("rejects a gateway attempt whose server-owned amount no longer matches", async () => {
