@@ -25,6 +25,7 @@ vi.mock("@/lib/db-access", () => ({
 }));
 vi.mock("@/lib/service-request-atomic", () => ({
   createServiceRequestAtomically: mocks.create,
+  ServiceRequestVehicleError: class ServiceRequestVehicleError extends Error {},
 }));
 
 import { POST } from "@/app/api/service-requests/route";
