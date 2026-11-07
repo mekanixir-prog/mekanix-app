@@ -101,6 +101,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       status: "VERIFIED",
       financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip",
+      targetPlanId: "plan-1",
       paymentId: "pay-1",
       amount: 100_000,
       currency: "IRR",
@@ -281,7 +282,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     mockPaymentGatewayLogFindUnique.mockResolvedValue({
       id: "gateway-1", userId: "user-1", status: "VERIFIED",
       financialUnitStatus: "VERIFIED_IRR",
-      purpose: "invoice", paymentId: "pay-1", amount: 100_000, currency: "IRR",
+      purpose: "invoice", targetPlanId: "plan-1", paymentId: "pay-1", amount: 100_000, currency: "IRR",
     });
     const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
     expect(res.status).toBe(400);
@@ -293,7 +294,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     mockPaymentGatewayLogFindUnique.mockResolvedValue({
       id: "gateway-1", userId: "user-1", status: "VERIFIED",
       financialUnitStatus: "VERIFIED_IRR",
-      purpose: "vip", paymentId: "different-payment", amount: 100_000, currency: "IRR",
+      purpose: "vip", targetPlanId: "plan-1", paymentId: "different-payment", amount: 100_000, currency: "IRR",
     });
     const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
     expect(res.status).toBe(400);
@@ -305,7 +306,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     mockPaymentGatewayLogFindUnique.mockResolvedValue({
       id: "gateway-1", userId: "user-1", status: "VERIFIED",
       financialUnitStatus: "VERIFIED_IRR",
-      purpose: "vip", paymentId: "pay-1", amount: 120_000, currency: "USD",
+      purpose: "vip", targetPlanId: "plan-1", paymentId: "pay-1", amount: 120_000, currency: "USD",
     });
     const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
     expect(res.status).toBe(400);
