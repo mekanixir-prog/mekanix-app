@@ -291,4 +291,45 @@ describe("atomic job status writer", () => {
     await expect(transitionJobStatusAtomically(db, input))
       .rejects.toBeInstanceOf(JobStatusConflictError);
   });
+
+  it("allows customer approval only as a same-status approval mutation", async () => {
+    const tx = {
+      job: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      serviceRequest: { updateMany: vi.fn() },
+      technician: { updateMany: vi.fn() },
+    };
+    const db = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
+    } as any;
+    const approvalInput = {
+      ...input,
+      actorRole: "CUSTOMER" as const,
+      actorTechnicianId: null,
+      currentStatus: "WAITING_APPROVAL" as const,
+      nextStatus: "WAITING_APPROVAL" as const,
+      updates: { customerApproved: true },
+    };
+
+    await expect(transitionJobStatusAtomically(db, approvalInput)).resolves.toBeUndefined();
+    expect(tx.job.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ status: "WAITING_APPROVAL" }),
+      data: { status: "WAITING_APPROVAL", customerApproved: true },
+    }));
+  });
+
+  it("rejects a customer attempt to complete a job through approval before any database write", async () => {
+    const db = { $transaction: vi.fn() } as any;
+    const invalidInput = {
+      ...input,
+      actorRole: "CUSTOMER" as const,
+      actorTechnicianId: null,
+      currentStatus: "WAITING_APPROVAL" as const,
+      nextStatus: "COMPLETED" as const,
+      updates: { customerApproved: true },
+    };
+
+    await expect(transitionJobStatusAtomically(db, invalidInput))
+      .rejects.toBeInstanceOf(JobStatusConflictError);
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
 });
