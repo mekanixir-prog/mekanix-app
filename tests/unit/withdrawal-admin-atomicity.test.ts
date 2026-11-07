@@ -129,6 +129,25 @@ describe("admin withdrawal transitions", () => {
     });
   });
 
+  it("rolls back PAID settlement if the payout audit ledger cannot be written", async () => {
+    const tx = {
+      withdrawalRequest: {
+        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "APPROVED", financialUnitStatus: "VERIFIED_IRR" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      walletTransaction: { create: vi.fn().mockResolvedValue({}) },
+      walletLedger: { create: vi.fn().mockRejectedValue(new Error("payout ledger failed")) },
+      wallet: {
+        findUnique: vi.fn().mockResolvedValue({ financialUnitStatus: "VERIFIED_IRR", balance: 1000 }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
+    await expect(updateWithdrawalWithPrisma(db, {
+      ...input, action: "PAID", payoutReference: "BANK-TRX-2026-0001",
+    })).rejects.toThrow("payout ledger failed");
+  });
+
   it("does not repeat an already completed transition", async () => {
     const tx = {
       withdrawalRequest: {
