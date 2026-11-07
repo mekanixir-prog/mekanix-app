@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { isSafeStoredIrrAmount } from "@/lib/money/financial-read-mask";
 import { releaseWalletTransactionWithD1, type D1Binding } from "./wallet-release-d1";
 export { releaseWalletTransactionWithD1 } from "./wallet-release-d1";
 
@@ -15,18 +16,20 @@ export async function releaseWalletTransactionWithPrisma(
         id: transactionId,
         walletId,
         status: "PENDING",
+        financialUnitStatus: "VERIFIED_IRR",
         netAmount: { gte: 0 },
         holdUntil: { not: null, lte: now },
       },
-      select: { netAmount: true },
+      select: { netAmount: true, financialUnitStatus: true },
     });
-    if (!transaction) return false;
+    if (!transaction || transaction.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(transaction.netAmount)) return false;
 
     const transition = await tx.walletTransaction.updateMany({
       where: {
         id: transactionId,
         walletId,
         status: "PENDING",
+        financialUnitStatus: "VERIFIED_IRR",
         netAmount: { gte: 0 },
         holdUntil: { not: null, lte: now },
       },
@@ -35,7 +38,7 @@ export async function releaseWalletTransactionWithPrisma(
     if (transition.count !== 1) return false;
 
     const walletUpdate = await tx.wallet.updateMany({
-      where: { id: walletId, pendingBalance: { gte: transaction.netAmount } },
+      where: { id: walletId, financialUnitStatus: "VERIFIED_IRR", pendingBalance: { gte: transaction.netAmount } },
       data: {
         pendingBalance: { decrement: transaction.netAmount },
         balance: { increment: transaction.netAmount },
@@ -49,9 +52,12 @@ export async function releaseWalletTransactionWithPrisma(
 
     const updatedWallet = await tx.wallet.findUnique({
       where: { id: walletId },
-      select: { balance: true },
+      select: { balance: true, pendingBalance: true, financialUnitStatus: true },
     });
-    if (!updatedWallet) throw new Error("Wallet disappeared during escrow release");
+    if (!updatedWallet || updatedWallet.financialUnitStatus !== "VERIFIED_IRR" ||
+        !isSafeStoredIrrAmount(updatedWallet.balance) || !isSafeStoredIrrAmount(updatedWallet.pendingBalance)) {
+      throw new Error("Wallet financial provenance or integer IRR aggregates are invalid");
+    }
 
     const amount = transaction.netAmount;
     const balanceAfter = updatedWallet.balance;
@@ -66,6 +72,7 @@ export async function releaseWalletTransactionWithPrisma(
         referenceId: transactionId,
         description: `Escrow released — transaction ${transactionId}`,
         idempotencyKey: `wallet-release:${transactionId}:LEDGER`,
+        financialUnitStatus: "VERIFIED_IRR",
       },
     });
     return true;
