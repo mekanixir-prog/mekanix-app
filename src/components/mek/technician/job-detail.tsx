@@ -408,7 +408,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                   <FileText className="mr-1.5 size-3.5" /> {t("tech.jobDetail.issueInvoice").replace("{code}", isFa ? toPersianDigits(job.invoice.code) : job.invoice.code)}
                 </Button>
               )}
-              {!job.invoice && (
+              {!job.invoice && ["WAITING_APPROVAL", "COMPLETED"].includes(job.status) && (
                 <Button onClick={issueInvoice} variant="outline" size="sm" className="mt-2 w-full">
                   <FileText className="mr-1.5 size-3.5" /> {t("tech.jobDetail.sendEstimate")}
                 </Button>
