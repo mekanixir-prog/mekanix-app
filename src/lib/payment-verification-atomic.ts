@@ -161,7 +161,7 @@ export async function recordVerifiedGatewayPaymentAtomically(
       purpose: "vip",
       targetPlanId: input.targetPlanId,
     });
-    await tx.paymentOutboxEvent.upsert({
+    const event = await tx.paymentOutboxEvent.upsert({
       where: { idempotencyKey: eventKey },
       create: {
         eventType: "PAYMENT_SUCCEEDED",
@@ -174,6 +174,9 @@ export async function recordVerifiedGatewayPaymentAtomically(
       },
       update: {},
     });
+    if (event.eventType !== "PAYMENT_SUCCEEDED" || event.aggregateType !== "Payment" || event.aggregateId !== payment.id) {
+      throw new Error("Outbox idempotency key is bound to a different event");
+    }
     return payment.id;
   });
 }
