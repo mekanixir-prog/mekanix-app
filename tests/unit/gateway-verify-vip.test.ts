@@ -145,6 +145,7 @@ describe("VIP gateway simulator verification", () => {
   it("does not create a second payment when the attempt is already linked", async () => {
     mockPaymentFindUnique.mockResolvedValue({
       id: "payment-1",
+      code: "PAY-PG-test",
       userId: "customer-1",
       status: "SUCCEEDED",
       currency: "IRR",
