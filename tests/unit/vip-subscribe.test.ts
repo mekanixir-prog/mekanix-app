@@ -320,6 +320,21 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     expect(mockCreateVipSubscriptionAtomically).not.toHaveBeenCalled();
   });
 
+  it("uses the persisted amount snapshot if the plan price changes after initiation", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockVipPlanFindUnique.mockResolvedValue({
+      id: "plan-1",
+      name: "Gold",
+      priceIrr: 150_000, // price changed after the attempt was initiated
+      durationDays: 30,
+      active: true,
+      financialUnitStatus: "VERIFIED_IRR",
+    });
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(200);
+    expect(mockCreateVipSubscriptionAtomically).toHaveBeenCalled();
+  });
+
   it("rejects a gateway attempt not linked back to the selected payment", async () => {
     vi.stubEnv("NODE_ENV", "test");
     mockPaymentGatewayLogFindUnique.mockResolvedValue({
