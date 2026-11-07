@@ -227,4 +227,23 @@ describe("atomic escrow release D1 SQLite integration", () => {
     expect(sqlite.prepare('SELECT "status" FROM "WalletTransaction" WHERE "id" = ?').get("txn-1")).toEqual({ status: "PENDING" });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
   });
+
+  it("does not release a pending transaction without verified IRR provenance", async () => {
+    const { sqlite, d1 } = makeD1(); databases.push(sqlite);
+    sqlite.prepare('INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "pendingBalance") VALUES (?, ?, ?, ?)').run(
+      "wallet-1", "VERIFIED_IRR", 2000, 1000
+    );
+    sqlite.prepare('INSERT INTO "WalletTransaction" ("id", "walletId", "financialUnitStatus", "netAmount", "status", "holdUntil") VALUES (?, ?, ?, ?, ?, ?)').run(
+      "txn-unverified", "wallet-1", "UNVERIFIED", 1000, "PENDING", "2026-10-30T09:00:00.000Z"
+    );
+
+    await expect(releaseWalletTransactionWithD1(
+      d1 as never, "wallet-1", "txn-unverified", new Date("2026-10-30T10:00:00.000Z")
+    )).rejects.toThrow();
+    expect(sqlite.prepare('SELECT "status" FROM "WalletTransaction" WHERE "id" = ?').get("txn-unverified")).toEqual({
+      status: "PENDING",
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
+  });
+
 });
