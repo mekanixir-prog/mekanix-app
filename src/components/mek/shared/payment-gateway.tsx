@@ -16,8 +16,8 @@ import { toast } from "sonner";
 type Stage = "form" | "otp" | "processing" | "done" | "failed";
 
 // Iranian payment gateway simulator (Shaparak-style).
-// Used for VIP subscription + pre-service payment + wallet top-up.
-// In production: replace the fetch calls with Zarinpal/IDPay API.
+// Used only for the VIP local simulator. Real providers remain disabled until
+// the persisted attempt / verification / fulfillment lifecycle is implemented.
 export function PaymentGatewayDialog({
   open,
   onOpenChange,
@@ -30,7 +30,7 @@ export function PaymentGatewayDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   amount: number; // Display-only fallback; server resolves the payable IRR amount from planId.
-  purpose: "vip" | "prepay" | "invoice" | "wallet_topup";
+  purpose: "vip";
   description?: string;
   planId: string;
   onSuccess?: (paymentId: string, amount: number) => void;
