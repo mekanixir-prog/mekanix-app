@@ -259,6 +259,7 @@ describe("atomic job status writer", () => {
     expect(statements[2].values).toContain("invoice-1");
     expect(statements[2].values).toContain(6_000_000);
     expect(statements[2].values).toContain("VERIFIED_IRR");
+    expect(statements[2].values).toContain("rate-card-2");
     expect(statements[3].sql).toContain("json_extract");
   });
 
