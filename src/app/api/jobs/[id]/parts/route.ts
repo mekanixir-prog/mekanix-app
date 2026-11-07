@@ -3,6 +3,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
 import { getJobPartAmountError } from "@/lib/money/job-part-amount";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 import { addJobPartBeforeInvoice, removeJobPartBeforeInvoice, JobPartMutationConflictError, JobPartNotFoundError } from "@/lib/job-parts-atomic";
 
 async function ensureAssignedTechOrAdmin(session: any, jobId: string) {
@@ -66,7 +67,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       quantity: body.quantity,
       unitPrice: body.unitPrice,
     });
-    return NextResponse.json(part);
+    return NextResponse.json(maskFinancialFields(part, ["unitPrice"]));
   } catch (error) {
     if (error instanceof JobPartMutationConflictError) {
       return NextResponse.json(
