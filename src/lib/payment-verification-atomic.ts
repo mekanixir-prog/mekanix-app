@@ -51,17 +51,6 @@ export async function recordVerifiedGatewayPaymentAtomically(
 ): Promise<string> {
   assertInput(input);
   const eventKey = `payment.succeeded:${input.gatewayLogId}`;
-  const payload = JSON.stringify({
-    eventType: "PAYMENT_SUCCEEDED",
-    paymentId: input.paymentId,
-    gatewayLogId: input.gatewayLogId,
-    userId: input.userId,
-    amount: input.amount,
-    currency: "IRR",
-    purpose: "vip",
-    targetPlanId: input.targetPlanId,
-  });
-
   const d1 = await getD1Binding();
   if (d1) {
     const now = input.verifiedAt.toISOString();
@@ -92,12 +81,12 @@ export async function recordVerifiedGatewayPaymentAtomically(
 
     const outboxInsert = d1.prepare(
       'INSERT INTO "PaymentOutboxEvent" ("id", "eventType", "aggregateType", "aggregateId", "payload", "idempotencyKey", "status", "attempts", "availableAt", "createdAt", "updatedAt") ' +
-      'SELECT ?, \'PAYMENT_SUCCEEDED\', \'Payment\', p."id", ?, ?, \'PENDING\', 0, ?, ?, ? ' +
+      'SELECT ?, \'PAYMENT_SUCCEEDED\', \'Payment\', p."id", json_object(\'eventType\', \'PAYMENT_SUCCEEDED\', \'paymentId\', p."id\', \'gatewayLogId\', ?, \'userId\', p."userId\', \'amount\', p."amount\', \'currency\', \'IRR\', \'purpose\', \'vip\', \'targetPlanId\', ?), ?, \'PENDING\', 0, ?, ?, ? ' +
       'FROM "Payment" p JOIN "PaymentGatewayLog" g ON g."id" = p."gatewayLogId" ' +
       'WHERE p."gatewayLogId" = ? AND p."userId" = ? AND p."amount" = ? AND p."currency" = \'IRR\' AND p."status" = \'SUCCEEDED\' ' +
       'AND g."status" = \'VERIFIED\' AND g."paymentId" = p."id" ' +
       'ON CONFLICT("idempotencyKey") DO NOTHING'
-    ).bind(eventId, payload, eventKey, now, now, now, input.gatewayLogId, input.userId, input.amount);
+    ).bind(eventId, input.gatewayLogId, input.targetPlanId, eventKey, now, now, now, input.gatewayLogId, input.userId, input.amount);
 
     const assertVerifiedAndEnqueued = d1.prepare(
       'SELECT CASE WHEN EXISTS (SELECT 1 FROM "Payment" p JOIN "PaymentGatewayLog" g ON g."id" = p."gatewayLogId" ' +
@@ -156,11 +145,22 @@ export async function recordVerifiedGatewayPaymentAtomically(
         currency: "IRR",
         financialUnitStatus: "VERIFIED_IRR",
         status: { in: ["REDIRECTED", "VERIFIED"] },
+        OR: [{ paymentId: null }, { paymentId: payment.id }],
       },
       data: { status: "VERIFIED", verifiedAt: log.verifiedAt ?? input.verifiedAt, paymentId: payment.id },
     });
     if (linked.count !== 1) throw new Error("Gateway attempt could not be linked to its Payment");
 
+    const payload = JSON.stringify({
+      eventType: "PAYMENT_SUCCEEDED",
+      paymentId: payment.id,
+      gatewayLogId: input.gatewayLogId,
+      userId: input.userId,
+      amount: input.amount,
+      currency: "IRR",
+      purpose: "vip",
+      targetPlanId: input.targetPlanId,
+    });
     await tx.paymentOutboxEvent.upsert({
       where: { idempotencyKey: eventKey },
       create: {
