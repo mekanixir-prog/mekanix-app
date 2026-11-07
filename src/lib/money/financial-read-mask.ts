@@ -76,7 +76,9 @@ export function maskFinancialFields<T extends object>(
 ): T {
   const source = record as FinancialRecord;
   const currency = currencyField ? source[currencyField] : undefined;
-  const verified = isVerifiedIrrRecord(source.financialUnitStatus, currency) &&
+  const currencyValid = currencyField === undefined || currency === "IRR";
+  const verified = currencyValid &&
+    isVerifiedIrrRecord(source.financialUnitStatus, currency) &&
     fields.every((field) => isSafeStoredIrrAmount(source[field]));
 
   if (verified) return record;
