@@ -109,7 +109,7 @@ describe("admin withdrawal API", () => {
     expect(mocks.list).toHaveBeenCalledTimes(1);
   });
 
-  it("approves a request and writes audit/notification after the transition", async () => {
+  it("durably audits before approval and records the committed transition", async () => {
     const response = await PATCH(request({ status: "APPROVED" }), {
       params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
     });
@@ -117,7 +117,12 @@ describe("admin withdrawal API", () => {
     expect(mocks.update).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       withdrawalId: "wd-1", action: "APPROVED", adminId: "admin-1",
     }));
-    expect(mocks.audit).toHaveBeenCalledTimes(1);
+    expect(mocks.audit).toHaveBeenCalledTimes(2);
+    expect(mocks.audit.mock.calls[0][0]).toMatchObject({
+      action: "ATTEMPT_WITHDRAWAL_APPROVED",
+      strict: true,
+    });
+    expect(mocks.audit.invocationCallOrder[0]).toBeLessThan(mocks.update.invocationCallOrder[0]);
     expect(mocks.notify).toHaveBeenCalledTimes(1);
   });
 
@@ -154,7 +159,12 @@ describe("admin withdrawal API", () => {
     expect(mocks.update).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       withdrawalId: "wd-1", action: "PAID", adminId: "admin-1", payoutReference: "BANK-TRX-2026-0001",
     }));
-    expect(mocks.audit).toHaveBeenCalledTimes(1);
+    expect(mocks.audit).toHaveBeenCalledTimes(2);
+    expect(mocks.audit.mock.calls[0][0]).toMatchObject({
+      action: "ATTEMPT_WITHDRAWAL_PAID",
+      strict: true,
+    });
+    expect(mocks.audit.invocationCallOrder[0]).toBeLessThan(mocks.update.invocationCallOrder[0]);
     expect(mocks.notify).toHaveBeenCalledTimes(1);
   });
 
@@ -197,7 +207,19 @@ describe("admin withdrawal API", () => {
     });
     expect(response.status).toBe(200);
     expect(mocks.update).toHaveBeenCalledTimes(1);
+    expect(mocks.audit).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not mutate a withdrawal when durable audit persistence fails", async () => {
+    mocks.audit.mockRejectedValueOnce(new Error("audit database unavailable"));
+    const response = await PATCH(request({ status: "APPROVED" }), {
+      params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
+    });
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({ code: "WITHDRAWAL_AUDIT_UNAVAILABLE" });
     expect(mocks.audit).toHaveBeenCalledTimes(1);
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.notify).not.toHaveBeenCalled();
   });
 
   it("returns conflict when another administrator already changed the state", async () => {
