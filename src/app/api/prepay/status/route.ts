@@ -110,5 +110,6 @@ export async function GET(req: Request) {
     jobId: job.id,
     recordedFinancialRows: recordCount,
     expectedFinancialRows: 4,
+    reason: job.prepayPaid ? "FINANCIAL_RECORD_MISSING" : "ORPHAN_FINANCIAL_RECORDS",
   }, { status: 409 });
 }
