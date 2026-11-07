@@ -251,7 +251,7 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
     await expect(createInsuranceClaimAtomically(makeDb(sqlite), claimInput))
       .rejects.toThrow("policy update failed");
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "InsuranceClaim"').get()).toEqual({ count: 0 });
-    expect(sqlite.prepare('SELECT "status" FROM "InsurancePolicy" WHERE "id" = ?').get("policy-1"))
+    expect(sqlite.prepare('SELECT "status", "financialUnitStatus" FROM "InsurancePolicy" WHERE "id" = ?').get("policy-1"))
       .toEqual({ status: "active", financialUnitStatus: "VERIFIED_IRR" });
   });
 
@@ -265,7 +265,7 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
     await expect(createInsuranceClaimAtomically(makeDb(sqlite), claimInput))
       .rejects.toThrow("no longer eligible");
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "InsuranceClaim"').get()).toEqual({ count: 0 });
-    expect(sqlite.prepare('SELECT "status" FROM "InsurancePolicy" WHERE "id" = ?').get("policy-1"))
+    expect(sqlite.prepare('SELECT "status", "financialUnitStatus" FROM "InsurancePolicy" WHERE "id" = ?').get("policy-1"))
       .toEqual({ status: "expired", financialUnitStatus: "VERIFIED_IRR" });
   });
 });
