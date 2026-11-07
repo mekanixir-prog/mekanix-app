@@ -163,6 +163,21 @@ describe("job status D1 SQLite transaction", () => {
       .toEqual({ status: "ONLINE" });
   });
 
+  it("rejects a stale job revision when parts changed after the estimate was read", async () => {
+    sqlite.prepare('UPDATE "Job" SET "updatedAt" = ? WHERE "id" = ?')
+      .run("2026-11-02T10:05:00.000Z", "job-1");
+
+    await expect(transitionJobStatusAtomically({} as any, {
+      ...baseInput,
+      invoice,
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+
+    expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
+      .toEqual({ status: "REPAIRING" });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "Invoice" WHERE "jobId" = ?').get("job-1"))
+      .toEqual({ count: 0 });
+  });
+
   it("rolls back job status when the authenticated technician is no longer assigned", async () => {
     sqlite.prepare('UPDATE "Job" SET "technicianId" = ? WHERE "id" = ?').run("tech-2", "job-1");
 
