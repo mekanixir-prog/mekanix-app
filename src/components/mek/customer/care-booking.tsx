@@ -316,8 +316,8 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
                 </div>
                 <p className="pt-2 text-xs leading-6 text-muted-foreground">
                   {isFa
-                    ? `این مبلغ بر اساس نسخه ${quote.pricingVersion} نرخ‌نامه و بدون قطعات و مسافت اضافه محاسبه شده است. مسافت مشمول اعزام ${toPersianDigits(quote.breakdown.includedDistanceKm)} کیلومتر است؛ هر هزینه اضافه فقط با اعلام و تأیید جداگانه قابل اعمال خواهد بود.`
-                    : `Calculated from rate-card ${quote.pricingVersion}; parts and extra distance are excluded. The included dispatch distance is ${quote.breakdown.includedDistanceKm} km. Any additional charge must be disclosed and separately approved.`}
+                    ? `این مبلغ بر اساس نسخه ${quote.pricingVersion} نرخ‌نامه و بدون قطعات و مسافت اضافه محاسبه شده است. مسافت مشمول اعزام ${toPersianDigits(quote.breakdown.includedDistanceKm)} کیلومتر است؛ در صورت اعمال هزینه مسافت اضافه، برآورد مسافت در فاکتور نهایی جداگانه نمایش داده می‌شود.`
+                    : `Calculated from rate-card ${quote.pricingVersion}; parts and extra distance are excluded. The included dispatch distance is ${quote.breakdown.includedDistanceKm} km. If an extra-distance charge applies, its estimated distance is shown separately on the final invoice.`}
                 </p>
               </>}
             </div>
