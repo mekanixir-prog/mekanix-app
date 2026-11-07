@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   if (!body.ok) return body.response;
 
   const {
-    vehicleId, packageId, serviceType, location, lat, lng,
+    vehicleId, packageId, serviceType, expectedPricingVersion, location, lat, lng,
     date, timeWindow, currentMileage,
   } = body.data;
 
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
     userId: session.userId,
     vehicleId,
     packageId: packageId || null,
-    serviceType: serviceType || "periodic",
+    serviceType,
     location,
     lat: lat ?? null,
     lng: lng ?? null,
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     timeWindow: timeWindow || null,
     currentMileage: currentMileage ?? null,
   };
-  const fingerprint = await requestFingerprint(normalized);
+  const fingerprint = await requestFingerprint({ ...normalized, expectedPricingVersion: expectedPricingVersion ?? null });
 
   // Fast replay path avoids recalculating a frozen historical price.
   const existing = await db.serviceBooking.findUnique({
@@ -77,17 +77,22 @@ export async function POST(req: Request) {
   let pricing: Awaited<ReturnType<typeof calculatePrice>>;
   try {
     pricing = await calculatePrice({
-      packageId: packageId || undefined,
       vehicleType: vehicle.type,
-      serviceCode: serviceType === "periodic" ? "periodic" : "diagnostic",
-      laborHours: 1,
+      serviceCode: "periodic",
+      laborHours: 0,
       partsCost: 0,
       travelDistanceKm: 0,
-      isEmergency: serviceType === "emergency",
+      isEmergency: false,
     });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "محاسبه تعرفه ممکن نیست", code: "PRICING_NOT_AVAILABLE" },
+      { status: 409 },
+    );
+  }
+  if (expectedPricingVersion && expectedPricingVersion !== pricing.pricingVersion) {
+    return NextResponse.json(
+      { error: "نرخ‌نامه پس از نمایش پیش‌فاکتور تغییر کرده است؛ لطفاً مبلغ جدید را بررسی کنید", code: "PRICING_VERSION_CHANGED" },
       { status: 409 },
     );
   }
