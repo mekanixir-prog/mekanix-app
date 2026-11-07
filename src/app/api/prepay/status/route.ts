@@ -3,6 +3,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant } from "@/lib/auth";
 import { maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { validatePrepayRecordSet } from "@/lib/prepay-reconciliation";
 
 // Read-only reconciliation lookup. It verifies the job marker and all
 // four financial records written by recordPrepayAtomically().
@@ -44,14 +45,42 @@ export async function GET(req: Request) {
   ]);
 
   const [prepayTxn, commissionTxn, holdLedger, commissionLedger] = await Promise.all([
-    db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${job.id}:PREPAY` }, select: { id: true } }),
-    db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${job.id}:COMMISSION` }, select: { id: true } }),
-    db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_HOLD` }, select: { id: true } }),
-    db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_COMMISSION` }, select: { id: true } }),
+    db.walletTransaction.findUnique({
+      where: { idempotencyKey: `prepay:${job.id}:PREPAY` },
+      select: { id: true, walletId: true, jobId: true, kind: true, status: true, grossAmount: true, commissionAmount: true, netAmount: true, idempotencyKey: true, financialUnitStatus: true },
+    }),
+    db.walletTransaction.findUnique({
+      where: { idempotencyKey: `prepay:${job.id}:COMMISSION` },
+      select: { id: true, walletId: true, jobId: true, kind: true, status: true, grossAmount: true, commissionAmount: true, netAmount: true, idempotencyKey: true, financialUnitStatus: true },
+    }),
+    db.walletLedger.findUnique({
+      where: { idempotencyKey: `prepay:${job.id}:LEDGER_HOLD` },
+      select: { id: true, walletId: true, type: true, amount: true, balanceBefore: true, balanceAfter: true, referenceType: true, referenceId: true, idempotencyKey: true, financialUnitStatus: true },
+    }),
+    db.walletLedger.findUnique({
+      where: { idempotencyKey: `prepay:${job.id}:LEDGER_COMMISSION` },
+      select: { id: true, walletId: true, type: true, amount: true, balanceBefore: true, balanceAfter: true, referenceType: true, referenceId: true, idempotencyKey: true, financialUnitStatus: true },
+    }),
   ]);
 
   const recordCount = [prepayTxn, commissionTxn, holdLedger, commissionLedger].filter(Boolean).length;
   if (job.prepayPaid && recordCount === 4) {
+    const reconciliation = validatePrepayRecordSet({
+      job,
+      prepayTransaction: prepayTxn,
+      commissionTransaction: commissionTxn,
+      holdLedger,
+      commissionLedger,
+    });
+    if (!reconciliation.ok) {
+      return NextResponse.json({
+        state: "RECONCILIATION_REQUIRED",
+        jobId: job.id,
+        recordedFinancialRows: recordCount,
+        expectedFinancialRows: 4,
+        reason: reconciliation.reason,
+      }, { status: 409 });
+    }
     return NextResponse.json({
       state: "COMMITTED",
       prepay: {
