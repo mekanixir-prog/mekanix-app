@@ -89,7 +89,8 @@ function makeD1() {
     CREATE TABLE "InsurancePolicy" (
       "id" TEXT PRIMARY KEY,
       "userId" TEXT NOT NULL,
-      "status" TEXT NOT NULL
+      "status" TEXT NOT NULL,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED'
     );
     CREATE TABLE "InsuranceClaim" (
       "id" TEXT PRIMARY KEY,
@@ -98,6 +99,7 @@ function makeD1() {
       "jobId" TEXT,
       "description" TEXT NOT NULL,
       "amount" REAL NOT NULL,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "status" TEXT NOT NULL,
       "idempotencyKey" TEXT UNIQUE,
       "requestFingerprint" TEXT,
@@ -144,7 +146,7 @@ function makeDb(sqlite: DatabaseSync) {
     },
     insurancePolicy: {
       findUnique: async ({ where }: any) =>
-        sqlite.prepare('SELECT "status" FROM "InsurancePolicy" WHERE "id" = ?')
+        sqlite.prepare('SELECT "status", "financialUnitStatus" FROM "InsurancePolicy" WHERE "id" = ?')
           .get(where.id) ?? null,
     },
   } as any;
@@ -209,8 +211,8 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
   it("creates and updates an insurance claim exactly once under 100 concurrent retries", async () => {
     const { sqlite, d1 } = makeD1();
     databases.push(sqlite);
-    sqlite.prepare('INSERT INTO "InsurancePolicy" ("id", "userId", "status") VALUES (?, ?, ?)')
-      .run("policy-1", "user-1", "active");
+    sqlite.prepare('INSERT INTO "InsurancePolicy" ("id", "userId", "status", "financialUnitStatus") VALUES (?, ?, ?, ?)')
+      .run("policy-1", "user-1", "active", "VERIFIED_IRR");
     mocks.getD1Binding.mockResolvedValue(d1);
 
     const results = await Promise.all(
@@ -223,7 +225,7 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
     expect(results.filter((result) => result.created)).toHaveLength(1);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "InsuranceClaim"').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT "status" FROM "InsurancePolicy" WHERE "id" = ?').get("policy-1"))
-      .toEqual({ status: "claimed" });
+      .toEqual({ status: "claimed", financialUnitStatus: "VERIFIED_IRR" });
   });
 
   it("rolls back the claim insert when the policy status transition fails", async () => {
@@ -239,20 +241,20 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
       .rejects.toThrow("policy update failed");
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "InsuranceClaim"').get()).toEqual({ count: 0 });
     expect(sqlite.prepare('SELECT "status" FROM "InsurancePolicy" WHERE "id" = ?').get("policy-1"))
-      .toEqual({ status: "active" });
+      .toEqual({ status: "active", financialUnitStatus: "VERIFIED_IRR" });
   });
 
   it("does not create a claim for an expired policy", async () => {
     const { sqlite, d1 } = makeD1();
     databases.push(sqlite);
-    sqlite.prepare('INSERT INTO "InsurancePolicy" ("id", "userId", "status") VALUES (?, ?, ?)')
-      .run("policy-1", "user-1", "expired");
+    sqlite.prepare('INSERT INTO "InsurancePolicy" ("id", "userId", "status", "financialUnitStatus") VALUES (?, ?, ?, ?)')
+      .run("policy-1", "user-1", "expired", "VERIFIED_IRR");
     mocks.getD1Binding.mockResolvedValue(d1);
 
     await expect(createInsuranceClaimAtomically(makeDb(sqlite), claimInput))
       .rejects.toThrow("no longer eligible");
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "InsuranceClaim"').get()).toEqual({ count: 0 });
     expect(sqlite.prepare('SELECT "status" FROM "InsurancePolicy" WHERE "id" = ?').get("policy-1"))
-      .toEqual({ status: "expired" });
+      .toEqual({ status: "expired", financialUnitStatus: "VERIFIED_IRR" });
   });
 });
