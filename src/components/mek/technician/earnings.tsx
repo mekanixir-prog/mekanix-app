@@ -72,10 +72,13 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
 
   const loadWallet = async (techId: string) => {
     try {
-      const res = await fetch(`/api/wallets?technicianId=${techId}`);
+      const res = await authFetch(`/api/wallets?technicianId=${encodeURIComponent(techId)}`);
+      if (!res.ok) throw new Error("Wallet could not be loaded");
       const w = await res.json();
       setWallet(w);
-    } catch {}
+    } catch {
+      setWallet(null);
+    }
   };
 
   useEffect(() => {
