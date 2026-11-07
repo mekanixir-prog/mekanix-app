@@ -1,3 +1,4 @@
+import { isVehicleInSupportedScope } from "@/lib/vehicle-scope";
 "use client";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
@@ -23,16 +24,19 @@ export function VehicleCard({
 }) {
   const { t, isFa, type: typeLabel, lang } = useT();
   const iconName = iconForMachineType(vehicle.type);
+  const serviceEligible = isVehicleInSupportedScope(vehicle.type, vehicle.make);
   return (
     <motion.button
       type="button"
-      onClick={onSelect}
+      onClick={serviceEligible ? onSelect : undefined}
+      aria-disabled={!serviceEligible}
       dir={isFa ? "rtl" : "ltr"}
       whileHover={{ y: -2 }}
       transition={{ type: "spring", stiffness: 300, damping: 25 }}
       className={cn(
         "group relative w-full overflow-hidden rounded-xl border bg-card p-4 text-left mk-card-hover",
         selected ? "border-amber mk-amber-glow" : "border-border hover:border-amber/40",
+        !serviceEligible && "cursor-not-allowed opacity-75",
         className
       )}
     >
@@ -55,6 +59,11 @@ export function VehicleCard({
             {vehicle.make} {vehicle.model}
           </h3>
           <p className="text-[11px] text-muted-foreground">{isFa ? toPersianDigits(vehicle.year) : vehicle.year}</p>
+          {!serviceEligible && (
+            <p className="mt-1 text-[10px] text-amber-700 dark:text-amber-300">
+              {isFa ? "خارج از محدوده خدمات سواری" : "Outside passenger service scope"}
+            </p>
+          )}
         </div>
         {onDelete && (
           <span
