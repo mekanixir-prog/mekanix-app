@@ -168,3 +168,46 @@ PR #136 is Draft and diverged from `main` (160 ahead, 2 behind). All 76 of its c
 
 The candidate must be revalidated on the exact final head after any subsequent edit. The ruleset for `main` remains disabled and has no required status checks. Production credentials and external services remain intentionally inactive.
 
+
+
+## 9. Exact-head follow-up audit — 2026-11-07 (supersedes earlier candidate status)
+
+**Decision remains NO-GO for public production.** Earlier workflow/head references in this document are historical snapshots and are not the current exact-head evidence.
+
+### Current pull-request topology
+
+- PR #137 remains open and Draft; branch `feat/admin-editable-irr-rate-card`; head `17ec5722d0e513b56753e065cd0f486a133fe73a`; base `main` at `10080473dd6b87ec725a5c6c22803f5d5d872342`.
+- PR #138 remains open and unmerged; branch `fix/release-guards-atomic-status-other-type`; head `f5088381cf2cfe836672ec0bbf94805934fe68a7`; base is the PR #137 head above.
+- Neither PR has been merged or deployed.
+
+### Exact PR #138 CI evidence
+
+All five checks completed successfully on exact head `f5088381cf2cfe836672ec0bbf94805934fe68a7`:
+
+| Check | Result |
+|---|---|
+| Lint + TypeCheck + Test | success |
+| Quality / Build | success |
+| PostgreSQL Migration + Build | success |
+| OpenNext → Cloudflare Worker | success |
+| Docker Build + Compose + Health | success |
+
+The test workflow reports 104 test files passed, 994 tests passed, and 14 skipped; four test files are excluded/skipped from the run. Docker Compose started the stack, passed health checks, verified PostgreSQL backend selection, and verified production OTP fails closed without a real SMS provider. These are CI/local-container results, not live staging or production evidence.
+
+### Current fixes in the candidate branch
+
+- Atomic database job-status writers enforce technician-specific transition rules and reject technician identity mismatch before writes.
+- Ambiguous `OTHER` asset pricing fails closed rather than inheriting heavy-machinery pricing.
+- Wallet/invoice read projections include financial masking; this supersedes the earlier concern in Section 5 item 7 that those read paths had not been audited in the candidate.
+- Payout completion writes an idempotent, zero-delta `PAYOUT` WalletLedger settlement-audit event in the same Prisma transaction or D1 batch as the payout state/transaction and wallet aggregate update. The event documents settlement and bank reference without double-debiting funds already debited at withdrawal request. Prisma and D1 tests cover creation and rollback on ledger failure.
+
+### Remaining NO-GO gates
+
+- Full PR #137 diff and both SQLite/D1 and PostgreSQL migration tracks require deliberate review before merge.
+- Payment provider initiation/verification, signed callback validation, replay/idempotency, amount/currency/order binding, purpose-specific fulfillment, refunds/reconciliation, invoice settlement, commission, technician earnings, escrow release, and payout proof remain incomplete release gates (Issue #24).
+- Historical financial provenance remains a record-level reconciliation task; unknown units must remain quarantined (Issue #81).
+- Tariff values, service-region policy, distance method, tax, commission, VIP pricing/coverage, and withdrawal policy require explicit owner approval (Issue #99).
+- Repository branch governance remains a blocker until the main ruleset is confirmed enabled and required checks are configured (Issue #121).
+- Customer, technician, admin, CARE, warranty, recovery, refund, and notification E2E; authorization/IDOR review; isolated remote staging; backup/restore; rollback; monitoring; and independent final review remain outstanding.
+
+**No production host, domain, DNS/TLS, remote D1, live SMS, payment gateway, production secret, or public traffic was activated.** Keep pricing approval, payment, tax, commission, and VIP gates disabled until the owner signs off and the exact Release Candidate passes all required evidence.
