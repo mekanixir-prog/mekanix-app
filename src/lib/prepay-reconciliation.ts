@@ -78,14 +78,15 @@ export function validatePrepayRecordSet(input: PrepayRecordSet): PrepayReconcili
   const travel = toSafeBigInt(job.travelFee);
   const commission = toSafeBigInt(job.platformCommission);
   const net = toSafeBigInt(job.netEarnings);
-  if ([inspection, travel, commission, net].some((value) => value === null)) {
+  if (inspection === null || travel === null || commission === null || net === null) {
     return { ok: false, reason: "JOB_AMOUNT_UNSAFE_OR_MISSING" };
   }
-  if (inspection! < 0n || travel! < 0n || commission! < 0n || net! < 0n) {
+  const zero = BigInt(0);
+  if (inspection < zero || travel < zero || commission < zero || net < zero) {
     return { ok: false, reason: "JOB_AMOUNT_NEGATIVE" };
   }
-  const gross = inspection! + travel!;
-  if (gross <= 0n || gross !== commission! + net!) {
+  const gross = inspection + travel;
+  if (gross <= zero || gross !== commission + net) {
     return { ok: false, reason: "JOB_AMOUNT_TOTAL_MISMATCH" };
   }
 
@@ -124,9 +125,9 @@ export function validatePrepayRecordSet(input: PrepayRecordSet): PrepayReconcili
     commissionTransaction.kind !== "COMMISSION" ||
     commissionTransaction.status !== "COMPLETED" ||
     commissionTransaction.idempotencyKey !== `prepay:${job.id}:COMMISSION` ||
-    toSafeBigInt(commissionTransaction.grossAmount) !== 0n ||
+    toSafeBigInt(commissionTransaction.grossAmount) !== zero ||
     toSafeBigInt(commissionTransaction.commissionAmount) !== commission ||
-    toSafeBigInt(commissionTransaction.netAmount) !== -commission
+    toSafeBigInt(commissionTransaction.netAmount) !== BigInt(0) - commission
   ) {
     return { ok: false, reason: "COMMISSION_TRANSACTION_MISMATCH" };
   }
