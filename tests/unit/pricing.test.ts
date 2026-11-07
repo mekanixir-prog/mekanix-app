@@ -66,6 +66,13 @@ describe("fixed-fee pricing engine", () => {
     await expect(calculatePrice({ ...base, serviceCode: "hydraulic" })).rejects.toThrow("در نرخ‌نامه تعریف نشده");
   });
 
+  it("rejects a missing service code instead of silently charging diagnostic labor", async () => {
+    await expect(calculatePrice({
+      ...base,
+      serviceCode: undefined as unknown as PricingInput["serviceCode"],
+    })).rejects.toThrow("کد خدمت برای محاسبه تعرفه الزامی است");
+  });
+
   it.each([1.5, -1, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])(
     "rejects invalid parts amount %s", async partsCost => {
       await expect(calculatePrice({ ...base, partsCost })).rejects.toThrow();
