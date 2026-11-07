@@ -126,6 +126,35 @@ export async function updateWithdrawalWithPrisma(
     if (walletUpdate.count !== 1) {
       throw new Error("کیف پول برای ثبت پرداخت پیدا نشد؛ عملیات لغو شد");
     }
+
+    // The available balance was debited when the withdrawal was requested.
+    // Settlement is a zero-delta ledger event, not a second wallet debit.
+    const settledWallet = await tx.wallet.findUnique({
+      where: { id: withdrawal.walletId },
+      select: { balance: true, financialUnitStatus: true },
+    });
+    if (
+      !settledWallet ||
+      settledWallet.financialUnitStatus !== "VERIFIED_IRR" ||
+      !isSafeStoredIrrAmount(settledWallet.balance)
+    ) {
+      throw new Error("کیف پول پس از ثبت تسویه از نظر مالی معتبر نیست");
+    }
+    await tx.walletLedger.create({
+      data: {
+        walletId: withdrawal.walletId,
+        type: "PAYOUT",
+        amount: 0,
+        balanceBefore: settledWallet.balance,
+        balanceAfter: settledWallet.balance,
+        referenceType: "Withdrawal",
+        referenceId: withdrawal.id,
+        description: `Payout settled — ${withdrawal.amount} IRR; bank reference ${payoutReference}`,
+        idempotencyKey: `withdrawal:${withdrawal.id}:PAYOUT_LEDGER`,
+        financialUnitStatus: "VERIFIED_IRR",
+        createdBy: input.adminId,
+      },
+    });
     return true;
   });
 }
@@ -205,7 +234,7 @@ export async function updateWithdrawalWithD1(
     ];
     try {
       const results = await d1.batch(statements);
-      return [0, 2, 4].every((index) => results[index]?.meta?.changes === 1);
+      return [0, 2, 4, 6].every((index) => results[index]?.meta?.changes === 1);
     } catch (error) {
       if (error instanceof Error && /malformed JSON/i.test(error.message)) return false;
       throw error;
@@ -259,6 +288,33 @@ export async function updateWithdrawalWithD1(
         AND "totalWithdrawn" <= 9007199254740991 - (SELECT "amount" FROM "WithdrawalRequest" WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?)
         AND changes() = 1
     `).bind(input.withdrawalId, payoutReference, at, input.withdrawalId, payoutReference, input.withdrawalId, payoutReference),
+    assertOneChange(),
+    d1.prepare(`
+      INSERT INTO "WalletLedger"
+        ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
+         "referenceType", "referenceId", "description", "idempotencyKey",
+         "createdBy", "createdAt", "financialUnitStatus")
+      SELECT ?, w."id", 'PAYOUT', 0, w."balance", w."balance",
+             'Withdrawal', wr."id", ?, ?, ?, ?, 'VERIFIED_IRR'
+      FROM "Wallet" w
+      JOIN "WithdrawalRequest" wr ON wr."walletId" = w."id"
+      WHERE wr."id" = ? AND wr."status" = 'PAID' AND wr."txnId" = ?
+        AND wr."financialUnitStatus" = 'VERIFIED_IRR'
+        AND w."financialUnitStatus" = 'VERIFIED_IRR'
+        AND NOT EXISTS (
+          SELECT 1 FROM "WalletLedger" existing
+          WHERE existing."idempotencyKey" = ?
+        )
+    `).bind(
+      crypto.randomUUID(),
+      `Payout settled — bank reference ${payoutReference}`,
+      `withdrawal:${input.withdrawalId}:PAYOUT_LEDGER`,
+      input.adminId,
+      at,
+      input.withdrawalId,
+      payoutReference,
+      `withdrawal:${input.withdrawalId}:PAYOUT_LEDGER`,
+    ),
     assertOneChange(),
   ];
   try {
