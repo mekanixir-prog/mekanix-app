@@ -328,7 +328,7 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
             </div>
           </div>
 
-          <Button onClick={handleBooking} disabled={booking || quoteLoading || !quote || Boolean(quoteError)} className="w-full bg-amber text-black hover:bg-amber/90"> disabled={booking} className="w-full bg-amber text-black hover:bg-amber/90">
+          <Button onClick={handleBooking} disabled={booking || quoteLoading || !quote || Boolean(quoteError)} className="w-full bg-amber text-black hover:bg-amber/90">
             {booking ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Check className="mr-2 size-4" />}
             {isFa ? "تأیید و رزرو" : "Confirm & Book"}
           </Button>
