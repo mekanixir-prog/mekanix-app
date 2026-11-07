@@ -64,7 +64,6 @@ export async function POST(req: Request) {
     !isSafeStoredIrrAmount(payment.amount) ||
     payment.currency !== "IRR" ||
     !payment.gatewayLogId ||
-    Number(payment.amount) !== Number(plan.priceIrr)
   ) {
     return NextResponse.json({ error: "Invalid or insufficient payment" }, { status: 400 });
   }
