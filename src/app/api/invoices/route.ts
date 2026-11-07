@@ -6,6 +6,7 @@ import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
 import { areJobPartPriceSourcesVerified } from "@/lib/money/provenance";
 import { calculatePrice } from "@/lib/pricing";
 import { estimateTravelDistanceKm, serviceCodeFromCategory } from "@/lib/job-invoice-pricing";
+import { maskInvoiceFinancialData } from "@/lib/money/financial-read-mask";
 
 const FULL_INCLUDE = {
   job: {
@@ -34,7 +35,7 @@ export async function GET(req: Request) {
 
   const db = await getDbForLib();
   const inv = await db.invoice.findUnique({ where: { jobId }, include: FULL_INCLUDE });
-  return NextResponse.json(inv);
+  return NextResponse.json(inv ? maskInvoiceFinancialData(inv as unknown as Record<string, unknown>) : null);
 }
 
 // POST: only the assigned technician or an admin may issue an invoice.
@@ -81,7 +82,7 @@ export async function POST(req: Request) {
     where: { jobId },
     include: FULL_INCLUDE,
   });
-  if (existingInvoice) return NextResponse.json(existingInvoice);
+  if (existingInvoice) return NextResponse.json(maskInvoiceFinancialData(existingInvoice as unknown as Record<string, unknown>));
 
   const job = await db.job.findUnique({
     where: { id: jobId },
@@ -194,7 +195,7 @@ export async function POST(req: Request) {
       where: { jobId },
       include: FULL_INCLUDE,
     }).catch(() => null);
-    if (racedInvoice) return NextResponse.json(racedInvoice);
+    if (racedInvoice) return NextResponse.json(maskInvoiceFinancialData(racedInvoice as unknown as Record<string, unknown>));
     throw error;
   }
 
@@ -245,5 +246,5 @@ export async function POST(req: Request) {
       console.error("[invoices] invoice notification failed:", error);
     }
   }
-  return NextResponse.json(invoice);
+  return NextResponse.json(maskInvoiceFinancialData(invoice as unknown as Record<string, unknown>));
 }
