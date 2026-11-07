@@ -85,8 +85,7 @@ export async function POST(req: Request) {
     gatewayLog.targetPlanId !== planId ||
     gatewayLog.paymentId !== payment.id ||
     gatewayLog.currency !== payment.currency ||
-    Number(gatewayLog.amount) !== Number(payment.amount) ||
-    Number(payment.amount) !== Number(plan.priceIrr)
+    Number(gatewayLog.amount) !== Number(payment.amount)
   ) {
     return NextResponse.json({ error: "Payment is not a verified VIP payment" }, { status: 400 });
   }
