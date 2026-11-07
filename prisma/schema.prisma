@@ -849,6 +849,8 @@ model PaymentGatewayLog {
   financialUnitStatus String   @default("UNVERIFIED")
   // Server-owned target for purpose-specific gateway attempts (currently VIP plan).
   targetPlanId    String?
+  // Client-generated retry key; globally unique to prevent duplicate attempts.
+  idempotencyKey  String?       @unique
   id              String        @id @default(cuid())
   code            String        @unique // PG-...
   userId          String?
