@@ -25,14 +25,16 @@ export function PaymentGatewayDialog({
   purpose,
   description,
   userId,
+  planId,
   onSuccess,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  amount: number; // USD
+  amount: number; // Display-only fallback; server resolves the payable IRR amount from planId.
   purpose: "vip" | "prepay" | "invoice" | "wallet_topup";
   description?: string;
   userId?: string;
+  planId: string;
   onSuccess?: (paymentId: string, amount: number) => void;
 }) {
   const { t, isFa, money } = useT();
@@ -47,11 +49,12 @@ export function PaymentGatewayDialog({
   const [code, setCode] = useState<string | null>(null);
   const [ref, setRef] = useState<string | null>(null);
   const [paymentId, setPaymentId] = useState<string | null>(null);
+  const [serverAmount, setServerAmount] = useState<number | null>(null);
 
   const reset = () => {
     setStage("form");
     setCard(""); setCardHolder(""); setExpiry(""); setCvv(""); setMobile(""); setOtp("");
-    setCode(null); setRef(null); setPaymentId(null);
+    setCode(null); setRef(null); setPaymentId(null); setServerAmount(null);
   };
 
   const close = () => {
@@ -85,10 +88,8 @@ export function PaymentGatewayDialog({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: userId ?? null,
-          amount,
           purpose,
-          description,
+          planId,
           mobile,
           cardNumber: card,
         }),
@@ -97,6 +98,7 @@ export function PaymentGatewayDialog({
       if (!res.ok) throw new Error(data.error);
       setCode(data.code);
       setRef(data.referenceId);
+      setServerAmount(Number(data.amount));
       setStage("otp");
       toast.success(t("pay.gateway.otpSent").replace("{mobile}", mobile || "•••"));
     } catch (e: any) {
@@ -147,7 +149,7 @@ export function PaymentGatewayDialog({
             <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
               {description ?? t(`pay.gateway.title`)}
             </span>
-            <span className="font-display text-lg font-bold text-amber">{money(amount)}</span>
+            <span className="font-display text-lg font-bold text-amber">{money(serverAmount ?? amount)}</span>
           </div>
         </div>
 
