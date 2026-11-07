@@ -128,7 +128,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       parts: { select: { unitPrice: true, quantity: true } },
       request: { select: { category: true, urgency: true, lat: true, lng: true, vehicle: { select: { type: true } } } },
       tracking: { orderBy: { ts: "asc" }, take: 1, select: { lat: true, lng: true } },
-      invoice: { select: { id: true } },
+      invoice: { select: { id: true, currency: true, financialUnitStatus: true } },
     },
   });
   if (!existing) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
@@ -154,9 +154,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       { status: 409 },
     );
   }
-  if (targetStatus === "REPAIRING" && existing.status === "WAITING_APPROVAL" && !existing.invoice) {
+  const hasVerifiedEstimate = existing.invoice?.currency === "IRR" &&
+    existing.invoice.financialUnitStatus === "VERIFIED_IRR";
+
+  if (targetStatus === "REPAIRING" && existing.status === "WAITING_APPROVAL" && !hasVerifiedEstimate) {
     return NextResponse.json(
-      { error: "پیش‌فاکتور قابل تأیید برای این کار یافت نشد", code: "REPAIR_ESTIMATE_REQUIRED" },
+      { error: "پیش‌فاکتور معتبر با واحد ریال تأییدشده برای این کار یافت نشد", code: "REPAIR_ESTIMATE_REQUIRED" },
       { status: 409 },
     );
   }
@@ -179,7 +182,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     );
   }
 
-  if (hasCustomerApproval && !existing.invoice) {
+  if (targetStatus === "COMPLETED" && existing.status === "REPAIRING" && !hasVerifiedEstimate) {
+    return NextResponse.json(
+      { error: "تکمیل کار بدون پیش‌فاکتور معتبر و تأییدشده مجاز نیست", code: "REPAIR_ESTIMATE_REQUIRED" },
+      { status: 409 },
+    );
+  }
+  if (targetStatus === "COMPLETED" && existing.status === "REPAIRING" && existing.customerApproved !== true) {
+    return NextResponse.json(
+      { error: "تکمیل کار پیش از تأیید پیش‌فاکتور توسط مشتری مجاز نیست", code: "CUSTOMER_APPROVAL_REQUIRED" },
+      { status: 409 },
+    );
+  }
+
+  if (hasCustomerApproval && !hasVerifiedEstimate) {
     return NextResponse.json(
       { error: "برای تأیید مشتری، پیش‌فاکتور معتبر باید صادر شده باشد", code: "REPAIR_ESTIMATE_REQUIRED" },
       { status: 409 },
