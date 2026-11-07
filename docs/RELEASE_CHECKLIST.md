@@ -38,7 +38,7 @@ This replaces the historical checklist snapshots from October. Do not use old â€
 ### PR #137 â€” editable IRR rate card and customer quote
 
 - [x] Separate fixed-fee schedules implemented for supported foreign passenger vehicles and heavy machinery; unsupported asset classes fail closed.
-- [x] Admin rate-card editor, optimistic versioning, history, server validation, and audit logging implemented. Persisted money values are integer IRR; admin tariff entry is Toman.
+- [x] Admin rate-card editor, optimistic versioning, history, and server validation implemented. Every rate-change attempt is audited before the setting write; if audit persistence fails, the save is blocked with HTTP 503. Persisted money values are integer IRR; admin tariff entry is Toman.
 - [x] Production pricing remains disabled until explicit owner approval through `MEKANIX_PRICING_IRR_APPROVED=true`; saving a proposed card does not activate it.
 - [x] CARE customer preview now requests a server-calculated quote from the same rate-card engine, formats verified IRR as Toman, and pins the quote version when booking.
 - [x] Legacy hardcoded CARE preview amounts, the unapproved 9% tax display, and unsupported six-month warranty promises removed from the reviewed booking/invoice copy. VIP copy now describes periodic visits only; repairs and parts are excluded.
