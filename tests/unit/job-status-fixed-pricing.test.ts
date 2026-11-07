@@ -253,6 +253,15 @@ describe("job status approval estimate uses the fixed rate card", () => {
     }));
   });
 
+  it("requires the diagnosis estimate step before a technician can start repair", async () => {
+    const response = await PATCH(request({ status: "REPAIRING" }), {
+      params: Promise.resolve({ id: "job-1" }),
+    });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "REPAIR_ESTIMATE_REQUIRED" });
+    expect(mocks.transition).not.toHaveBeenCalled();
+  });
+
   it("does not let a technician start repair before the stored customer approval", async () => {
     mocks.auth.mockResolvedValue({ userId: "technician-user-1", role: "TECHNICIAN" });
     mocks.jobFindUnique.mockReset().mockResolvedValueOnce({
