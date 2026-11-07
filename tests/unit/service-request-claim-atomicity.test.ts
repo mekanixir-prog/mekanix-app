@@ -72,7 +72,7 @@ describe("service request atomic writer", () => {
     expect(db.$transaction).toHaveBeenCalledTimes(1);
     expect(tx.vehicle.findUnique).toHaveBeenCalledWith({
       where: { id: "vehicle-1" },
-      select: { id: true, customerId: true },
+      select: { id: true, customerId: true, type: true, make: true },
     });
     expect(tx.serviceRequest.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
@@ -152,6 +152,11 @@ describe("service request atomic writer", () => {
     mocks.getD1Binding.mockResolvedValue(d1);
     vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValueOnce("request-d1") });
     const db = {
+      vehicle: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "vehicle-1", customerId: "customer-1", type: "EXCAVATOR", make: "CAT",
+        }),
+      },
       serviceRequest: {
         findUnique: vi.fn()
           .mockResolvedValueOnce(null)
