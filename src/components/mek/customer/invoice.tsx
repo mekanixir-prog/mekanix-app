@@ -13,15 +13,22 @@ import { useT } from "@/lib/use-t";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { parseMedia } from "@/lib/format";
+import { formatTomanFromIrr } from "@/lib/money/irr";
 
 export function CustomerInvoice({ customer }: { customer: DemoUser }) {
   const { go, params, back } = useApp();
-  const { t, isFa, money } = useT();
+  const { t, isFa } = useT();
   const [job, setJob] = useState<Job | null>(null);
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [method, setMethod] = useState("card");
   const [paying, setPaying] = useState(false);
+  const invoiceFinancialReady = invoice?.financialUnitStatus === "VERIFIED_IRR" && invoice.currency === "IRR";
+  const money = (value: number) => {
+    const amount = Number(value);
+    if (!invoiceFinancialReady || !Number.isSafeInteger(amount) || amount < 0) return "—";
+    return `${formatTomanFromIrr(amount, isFa ? "fa-IR" : "en-US")} ${isFa ? "تومان" : "Toman"}`;
+  };
 
   useEffect(() => {
     if (!params.jobId) return;
@@ -34,6 +41,10 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
 
   const approveAndPay = async () => {
     if (!invoice) return;
+    if (!invoiceFinancialReady) {
+      toast.error(isFa ? "واحد پول فاکتور تأیید نشده است؛ پرداخت متوقف شد." : "Invoice currency is not verified; payment is blocked.");
+      return;
+    }
     setPaying(true);
     try {
       // approve first (if waiting)
@@ -186,12 +197,13 @@ export function CustomerInvoice({ customer }: { customer: DemoUser }) {
             })}
           </div>
 
+          {!invoiceFinancialReady && <div role="alert" className="mt-3 rounded-lg border border-amber/30 bg-amber/5 p-3 text-xs text-muted-foreground">{isFa ? "این فاکتور تا زمان تأیید واحد پول قابل پرداخت نیست." : "This invoice cannot be paid until its currency provenance is verified."}</div>}
           <div className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-glow/20 bg-emerald-glow/5 p-3 text-[11px] text-muted-foreground">
             <ShieldCheck className="size-4 text-emerald-glow shrink-0" />
             {t("invoice.securePayment")}
           </div>
 
-          <Button onClick={approveAndPay} disabled={paying} className="mt-3 w-full bg-amber text-black hover:bg-amber/90">
+          <Button onClick={approveAndPay} disabled={paying || !invoiceFinancialReady} className="mt-3 w-full bg-amber text-black hover:bg-amber/90">
             {paying ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Lock className="mr-2 size-4" />}
             {t("pay.approveAndPay")} {money(Number(invoice.total))}
           </Button>
