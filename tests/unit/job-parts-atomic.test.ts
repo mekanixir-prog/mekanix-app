@@ -104,10 +104,11 @@ describe("atomic job part mutation", () => {
     });
 
     expect(part).toMatchObject({ id: "d1-part", jobId: "job-1" });
-    expect(d1.prepare.mock.calls[0][0]).toContain('INSERT INTO "Part"');
-    expect(d1.prepare.mock.calls[0][0]).toContain('status" = \'REPAIRING\'');
+    expect(d1.prepare.mock.calls[0][0]).toContain('UPDATE "Job"');
+    expect(d1.prepare.mock.calls[2][0]).toContain('INSERT INTO "Part"');
+    expect(d1.prepare.mock.calls[2][0]).toContain('status" = \'REPAIRING\'');
     expect(d1.batch).toHaveBeenCalledTimes(1);
-    expect(d1.batch.mock.calls[0][0]).toHaveLength(2);
+    expect(d1.batch.mock.calls[0][0]).toHaveLength(4);
   });
 
   it("maps a failed D1 conditional insert to a conflict instead of a server error", async () => {
