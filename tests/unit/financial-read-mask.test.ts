@@ -40,6 +40,14 @@ describe("financial read masking", () => {
     expect(maskFinancialFields(record, ["amount"], "currency")).toEqual(record);
   });
 
+  it("quarantines a verified invoice when its explicit currency field is missing", () => {
+    expect(maskFinancialFields(
+      { financialUnitStatus: "VERIFIED_IRR", amount: 125 },
+      ["amount"],
+      "currency",
+    )).toMatchObject({ financialUnitStatus: "QUARANTINED", amount: null });
+  });
+
   it("quarantines conflicting currency and invalid amounts even when status claims verified", () => {
     expect(maskFinancialFields(
       { financialUnitStatus: "VERIFIED_IRR", currency: "USD", amount: 100 },
