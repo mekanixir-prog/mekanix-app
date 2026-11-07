@@ -264,8 +264,8 @@ describe("job status D1 SQLite transaction", () => {
       invoice,
     })).resolves.toBeUndefined();
 
-    expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
-      .toEqual({ status: "WAITING_APPROVAL" });
+    expect(sqlite.prepare('SELECT "status", "customerApproved" FROM "Job" WHERE "id" = ?').get("job-1"))
+      .toEqual({ status: "WAITING_APPROVAL", customerApproved: 0 });
     expect(sqlite.prepare('SELECT "id", "jobId", "status", "inspectionFee", "emergencyFee", "pricingVersion", "financialUnitStatus" FROM "Invoice" WHERE "jobId" = ?').get("job-1"))
       .toEqual({
         id: "invoice-1",
