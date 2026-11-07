@@ -27,6 +27,7 @@ function assertOneChange(d1: NonNullable<Awaited<ReturnType<typeof getD1Binding>
   return d1.prepare("SELECT CASE WHEN changes() = 1 THEN 1 ELSE json_extract('not-json', '$') END").bind();
 }
 
+/** Advance the job revision so status-transition CAS cannot miss a concurrent part edit. */
 function nextJobRevision(updatedAt: Date | string): Date {
   const previous = new Date(updatedAt).getTime();
   if (!Number.isFinite(previous)) throw new JobPartMutationConflictError();
