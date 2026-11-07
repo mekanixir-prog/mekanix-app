@@ -63,7 +63,7 @@ export async function POST(req: Request) {
     payment.financialUnitStatus !== "VERIFIED_IRR" ||
     !isSafeStoredIrrAmount(payment.amount) ||
     payment.currency !== "IRR" ||
-    !payment.gatewayLogId ||
+    !payment.gatewayLogId
   ) {
     return NextResponse.json({ error: "Invalid or insufficient payment" }, { status: 400 });
   }
