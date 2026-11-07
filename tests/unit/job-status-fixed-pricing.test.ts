@@ -177,7 +177,7 @@ describe("job status approval estimate uses the fixed rate card", () => {
 
   it("allows a customer to approve an estimate without changing the job status", async () => {
     mocks.auth.mockResolvedValue({ userId: "customer-user-1", role: "CUSTOMER" });
-    const waitingApproval = { ...beforeJob, status: "WAITING_APPROVAL" };
+    const waitingApproval = { ...beforeJob, status: "WAITING_APPROVAL", invoice: { id: "invoice-1" } };
     const updated = { ...updatedJob, status: "WAITING_APPROVAL" };
     mocks.jobFindUnique.mockReset().mockResolvedValueOnce(waitingApproval).mockResolvedValueOnce(updated);
 
@@ -257,7 +257,7 @@ describe("job status approval estimate uses the fixed rate card", () => {
   });
 
   it("allows a technician to start repair after stored customer approval", async () => {
-    const waitingApproval = { ...beforeJob, status: "WAITING_APPROVAL", customerApproved: true };
+    const waitingApproval = { ...beforeJob, status: "WAITING_APPROVAL", customerApproved: true, invoice: { id: "invoice-1" } };
     const repairing = { ...updatedJob, status: "REPAIRING" };
     mocks.jobFindUnique.mockReset().mockResolvedValueOnce(waitingApproval).mockResolvedValueOnce(repairing);
 
@@ -290,6 +290,7 @@ describe("job status approval estimate uses the fixed rate card", () => {
       ...beforeJob,
       status: "WAITING_APPROVAL",
       customerApproved: false,
+      invoice: { id: "invoice-1" },
     });
 
     const response = await PATCH(request({ status: "REPAIRING" }), {
