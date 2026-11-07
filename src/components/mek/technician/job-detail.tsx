@@ -193,9 +193,11 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
   const next = getNextJobStatus(job);
   const nextMeta = job.status === "WAITING_APPROVAL" && job.customerApproved && job.invoice
     ? NEXT_ACTION_KEYS.DIAGNOSING
-    : job.status === "REPAIRING" && job.invoice
+    : job.status === "REPAIRING" && job.invoice && job.customerApproved
       ? { key: "tech.jobDetail.action.completeRepair", icon: CircleCheck }
-      : NEXT_ACTION_KEYS[job.status];
+      : job.status === "REPAIRING" && job.invoice
+        ? NEXT_ACTION_KEYS.WAITING_APPROVAL
+        : NEXT_ACTION_KEYS[job.status];
   const canAdvance = job.status !== "COMPLETED" && job.status !== "CANCELLED" && next !== job.status;
   const techLoc = { lat: user.technician?.lat ?? 37.77, lng: user.technician?.lng ?? -122.42 };
   const custLoc = { lat: job.request.lat, lng: job.request.lng };
@@ -451,7 +453,10 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
 }
 
 function getNextJobStatus(job: Job): string {
-  if (job.status === "REPAIRING") return job.invoice ? "COMPLETED" : "WAITING_APPROVAL";
+  if (job.status === "REPAIRING") {
+    if (!job.invoice) return "WAITING_APPROVAL";
+    return job.customerApproved ? "COMPLETED" : "REPAIRING";
+  }
   if (job.status === "WAITING_APPROVAL") return job.customerApproved && job.invoice ? "REPAIRING" : "WAITING_APPROVAL";
   return NEXT_STATUS[job.status] ?? job.status;
 }
