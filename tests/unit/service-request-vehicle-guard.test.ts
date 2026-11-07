@@ -99,11 +99,14 @@ describe("service request vehicle gate", () => {
       model: "Quick",
     }));
     expect(response.status).toBe(200);
-    expect(mocks.create).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
-      vehicleId: "vehicle-1",
-      machineType: "EXCAVATOR",
-      make: "Caterpillar",
-      model: "320",
-    }));
+    expect(mocks.vehicleFind).toHaveBeenCalledWith({
+      where: { id: "vehicle-1" },
+      select: { customerId: true, type: true, make: true, model: true },
+    });
+    const createInput = mocks.create.mock.calls[0][1];
+    expect(createInput).toMatchObject({ vehicleId: "vehicle-1" });
+    expect(createInput).not.toHaveProperty("machineType");
+    expect(createInput).not.toHaveProperty("make");
+    expect(createInput).not.toHaveProperty("model");
   });
 });
