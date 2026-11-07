@@ -180,6 +180,7 @@ export async function POST(req: Request) {
         taxTotal,
         total,
         currency: "IRR",
+        pricingVersion: pricing.pricingVersion,
         financialUnitStatus: "VERIFIED_IRR",
         status: "SENT",
         notes: `Fixed-fee rate card ${pricing.pricingVersion}; service ${serviceCode}; estimated technician travel ${travelDistanceKm} km. Warranty terms, if applicable, are governed by the separately approved service agreement.`,
