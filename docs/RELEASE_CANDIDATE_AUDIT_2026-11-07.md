@@ -66,7 +66,13 @@ The proposal includes:
 
 No value in this proposal should be activated in production until the owner signs off on the exact passenger and heavy-equipment values, scope, region policy, and effective date.
 
-## 4. Additional concurrency hardening completed\n\n- Admin rate-card updates now compare-and-set against the exact PlatformSetting row read at the beginning of the request. A second read after audit persistence is no longer allowed to replace the original CAS predicate; concurrent changes return HTTP 409. A regression test covers this race.\n- CARE booking now requires `expectedPricingVersion`; requests without the server-quoted version are rejected, and a changed rate-card version returns HTTP 409.\n- The feature branch is synchronized with `main` (zero commits behind); the synchronization merge commit preserves the already-tested feature tree.\n\n## 5. Technical risks still requiring closure
+## 4. Additional concurrency hardening completed
+
+- Admin rate-card updates now compare-and-set against the exact PlatformSetting row read at the beginning of the request. A second read after audit persistence is no longer allowed to replace the original CAS predicate; concurrent changes return HTTP 409. A regression test covers this race.
+- CARE booking now requires `expectedPricingVersion`; requests without the server-quoted version are rejected, and a changed rate-card version returns HTTP 409.
+- The feature branch is synchronized with `main` (zero commits behind); the synchronization merge commit preserves the already-tested feature tree.
+
+## 5. Technical risks still requiring closure
 
 1. **Extra-distance method:** the current invoice calculation estimates road distance as Haversine straight-line distance × 1.3, rounded up. This is not a navigation-provider route. Obtain explicit approval for this estimation policy or replace it with a verified routing provider before extra-kilometre billing is enabled.
 2. **Legacy financial provenance:** old technician fees, job-part prices, wallet/invoice values, and withdrawals still require record-level reconciliation. Do not infer old units or mass-convert historical rows.
