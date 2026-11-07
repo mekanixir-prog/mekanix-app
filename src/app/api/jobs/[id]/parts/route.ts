@@ -71,7 +71,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   } catch (error) {
     if (error instanceof JobPartMutationConflictError) {
       return NextResponse.json(
-        { error: "ثبت یا تغییر قطعه فقط پیش از صدور پیش‌فاکتور و در مرحله تعمیر مجاز است؛ تغییرات بعدی نیازمند برآورد و تأیید جداگانه است", code: "PARTS_LOCKED_AFTER_ESTIMATE" },
+        { error: "ثبت یا تغییر قطعه فقط در مرحله آماده‌سازی برآورد و پیش از صدور پیش‌فاکتور مجاز است؛ تغییرات بعدی نیازمند برآورد و تأیید جداگانه است", code: "PARTS_LOCKED_AFTER_ESTIMATE" },
         { status: 409 },
       );
     }
