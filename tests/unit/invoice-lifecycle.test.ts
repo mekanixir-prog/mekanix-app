@@ -66,6 +66,7 @@ const existingInvoice = {
   status: "SENT",
   total: 1200,
   currency: "IRR",
+  financialUnitStatus: "VERIFIED_IRR",
 };
 
 const pricingJob = {
