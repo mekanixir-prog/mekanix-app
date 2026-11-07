@@ -95,9 +95,10 @@ export async function recordVerifiedGatewayPaymentAtomically(
       'AND json_extract(o."payload", \'$.userId\') = p."userId" AND json_extract(o."payload", \'$.amount\') = p."amount" ' +
       'AND json_extract(o."payload", \'$.targetPlanId\') = ? ' +
       'WHERE p."gatewayLogId" = ? AND p."userId" = ? AND p."amount" = ? AND p."currency" = \'IRR\' AND p."status" = \'SUCCEEDED\' ' +
-      'AND p."financialUnitStatus" = \'VERIFIED_IRR\' AND g."status" = \'VERIFIED\' AND g."paymentId" = p."id") ' +
+      'AND p."financialUnitStatus" = \'VERIFIED_IRR\' AND g."status" = \'VERIFIED\' AND g."paymentId" = p."id" ' +
+      'AND g."purpose" = \'vip\' AND g."targetPlanId" = ? AND g."financialUnitStatus" = \'VERIFIED_IRR\') ' +
       'THEN 1 ELSE json_extract(\'not-json\', \'$\') END'
-    ).bind(eventKey, input.targetPlanId, input.gatewayLogId, input.userId, input.amount);
+    ).bind(eventKey, input.targetPlanId, input.gatewayLogId, input.userId, input.amount, input.targetPlanId);
 
     await d1.batch([paymentInsert, linkAndVerify, outboxInsert, assertVerifiedAndEnqueued]);
     const row = await d1.prepare('SELECT "id" FROM "Payment" WHERE "gatewayLogId" = ?').bind(input.gatewayLogId).first<{ id: string }>();
