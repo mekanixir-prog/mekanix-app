@@ -61,7 +61,10 @@ const updatedJob = {
   status: "WAITING_APPROVAL",
   etaMins: 20,
   request: { customer: { user: { id: "customer-user-1" } } },
-  technician: { user: { id: "technician-user-1", name: "Technician" } },
+  financialUnitStatus: "UNVERIFIED",
+  travelFee: 123_000,
+  inspectionFee: 456_000,
+  technician: { financialUnitStatus: "UNVERIFIED", hourlyRate: 900_000, user: { id: "technician-user-1", name: "Technician" } },
 };
 const pricing = {
   labor: 8_000_000,
@@ -112,6 +115,13 @@ describe("job status approval estimate uses the fixed rate card", () => {
     }), { params: Promise.resolve({ id: "job-1" }) });
 
     expect(response.status).toBe(200);
+    const responseBody = await response.json();
+    expect(responseBody).toMatchObject({
+      financialUnitStatus: "UNVERIFIED",
+      travelFee: null,
+      inspectionFee: null,
+      technician: { hourlyRate: null, financialUnitStatus: "UNVERIFIED" },
+    });
     expect(mocks.calculatePrice).toHaveBeenCalledWith({
       vehicleType: "CAR",
       serviceCode: "diagnostic",
