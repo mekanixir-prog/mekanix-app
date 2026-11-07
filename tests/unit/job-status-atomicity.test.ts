@@ -238,6 +238,7 @@ describe("atomic job status writer", () => {
       discount: 0,
       total: 39_000_000,
       currency: "IRR",
+      pricingVersion: "rate-card-2",
       financialUnitStatus: "VERIFIED_IRR" as const,
       status: "SENT" as const,
       notes: "Fixed-fee rate card rate-card-2; service periodic. Warranty terms follow the approved service agreement.",
