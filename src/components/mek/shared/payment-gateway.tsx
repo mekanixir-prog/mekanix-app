@@ -48,11 +48,12 @@ export function PaymentGatewayDialog({
   const [ref, setRef] = useState<string | null>(null);
   const [paymentId, setPaymentId] = useState<string | null>(null);
   const [serverAmount, setServerAmount] = useState<number | null>(null);
+  const [idempotencyKey, setIdempotencyKey] = useState("");
 
   const reset = () => {
     setStage("form");
     setCard(""); setCardHolder(""); setExpiry(""); setCvv(""); setMobile(""); setOtp("");
-    setCode(null); setRef(null); setPaymentId(null); setServerAmount(null);
+    setCode(null); setRef(null); setPaymentId(null); setServerAmount(null); setIdempotencyKey("");
   };
 
   const close = () => {
@@ -93,6 +94,8 @@ export function PaymentGatewayDialog({
       return;
     }
     setStage("processing");
+    const requestKey = idempotencyKey || crypto.randomUUID();
+    if (!idempotencyKey) setIdempotencyKey(requestKey);
     try {
       const res = await authFetch("/api/gateway/initiate", {
         method: "POST",
@@ -100,6 +103,7 @@ export function PaymentGatewayDialog({
         body: JSON.stringify({
           purpose: "vip",
           planId,
+          idempotencyKey: requestKey,
           mobile,
           cardNumber: card,
         }),
@@ -298,7 +302,7 @@ export function PaymentGatewayDialog({
             <motion.div key="failed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="py-6 text-center">
               <h3 className="font-display text-lg font-semibold text-destructive">{t("pay.gateway.failed")}</h3>
               <div className="mt-4 flex gap-2">
-                <Button onClick={reset} variant="outline" className="flex-1">{t("common.back")}</Button>
+                <Button onClick={() => setStage("form")} variant="outline" className="flex-1">{t("common.back")}</Button>
                 <Button onClick={close} className="flex-1">{t("common.close")}</Button>
               </div>
             </motion.div>
