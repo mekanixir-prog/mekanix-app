@@ -141,8 +141,10 @@ export async function recordVerifiedGatewayPaymentAtomically(
         },
         data: { gatewayLogId: input.gatewayLogId },
       });
-      if (bound.count !== 1) throw new Error("Legacy Payment was concurrently bound to another gateway attempt");
       payment = await tx.payment.findUnique({ where: { gatewayLogId: input.gatewayLogId } });
+      if (bound.count !== 1 && (!payment || payment.id !== input.legacyPaymentId)) {
+        throw new Error("Legacy Payment was concurrently bound to another gateway attempt");
+      }
     }
     if (!payment) {
       payment = await tx.payment.create({
