@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getD1Binding: vi.fn(),
+  jobFindUnique: vi.fn(),
   jobUpdateMany: vi.fn(),
   invoiceFindUnique: vi.fn(),
   partCreate: vi.fn(),
@@ -20,7 +21,7 @@ import {
 } from "@/lib/job-parts-atomic";
 
 const tx = {
-  job: { updateMany: mocks.jobUpdateMany },
+  job: { findUnique: mocks.jobFindUnique, updateMany: mocks.jobUpdateMany },
   invoice: { findUnique: mocks.invoiceFindUnique },
   part: {
     create: mocks.partCreate,
@@ -30,12 +31,14 @@ const tx = {
 };
 const db = {
   $transaction: (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
+  job: { findUnique: mocks.jobFindUnique },
   part: { findUnique: mocks.partFindUnique },
 } as never;
 
 beforeEach(() => {
   Object.values(mocks).forEach((mock) => mock.mockReset());
   mocks.getD1Binding.mockResolvedValue(null);
+  mocks.jobFindUnique.mockResolvedValue({ status: "REPAIRING", updatedAt: new Date("2026-11-06T10:00:00.000Z") });
   mocks.jobUpdateMany.mockResolvedValue({ count: 1 });
   mocks.invoiceFindUnique.mockResolvedValue(null);
   mocks.partCreate.mockResolvedValue({ id: "part-1", jobId: "job-1" });
@@ -53,8 +56,9 @@ describe("atomic job part mutation", () => {
       unitPrice: 1_500_000,
     });
     expect(part).toMatchObject({ id: "part-1", jobId: "job-1" });
+    expect(mocks.jobFindUnique).toHaveBeenCalledWith({ where: { id: "job-1" }, select: { status: true, updatedAt: true } });
     expect(mocks.jobUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: "job-1", status: "REPAIRING" },
+      where: { id: "job-1", status: "REPAIRING", updatedAt: new Date("2026-11-06T10:00:00.000Z") },
     }));
     expect(mocks.invoiceFindUnique).toHaveBeenCalledWith({
       where: { jobId: "job-1" },
