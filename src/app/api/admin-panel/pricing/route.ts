@@ -41,6 +41,11 @@ export async function PUT(req: Request) {
       effectiveAt: now, updatedAt: now, updatedBy: session.username || session.adminId,
     };
     const next: Stored = { current, history: [before.current, ...before.history].slice(0, 20) };
+    try {
+      await writeAuditLog({ session, action: "ATTEMPT_UPDATE_PRICING_RATE_CARD", entity: "PricingRateCard", entityId: String(current.version), before: before.current, after: current, req, strict: true });
+    } catch {
+      return NextResponse.json({ error: "ثبت سابقه حسابرسی ممکن نیست؛ نرخ‌نامه ذخیره نشد" }, { status: 503 });
+    }
     const existingRow = await db.platformSetting.findUnique({ where: { key: PRICING_RATE_CARD_KEY } });
     if (existingRow) {
       const changed = await db.platformSetting.updateMany({
@@ -57,7 +62,6 @@ export async function PUT(req: Request) {
         return NextResponse.json({ error: "نرخ‌نامه هم‌زمان ایجاد شده است؛ صفحه را تازه‌سازی کنید" }, { status: 409 });
       }
     }
-    await writeAuditLog({ session, action: "UPDATE_PRICING_RATE_CARD", entity: "PricingRateCard", entityId: String(current.version), before: before.current, after: current, req });
     return NextResponse.json(next);
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "ذخیره نرخ‌نامه ناموفق بود" }, { status: 400 });
