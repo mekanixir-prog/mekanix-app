@@ -121,8 +121,10 @@ export async function recordPrepayWithPrisma(
         walletId: wallet.id,
         type: "COMMISSION",
         amount: -input.commission,
-        balanceBefore: wallet.pendingBalance,
-        balanceAfter: wallet.pendingBalance,
+        // Commission is withheld from gross before the net hold is credited;
+        // the commission ledger therefore follows the HOLD row's resulting balance.
+        balanceBefore: Number(wallet.pendingBalance) + input.net,
+        balanceAfter: Number(wallet.pendingBalance) + input.net,
         referenceType: "Job",
         referenceId: input.jobId,
         description: `Platform commission — ${input.jobCode}`,
