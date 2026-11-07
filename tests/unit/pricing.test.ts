@@ -87,6 +87,15 @@ describe("production pricing approval gate", () => {
     expect(isProductionPricingApproved("production", "true")).toBe(true);
   });
 
+  it("fails closed when production approval is set but no persisted rate card exists", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("MEKANIX_PRICING_IRR_APPROVED", "true");
+    dbMock.platformSetting.findUnique.mockResolvedValueOnce(null);
+    try {
+      await expect(calculatePrice(base)).rejects.toThrow("No persisted owner-approved IRR rate card is configured");
+    } finally { vi.unstubAllEnvs(); }
+  });
+
   it("fails before database access when production approval is absent", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("MEKANIX_PRICING_IRR_APPROVED", "false");
