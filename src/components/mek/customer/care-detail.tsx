@@ -99,7 +99,7 @@ export function CareDetail() {
               <div className="mt-2 flex items-center justify-between">
                 <div className="text-sm">
                   <span className="text-muted-foreground">{isFa ? "قطعه:" : "Part:"} </span>
-                  <span className="font-medium">{moneyIrr(Number(ap.partPrice) * Number(ap.quantity))}</span>
+                  <span className="font-medium">{moneyIrr(ap.partPrice == null ? null : Number(ap.partPrice) * Number(ap.quantity))}</span>
                   <span className="ms-3 text-muted-foreground">{isFa ? "اجرت:" : "Labor:"} </span>
                   <span className="font-medium">{moneyIrr(ap.laborPrice)}</span>
                 </div>
