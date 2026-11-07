@@ -89,7 +89,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
 
   const advance = async () => {
     if (!job) return;
-    const next = NEXT_STATUS[job.status];
+    const next = getNextJobStatus(job);
     if (next === job.status) return;
     setAdvancing(true);
     try {
@@ -190,8 +190,12 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
   if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="size-8 animate-spin text-amber" /></div>;
   if (!job) return null;
 
-  const next = NEXT_STATUS[job.status];
-  const nextMeta = NEXT_ACTION_KEYS[job.status];
+  const next = getNextJobStatus(job);
+  const nextMeta = job.status === "WAITING_APPROVAL" && job.customerApproved
+    ? NEXT_ACTION_KEYS.DIAGNOSING
+    : job.status === "REPAIRING" && job.invoice
+      ? { key: "tech.jobDetail.action.completeRepair", icon: CircleCheck }
+      : NEXT_ACTION_KEYS[job.status];
   const canAdvance = job.status !== "COMPLETED" && job.status !== "CANCELLED" && next !== job.status;
   const techLoc = { lat: user.technician?.lat ?? 37.77, lng: user.technician?.lng ?? -122.42 };
   const custLoc = { lat: job.request.lat, lng: job.request.lng };
@@ -393,7 +397,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                   {isFa ? "پیش‌فاکتور پس از ثبت قطعات و ارسال برای تأیید مشتری، با نرخ‌نامه ثابت مکانیکس محاسبه می‌شود." : "The fixed-rate estimate is calculated when parts are recorded and the estimate is sent for customer approval."}
                 </p>}
               </div>
-              {job.status === "REPAIRING" && (
+              {job.status === "REPAIRING" && !job.invoice && (
                 <Button onClick={advance} className="mt-3 w-full bg-amber text-black hover:bg-amber/90">
                   <FileText className="mr-2 size-4" /> {t("tech.jobDetail.sendEstimate")}
                 </Button>
@@ -437,6 +441,12 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
       </div>
     </div>
   );
+}
+
+function getNextJobStatus(job: Job): string {
+  if (job.status === "REPAIRING") return job.invoice ? "COMPLETED" : "WAITING_APPROVAL";
+  if (job.status === "WAITING_APPROVAL") return job.customerApproved ? "REPAIRING" : "WAITING_APPROVAL";
+  return NEXT_STATUS[job.status] ?? job.status;
 }
 
 function safeInteger(value: unknown): number | null {
