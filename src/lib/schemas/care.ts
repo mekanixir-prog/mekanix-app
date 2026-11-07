@@ -19,7 +19,8 @@ import { z } from "zod";
 export const careBookingSchema = z.object({
   vehicleId: z.string({ error: "خودرو الزامی است" }).min(1, "خودرو الزامی است"),
   packageId: z.string().min(1).optional(),
-  serviceType: z.string().max(100).optional(),
+  serviceType: z.enum(["periodic"]).default("periodic"),
+  expectedPricingVersion: z.string().min(1).max(64).optional(),
   location: z.string({ error: "محل الزامی است" }).min(1, "محل الزامی است").max(300, "محل بیش از حد طولانی است"),
   lat: z.number({ error: "عرض جغرافیایی باید عدد باشد" }).min(-90, "عرض جغرافیایی نامعتبر است").max(90, "عرض جغرافیایی نامعتبر است").optional(),
   lng: z.number({ error: "طول جغرافیایی باید عدد باشد" }).min(-180, "طول جغرافیایی نامعتبر است").max(180, "طول جغرافیایی نامعتبر است").optional(),
