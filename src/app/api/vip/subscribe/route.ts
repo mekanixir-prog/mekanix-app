@@ -64,7 +64,7 @@ export async function POST(req: Request) {
     !isSafeStoredIrrAmount(payment.amount) ||
     payment.currency !== "IRR" ||
     !payment.gatewayLogId ||
-    Number(payment.amount) < Number(plan.priceIrr)
+    Number(payment.amount) !== Number(plan.priceIrr)
   ) {
     return NextResponse.json({ error: "Invalid or insufficient payment" }, { status: 400 });
   }
@@ -82,9 +82,11 @@ export async function POST(req: Request) {
     gatewayLog.financialUnitStatus !== "VERIFIED_IRR" ||
     !isSafeStoredIrrAmount(gatewayLog.amount) ||
     gatewayLog.purpose !== "vip" ||
+    gatewayLog.targetPlanId !== planId ||
     gatewayLog.paymentId !== payment.id ||
     gatewayLog.currency !== payment.currency ||
-    Number(gatewayLog.amount) !== Number(payment.amount)
+    Number(gatewayLog.amount) !== Number(payment.amount) ||
+    Number(payment.amount) !== Number(plan.priceIrr)
   ) {
     return NextResponse.json({ error: "Payment is not a verified VIP payment" }, { status: 400 });
   }
