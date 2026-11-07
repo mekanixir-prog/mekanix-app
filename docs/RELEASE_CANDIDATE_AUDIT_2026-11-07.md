@@ -4,7 +4,7 @@
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Candidate PR:** [#137 — feat(pricing): add editable versioned IRR rate card](https://github.com/mekanixir-prog/mekanix-app/pull/137)  
 **Candidate branch:** `feat/admin-editable-irr-rate-card`  
-**Code candidate SHA reviewed before this audit-record update:** `3a50eff8f7d1a6f09f8ae1ca1f04579c81e254ae`  
+**Code candidate SHA reviewed before this audit-record update:** `a78e7a15e431c088a776b05994195082dcc5ecc6`  
 **Main branch SHA observed:** `10080473dd6b87ec725a5c6c22803f5d5d872342`
 
 This is a code/repository review, not evidence of a live deployment. No production host, domain, DNS/TLS, remote D1 database, SMS provider, payment gateway, production secret, or production data was activated or changed.
@@ -22,7 +22,7 @@ This is a code/repository review, not evidence of a live deployment. No producti
 - Unsupported vehicle/service classifications fail closed. Ambiguous engine categories require explicit minor/major mapping.
 - Fixed labor is presented as a service unit, not as hourly labor.
 - Unapproved six-month warranty claims and the VIP extended-warranty benefit copy were removed from the reviewed customer-facing language. VIP copy is limited to periodic visits; repairs and parts remain excluded.
-- Production price calculation remains disabled until explicit owner approval via `MEKANIX_PRICING_IRR_APPROVED=true`.
+- Production price calculation remains disabled until explicit owner approval via `MEKANIX_PRICING_IRR_APPROVED=true`; even if the flag is set, production fails closed when no persisted rate-card record exists and never silently falls back to illustrative in-code defaults.
 
 ## 2. CI evidence
 
