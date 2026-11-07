@@ -89,6 +89,9 @@ export function normalizeVehicleAssetClass(vehicleType: string): AssetClass {
 export async function getPricingRateCard(): Promise<PricingRateCard> {
   const db = await getDbForLib();
   const row = await db.platformSetting.findUnique({ where: { key: PRICING_RATE_CARD_KEY } });
+  // Production must never promote the illustrative in-code proposal by
+  // merely setting the approval flag. A saved PlatformSetting record is
+  // required so the owner-approved version is explicit and auditable.
   if (!row) {
     if (process.env.NODE_ENV === "production") {
       throw new Error("No persisted owner-approved IRR rate card is configured");
