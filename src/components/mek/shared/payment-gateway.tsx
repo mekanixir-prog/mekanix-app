@@ -16,8 +16,8 @@ import { toast } from "sonner";
 type Stage = "form" | "otp" | "processing" | "done" | "failed";
 
 // Iranian payment gateway simulator (Shaparak-style).
-// Used only for the VIP local simulator. Real providers remain disabled until
-// the persisted attempt / verification / fulfillment lifecycle is implemented.
+// VIP uses the server-priced gateway simulator. Prepay uses its separate
+// local prepay endpoint; neither flow enables a real provider.
 export function PaymentGatewayDialog({
   open,
   onOpenChange,
@@ -228,10 +228,12 @@ export function PaymentGatewayDialog({
   
                 </>
               )}
-              <div>
-                <Label className="text-xs">{t("pay.gateway.mobile")}</Label>
-                <Input value={mobile} onChange={(e) => setMobile(e.target.value.replace(/\D/g, "").slice(0, 11))} placeholder="09123456789" inputMode="numeric" className="mt-1 font-mono" />
-              </div>
+              {purpose === "vip" && (
+                <div>
+                  <Label className="text-xs">{t("pay.gateway.mobile")}</Label>
+                  <Input value={mobile} onChange={(e) => setMobile(e.target.value.replace(/\D/g, "").slice(0, 11))} placeholder="09123456789" inputMode="numeric" className="mt-1 font-mono" />
+                </div>
+              )}
               <p className="text-[10px] text-muted-foreground">{t("pay.gateway.demoNote")}</p>
               <Button onClick={initiate} className="w-full bg-amber text-black hover:bg-amber/90" size="lg">
                 <Lock className="mr-2 size-4" /> {t("pay.gateway.pay").replace("{amount}", money(serverAmount ?? amount))}
