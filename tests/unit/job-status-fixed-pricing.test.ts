@@ -40,7 +40,7 @@ vi.mock("@/lib/job-status-atomic", () => ({
 import { PATCH } from "@/app/api/jobs/[id]/status/route";
 
 const beforeJob = {
-  status: "DIAGNOSING",
+  status: "REPAIRING",
   customerApproved: false,
   updatedAt: new Date("2026-11-06T10:00:00.000Z"),
   technicianId: "tech-1",
@@ -253,7 +253,8 @@ describe("job status approval estimate uses the fixed rate card", () => {
     }));
   });
 
-  it("requires the diagnosis estimate step before a technician can start repair", async () => {
+  it("rejects direct repair from an earlier dispatch stage", async () => {
+    mocks.jobFindUnique.mockReset().mockResolvedValueOnce({ ...beforeJob, status: "ARRIVED" });
     const response = await PATCH(request({ status: "REPAIRING" }), {
       params: Promise.resolve({ id: "job-1" }),
     });
