@@ -140,10 +140,10 @@ export function CareDetail() {
               <PriceLine label={isFa ? "دستمزد ثابت" : "Fixed labor"} amount={booking.pricing.laborPrice} money={moneyIrr} />
               <PriceLine label={isFa ? "اعزام" : "Dispatch"} amount={booking.pricing.visitPrice} money={moneyIrr} />
               <PriceLine label={isFa ? "بازدید و عیب‌یابی" : "Inspection"} amount={booking.pricing.inspectionPrice} money={moneyIrr} />
-              {safeInteger(booking.pricing.emergencyPrice) > 0 && <PriceLine label={isFa ? "هزینه فوریت" : "Emergency surcharge"} amount={booking.pricing.emergencyPrice} money={moneyIrr} />}
+              {(safeInteger(booking.pricing.emergencyPrice) ?? 0) > 0 && <PriceLine label={isFa ? "هزینه فوریت" : "Emergency surcharge"} amount={booking.pricing.emergencyPrice} money={moneyIrr} />}
               <PriceLine label={isFa ? "قطعات" : "Parts"} amount={booking.pricing.partsPrice} money={moneyIrr} muted />
-              {safeInteger(booking.pricing.discount) > 0 && <PriceLine label={isFa ? "تخفیف" : "Discount"} amount={booking.pricing.discount} money={moneyIrr} muted />}
-              {safeInteger(booking.pricing.taxTotal) > 0 && <PriceLine label={isFa ? "مالیات" : "Tax"} amount={booking.pricing.taxTotal} money={moneyIrr} muted />}
+              {(safeInteger(booking.pricing.discount) ?? 0) > 0 && <PriceLine label={isFa ? "تخفیف" : "Discount"} amount={booking.pricing.discount} money={moneyIrr} muted />}
+              {(safeInteger(booking.pricing.taxTotal) ?? 0) > 0 && <PriceLine label={isFa ? "مالیات" : "Tax"} amount={booking.pricing.taxTotal} money={moneyIrr} muted />}
               <div className="flex items-center justify-between border-t border-border pt-2">
                 <span className="font-bold">{isFa ? "مبلغ نهایی" : "Total"}</span>
                 <span className="font-display text-lg font-bold text-amber">{moneyIrr(booking.pricing.total)}</span>
