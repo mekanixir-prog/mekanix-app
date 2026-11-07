@@ -220,7 +220,9 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
             <h1 className="font-display text-base font-semibold">{job.request.title}</h1>
           </div>
         </div>
-        <StatusBadge status={job.status} />
+        {job.status === "REPAIRING" && !job.invoice
+          ? <Badge variant="outline" className="border-amber/40 text-amber">{t("tech.jobDetail.estimatePreparation")}</Badge>
+          : <StatusBadge status={job.status} />}
       </div>
 
       {/* Action bar */}
@@ -330,6 +332,11 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                 <Package className="size-4 text-amber" />
                 <h3 className="font-display text-sm font-semibold">{t("tech.jobDetail.parts")}</h3>
               </div>
+              {job.status === "REPAIRING" && !job.invoice && (
+                <p className="mt-2 rounded-lg bg-amber/5 p-2 text-[11px] leading-6 text-muted-foreground">
+                  {t("tech.jobDetail.estimatePreparationHint")}
+                </p>
+              )}
               {job.parts.length > 0 && (
                 <div className="mt-3 space-y-1.5">
                   {job.parts.map((p) => (
