@@ -43,7 +43,7 @@ const TECH_TRANSITIONS: { to: Status; from: Status[] }[] = [
   { to: "DIAGNOSING", from: ["ARRIVED", "EN_ROUTE", "ACCEPTED"] },
   { to: "REPAIRING", from: ["DIAGNOSING", "ARRIVED", "WAITING_APPROVAL"] },
   { to: "WAITING_APPROVAL", from: ["REPAIRING", "DIAGNOSING"] },
-  { to: "COMPLETED", from: ["REPAIRING", "WAITING_APPROVAL"] },
+  { to: "COMPLETED", from: ["REPAIRING"] },
   { to: "REJECTED", from: ["REQUESTED"] },
 ];
 
@@ -120,6 +120,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     where: { id },
     select: {
       status: true,
+      customerApproved: true,
       updatedAt: true,
       technicianId: true,
       requestId: true,
@@ -135,7 +136,30 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // For technicians, ensure they are the ASSIGNED technician (requireJobParticipant already checked)
   // For customers, ensure they own the request (requireJobParticipant already checked)
 
+  if (hasCustomerApproval && session.role !== "CUSTOMER" && session.role !== "FLEET_MANAGER") {
+    return NextResponse.json(
+      { error: "فقط مشتری یا مدیر ناوگان می‌تواند برآورد تعمیر را تأیید کند", code: "CUSTOMER_APPROVAL_FORBIDDEN" },
+      { status: 403 },
+    );
+  }
+
   const customerApproved = hasCustomerApproval ? true : undefined;
+
+  // The estimate is a hard consent gate: no actor may start or complete work
+  // from WAITING_APPROVAL until the customer has accepted the estimate.
+  const targetStatus = status ?? existing.status;
+  if (existing.status === "WAITING_APPROVAL" && targetStatus === "REPAIRING" && existing.customerApproved !== true) {
+    return NextResponse.json(
+      { error: "شروع تعمیر تا زمان تأیید پیش‌فاکتور توسط مشتری مجاز نیست", code: "CUSTOMER_APPROVAL_REQUIRED" },
+      { status: 409 },
+    );
+  }
+  if (existing.status === "WAITING_APPROVAL" && targetStatus === "COMPLETED") {
+    return NextResponse.json(
+      { error: "کار نمی‌تواند پیش از شروع و تأیید برآورد تکمیل شود", code: "REPAIR_NOT_STARTED" },
+      { status: 409 },
+    );
+  }
 
   // If neither status nor customerApproved is provided, nothing to do
   if (!status && customerApproved === undefined) {
@@ -143,7 +167,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   // Validate state-machine transition
-  const targetStatus = status ?? existing.status;
   const allowed = isAllowedTransition(session.role, existing.status, targetStatus, customerApproved);
   if (!allowed) {
     return NextResponse.json(
@@ -240,7 +263,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       pricingVersion: pricing.pricingVersion,
       financialUnitStatus: "VERIFIED_IRR",
       status: "SENT" as const,
-      notes: `Fixed-fee rate card ${pricing.pricingVersion}; service ${serviceCode}; estimated technician travel ${travelDistanceKm} km. Warranty terms, if applicable, follow the separately approved service agreement.`,
+      notes: `پیش‌فاکتور بر اساس نرخ‌نامه ثابت نسخه ${pricing.pricingVersion} و کد خدمت ${serviceCode} صادر شده است. مسافت تقریبی حرکت تکنسین ${travelDistanceKm} کیلومتر است و هزینه رفت‌وآمد در همین برآورد محاسبه شده؛ انجام تعمیر و دریافت وجه منوط به تأیید این پیش‌فاکتور توسط مشتری است. شرایط ضمانت تابع توافق‌نامه جداگانه و تأییدشده خدمت است.`,
     };
   }
   const holdUntil = status === "COMPLETED"
@@ -351,7 +374,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     WAITING_APPROVAL: {
       type: "estimate_ready",
       title: "Estimate ready for approval",
-      body: `Review and approve your repair estimate for ${job.code}`,
+      body: `پیش‌فاکتور تعمیر ${job.code} آماده بررسی و تأیید شماست. انجام تعمیر پس از تأیید شما آغاز می‌شود.`,
       category: "job",
       link: "customer/invoice",
     },
