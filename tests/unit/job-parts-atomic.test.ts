@@ -1,0 +1,97 @@
+// @vitest-environment node
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  jobUpdateMany: vi.fn(),
+  invoiceFindUnique: vi.fn(),
+  partCreate: vi.fn(),
+  partFindUnique: vi.fn(),
+  partDelete: vi.fn(),
+  transaction: vi.fn(),
+}));
+vi.mock("@/lib/idempotency", () => ({ getD1Binding: vi.fn(async () => null) }));
+
+import {
+  addJobPartBeforeInvoice,
+  removeJobPartBeforeInvoice,
+  JobPartMutationConflictError,
+  JobPartNotFoundError,
+} from "@/lib/job-parts-atomic";
+
+const tx = {
+  job: { updateMany: mocks.jobUpdateMany },
+  invoice: { findUnique: mocks.invoiceFindUnique },
+  part: {
+    create: mocks.partCreate,
+    findUnique: mocks.partFindUnique,
+    delete: mocks.partDelete,
+  },
+};
+const db = {
+  $transaction: (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
+} as never;
+
+beforeEach(() => {
+  Object.values(mocks).forEach((mock) => mock.mockReset());
+  mocks.jobUpdateMany.mockResolvedValue({ count: 1 });
+  mocks.invoiceFindUnique.mockResolvedValue(null);
+  mocks.partCreate.mockResolvedValue({ id: "part-1", jobId: "job-1" });
+  mocks.partFindUnique.mockResolvedValue({ id: "part-1", jobId: "job-1" });
+  mocks.partDelete.mockResolvedValue({});
+});
+
+describe("atomic job part mutation", () => {
+  it("adds a verified IRR part only while the job is in REPAIRING and has no invoice", async () => {
+    const part = await addJobPartBeforeInvoice(db, {
+      jobId: "job-1",
+      name: "Oil filter",
+      sku: "OF-1",
+      quantity: 2,
+      unitPrice: 1_500_000,
+    });
+    expect(part).toMatchObject({ id: "part-1", jobId: "job-1" });
+    expect(mocks.jobUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "job-1", status: "REPAIRING" },
+    }));
+    expect(mocks.invoiceFindUnique).toHaveBeenCalledWith({
+      where: { jobId: "job-1" },
+      select: { id: true },
+    });
+    expect(mocks.partCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        jobId: "job-1",
+        name: "Oil filter",
+        quantity: 2,
+        unitPrice: 1_500_000,
+        financialUnitStatus: "VERIFIED_IRR",
+      }),
+    });
+  });
+
+  it("rejects part changes if the status transition already won the race", async () => {
+    mocks.jobUpdateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(addJobPartBeforeInvoice(db, {
+      jobId: "job-1", name: "Oil filter", sku: null, quantity: 1, unitPrice: 100,
+    })).rejects.toBeInstanceOf(JobPartMutationConflictError);
+    expect(mocks.partCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects part changes when an invoice already exists", async () => {
+    mocks.invoiceFindUnique.mockResolvedValueOnce({ id: "invoice-1" });
+    await expect(addJobPartBeforeInvoice(db, {
+      jobId: "job-1", name: "Oil filter", sku: null, quantity: 1, unitPrice: 100,
+    })).rejects.toBeInstanceOf(JobPartMutationConflictError);
+    expect(mocks.partCreate).not.toHaveBeenCalled();
+  });
+
+  it("deletes a part only while the job is still editable", async () => {
+    await expect(removeJobPartBeforeInvoice(db, "job-1", "part-1")).resolves.toBeUndefined();
+    expect(mocks.partDelete).toHaveBeenCalledWith({ where: { id: "part-1" } });
+  });
+
+  it("returns not found when a part belongs to another job or is missing", async () => {
+    mocks.partFindUnique.mockResolvedValueOnce(null);
+    await expect(removeJobPartBeforeInvoice(db, "job-1", "missing")).rejects.toBeInstanceOf(JobPartNotFoundError);
+    expect(mocks.partDelete).not.toHaveBeenCalled();
+  });
+});
