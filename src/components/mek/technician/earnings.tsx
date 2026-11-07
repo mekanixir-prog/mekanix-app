@@ -22,11 +22,11 @@ import { Label } from "@/components/ui/label";
 
 type Wallet = {
   id: string;
-  balance: number;
-  pendingBalance: number;
-  totalEarned: number;
-  totalCommission: number;
-  totalWithdrawn: number;
+  balance: number | string | null;
+  pendingBalance: number | string | null;
+  totalEarned: number | string | null;
+  totalCommission: number | string | null;
+  totalWithdrawn: number | string | null;
   transactions: WalletTxn[];
   withdrawals: WithdrawalReq[];
 };
@@ -36,9 +36,9 @@ type WalletTxn = {
   jobId: string | null;
   kind: string;
   status: string;
-  grossAmount: number;
-  commissionAmount: number;
-  netAmount: number;
+  grossAmount: number | string | null;
+  commissionAmount: number | string | null;
+  netAmount: number | string | null;
   holdUntil: string | null;
   releasedAt: string | null;
   description: string | null;
@@ -48,7 +48,7 @@ type WalletTxn = {
 type WithdrawalReq = {
   id: string;
   code: string;
-  amount: number;
+  amount: number | string | null;
   method: string;
   cardNumber: string | null;
   shebaNumber: string | null;
@@ -105,16 +105,20 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
   });
   const spark = series.map((s) => s.revenue);
 
-  const balance = wallet?.balance ?? 0;
-  const pending = wallet?.pendingBalance ?? 0;
-  const totalEarned = wallet?.totalEarned ?? 0;
-  const totalCommission = wallet?.totalCommission ?? 0;
-  const totalWithdrawn = wallet?.totalWithdrawn ?? 0;
+  const balance = wallet?.balance == null ? null : Number(wallet.balance);
+  const pending = wallet?.pendingBalance == null ? null : Number(wallet.pendingBalance);
+  const totalEarned = wallet?.totalEarned == null ? null : Number(wallet.totalEarned);
+  const totalCommission = wallet?.totalCommission == null ? null : Number(wallet.totalCommission);
+  const totalWithdrawn = wallet?.totalWithdrawn == null ? null : Number(wallet.totalWithdrawn);
 
   const submitWithdraw = async () => {
     const amt = parseFloat(withdrawAmount);
     if (!Number.isSafeInteger(amt) || amt <= 0) {
       toast.error(t("tech.earnings.withdrawInvalidIrr", "مبلغ برداشت باید عدد صحیح مثبت به ریال باشد"));
+      return;
+    }
+    if (balance === null || !Number.isSafeInteger(balance)) {
+      toast.error(isFa ? "موجودی تا زمان تأیید سوابق مالی قابل برداشت نیست" : "Balance is unavailable until its financial provenance is verified");
       return;
     }
     if (amt > balance) {
@@ -198,7 +202,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
             <Button
               className="w-full bg-amber text-black hover:bg-amber/90"
               onClick={() => setWithdrawOpen(true)}
-              disabled={balance <= 0}
+              disabled={balance === null || balance <= 0}
             >
               <Banknote className="mr-2 size-4" /> {t("tech.earnings.withdrawNow")}
             </Button>
@@ -260,7 +264,9 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {(wallet?.transactions ?? []).slice(0, 10).map((txn) => (
+                  {(wallet?.transactions ?? []).slice(0, 10).map((txn) => {
+                    const netAmount = txn.netAmount == null ? null : Number(txn.netAmount);
+                    return (
                     <tr key={txn.id} className="border-t border-border">
                       <td className="px-4 py-2.5 text-xs">
                         <span className="font-medium">{t(`tech.earnings.txnType.${txn.kind}` as any) ?? txn.kind}</span>
@@ -278,11 +284,12 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
                           {t(`tech.earnings.txnStatus.${txn.status}` as any) ?? txn.status}
                         </span>
                       </td>
-                      <td className={`px-4 py-2.5 text-right font-medium ${txn.netAmount >= 0 ? "text-amber" : "text-destructive"}`}>
-                        {money(Math.abs(txn.netAmount))} {txn.netAmount >= 0 ? "+" : "−"}
+                      <td className={`px-4 py-2.5 text-right font-medium ${txn.netAmount == null || Number(txn.netAmount) >= 0 ? "text-amber" : "text-destructive"}`}>
+                        {money(netAmount === null ? null : Math.abs(netAmount))} {netAmount === null ? "" : netAmount >= 0 ? "+" : "−"}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -349,7 +356,7 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
               <Input
                 type="number"
                 min={1}
-                max={balance}
+                max={balance ?? undefined}
                 value={withdrawAmount}
                 onChange={(e) => { withdrawalIdempotencyKey.current = null; setWithdrawAmount(e.target.value); }}
                 className="mt-1"
