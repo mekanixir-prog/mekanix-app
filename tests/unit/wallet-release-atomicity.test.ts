@@ -148,4 +148,25 @@ describe("wallet escrow release atomicity", () => {
     await expect(releaseWalletTransactionWithD1(d1 as any, "wallet-1", "txn-1", new Date()))
       .rejects.toThrow("unique RELEASE ledger key conflict");
   });
+
+  it("does not release a transaction without verified IRR provenance", async () => {
+    const tx = {
+      walletTransaction: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        updateMany: vi.fn(),
+      },
+      wallet: { updateMany: vi.fn(), findUnique: vi.fn() },
+      walletLedger: { create: vi.fn() },
+    };
+    const db = { $transaction: vi.fn(async (callback: (tx: any) => Promise<boolean>) => callback(tx)) } as any;
+
+    await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-unverified", new Date())).resolves.toBe(false);
+    expect(tx.walletTransaction.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ financialUnitStatus: "VERIFIED_IRR" }),
+    }));
+    expect(tx.walletTransaction.updateMany).not.toHaveBeenCalled();
+    expect(tx.wallet.updateMany).not.toHaveBeenCalled();
+    expect(tx.walletLedger.create).not.toHaveBeenCalled();
+  });
+
 });
