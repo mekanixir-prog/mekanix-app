@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   rateLimitAsync: vi.fn(),
   getDbForLib: vi.fn(),
   getClientId: vi.fn(),
+  createSession: vi.fn(),
 }));
 
 vi.mock("@/lib/rate-limit", () => ({
@@ -13,7 +14,7 @@ vi.mock("@/lib/rate-limit", () => ({
   RATE_LIMITS: { OTP_VERIFY: { max: 5, windowMs: 60_000 } },
 }));
 vi.mock("@/lib/db-access", () => ({ getDbForLib: mocks.getDbForLib }));
-vi.mock("@/lib/auth", () => ({ createSession: vi.fn() }));
+vi.mock("@/lib/auth", () => ({ createSession: mocks.createSession }));
 
 import { POST } from "@/app/api/auth/otp/verify/route";
 import { hashOtpPhone } from "@/lib/otp-crypto";
@@ -35,6 +36,46 @@ afterEach(() => {
 });
 
 describe("OTP verification phone rate limit", () => {
+  it("masks unverified technician fees in the successful OTP response", async () => {
+    const technicianUser = {
+      id: "technician-user-1",
+      phone: "09123456789",
+      phoneVerified: true,
+      role: "TECHNICIAN",
+      customer: { id: "customer-1" },
+      technician: {
+        id: "technician-1",
+        financialUnitStatus: "UNVERIFIED",
+        hourlyRate: 900_000,
+        travelFeeBase: 200_000,
+        inspectionFee: 300_000,
+        inspectionFeeHeavy: 1_200_000,
+      },
+    };
+    mocks.getDbForLib.mockResolvedValue({
+      otpCode: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      user: { findUnique: vi.fn().mockResolvedValue(technicianUser) },
+      customer: { create: vi.fn() },
+    });
+    mocks.createSession.mockResolvedValue("test-session-token");
+
+    const response = await POST(new Request("https://mekanix.ir/api/auth/otp/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone: "09123456789", code: "123456" }),
+    }));
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload.user.technician).toMatchObject({
+      financialUnitStatus: "UNVERIFIED",
+      hourlyRate: null,
+      travelFeeBase: null,
+      inspectionFee: null,
+      inspectionFeeHeavy: null,
+    });
+  });
+
   it("checks both IP and keyed phone budgets before reading OTP records", async () => {
     const response = await POST(new Request("https://mekanix.ir/api/auth/otp/verify", {
       method: "POST",
