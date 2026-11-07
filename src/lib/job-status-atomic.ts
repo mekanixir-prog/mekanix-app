@@ -62,7 +62,14 @@ function isTechnicianReleaseTransition(status: string) {
 }
 
 function assertRoleTransition(input: AtomicJobStatusInput) {
-  if (input.actorRole !== "CUSTOMER" && input.actorRole !== "FLEET_MANAGER") return;
+  const isCustomerActor = input.actorRole === "CUSTOMER" || input.actorRole === "FLEET_MANAGER";
+  if (input.updates.customerApproved !== undefined && !isCustomerActor) {
+    throw new JobStatusConflictError();
+  }
+  if (input.currentStatus === "WAITING_APPROVAL" && input.nextStatus === "COMPLETED") {
+    throw new JobStatusConflictError();
+  }
+  if (!isCustomerActor) return;
 
   const updateKeys = Object.keys(input.updates);
   const approvalOnly =
@@ -91,6 +98,9 @@ async function transitionWithPrisma(db: PrismaClient, input: AtomicJobStatusInpu
     if (input.actorRole === "TECHNICIAN") {
       if (!input.actorTechnicianId) throw new JobStatusConflictError();
       jobWhere.technicianId = input.actorTechnicianId;
+    }
+    if (input.currentStatus === "WAITING_APPROVAL" && input.nextStatus === "REPAIRING") {
+      jobWhere.customerApproved = true;
     }
     if (requestTransition) {
       jobWhere.request = {
@@ -177,11 +187,15 @@ async function transitionWithD1(
 
   let technicianGuard = "";
   let requestGuard = "";
+  let approvalGuard = "";
   values.push(input.jobId, input.currentStatus, input.expectedUpdatedAt.toISOString());
   if (input.actorRole === "TECHNICIAN") {
     if (!input.actorTechnicianId) throw new JobStatusConflictError();
     technicianGuard = ' AND "technicianId" = ?';
     values.push(input.actorTechnicianId);
+  }
+  if (input.currentStatus === "WAITING_APPROVAL" && input.nextStatus === "REPAIRING") {
+    approvalGuard = ' AND "customerApproved" = 1';
   }
   if (isRequestTerminalTransition(input.nextStatus)) {
     requestGuard = ' AND EXISTS (SELECT 1 FROM "ServiceRequest" r WHERE r."id" = ? AND r."matchedTechId" = ?)';
@@ -196,7 +210,7 @@ async function transitionWithD1(
   const statements = [
     d1.prepare(
       'UPDATE "Job" SET ' + assignments.join(", ") +
-      ' WHERE "id" = ? AND "status" = ? AND "updatedAt" = ?' + technicianGuard + requestGuard
+      ' WHERE "id" = ? AND "status" = ? AND "updatedAt" = ?' + technicianGuard + approvalGuard + requestGuard
     ).bind(...values),
     assertOneChange(),
   ];
