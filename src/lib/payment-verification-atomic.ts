@@ -126,7 +126,7 @@ export async function recordVerifiedGatewayPaymentAtomically(
     let payment = await tx.payment.findUnique({ where: { gatewayLogId: input.gatewayLogId } });
     if (!payment && input.legacyPaymentId) {
       const legacyPayment = await tx.payment.findUnique({ where: { id: input.legacyPaymentId } });
-      if (!isMatchingPayment(legacyPayment, input) || legacyPayment.gatewayLogId) {
+      if (!legacyPayment || !isMatchingPayment(legacyPayment, input) || legacyPayment.gatewayLogId) {
         throw new Error("Legacy Payment cannot be safely bound to this gateway attempt");
       }
       const bound = await tx.payment.updateMany({
