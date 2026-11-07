@@ -235,6 +235,27 @@ describe("job status approval estimate uses the fixed rate card", () => {
     expect(mocks.transition).not.toHaveBeenCalled();
   });
 
+  it("allows the technician to enter pre-estimate preparation after diagnosis", async () => {
+    mocks.jobFindUnique.mockReset().mockResolvedValueOnce({
+      ...beforeJob,
+      status: "DIAGNOSING",
+      invoice: null,
+      customerApproved: false,
+    });
+
+    const response = await PATCH(request({ status: "REPAIRING" }), {
+      params: Promise.resolve({ id: "job-1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.transition).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
+      actorRole: "TECHNICIAN",
+      currentStatus: "DIAGNOSING",
+      nextStatus: "REPAIRING",
+      updates: {},
+    }));
+  });
+
   it("allows a technician to start repair after stored customer approval", async () => {
     const waitingApproval = { ...beforeJob, status: "WAITING_APPROVAL", customerApproved: true };
     const repairing = { ...updatedJob, status: "REPAIRING" };
