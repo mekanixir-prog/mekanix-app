@@ -66,11 +66,19 @@ export async function GET(req: Request) {
 
   // A WithdrawalRequest row alone is not proof that the wallet debit committed.
   // Verify the matching immutable ledger row before telling the client it succeeded.
+  if (!ledger) {
+    return NextResponse.json({
+      state: "RECONCILIATION_REQUIRED",
+      withdrawalCode: request!.code,
+      ledgerFound: false,
+      requestFound: true,
+    }, { status: 409 });
+  }
   if (
     request!.financialUnitStatus !== "VERIFIED_IRR" ||
-    ledger!.financialUnitStatus !== "VERIFIED_IRR" ||
+    ledger.financialUnitStatus !== "VERIFIED_IRR" ||
     !isSafeStoredIrrAmount(request!.amount) ||
-    !isSafeStoredIrrAmount(ledger!.amount)
+    !isSafeStoredIrrAmount(ledger.amount)
   ) {
     return NextResponse.json({
       state: "RECONCILIATION_REQUIRED",
@@ -82,7 +90,7 @@ export async function GET(req: Request) {
   }
 
   const expectedDebit = new Prisma.Decimal(request!.amount).negated();
-  if (!ledger || ledger.referenceId !== request!.id || !expectedDebit.equals(ledger.amount)) {
+  if (ledger.referenceId !== request!.id || !expectedDebit.equals(ledger.amount)) {
     return NextResponse.json({
       state: "RECONCILIATION_REQUIRED",
       withdrawalCode: request!.code,
