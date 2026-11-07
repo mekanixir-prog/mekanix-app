@@ -1,3 +1,4 @@
+import { isVehicleInSupportedScope } from "@/lib/vehicle-scope";
 import type { PrismaClient } from "@prisma/client";
 import { getD1Binding, IdempotencyConflictError } from "@/lib/idempotency";
 
@@ -45,9 +46,9 @@ async function createWithPrisma(db: PrismaClient, input: ServiceRequestCreateInp
 
     const vehicle = await tx.vehicle.findUnique({
       where: { id: input.vehicleId },
-      select: { id: true, customerId: true },
+      select: { id: true, customerId: true, type: true, make: true },
     });
-    if (!vehicle || vehicle.customerId !== input.customerId) throw new ServiceRequestVehicleError();
+    if (!vehicle || vehicle.customerId !== input.customerId || !isVehicleInSupportedScope(vehicle.type, vehicle.make)) throw new ServiceRequestVehicleError();
 
     const request = await tx.serviceRequest.create({
       data: {
@@ -78,6 +79,14 @@ async function createWithD1(
   d1: NonNullable<Awaited<ReturnType<typeof getD1Binding>>>,
   input: ServiceRequestCreateInput
 ): Promise<CreateResult> {
+  const vehicle = await db.vehicle.findUnique({
+    where: { id: input.vehicleId },
+    select: { id: true, customerId: true, type: true, make: true },
+  });
+  if (!vehicle || vehicle.customerId !== input.customerId || !isVehicleInSupportedScope(vehicle.type, vehicle.make)) {
+    throw new ServiceRequestVehicleError();
+  }
+
   const now = new Date().toISOString();
   const requestId = crypto.randomUUID();
   const statement = d1.prepare(`
@@ -106,9 +115,9 @@ async function createWithD1(
   if (!existing) {
     const vehicle = await db.vehicle.findUnique({
       where: { id: input.vehicleId },
-      select: { id: true, customerId: true },
+      select: { id: true, customerId: true, type: true, make: true },
     });
-    if (!vehicle || vehicle.customerId !== input.customerId) throw new ServiceRequestVehicleError();
+    if (!vehicle || vehicle.customerId !== input.customerId || !isVehicleInSupportedScope(vehicle.type, vehicle.make)) throw new ServiceRequestVehicleError();
     throw new Error("D1 batch completed without a readable service request");
   }
   assertFingerprint(existing, input.requestFingerprint);
