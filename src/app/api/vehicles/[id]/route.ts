@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth, validateBody } from "@/lib/api-helpers";
 import { isVehicleInSupportedScope } from "@/lib/vehicle-scope";
-import { vehicleUpdateSchema } from "@/lib/schemas";
+import { vehicleUpdateSchema } from "@/lib/schemas/vehicle";
 import {
   requireVehicleOwner,
   sanitizeInput,
