@@ -11,12 +11,12 @@ describe("wallet escrow release atomicity", () => {
     const netAmount = 1250;
     const tx = {
       walletTransaction: {
-        findFirst: vi.fn().mockResolvedValue({ netAmount }),
+        findFirst: vi.fn().mockResolvedValue({ netAmount, financialUnitStatus: "VERIFIED_IRR" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       wallet: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-        findUnique: vi.fn().mockResolvedValue({ balance: new Prisma.Decimal(3250) }),
+        findUnique: vi.fn().mockResolvedValue({ balance: new Prisma.Decimal(3250), pendingBalance: new Prisma.Decimal(0), financialUnitStatus: "VERIFIED_IRR" }),
       },
       walletLedger: { create: vi.fn().mockResolvedValue({ id: "ledger-1" }) },
     };
@@ -34,7 +34,7 @@ describe("wallet escrow release atomicity", () => {
     }));
     expect(tx.walletTransaction.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.wallet.updateMany).toHaveBeenCalledWith({
-      where: { id: "wallet-1", pendingBalance: { gte: netAmount } },
+      where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR", pendingBalance: { gte: netAmount } },
       data: {
         pendingBalance: { decrement: netAmount },
         balance: { increment: netAmount },
@@ -57,7 +57,7 @@ describe("wallet escrow release atomicity", () => {
   it("does not touch the wallet or ledger when another request already transitioned the transaction", async () => {
     const tx = {
       walletTransaction: {
-        findFirst: vi.fn().mockResolvedValue({ netAmount: 1250 }),
+        findFirst: vi.fn().mockResolvedValue({ netAmount: 1250, financialUnitStatus: "VERIFIED_IRR" }),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       wallet: { updateMany: vi.fn(), findUnique: vi.fn() },
@@ -73,7 +73,7 @@ describe("wallet escrow release atomicity", () => {
   it("throws inside the Prisma transaction when pending balance cannot cover the release", async () => {
     const tx = {
       walletTransaction: {
-        findFirst: vi.fn().mockResolvedValue({ netAmount: 1250 }),
+        findFirst: vi.fn().mockResolvedValue({ netAmount: 1250, financialUnitStatus: "VERIFIED_IRR" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       wallet: { updateMany: vi.fn().mockResolvedValue({ count: 0 }), findUnique: vi.fn() },
