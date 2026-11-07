@@ -88,6 +88,24 @@ describe("VIP gateway initiation", () => {
     expect(mockGatewayCreate).not.toHaveBeenCalled();
   });
 
+  it("reuses the original attempt snapshot when the plan price changes", async () => {
+    mockVipPlanFindUnique.mockResolvedValue({
+      id: "plan-gold", name: "Gold", priceIrr: 150_000,
+      financialUnitStatus: "VERIFIED_IRR", active: true,
+    });
+    mockGatewayFindUnique.mockResolvedValue({
+      code: "PG-original", referenceId: "SIM-original", amount: 125_000,
+      userId: "customer-1", purpose: "vip", targetPlanId: "plan-gold",
+      currency: "IRR", financialUnitStatus: "VERIFIED_IRR", status: "REDIRECTED",
+    });
+    const response = await POST(request({ purpose: "vip", planId: "plan-gold", idempotencyKey: "vip-checkout-attempt-0001" }));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.amount).toBe(125_000);
+    expect(body.reused).toBe(true);
+    expect(mockGatewayCreate).not.toHaveBeenCalled();
+  });
+
   it("rejects reuse of a key for a different user or plan", async () => {
     mockGatewayFindUnique.mockResolvedValue({
       code: "PG-existing", referenceId: "SIM-existing", amount: 125_000,
@@ -114,14 +132,14 @@ describe("VIP gateway initiation", () => {
       active: true,
     });
 
-    const response = await POST(request({ purpose: "vip", planId: "plan-gold" }));
+    const response = await POST(request({ purpose: "vip", planId: "plan-gold", idempotencyKey: "vip-unverified-plan-0001" }));
     expect(response.status).toBe(409);
     expect(mockGatewayCreate).not.toHaveBeenCalled();
   });
 
   it("rejects an inactive or missing plan", async () => {
     mockVipPlanFindUnique.mockResolvedValue(null);
-    const response = await POST(request({ purpose: "vip", planId: "missing" }));
+    const response = await POST(request({ purpose: "vip", planId: "missing", idempotencyKey: "vip-missing-plan-0001" }));
     expect(response.status).toBe(404);
     expect(mockGatewayCreate).not.toHaveBeenCalled();
   });
