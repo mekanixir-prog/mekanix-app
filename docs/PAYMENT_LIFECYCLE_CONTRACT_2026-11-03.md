@@ -179,3 +179,18 @@ This resolves only the unit-policy decision. It does **not** certify existing ro
 5. Sandbox certification and live activation: **deferred until the launch window and explicit approval**.
 
 The implementation order should therefore begin with a row-provenance-safe server-owned amount resolver and purpose-specific business-policy review, not with any historical mass conversion or production credential activation.
+
+
+## 11. VIP simulator hardening — 2026-11-07
+
+The local VIP simulator now uses a server-owned plan snapshot rather than trusting a client-submitted amount:
+
+- The initiation request supplies only the VIP plan identifier and non-financial display/contact fields. The amount, currency, payer, and purpose are resolved or assigned by the server.
+- The plan must be active, marked `VERIFIED_IRR`, and have a positive safe-integer IRR price within the configured local simulator limit.
+- `PaymentGatewayLog.targetPlanId` binds the attempt to the exact VIP plan. New SQLite/D1 and PostgreSQL migrations add this nullable field and index; existing historical logs remain unbound.
+- Verification reloads the persisted plan and checks its current active/provenance state and exact price against the immutable attempt amount before creating a Payment.
+- VIP activation requires the verified gateway attempt's `targetPlanId` to equal the requested plan and requires exact equality between payment amount and plan price. Overpayment and cross-plan reuse are rejected.
+- The dialog no longer sends client `userId`, amount, card CVV, or expiry to the server. The server response amount is used for the confirmation display.
+- The simulator UI and route are explicitly VIP-only; invoice, prepay and wallet-top-up are not silently treated as supported by this path.
+
+This is a local simulator safety improvement, not a production payment attempt/outbox implementation. Provider callbacks, provider API verification, replay protection, timeout reconciliation, refund handling and purpose-specific outbox fulfillment remain open under Issue #24. Legacy gateway logs without `targetPlanId` cannot be used to activate a new VIP subscription through this path.
