@@ -224,15 +224,15 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
     expect(new Set(results.map((result) => result.id)).size).toBe(1);
     expect(results.filter((result) => result.created)).toHaveLength(1);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "InsuranceClaim"').get()).toEqual({ count: 1 });
-    expect(sqlite.prepare('SELECT "status" FROM "InsurancePolicy" WHERE "id" = ?').get("policy-1"))
+    expect(sqlite.prepare('SELECT "status", "financialUnitStatus" FROM "InsurancePolicy" WHERE "id" = ?').get("policy-1"))
       .toEqual({ status: "claimed", financialUnitStatus: "VERIFIED_IRR" });
   });
 
   it("rolls back the claim insert when the policy status transition fails", async () => {
     const { sqlite, d1 } = makeD1();
     databases.push(sqlite);
-    sqlite.prepare('INSERT INTO "InsurancePolicy" ("id", "userId", "status") VALUES (?, ?, ?)')
-      .run("policy-1", "user-1", "active");
+    sqlite.prepare('INSERT INTO "InsurancePolicy" ("id", "userId", "status", "financialUnitStatus") VALUES (?, ?, ?, ?)')
+      .run("policy-1", "user-1", "active", "VERIFIED_IRR");
     sqlite.exec(`CREATE TRIGGER "fail_policy_update" BEFORE UPDATE ON "InsurancePolicy"
       BEGIN SELECT RAISE(ABORT, 'policy update failed'); END;`);
     mocks.getD1Binding.mockResolvedValue(d1);
