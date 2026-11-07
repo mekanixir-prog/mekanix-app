@@ -50,8 +50,8 @@ export function isProductionPricingApproved(
 export interface PricingInput {
   packageId?: string;
   vehicleType: string; // CAR, TRUCK, EXCAVATOR, etc.
-  /** Fixed-fee service code. Defaults to diagnostic for legacy callers. */
-  serviceCode?: ServiceCode;
+  /** Explicit fixed-fee service code; no implicit category fallback is allowed. */
+  serviceCode: ServiceCode;
   /** @deprecated Kept for API compatibility; fixed-fee pricing ignores elapsed hours. */
   laborHours: number;
   partsCost: number; // sum of parts
@@ -126,7 +126,10 @@ export async function calculatePrice(input: PricingInput): Promise<PricingBreakd
 
   const card = await getPricingRateCard();
   const assetClass = normalizeVehicleAssetClass(input.vehicleType);
-  const serviceCode = input.serviceCode ?? "diagnostic";
+  const serviceCode = input.serviceCode;
+  if (!serviceCode) {
+    throw new Error("کد خدمت برای محاسبه تعرفه الزامی است");
+  }
   const fixedLabor = card.serviceFeesIrr[assetClass][serviceCode];
   if (fixedLabor === null || fixedLabor === undefined) {
     throw new Error("این خدمت برای گروه وسیله انتخاب‌شده در نرخ‌نامه تعریف نشده است");
