@@ -224,6 +224,26 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
       }
     }
 
+    // Financial state transitions require a durable audit record before
+    // touching the wallet/request. A degraded audit store must fail closed.
+    try {
+      await writeAuditLog({
+        session: adminSession,
+        action: `ATTEMPT_WITHDRAWAL_${action}`,
+        entity: "withdrawalRequest",
+        entityId: id,
+        before,
+        after: { requestedStatus: action, adminNotes, payoutReference },
+        req,
+        strict: true,
+      });
+    } catch {
+      return NextResponse.json(
+        { error: "ثبت سابقه حسابرسی ممکن نیست؛ عملیات برداشت انجام نشد", code: "WITHDRAWAL_AUDIT_UNAVAILABLE" },
+        { status: 503 },
+      );
+    }
+
     const changed = await updateWithdrawalAtomically(db, {
       withdrawalId: id,
       action,
