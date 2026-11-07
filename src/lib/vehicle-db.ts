@@ -1,3 +1,4 @@
+import { isExcludedPassengerMake } from "@/lib/vehicle-scope";
 // MEKANIX — Iranian vehicle database (comprehensive)
 // Includes ALL Iranian assemblers (مونتاژ) + importers with their full model
 // catalogs and rich per-model metadata (years, segment, engine, fuel, notes).
@@ -693,7 +694,12 @@ export const HEAVY_MAKES: VehicleMake[] = [
 
 // Get makes for a given mode
 export function getMakesForMode(mode: "passenger" | "heavy"): VehicleMake[] {
-  return mode === "passenger" ? PASSENGER_MAKES : HEAVY_MAKES;
+  if (mode === "heavy") return HEAVY_MAKES;
+  return PASSENGER_MAKES.filter((make) =>
+    !isExcludedPassengerMake(make.make) &&
+    !isExcludedPassengerMake(make.makeEn) &&
+    !isExcludedPassengerMake(make.assembler)
+  );
 }
 
 // Get only Iranian assemblers/importers (for the catalog page)
@@ -711,7 +717,7 @@ export function getModelMeta(make: string, modelName: string): VehicleModel | un
 
 // Find a make by name (Persian or English) — useful for backward compatibility
 export function findMake(makeName: string): VehicleMake | undefined {
-  return PASSENGER_MAKES.find((m) => m.make === makeName || (m.makeEn && m.makeEn === makeName))
+  return getMakesForMode("passenger").find((m) => m.make === makeName || (m.makeEn && m.makeEn === makeName))
     || HEAVY_MAKES.find((m) => m.make === makeName || (m.makeEn && m.makeEn === makeName));
 }
 
