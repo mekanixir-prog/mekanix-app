@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  getD1Binding: vi.fn(),
   jobUpdateMany: vi.fn(),
   invoiceFindUnique: vi.fn(),
   partCreate: vi.fn(),
@@ -9,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   partDelete: vi.fn(),
   transaction: vi.fn(),
 }));
-vi.mock("@/lib/idempotency", () => ({ getD1Binding: vi.fn(async () => null) }));
+vi.mock("@/lib/idempotency", () => ({ getD1Binding: mocks.getD1Binding }));
 
 import {
   addJobPartBeforeInvoice,
@@ -29,10 +30,12 @@ const tx = {
 };
 const db = {
   $transaction: (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
+  part: { findUnique: mocks.partFindUnique },
 } as never;
 
 beforeEach(() => {
   Object.values(mocks).forEach((mock) => mock.mockReset());
+  mocks.getD1Binding.mockResolvedValue(null);
   mocks.jobUpdateMany.mockResolvedValue({ count: 1 });
   mocks.invoiceFindUnique.mockResolvedValue(null);
   mocks.partCreate.mockResolvedValue({ id: "part-1", jobId: "job-1" });
@@ -87,6 +90,32 @@ describe("atomic job part mutation", () => {
   it("deletes a part only while the job is still editable", async () => {
     await expect(removeJobPartBeforeInvoice(db, "job-1", "part-1")).resolves.toBeUndefined();
     expect(mocks.partDelete).toHaveBeenCalledWith({ where: { id: "part-1" } });
+  });
+
+  it("uses a conditional D1 batch and reads back the inserted part", async () => {
+    const statement = { bind: vi.fn(() => statement) };
+    const d1 = { prepare: vi.fn(() => statement), batch: vi.fn().mockResolvedValue([]) };
+    mocks.getD1Binding.mockResolvedValueOnce(d1);
+    mocks.partFindUnique.mockResolvedValueOnce({ id: "d1-part", jobId: "job-1" });
+
+    const part = await addJobPartBeforeInvoice(db, {
+      jobId: "job-1", name: "Oil filter", sku: null, quantity: 1, unitPrice: 1_000_000,
+    });
+
+    expect(part).toMatchObject({ id: "d1-part", jobId: "job-1" });
+    expect(d1.prepare.mock.calls[0][0]).toContain('INSERT INTO "Part"');
+    expect(d1.prepare.mock.calls[0][0]).toContain('status" = \'REPAIRING\'');
+    expect(d1.batch).toHaveBeenCalledTimes(1);
+    expect(d1.batch.mock.calls[0][0]).toHaveLength(2);
+  });
+
+  it("maps a failed D1 conditional insert to a conflict instead of a server error", async () => {
+    const statement = { bind: vi.fn(() => statement) };
+    const d1 = { prepare: vi.fn(() => statement), batch: vi.fn().mockRejectedValue(new Error("malformed JSON")) };
+    mocks.getD1Binding.mockResolvedValueOnce(d1);
+    await expect(addJobPartBeforeInvoice(db, {
+      jobId: "job-1", name: "Oil filter", sku: null, quantity: 1, unitPrice: 1_000_000,
+    })).rejects.toBeInstanceOf(JobPartMutationConflictError);
   });
 
   it("returns not found when a part belongs to another job or is missing", async () => {
