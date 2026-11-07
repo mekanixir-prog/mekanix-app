@@ -69,6 +69,12 @@ function assertRoleTransition(input: AtomicJobStatusInput) {
   if (input.currentStatus === "WAITING_APPROVAL" && input.nextStatus === "COMPLETED") {
     throw new JobStatusConflictError();
   }
+  if (input.nextStatus === "REPAIRING" && input.currentStatus !== "WAITING_APPROVAL") {
+    throw new JobStatusConflictError();
+  }
+  if (input.nextStatus === "WAITING_APPROVAL" && input.currentStatus !== "DIAGNOSING") {
+    throw new JobStatusConflictError();
+  }
   if (!isCustomerActor) return;
 
   const updateKeys = Object.keys(input.updates);
@@ -108,9 +114,16 @@ async function transitionWithPrisma(db: PrismaClient, input: AtomicJobStatusInpu
       };
     }
 
+    const jobData = {
+      status: input.nextStatus,
+      ...(input.nextStatus === "WAITING_APPROVAL" && input.currentStatus !== "WAITING_APPROVAL"
+        ? { customerApproved: false }
+        : {}),
+      ...input.updates,
+    };
     const jobUpdate = await tx.job.updateMany({
       where: jobWhere,
-      data: { status: input.nextStatus, ...input.updates },
+      data: jobData,
     });
     if (jobUpdate.count !== 1) throw new JobStatusConflictError();
 
@@ -164,6 +177,10 @@ async function transitionWithD1(
   const assignments = ['"status" = ?', '"updatedAt" = ?'];
   const values: unknown[] = [input.nextStatus, now];
 
+  if (input.nextStatus === "WAITING_APPROVAL" && input.currentStatus !== "WAITING_APPROVAL") {
+    assignments.push('"customerApproved" = ?');
+    values.push(0);
+  }
   if (input.updates.startedAt) {
     assignments.push('"startedAt" = ?');
     values.push(input.updates.startedAt.toISOString());
