@@ -289,6 +289,37 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
   });
 
+  it("rejects a verified payment bound to a different VIP plan", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "gateway-1", userId: "user-1", status: "VERIFIED",
+      financialUnitStatus: "VERIFIED_IRR",
+      purpose: "vip", targetPlanId: "another-plan", paymentId: "pay-1",
+      amount: 100_000, currency: "IRR",
+    });
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(400);
+    expect(mockCreateVipSubscriptionAtomically).not.toHaveBeenCalled();
+  });
+
+  it("rejects overpayment instead of accepting an amount greater than the selected plan", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockPaymentFindUnique.mockResolvedValue({
+      id: "pay-1", userId: "user-1", status: "SUCCEEDED",
+      financialUnitStatus: "VERIFIED_IRR",
+      amount: 150_000, currency: "IRR", gatewayLogId: "gateway-1",
+    });
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "gateway-1", userId: "user-1", status: "VERIFIED",
+      financialUnitStatus: "VERIFIED_IRR",
+      purpose: "vip", targetPlanId: "plan-1", paymentId: "pay-1",
+      amount: 150_000, currency: "IRR",
+    });
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(400);
+    expect(mockCreateVipSubscriptionAtomically).not.toHaveBeenCalled();
+  });
+
   it("rejects a gateway attempt not linked back to the selected payment", async () => {
     vi.stubEnv("NODE_ENV", "test");
     mockPaymentGatewayLogFindUnique.mockResolvedValue({
