@@ -148,7 +148,7 @@ export async function POST(req: Request) {
         });
 
         // Create warranty (catch — may already exist from duplicate)
-        await db.warranty.create({ data: { jobId: inv.jobId, months: 6, active: true } }).catch(() => {});
+        // Warranty is not auto-created until its duration and coverage are approved in a service agreement.
 
         if (inv.job?.technician?.userId) {
           await db.notification.create({
@@ -156,7 +156,7 @@ export async function POST(req: Request) {
               userId: inv.job.technician.userId,
               type: "job_completed",
               title: "Payment received",
-              body: `Invoice ${inv.code} paid — $${inv.total}`,
+              body: `فاکتور ${inv.code} پرداخت شد.`,
               category: "payment",
               link: "technician/earnings",
             },
@@ -194,7 +194,7 @@ export async function POST(req: Request) {
         data: { status: "COMPLETED", completedAt: new Date() },
       });
 
-      await db.warranty.create({ data: { jobId: inv.jobId, months: 6, active: true } }).catch(() => {});
+      // Warranty is not auto-created until its duration and coverage are approved in a service agreement.
 
       if (inv.job?.technician?.userId) {
         await db.notification.create({
@@ -202,7 +202,7 @@ export async function POST(req: Request) {
             userId: inv.job.technician.userId,
             type: "job_completed",
             title: "Payment received",
-            body: `Invoice ${inv.code} paid — $${inv.total}`,
+            body: `فاکتور ${inv.code} پرداخت شد.`,
             category: "payment",
             link: "technician/earnings",
           },
