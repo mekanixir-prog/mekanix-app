@@ -115,9 +115,9 @@ describe("job status route delegates atomic state changes", () => {
     }));
   });
 
-  it("uses fixed rate-card components when the repair enters customer approval", async () => {
+  it("uses fixed rate-card components when diagnosis enters customer approval", async () => {
     const repair = {
-      status: "REPAIRING",
+      status: "DIAGNOSING",
       updatedAt: new Date("2026-11-06T10:00:00.000Z"),
       technicianId: "tech-1",
       requestId: "request-1",
@@ -171,9 +171,9 @@ describe("job status route delegates atomic state changes", () => {
     }));
   });
 
-  it("fails closed when the rate-card calculator is unavailable", async () => {
+  it("fails closed when the rate-card calculator is unavailable during diagnosis", async () => {
     const repair = {
-      status: "REPAIRING",
+      status: "DIAGNOSING",
       technicianId: "tech-1",
       requestId: "request-1",
       technician: {
