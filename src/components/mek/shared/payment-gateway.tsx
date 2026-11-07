@@ -182,7 +182,8 @@ export function PaymentGatewayDialog({
           {stage === "form" && (
             <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3">
               {purpose === "vip" && (
-                <div>
+                <>
+                  <div>
                   <Label className="text-xs">{t("pay.gateway.bank")}</Label>
                   <Select value={bank} onValueChange={setBank}>
                     <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
@@ -225,6 +226,7 @@ export function PaymentGatewayDialog({
                   </div>
                 </div>
   
+                </>
               )}
               <div>
                 <Label className="text-xs">{t("pay.gateway.mobile")}</Label>
