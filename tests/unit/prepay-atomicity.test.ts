@@ -42,7 +42,7 @@ describe("atomic prepay recording", () => {
       }),
     });
     expect(tx.wallet.updateMany).toHaveBeenCalledWith({
-      where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR" },
+      where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR", pendingBalance: 50 },
       data: {
         pendingBalance: { increment: 900 },
         totalEarned: { increment: 1000 },
@@ -89,6 +89,34 @@ describe("atomic prepay recording", () => {
     expect(tx.job.updateMany).not.toHaveBeenCalled();
     expect(tx.walletTransaction.create).not.toHaveBeenCalled();
     expect(tx.walletLedger.create).not.toHaveBeenCalled();
+  });
+
+  it("aborts if the pending balance changed after the ledger snapshot", async () => {
+    const tx = {
+      job: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      wallet: {
+        upsert: vi.fn().mockResolvedValue({
+          id: "wallet-1",
+          balance: 0,
+          pendingBalance: 50,
+          totalEarned: 0,
+          totalCommission: 0,
+          financialUnitStatus: "VERIFIED_IRR",
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      walletTransaction: { create: vi.fn().mockResolvedValue({}) },
+      walletLedger: { create: vi.fn().mockResolvedValue({}) },
+    };
+    const db = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)),
+    } as any;
+
+    await expect(recordPrepayWithPrisma(db, input))
+      .rejects.toThrow("Verified IRR wallet aggregate update failed");
+    expect(tx.wallet.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ pendingBalance: 50 }),
+    }));
   });
 
   it("propagates a ledger failure so the Prisma transaction rolls back", async () => {
