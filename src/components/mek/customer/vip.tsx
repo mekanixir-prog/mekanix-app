@@ -200,7 +200,7 @@ export function CustomerVip({ userId }: { userId: string }) {
           onOpenChange={setGatewayOpen}
           amount={selectedPlan.priceIrr}
           purpose="vip"
-          userId={userId}
+          planId={selectedPlan.id}
           description={t(`vip.plan.${selectedPlan.slug}`)}
           onSuccess={onPaid}
         />

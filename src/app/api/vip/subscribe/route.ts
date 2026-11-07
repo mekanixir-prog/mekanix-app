@@ -1,3 +1,4 @@
+import { isPaymentSimulatorRouteEnabled } from "@/lib/payment-simulator-guard";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
@@ -17,7 +18,7 @@ import { isSafeStoredIrrAmount, maskFinancialFields } from "@/lib/money/financia
 export async function POST(req: Request) {
   // 1. Production guard — fail closed. This route is dev-only simulation
   //    until a real payment gateway integration exists.
-  if (process.env.NODE_ENV === "production") {
+  if (!isPaymentSimulatorRouteEnabled()) {
     return new NextResponse(null, { status: 404 });
   }
 
@@ -62,8 +63,7 @@ export async function POST(req: Request) {
     payment.financialUnitStatus !== "VERIFIED_IRR" ||
     !isSafeStoredIrrAmount(payment.amount) ||
     payment.currency !== "IRR" ||
-    !payment.gatewayLogId ||
-    Number(payment.amount) < Number(plan.priceIrr)
+    !payment.gatewayLogId
   ) {
     return NextResponse.json({ error: "Invalid or insufficient payment" }, { status: 400 });
   }
@@ -81,6 +81,7 @@ export async function POST(req: Request) {
     gatewayLog.financialUnitStatus !== "VERIFIED_IRR" ||
     !isSafeStoredIrrAmount(gatewayLog.amount) ||
     gatewayLog.purpose !== "vip" ||
+    gatewayLog.targetPlanId !== planId ||
     gatewayLog.paymentId !== payment.id ||
     gatewayLog.currency !== payment.currency ||
     Number(gatewayLog.amount) !== Number(payment.amount)

@@ -101,6 +101,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       status: "VERIFIED",
       financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip",
+      targetPlanId: "plan-1",
       paymentId: "pay-1",
       amount: 100_000,
       currency: "IRR",
@@ -281,11 +282,57 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     mockPaymentGatewayLogFindUnique.mockResolvedValue({
       id: "gateway-1", userId: "user-1", status: "VERIFIED",
       financialUnitStatus: "VERIFIED_IRR",
-      purpose: "invoice", paymentId: "pay-1", amount: 100_000, currency: "IRR",
+      purpose: "invoice", targetPlanId: "plan-1", paymentId: "pay-1", amount: 100_000, currency: "IRR",
     });
     const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
     expect(res.status).toBe(400);
     expect(mockUserVipSubscriptionCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a verified payment bound to a different VIP plan", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "gateway-1", userId: "user-1", status: "VERIFIED",
+      financialUnitStatus: "VERIFIED_IRR",
+      purpose: "vip", targetPlanId: "another-plan", paymentId: "pay-1",
+      amount: 100_000, currency: "IRR",
+    });
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(400);
+    expect(mockCreateVipSubscriptionAtomically).not.toHaveBeenCalled();
+  });
+
+  it("rejects a Payment amount that does not match its immutable gateway attempt", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockPaymentFindUnique.mockResolvedValue({
+      id: "pay-1", userId: "user-1", status: "SUCCEEDED",
+      financialUnitStatus: "VERIFIED_IRR",
+      amount: 150_000, currency: "IRR", gatewayLogId: "gateway-1",
+    });
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "gateway-1", userId: "user-1", status: "VERIFIED",
+      financialUnitStatus: "VERIFIED_IRR",
+      purpose: "vip", targetPlanId: "plan-1", paymentId: "pay-1",
+      amount: 100_000, currency: "IRR",
+    });
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(400);
+    expect(mockCreateVipSubscriptionAtomically).not.toHaveBeenCalled();
+  });
+
+  it("uses the persisted amount snapshot if the plan price changes after initiation", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockVipPlanFindUnique.mockResolvedValue({
+      id: "plan-1",
+      name: "Gold",
+      priceIrr: 150_000, // price changed after the attempt was initiated
+      durationDays: 30,
+      active: true,
+      financialUnitStatus: "VERIFIED_IRR",
+    });
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(200);
+    expect(mockCreateVipSubscriptionAtomically).toHaveBeenCalled();
   });
 
   it("rejects a gateway attempt not linked back to the selected payment", async () => {
@@ -293,7 +340,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     mockPaymentGatewayLogFindUnique.mockResolvedValue({
       id: "gateway-1", userId: "user-1", status: "VERIFIED",
       financialUnitStatus: "VERIFIED_IRR",
-      purpose: "vip", paymentId: "different-payment", amount: 100_000, currency: "IRR",
+      purpose: "vip", targetPlanId: "plan-1", paymentId: "different-payment", amount: 100_000, currency: "IRR",
     });
     const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
     expect(res.status).toBe(400);
@@ -305,7 +352,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     mockPaymentGatewayLogFindUnique.mockResolvedValue({
       id: "gateway-1", userId: "user-1", status: "VERIFIED",
       financialUnitStatus: "VERIFIED_IRR",
-      purpose: "vip", paymentId: "pay-1", amount: 120_000, currency: "USD",
+      purpose: "vip", targetPlanId: "plan-1", paymentId: "pay-1", amount: 120_000, currency: "USD",
     });
     const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
     expect(res.status).toBe(400);

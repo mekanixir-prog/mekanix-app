@@ -1,3 +1,4 @@
+import { isPaymentSimulatorRouteEnabled } from "@/lib/payment-simulator-guard";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
@@ -6,7 +7,7 @@ import { isSafeStoredIrrAmount } from "@/lib/money/financial-read-mask";
 // Verify a payment (simulated Shaparak OTP flow).
 // Simulator-only: real provider callbacks must use provider signature verification.
 export async function POST(req: Request) {
-  if (process.env.NODE_ENV === "production") {
+  if (!isPaymentSimulatorRouteEnabled()) {
     return new NextResponse(null, { status: 404 });
   }
 
@@ -40,6 +41,21 @@ export async function POST(req: Request) {
   }
   if (log.currency !== "IRR" || log.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(log.amount) || Number(log.amount) <= 0) {
     return NextResponse.json({ error: "مبلغ درگاه از نظر واحد و منشأ ریال تأیید نشده است", code: "GATEWAY_IRR_PROVENANCE_UNVERIFIED" }, { status: 409 });
+  }
+
+  // This simulator endpoint supports VIP only. The plan identity and amount
+  // are persisted at initiation; client purpose/amount never select fulfillment.
+  if (log.purpose !== "vip" || !log.targetPlanId) {
+    return NextResponse.json({ error: "این تلاش پرداخت به طرح VIP معتبر متصل نیست", code: "GATEWAY_PURPOSE_UNBOUND" }, { status: 409 });
+  }
+  const targetPlan = await db.vipPlan.findUnique({ where: { id: log.targetPlanId } });
+  if (
+    !targetPlan ||
+    !targetPlan.active ||
+    targetPlan.financialUnitStatus !== "VERIFIED_IRR" ||
+    !isSafeStoredIrrAmount(targetPlan.priceIrr)
+  ) {
+    return NextResponse.json({ error: "طرح یا مبلغ تلاش پرداخت دیگر قابل تأیید نیست", code: "VIP_PLAN_SNAPSHOT_MISMATCH" }, { status: 409 });
   }
   if (log.status === "FAILED" || log.status === "CANCELLED") {
     return NextResponse.json({ error: "این پرداخت ناموفق یا لغو شده است" }, { status: 409 });

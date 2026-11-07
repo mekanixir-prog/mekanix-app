@@ -152,3 +152,45 @@ No commission percentage, release hold, refund policy, VIP entitlement, or price
 - No weakening or removal of production 404/fail-closed guards to make a demo work.
 
 **Decision:** design ready for technical review; implementation remains blocked by the monetary-unit decision and purpose-specific settlement approval.
+
+
+## 10. Owner-decision update — 2026-11-07 (supersedes the monetary-unit dependency wording above)
+
+The product owner approved **canonical integer IRR for persisted accounting amounts and Toman-only Persian presentation at the exact 10 IRR = 1 Toman ratio** on 2026-11-03 (recorded in Issue #81). Therefore, the earlier statement that the canonical unit itself is still undecided is historical and no longer current.
+
+This resolves only the unit-policy decision. It does **not** certify existing rows as IRR and does not authorize historical conversion or live money movement.
+
+### Current implementation consequences
+
+- New payment attempts must snapshot a positive safe-integer amount in IRR, sourced from a server-owned business record whose `financialUnitStatus` is `VERIFIED_IRR`.
+- Provider adapters must receive the exact persisted IRR amount. Do not derive a provider amount from client input or the display-only exchange-rate endpoint.
+- Toman conversion is presentation-only and must occur once at the UI boundary.
+- Existing technician fees, parts, invoices, wallet rows, withdrawals and legacy gateway logs remain subject to record-level provenance. Unknown rows must stay quarantined.
+- The current rate card is still a proposal until Issue #99's commercial values and effective policy are approved.
+- Commission, escrow hold/release, invoice-to-technician earnings, VIP pricing/refunds and withdrawal limits are not approved merely by the unit decision. No generic payment-success handler may invent these policies.
+- The simulator remains non-production only. PR #139 adds a shared explicit environment allow-list; this does not wire the provider adapters into the authoritative lifecycle.
+
+### Revised dependency status
+
+1. Canonical persisted unit: **resolved** — integer IRR; Toman display 10:1.
+2. Historical row provenance and reconciliation: **open** — Issue #81.
+3. Commercial settlement and tariff decisions: **open** — Issue #99.
+4. Attempt/outbox schema, provider verification, callback handling and purpose-specific fulfillment: **open** — Issue #24.
+5. Sandbox certification and live activation: **deferred until the launch window and explicit approval**.
+
+The implementation order should therefore begin with a row-provenance-safe server-owned amount resolver and purpose-specific business-policy review, not with any historical mass conversion or production credential activation.
+
+
+## 11. VIP simulator hardening — 2026-11-07
+
+The local VIP simulator now uses a server-owned plan snapshot rather than trusting a client-submitted amount:
+
+- The initiation request supplies only the VIP plan identifier and non-financial display/contact fields. The amount, currency, payer, and purpose are resolved or assigned by the server.
+- The plan must be active, marked `VERIFIED_IRR`, and have a positive safe-integer IRR price within the configured local simulator limit.
+- `PaymentGatewayLog.targetPlanId` binds the attempt to the exact VIP plan. New SQLite/D1 and PostgreSQL migrations add this nullable field and index; existing historical logs remain unbound.
+- Verification reloads the persisted plan and checks its current active/provenance state. The amount on the gateway attempt remains the price snapshot captured at initiation; later plan-price edits do not rewrite an in-flight attempt.
+- VIP activation requires the verified gateway attempt's `targetPlanId` to equal the requested plan and exact equality between the Payment amount and its gateway-attempt amount. Cross-plan reuse and Payment/attempt amount mismatch are rejected.
+- The dialog no longer sends client `userId`, amount, card CVV, or expiry to the server. The server response amount is used for the confirmation display.
+- The gateway initiation/verification routes and their dialog branch are VIP-only. Prepay retains its separate local /api/prepay simulator writer; it no longer sends fake card data or creates an unrelated gateway Payment row. The prepay API still computes its own server-authoritative fees and remains blocked unless its separate policy-approval gate is enabled. Invoice and wallet-top-up are not treated as supported by either simulator path.
+
+This is a local simulator safety improvement, not a production payment attempt/outbox implementation. Provider callbacks, provider API verification, replay protection, timeout reconciliation, refund handling and purpose-specific outbox fulfillment remain open under Issue #24. Legacy gateway logs without `targetPlanId` cannot be used to activate a new VIP subscription through this path.

@@ -1,57 +1,87 @@
+import { isPaymentSimulatorRouteEnabled } from "@/lib/payment-simulator-guard";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { isSafeStoredIrrAmount } from "@/lib/money/financial-read-mask";
 
-// ⚠️ DEV MODE: Amount comes from client in dev mode for testing.
-// In production, this route returns 404 — real gateway integration
-// must resolve amount from the linked entity (invoice/plan), not from client.
-
+// VIP-only local simulator initiation.
+// The client identifies a plan; the server owns the amount and purpose.
+// Real provider initiation remains disabled until the authoritative lifecycle is wired.
 export async function POST(req: Request) {
-  // Hard block in production — simulator must not be reachable
-  if (process.env.NODE_ENV === "production") {
+  if (!isPaymentSimulatorRouteEnabled()) {
     return new NextResponse(null, { status: 404 });
   }
 
-  // Require authentication — userId must come from session, not client
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
-  const body = await req.json();
-  const { amount, purpose, description, mobile, cardNumber } = body;
-
-  if (!isSafeStoredIrrAmount(amount) || typeof amount !== "number" || amount <= 0) {
-    return NextResponse.json({ error: "مبلغ معتبر الزامی است" }, { status: 400 });
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  // Validate amount is reasonable (prevent extreme spoofing)
-  if (amount > 100_000_000) { // 100M IRR = ~$200 USD max single payment
-    return NextResponse.json({ error: "مبلغ غیرمجاز" }, { status: 400 });
+  const input = body as Record<string, unknown>;
+  if (input.purpose !== "vip" || typeof input.planId !== "string" || !input.planId.trim()) {
+    return NextResponse.json({ error: "A valid VIP plan is required", code: "VIP_PLAN_REQUIRED" }, { status: 400 });
   }
-
-  const code = `PG-${Math.floor(7000 + Math.random() * 2000)}`;
-  const referenceId = `SIM-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+  if (input.mobile != null && (typeof input.mobile !== "string" || input.mobile.length > 20)) {
+    return NextResponse.json({ error: "Invalid mobile value" }, { status: 400 });
+  }
+  if (input.cardNumber != null && (typeof input.cardNumber !== "string" || input.cardNumber.length > 32)) {
+    return NextResponse.json({ error: "Invalid card value" }, { status: 400 });
+  }
 
   const db = await getDbForLib();
+  const plan = await db.vipPlan.findUnique({ where: { id: input.planId.trim() } });
+  if (!plan || !plan.active) {
+    return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
+  }
+  if (plan.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(plan.priceIrr)) {
+    return NextResponse.json({
+      error: "قیمت طرح VIP از نظر منشأ و واحد ریال تأیید نشده است",
+      code: "VIP_PLAN_PRICE_UNVERIFIED",
+    }, { status: 409 });
+  }
+
+  const amount = Number(plan.priceIrr);
+  if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 100_000_000) {
+    return NextResponse.json({ error: "مبلغ طرح خارج از محدوده مجاز است", code: "VIP_PLAN_AMOUNT_INVALID" }, { status: 409 });
+  }
+
+  const code = `PG-${crypto.randomUUID()}`;
+  const referenceId = `SIM-${crypto.randomUUID()}`;
   const log = await db.paymentGatewayLog.create({
     data: {
       code,
-      userId: session.userId, // server-authoritative — NOT from client
+      userId: session.userId,
       amount,
       currency: "IRR",
       financialUnitStatus: "VERIFIED_IRR",
       gateway: "SHAPARAK_SIM",
       status: "REDIRECTED",
-      purpose: purpose || "vip",
+      purpose: "vip",
+      targetPlanId: plan.id,
       referenceId,
-      cardNumber: cardNumber ? maskCard(cardNumber) : null,
-      mobile: mobile ?? null,
-      description: description ?? null,
+      cardNumber: input.cardNumber ? maskCard(input.cardNumber) : null,
+      mobile: typeof input.mobile === "string" ? input.mobile : null,
+      description: `VIP plan: ${plan.name}`,
     },
   });
 
-  // Return the reference; frontend simulates the OTP step then calls /verify
-  return NextResponse.json({ ok: true, code: log.code, referenceId, amount });
+  return NextResponse.json({
+    ok: true,
+    code: log.code,
+    referenceId,
+    amount,
+    currency: "IRR",
+    purpose: "vip",
+    planId: plan.id,
+  });
 }
 
 function maskCard(card: string): string {

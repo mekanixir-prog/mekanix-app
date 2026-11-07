@@ -1,3 +1,4 @@
+import { isPaymentSimulatorRouteEnabled } from "@/lib/payment-simulator-guard";
 import { PARTICIPANT_USER_SELECT } from "@/lib/user-select";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
@@ -35,7 +36,7 @@ function isHeavyMachine(type: string): boolean {
 
 export async function POST(req: Request) {
   // Hard block in production — simulator must not process real payments
-  if (process.env.NODE_ENV === "production") {
+  if (!isPaymentSimulatorRouteEnabled()) {
     return new NextResponse(null, { status: 404 });
   }
 
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json();
-  const { jobId, method, cardNumber, mobile } = body;
+  const { jobId } = body;
   if (!jobId) return NextResponse.json({ error: "jobId is required" }, { status: 400 });
 
   // Job ownership: caller must be a participant (customer who owns it, or admin)
@@ -126,10 +127,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "مبالغ پیش‌پرداخت باید اعداد صحیح امن ریالی باشند؛ گردکردن خودکار انجام نمی‌شود", code: "PREPAY_AMOUNT_NOT_INTEGER_IRR" }, { status: 409 });
   }
 
-  // Simulate gateway success (in production: call Zarinpal/IDPay verify here)
-  if (!cardNumber && method === "card") {
-    return NextResponse.json({ error: "Card number required" }, { status: 400 });
-  }
+  // Local simulator flow: no card PAN/CVV is collected or persisted here.
+  // A real provider must verify a server-owned PaymentAttempt before this
+  // financial writer is allowed to settle the prepay records.
 
   // Record the paid marker, wallet transactions, ledger and aggregates atomically.
   // A concurrent request that loses the Job transition does not create financial rows.
