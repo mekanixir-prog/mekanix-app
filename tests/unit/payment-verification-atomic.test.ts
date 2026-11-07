@@ -46,7 +46,7 @@ describe("atomic verified gateway payment persistence", () => {
       status: "SUCCEEDED", financialUnitStatus: "VERIFIED_IRR",
     });
     mockLogUpdateMany.mockResolvedValue({ count: 1 });
-    mockOutboxUpsert.mockResolvedValue({});
+    mockOutboxUpsert.mockResolvedValue({ eventType: "PAYMENT_SUCCEEDED", aggregateType: "Payment", aggregateId: "payment-1" });
     mockTransaction.mockImplementation(async (callback: () => Promise<unknown>) => callback());
   });
 
@@ -94,6 +94,15 @@ describe("atomic verified gateway payment persistence", () => {
     );
     expect(mockPaymentCreate).not.toHaveBeenCalled();
     expect(mockOutboxUpsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects an outbox idempotency key already bound to another aggregate", async () => {
+    mockOutboxUpsert.mockResolvedValue({
+      eventType: "PAYMENT_SUCCEEDED", aggregateType: "Payment", aggregateId: "payment-other",
+    });
+    await expect(recordVerifiedGatewayPaymentAtomically(makeDb(), input)).rejects.toThrow(
+      "Outbox idempotency key is bound to a different event"
+    );
   });
 
   it("rejects a conflicting pre-existing Payment instead of emitting an event", async () => {
