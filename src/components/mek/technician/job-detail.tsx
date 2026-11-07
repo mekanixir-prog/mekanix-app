@@ -441,7 +441,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
 
 function safeInteger(value: unknown): number | null {
   if (typeof value === "number") return Number.isSafeInteger(value) ? value : null;
-  if (typeof value === "string" && /^\\d+(?:\\.0+)?$/.test(value)) {
+  if (typeof value === "string" && /^-?\d+(?:\.0+)?$/.test(value)) {
     const parsed = Number(value);
     return Number.isSafeInteger(parsed) ? parsed : null;
   }
