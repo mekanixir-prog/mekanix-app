@@ -11,12 +11,19 @@ import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/use-t";
 import { toast } from "sonner";
 import { toPersianDigits } from "@/lib/format";
+import { formatTomanFromIrr } from "@/lib/money/irr";
 
 export function InvoiceDocument({ customer }: { customer: DemoUser }) {
   const { params, back } = useApp();
-  const { t, isFa, money } = useT();
+  const { t, isFa } = useT();
   const [inv, setInv] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
+  const invoiceFinancialReady = inv?.financialUnitStatus === "VERIFIED_IRR" && inv.currency === "IRR";
+  const money = (value: number) => {
+    const amount = Number(value);
+    if (!invoiceFinancialReady || !Number.isSafeInteger(amount) || amount < 0) return "—";
+    return `${formatTomanFromIrr(amount, isFa ? "fa-IR" : "en-US")} ${isFa ? "تومان" : "Toman"}`;
+  };
 
   useEffect(() => {
     if (!params.jobId) return;
