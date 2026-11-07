@@ -151,9 +151,14 @@ describe("atomic job status writer", () => {
 
     await expect(transitionJobStatusAtomically(db, {
       ...input,
+      currentStatus: "DIAGNOSING",
       nextStatus: "WAITING_APPROVAL",
       invoice,
     })).resolves.toBeUndefined();
+    expect(tx.job.updateMany).toHaveBeenCalledWith({
+      where: { id: input.jobId, status: "DIAGNOSING", technicianId: input.actorTechnicianId, updatedAt: input.expectedUpdatedAt },
+      data: { status: "WAITING_APPROVAL", customerApproved: false },
+    });
     expect(tx.invoice.create).toHaveBeenCalledWith({ data: invoice });
     expect(invoice).toMatchObject({ inspectionFee: 6_000_000, emergencyFee: 0, financialUnitStatus: "VERIFIED_IRR" });
   });
