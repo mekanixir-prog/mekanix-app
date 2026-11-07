@@ -4,6 +4,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant } from "@/lib/auth";
 import { recordPrepayAtomically } from "@/lib/prepay-atomic";
+import { validatePrepayRecordSet } from "@/lib/prepay-reconciliation";
 import { isSafeStoredIrrAmount, maskFinancialFields, maskJobFinancialData } from "@/lib/money/financial-read-mask";
 
 // Pre-service payment: customer pays inspection fee + travel fee.
@@ -79,10 +80,18 @@ export async function POST(req: Request) {
       db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_HOLD` } }),
       db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_COMMISSION` } }),
     ]);
-    if (!prepayTxn || !commissionTxn || !holdLedger || !commissionLedger) {
+    const reconciliation = validatePrepayRecordSet({
+      job,
+      prepayTransaction: prepayTxn,
+      commissionTransaction: commissionTxn,
+      holdLedger,
+      commissionLedger,
+    });
+    if (!reconciliation.ok) {
       return NextResponse.json({
         error: "Pre-service payment requires financial reconciliation",
         reconciliationRequired: true,
+        reason: reconciliation.reason,
         jobId: job.id,
       }, { status: 409 });
     }
@@ -141,13 +150,34 @@ export async function POST(req: Request) {
   if (!recorded) {
     const currentJob = await db.job.findUnique({ where: { id: jobId } });
     if (currentJob?.prepayPaid) {
+      const [prepayTxn, commissionTxn, holdLedger, commissionLedger] = await Promise.all([
+        db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${currentJob.id}:PREPAY` } }),
+        db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${currentJob.id}:COMMISSION` } }),
+        db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${currentJob.id}:LEDGER_HOLD` } }),
+        db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${currentJob.id}:LEDGER_COMMISSION` } }),
+      ]);
+      const reconciliation = validatePrepayRecordSet({
+        job: currentJob,
+        prepayTransaction: prepayTxn,
+        commissionTransaction: commissionTxn,
+        holdLedger,
+        commissionLedger,
+      });
+      if (!reconciliation.ok) {
+        return NextResponse.json({
+          error: "Pre-service payment requires financial reconciliation",
+          reconciliationRequired: true,
+          reason: reconciliation.reason,
+          jobId: currentJob.id,
+        }, { status: 409 });
+      }
       return NextResponse.json({
         ok: true,
         alreadyPaid: true,
         job: maskFinancialFields(currentJob, ["inspectionFee", "travelFee", "platformCommission", "netEarnings"]),
-        amount: currentJob.financialUnitStatus === "VERIFIED_IRR" ? Number(currentJob.inspectionFee) + Number(currentJob.travelFee) : null,
-        commission: currentJob.financialUnitStatus === "VERIFIED_IRR" ? Number(currentJob.platformCommission) : null,
-        net: currentJob.financialUnitStatus === "VERIFIED_IRR" ? Number(currentJob.netEarnings) : null,
+        amount: Number(currentJob.inspectionFee) + Number(currentJob.travelFee),
+        commission: Number(currentJob.platformCommission),
+        net: Number(currentJob.netEarnings),
       });
     }
     return NextResponse.json({ error: "Pre-service payment could not be recorded; retry safely" }, { status: 409 });
