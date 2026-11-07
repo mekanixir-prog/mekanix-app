@@ -34,6 +34,13 @@ describe("atomic prepay recording", () => {
     expect(db.$transaction).toHaveBeenCalledTimes(1);
     expect(tx.walletTransaction.create).toHaveBeenCalledTimes(2);
     expect(tx.walletLedger.create).toHaveBeenCalledTimes(2);
+    expect(tx.walletLedger.create).toHaveBeenNthCalledWith(2, {
+      data: expect.objectContaining({
+        amount: -100,
+        balanceBefore: 950,
+        balanceAfter: 950,
+      }),
+    });
     expect(tx.wallet.updateMany).toHaveBeenCalledWith({
       where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR" },
       data: {
