@@ -41,8 +41,8 @@ const TECH_TRANSITIONS: { to: Status; from: Status[] }[] = [
   { to: "EN_ROUTE", from: ["ACCEPTED"] },
   { to: "ARRIVED", from: ["EN_ROUTE", "ACCEPTED"] },
   { to: "DIAGNOSING", from: ["ARRIVED", "EN_ROUTE", "ACCEPTED"] },
-  { to: "REPAIRING", from: ["DIAGNOSING", "ARRIVED", "WAITING_APPROVAL"] },
-  { to: "WAITING_APPROVAL", from: ["REPAIRING", "DIAGNOSING"] },
+  { to: "REPAIRING", from: ["WAITING_APPROVAL"] },
+  { to: "WAITING_APPROVAL", from: ["DIAGNOSING"] },
   { to: "COMPLETED", from: ["REPAIRING"] },
   { to: "REJECTED", from: ["REQUESTED"] },
 ];
@@ -148,7 +148,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // The estimate is a hard consent gate: no actor may start or complete work
   // from WAITING_APPROVAL until the customer has accepted the estimate.
   const targetStatus = status ?? existing.status;
-  if (existing.status === "WAITING_APPROVAL" && targetStatus === "REPAIRING" && existing.customerApproved !== true) {
+  if (targetStatus === "REPAIRING" && existing.status !== "WAITING_APPROVAL") {
+    return NextResponse.json(
+      { error: "ابتدا باید پیش‌فاکتور صادر و برای تأیید مشتری ارسال شود", code: "REPAIR_ESTIMATE_REQUIRED" },
+      { status: 409 },
+    );
+  }
+  if (targetStatus === "REPAIRING" && existing.customerApproved !== true) {
     return NextResponse.json(
       { error: "شروع تعمیر تا زمان تأیید پیش‌فاکتور توسط مشتری مجاز نیست", code: "CUSTOMER_APPROVAL_REQUIRED" },
       { status: 409 },
