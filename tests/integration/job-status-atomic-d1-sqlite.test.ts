@@ -183,8 +183,16 @@ describe("job status D1 SQLite transaction", () => {
 
     expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
       .toEqual({ status: "WAITING_APPROVAL" });
-    expect(sqlite.prepare('SELECT "id", "jobId", "status" FROM "Invoice" WHERE "jobId" = ?').get("job-1"))
-      .toEqual({ id: "invoice-1", jobId: "job-1", status: "SENT" });
+    expect(sqlite.prepare('SELECT "id", "jobId", "status", "inspectionFee", "emergencyFee", "pricingVersion", "financialUnitStatus" FROM "Invoice" WHERE "jobId" = ?').get("job-1"))
+      .toEqual({
+        id: "invoice-1",
+        jobId: "job-1",
+        status: "SENT",
+        inspectionFee: 6_000_000,
+        emergencyFee: 0,
+        pricingVersion: "rate-card-2",
+        financialUnitStatus: "VERIFIED_IRR",
+      });
   });
 
   it("rolls back WAITING_APPROVAL when a job invoice already exists", async () => {
