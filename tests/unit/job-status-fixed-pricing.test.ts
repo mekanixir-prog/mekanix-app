@@ -41,6 +41,7 @@ import { PATCH } from "@/app/api/jobs/[id]/status/route";
 
 const beforeJob = {
   status: "DIAGNOSING",
+  customerApproved: false,
   updatedAt: new Date("2026-11-06T10:00:00.000Z"),
   technicianId: "tech-1",
   requestId: "request-1",
@@ -230,6 +231,24 @@ describe("job status approval estimate uses the fixed rate card", () => {
     expect(response.status).toBe(403);
     expect(await response.json()).toMatchObject({ code: "CUSTOMER_APPROVAL_FORBIDDEN" });
     expect(mocks.transition).not.toHaveBeenCalled();
+  });
+
+  it("allows a technician to start repair after stored customer approval", async () => {
+    const waitingApproval = { ...beforeJob, status: "WAITING_APPROVAL", customerApproved: true };
+    const repairing = { ...updatedJob, status: "REPAIRING" };
+    mocks.jobFindUnique.mockReset().mockResolvedValueOnce(waitingApproval).mockResolvedValueOnce(repairing);
+
+    const response = await PATCH(request({ status: "REPAIRING" }), {
+      params: Promise.resolve({ id: "job-1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.transition).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({
+      actorRole: "TECHNICIAN",
+      currentStatus: "WAITING_APPROVAL",
+      nextStatus: "REPAIRING",
+      updates: {},
+    }));
   });
 
   it("does not let a technician start repair before the stored customer approval", async () => {
