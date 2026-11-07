@@ -174,6 +174,27 @@ describe("job status D1 SQLite transaction", () => {
       .toEqual({ status: "ONLINE" });
   });
 
+  it("requires customer approval before a technician can start repair", async () => {
+    sqlite.prepare('UPDATE "Job" SET "status" = ?, "customerApproved" = 0 WHERE "id" = ?')
+      .run("WAITING_APPROVAL", "job-1");
+    const startRepair = {
+      ...baseInput,
+      currentStatus: "WAITING_APPROVAL" as const,
+      nextStatus: "REPAIRING" as const,
+      updates: {},
+    };
+
+    await expect(transitionJobStatusAtomically({} as any, startRepair))
+      .rejects.toBeInstanceOf(JobStatusConflictError);
+    expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
+      .toEqual({ status: "WAITING_APPROVAL" });
+
+    sqlite.prepare('UPDATE "Job" SET "customerApproved" = 1 WHERE "id" = ?').run("job-1");
+    await expect(transitionJobStatusAtomically({} as any, startRepair)).resolves.toBeUndefined();
+    expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
+      .toEqual({ status: "REPAIRING" });
+  });
+
   it("serializes a D1 part edit against the status transition and prevents a stale invoice", async () => {
     const oldRevision = baseInput.expectedUpdatedAt.toISOString();
     const db = {
