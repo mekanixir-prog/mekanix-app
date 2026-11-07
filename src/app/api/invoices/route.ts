@@ -50,7 +50,7 @@ function estimateTravelDistanceKm(
   const a = Math.sin(dLat / 2) ** 2 +
     Math.cos(radians(from.lat)) * Math.cos(radians(to.lat)) * Math.sin(dLng / 2) ** 2;
   const straightLineKm = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  // Approximate road distance from the technician's last reported location.
+  // Approximate road distance from the earliest job-scoped dispatch tracking point.
   return Math.ceil(straightLineKm * 1.3);
 }
 
@@ -216,7 +216,7 @@ export async function POST(req: Request) {
         currency: "IRR",
         financialUnitStatus: "VERIFIED_IRR",
         status: "SENT",
-        notes: `Fixed-fee rate card ${pricing.pricingVersion}; service ${serviceCode}; estimated technician travel ${travelDistanceKm} km. Parts & labor covered by 6-month MEKANIX warranty.`,
+        notes: `Fixed-fee rate card ${pricing.pricingVersion}; service ${serviceCode}; estimated technician travel ${travelDistanceKm} km. Warranty terms, if applicable, are governed by the separately approved service agreement.`,
       },
       include: FULL_INCLUDE,
     });
