@@ -16,6 +16,7 @@ const input = {
   actorRole: "TECHNICIAN" as const,
   actorTechnicianId: "technician-1",
   currentStatus: "REQUESTED",
+  expectedUpdatedAt: new Date("2026-11-06T10:00:00.000Z"),
   nextStatus: "REJECTED",
   updates: {},
 } as const;
