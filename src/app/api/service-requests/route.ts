@@ -6,6 +6,7 @@ import { getCustomerFromSession, getTechnicianFromSession } from "@/lib/auth";
 import { IdempotencyConflictError, readIdempotencyKey, requestFingerprint } from "@/lib/idempotency";
 import { createServiceRequestAtomically } from "@/lib/service-request-atomic";
 import { maskFinancialFields, maskJobFinancialData } from "@/lib/money/financial-read-mask";
+import { isVehicleInSupportedScope } from "@/lib/vehicle-scope";
 
 const include = {
   customer: { include: { user: { select: PARTICIPANT_USER_SELECT } } },
@@ -56,7 +57,7 @@ export async function GET(req: Request) {
 }
 
 // POST /api/service-requests
-// Request + optional ad-hoc vehicle are atomic. Notifications are post-commit.
+// A customer must select a registered, in-scope vehicle before requesting service.
 export async function POST(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
@@ -108,24 +109,27 @@ export async function POST(req: Request) {
   const vehicleId = typeof body.vehicleId === "string" && body.vehicleId.trim()
     ? body.vehicleId.trim()
     : null;
-  if (vehicleId) {
-    const vehicle = await db.vehicle.findUnique({
-      where: { id: vehicleId },
-      select: { customerId: true },
-    });
-    if (!vehicle || vehicle.customerId !== customerId) {
-      return NextResponse.json({ error: "خودرو متعلق به این مشتری نیست" }, { status: 403 });
-    }
+  if (!vehicleId) {
+    return NextResponse.json({ error: "برای ثبت درخواست ابتدا باید وسیله خود را ثبت کنید", code: "VEHICLE_REGISTRATION_REQUIRED" }, { status: 400 });
+  }
+  const vehicle = await db.vehicle.findUnique({
+    where: { id: vehicleId },
+    select: { customerId: true, type: true, make: true, model: true },
+  });
+  if (!vehicle || vehicle.customerId !== customerId) {
+    return NextResponse.json({ error: "وسیله متعلق به این مشتری نیست" }, { status: 403 });
+  }
+  if (!isVehicleInSupportedScope(vehicle.type, vehicle.make)) {
+    return NextResponse.json({ error: "این خودروی سواری در محدوده خدمات MEKANIX نیست", code: "VEHICLE_OUT_OF_SCOPE" }, { status: 400 });
   }
 
-  const validMachineTypes = ["CAR", "TRUCK", "BUS", "EXCAVATOR", "LOADER", "BULLDOZER", "GRADER", "AGRI", "INDUSTRIAL", "OTHER"];
   const normalized = {
     actorUserId: session.userId,
     customerId,
     vehicleId,
-    machineType: validMachineTypes.includes(body.machineType) ? body.machineType : "CAR",
-    make: typeof body.make === "string" ? body.make.slice(0, 100) : "Unspecified",
-    model: typeof body.model === "string" ? body.model.slice(0, 100) : "Ad-hoc",
+    machineType: vehicle.type,
+    make: vehicle.make.slice(0, 100),
+    model: vehicle.model.slice(0, 100),
     category: body.category.trim().slice(0, 50),
     urgency: (["NORMAL", "URGENT", "EMERGENCY"].includes(body.urgency) ? body.urgency : "NORMAL") as "NORMAL" | "URGENT" | "EMERGENCY",
     title: body.title.trim().slice(0, 200),
