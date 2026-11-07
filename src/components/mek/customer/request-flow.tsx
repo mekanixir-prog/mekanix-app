@@ -169,6 +169,12 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
     if (auth.isGuest) { setGuestBlock(true); return; }
     if (!category) { toast.error(t("req.error.category")); return; }
     if (!title.trim()) { toast.error(t("req.error.title")); return; }
+    if (!customer.customer?.id) {
+      // Should not happen because OTP verify + session route auto-create Customer,
+      // but if it does, fail gracefully with a clear message instead of a TypeError.
+      toast.error(t("req.error.noCustomer"));
+      return;
+    }
     if (!vehiclesLoaded) {
       toast.error(isFa ? "در حال دریافت فهرست وسایل..." : "Loading your registered vehicles...");
       return;
@@ -178,12 +184,6 @@ export function DescribeProblem({ customer }: { customer: DemoUser }) {
       toast.error(isFa
         ? "برای ثبت درخواست، ابتدا وسیله خود را ثبت و سپس آن را انتخاب کنید."
         : "Register and select a vehicle before submitting a service request.");
-      return;
-    }
-    if (!customer.customer?.id) {
-      // Should not happen because OTP verify + session route auto-create Customer,
-      // but if it does, fail gracefully with a clear message instead of a TypeError.
-      toast.error(t("req.error.noCustomer"));
       return;
     }
     setSubmitting(true);
