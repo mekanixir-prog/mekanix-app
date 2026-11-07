@@ -1,5 +1,5 @@
-import { isVehicleInSupportedScope } from "@/lib/vehicle-scope";
 "use client";
+import { isVehicleInSupportedScope } from "@/lib/vehicle-scope";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { MapPin, Gauge, Calendar, Trash2 } from "lucide-react";
