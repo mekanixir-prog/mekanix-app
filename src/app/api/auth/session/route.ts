@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { getSessionFromRequest } from "@/lib/auth";
-import { maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { maskTechnicianFinancialData } from "@/lib/money/financial-read-mask";
 
 const TECHNICIAN_INCLUDE = {
   specialties: true,
@@ -14,10 +14,7 @@ function maskSessionFinancialData<T extends { technician?: unknown }>(user: T): 
   if (!technician || typeof technician !== "object") return user;
   return {
     ...user,
-    technician: maskFinancialFields(
-      technician as Record<string, unknown>,
-      ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"],
-    ),
+    technician: maskTechnicianFinancialData(technician as Record<string, unknown>),
   };
 }
 
