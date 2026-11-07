@@ -78,10 +78,12 @@ function assertRoleTransition(input: AtomicJobStatusInput) {
     input.updates.customerApproved === true &&
     updateKeys.every((key) => key === "customerApproved");
 
-  if (input.nextStatus === "REPAIRING" && input.currentStatus !== "WAITING_APPROVAL") {
+  // REPAIRING without an invoice is the pre-estimate parts-preparation stage;
+  // REPAIRING after customer approval is the actual repair stage.
+  if (input.nextStatus === "REPAIRING" && !["DIAGNOSING", "WAITING_APPROVAL"].includes(input.currentStatus)) {
     throw new JobStatusConflictError();
   }
-  if (input.nextStatus === "WAITING_APPROVAL" && input.currentStatus !== "DIAGNOSING" && !approvalOnly) {
+  if (input.nextStatus === "WAITING_APPROVAL" && input.currentStatus !== "REPAIRING" && !approvalOnly) {
     throw new JobStatusConflictError();
   }
 
