@@ -179,6 +179,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     );
   }
 
+  if (hasCustomerApproval && !existing.invoice) {
+    return NextResponse.json(
+      { error: "برای تأیید مشتری، پیش‌فاکتور معتبر باید صادر شده باشد", code: "REPAIR_ESTIMATE_REQUIRED" },
+      { status: 409 },
+    );
+  }
+
   // If neither status nor customerApproved is provided, nothing to do
   if (!status && customerApproved === undefined) {
     return NextResponse.json({ error: "status یا customerApproved الزامی است" }, { status: 400 });
