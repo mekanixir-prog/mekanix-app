@@ -123,3 +123,48 @@ Enable the ruleset and configure required checks before relying on PR gating. Ma
 ## 8. Safety decision
 
 PR #137 may be reviewed as a bounded code change, but **it is not a production release approval**. Keep production pricing approval unset, keep payment/VIP/tax/commission disabled, and do not deploy public traffic until all gates above have evidence and the owner explicitly approves launch.
+
+ 
+## 8. Follow-up code review — 2026-11-07
+
+**Reviewed head:** `33d462502bb609e92cf3e2734e733a9ccf65e663` (PR #137 remains Draft). This section supersedes earlier unchecked findings where stated below; it does not change the overall **NO-GO** decision.
+
+### Fixed after the initial audit
+
+- The pricing engine now requires an explicit `serviceCode`; no implicit diagnostic fallback remains.
+- Customer approval is Boolean-only, role-restricted, and cannot be combined with status jumps. The job-status route and Prisma/D1 atomic writer enforce the approval boundary.
+- The estimate lifecycle is guarded: pre-estimate preparation and part entry happen before invoice issuance; a verified IRR estimate must exist before customer approval; actual repair and completion require stored customer consent. The technician UI distinguishes estimate preparation from post-approval repair.
+- Session and OTP verification responses share a fail-closed technician-fee masking helper.
+- Service-request schema requires a registered `vehicleId`; atomic D1 insertion rechecks vehicle ownership and supported scope to close the lookup/write race.
+- Regression tests cover the new state-machine, D1 race, schema, and financial-mask cases.
+
+### Financial read-path cross-check
+
+Current candidate projections were checked in:
+- technician public list/detail;
+- auth session and OTP verification;
+- job list/detail;
+- invoice list/detail and invoice mutations;
+- wallet and withdrawal read/status;
+- prepay and prepay status;
+- VIP plan/subscription;
+- CARE booking list/detail and pricing snapshot.
+
+This is a code review of the candidate tree, not evidence of a live production data migration or provider integration.
+
+### PR #136 overlap
+
+PR #136 is Draft and diverged from `main` (160 ahead, 2 behind). All 76 of its changed files are also changed by PR #137; 47 file blobs are identical and 29 differ. PR #137 contains the newer integrated versions. A review comment (ID `5810569703`) advises against merging PR #136 independently. Keep it open only until any unique changes are confirmed, then close it as superseded.
+
+### Workflow results on the reviewed head
+
+- CI: success — run `42347387500`
+- Production readiness: success — run `42347387395`
+- PostgreSQL CI: success — run `42347387562`
+- Cloudflare Build: success — run `42347387614`
+- CodeQL: success — run `42347387448`
+- Secret Scan: success — run `42347387466`
+- Docker E2E: in progress — run `42347387459`
+
+The candidate must be revalidated on the exact final head after any subsequent edit. The ruleset for `main` remains disabled and has no required status checks. Production credentials and external services remain intentionally inactive.
+
