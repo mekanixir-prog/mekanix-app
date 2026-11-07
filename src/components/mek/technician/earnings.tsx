@@ -89,7 +89,16 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
   }, [user]);
 
   const completed = (jobs ?? []).filter((j) => j.status === "COMPLETED");
-  const payments = completed.filter((j) => !!(j as any).invoice?.payment);
+  const hasUnverifiedPaymentAmounts = completed.some((j) => {
+    const payment = (j as any).invoice?.payment;
+    return Boolean(payment) && payment.amount == null;
+  });
+  // The API masks unverified amounts as null. Exclude them from revenue sums
+  // rather than silently treating unknown money as zero.
+  const payments = completed.filter((j) => {
+    const payment = (j as any).invoice?.payment;
+    return Boolean(payment) && payment.amount != null;
+  });
   const today = payments.filter((p) => Date.now() - new Date((p as any).invoice!.payment!.createdAt).getTime() < 86400000).length;
   const week = payments.filter((p) => Date.now() - new Date((p as any).invoice!.payment!.createdAt).getTime() < 7 * 86400000).length;
 
@@ -189,6 +198,13 @@ export function TechnicianEarnings({ user }: { user: DemoUser }) {
             </div>
           </div>
           <RevenueAreaChart data={series} height={200} className="mt-3" />
+          {hasUnverifiedPaymentAmounts && (
+            <p role="status" className="mt-2 text-[11px] text-muted-foreground">
+              {isFa
+                ? "مبالغ سوابق تطبیق‌نشده در نمودار درآمد محاسبه نشده‌اند."
+                : "Unverified payment amounts are excluded from this revenue chart."}
+            </p>
+          )}
         </div>
 
         <div className="rounded-xl border border-border bg-card p-4">
