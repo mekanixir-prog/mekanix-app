@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireBookingParticipant, requireAssignedTechnician } from "@/lib/care-auth";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const db = await getDbForLib();
@@ -14,7 +15,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (authErr) return authErr;
 
   const findings = await db.finding.findMany({ where: { bookingId: id }, include: { approvals: true } });
-  return NextResponse.json(findings);
+  return NextResponse.json(findings.map((finding) => ({
+    ...finding,
+    approvals: finding.approvals.map((approval) => maskFinancialFields(approval, ["partPrice", "laborPrice", "totalPrice"])),
+  })));
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
