@@ -100,5 +100,5 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "کاربر یافت نشد" }, { status: 404 });
   }
 
-  return NextResponse.json({ user });
+  return NextResponse.json({ user: maskSessionFinancialData(user) });
 }
