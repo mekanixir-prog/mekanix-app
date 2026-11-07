@@ -4,7 +4,7 @@
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Candidate PR:** [#137 — feat(pricing): add editable versioned IRR rate card](https://github.com/mekanixir-prog/mekanix-app/pull/137)  
 **Candidate branch:** `feat/admin-editable-irr-rate-card`  
-**Code candidate SHA reviewed before this audit-record update:** `46f689e7a6e3e663b1ae7c85419907ba147f0fda`  
+**Code candidate SHA reviewed before this audit-record update:** `3a50eff8f7d1a6f09f8ae1ca1f04579c81e254ae`  
 **Main branch SHA observed:** `10080473dd6b87ec725a5c6c22803f5d5d872342`
 
 This is a code/repository review, not evidence of a live deployment. No production host, domain, DNS/TLS, remote D1 database, SMS provider, payment gateway, production secret, or production data was activated or changed.
