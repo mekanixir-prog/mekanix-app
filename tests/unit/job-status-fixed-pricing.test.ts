@@ -153,6 +153,21 @@ describe("job status approval estimate uses the fixed rate card", () => {
     expect(atomicInput.invoice.notes).not.toContain("6-month");
   });
 
+  it("does not reopen approval for an estimate that was already issued", async () => {
+    mocks.jobFindUnique.mockReset().mockResolvedValueOnce({
+      ...beforeJob,
+      status: "REPAIRING",
+      invoice: { id: "invoice-1", currency: "IRR", financialUnitStatus: "VERIFIED_IRR" },
+      customerApproved: true,
+    });
+    const response = await PATCH(request({ status: "WAITING_APPROVAL" }), {
+      params: Promise.resolve({ id: "job-1" }),
+    });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "ESTIMATE_ALREADY_ISSUED" });
+    expect(mocks.transition).not.toHaveBeenCalled();
+  });
+
   it("blocks estimates when legacy parts do not have approved IRR provenance", async () => {
     mocks.partsVerified.mockReturnValue(false);
     const response = await PATCH(request({ status: "WAITING_APPROVAL" }), {
