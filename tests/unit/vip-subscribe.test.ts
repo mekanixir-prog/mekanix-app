@@ -302,7 +302,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     expect(mockCreateVipSubscriptionAtomically).not.toHaveBeenCalled();
   });
 
-  it("rejects overpayment instead of accepting an amount greater than the selected plan", async () => {
+  it("rejects a Payment amount that does not match its immutable gateway attempt", async () => {
     vi.stubEnv("NODE_ENV", "test");
     mockPaymentFindUnique.mockResolvedValue({
       id: "pay-1", userId: "user-1", status: "SUCCEEDED",
@@ -313,7 +313,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       id: "gateway-1", userId: "user-1", status: "VERIFIED",
       financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip", targetPlanId: "plan-1", paymentId: "pay-1",
-      amount: 150_000, currency: "IRR",
+      amount: 100_000, currency: "IRR",
     });
     const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
     expect(res.status).toBe(400);
