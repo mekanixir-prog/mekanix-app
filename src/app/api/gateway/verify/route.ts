@@ -1,3 +1,4 @@
+import { isPaymentSimulatorRouteEnabled } from "@/lib/payment-simulator-guard";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
@@ -6,7 +7,7 @@ import { isSafeStoredIrrAmount } from "@/lib/money/financial-read-mask";
 // Verify a payment (simulated Shaparak OTP flow).
 // Simulator-only: real provider callbacks must use provider signature verification.
 export async function POST(req: Request) {
-  if (process.env.NODE_ENV === "production") {
+  if (!isPaymentSimulatorRouteEnabled()) {
     return new NextResponse(null, { status: 404 });
   }
 
