@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   notify: vi.fn(),
   update: vi.fn(),
   audit: vi.fn(),
+  events: [] as string[],
   paymentFind: vi.fn(),
   paymentUpdate: vi.fn(),
 }));
@@ -66,7 +67,9 @@ beforeEach(() => {
   mocks.find.mockResolvedValueOnce(before).mockResolvedValue(after);
   mocks.update.mockResolvedValue(true);
   mocks.notify.mockResolvedValue({});
-  mocks.audit.mockResolvedValue(undefined);
+  mocks.events.length = 0;
+  mocks.audit.mockImplementation(async () => { mocks.events.push("audit"); });
+  mocks.update.mockImplementation(async () => { mocks.events.push("update"); return true; });
 });
 
 describe("admin withdrawal API", () => {
@@ -122,7 +125,7 @@ describe("admin withdrawal API", () => {
       action: "ATTEMPT_WITHDRAWAL_APPROVED",
       strict: true,
     });
-    expect(mocks.audit.invocationCallOrder[0]).toBeLessThan(mocks.update.invocationCallOrder[0]);
+    expect(mocks.events.indexOf("audit")).toBeLessThan(mocks.events.indexOf("update"));
     expect(mocks.notify).toHaveBeenCalledTimes(1);
   });
 
@@ -164,7 +167,7 @@ describe("admin withdrawal API", () => {
       action: "ATTEMPT_WITHDRAWAL_PAID",
       strict: true,
     });
-    expect(mocks.audit.invocationCallOrder[0]).toBeLessThan(mocks.update.invocationCallOrder[0]);
+    expect(mocks.events.indexOf("audit")).toBeLessThan(mocks.events.indexOf("update"));
     expect(mocks.notify).toHaveBeenCalledTimes(1);
   });
 
