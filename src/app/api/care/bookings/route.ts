@@ -7,6 +7,7 @@ import { requestFingerprint } from "@/lib/idempotency";
 import { calculatePrice } from "@/lib/pricing";
 import { wantsLite, liteResponse } from "@/lib/lite-response";
 import { maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { isVehicleInSupportedScope } from "@/lib/vehicle-scope";
 import {
   CareBookingIdempotencyConflict,
   createCareBookingAtomically,
@@ -45,6 +46,9 @@ export async function POST(req: Request) {
   const vehicle = await db.vehicle.findUnique({ where: { id: vehicleId } });
   if (!vehicle || vehicle.customerId !== customer.id) {
     return NextResponse.json({ error: "خودرو متعلق به شما نیست" }, { status: 403 });
+  }
+  if (!isVehicleInSupportedScope(vehicle.type, vehicle.make)) {
+    return NextResponse.json({ error: "این خودروی سواری در محدوده خدمات MEKANIX نیست", code: "VEHICLE_OUT_OF_SCOPE" }, { status: 400 });
   }
 
   const normalized = {
