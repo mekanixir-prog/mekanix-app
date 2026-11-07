@@ -231,6 +231,17 @@ describe("atomic job status writer", () => {
     expect(db.$transaction).not.toHaveBeenCalled();
   });
 
+  it("rejects job completion before the repair stage", async () => {
+    const db = { $transaction: vi.fn() } as any;
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      currentStatus: "DIAGNOSING",
+      nextStatus: "COMPLETED",
+      updates: { completedAt: new Date("2026-11-07T10:00:00.000Z") },
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
   it("allows a customer to record approval without changing the waiting status", async () => {
     const tx = {
       job: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
