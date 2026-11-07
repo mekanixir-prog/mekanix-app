@@ -287,9 +287,9 @@ describe("MEKANIX Business E2E Flow", () => {
       const { vehicleCreateSchema } = await import("@/lib/schemas");
       const result = vehicleCreateSchema.safeParse({
         type: "CAR",
-        make: "IKCO",
-        model: "Samand",
-        year: 2020,
+        make: "Kerman Motor",
+        model: "KMC J7",
+        year: 2024,
       });
       expect(result.success).toBe(true);
     });
