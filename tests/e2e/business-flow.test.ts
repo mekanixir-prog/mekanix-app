@@ -64,8 +64,8 @@ vi.mock("@/lib/db", () => {
       {
         id: "veh1",
         customerId: "cust1",
-        make: "IKCO",
-        model: "Samand",
+        make: "کرمان موتور",
+        model: "KMC J7",
         year: 2020,
         type: "CAR",
       },
@@ -292,6 +292,19 @@ describe("MEKANIX Business E2E Flow", () => {
         year: 2020,
       });
       expect(result.success).toBe(true);
+    });
+
+    it("should reject excluded Iran Khodro and Saipa passenger makes", async () => {
+      const { vehicleCreateSchema } = await import("@/lib/schemas");
+      for (const make of ["IKCO", "Saipa", "پارس خودرو"]) {
+        const result = vehicleCreateSchema.safeParse({
+          type: "CAR",
+          make,
+          model: "Unsupported",
+          year: 2024,
+        });
+        expect(result.success).toBe(false);
+      }
     });
 
     it("should reject an unknown vehicle type (mass-assignment / enum guard)", async () => {
