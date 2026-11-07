@@ -148,6 +148,8 @@ describe("job status approval estimate uses the fixed rate card", () => {
       pricingVersion: "rate-card-7",
       financialUnitStatus: "VERIFIED_IRR",
     });
+    expect(atomicInput.invoice.notes).toContain("هزینه رفت‌وآمد");
+    expect(atomicInput.invoice.notes).toContain("تأیید این پیش‌فاکتور");
     expect(atomicInput.invoice.notes).not.toContain("6-month");
   });
 
