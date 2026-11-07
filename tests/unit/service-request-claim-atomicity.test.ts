@@ -60,7 +60,7 @@ describe("service request atomic writer", () => {
         findUnique: vi.fn().mockResolvedValue(null),
         create: vi.fn().mockResolvedValue({ id: "request-1" }),
       },
-      vehicle: { findUnique: vi.fn().mockResolvedValue({ id: "vehicle-1", customerId: "customer-1" }) },
+      vehicle: { findUnique: vi.fn().mockResolvedValue({ id: "vehicle-1", customerId: "customer-1", type: "EXCAVATOR", make: "CAT" }) },
     };
     const db = {
       serviceRequest: { findUnique: vi.fn().mockResolvedValue(null) },
