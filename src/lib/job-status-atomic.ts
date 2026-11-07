@@ -46,6 +46,7 @@ export type AtomicJobStatusInput = {
   actorRole: "TECHNICIAN" | "ADMIN" | "CUSTOMER" | "FLEET_MANAGER";
   actorTechnicianId: string | null;
   currentStatus: JobStatus;
+  expectedUpdatedAt: Date;
   nextStatus: JobStatus;
   updates: JobStatusScalarUpdates;
   invoice?: AtomicInvoiceInput | null;
@@ -66,6 +67,7 @@ async function transitionWithPrisma(db: PrismaClient, input: AtomicJobStatusInpu
     const jobWhere: any = {
       id: input.jobId,
       status: input.currentStatus,
+      updatedAt: input.expectedUpdatedAt,
     };
     if (input.actorRole === "TECHNICIAN") {
       if (!input.actorTechnicianId) throw new JobStatusConflictError();
@@ -156,7 +158,7 @@ async function transitionWithD1(
 
   let technicianGuard = "";
   let requestGuard = "";
-  values.push(input.jobId, input.currentStatus);
+  values.push(input.jobId, input.currentStatus, input.expectedUpdatedAt.toISOString());
   if (input.actorRole === "TECHNICIAN") {
     if (!input.actorTechnicianId) throw new JobStatusConflictError();
     technicianGuard = ' AND "technicianId" = ?';
@@ -175,7 +177,7 @@ async function transitionWithD1(
   const statements = [
     d1.prepare(
       'UPDATE "Job" SET ' + assignments.join(", ") +
-      ' WHERE "id" = ? AND "status" = ?' + technicianGuard + requestGuard
+      ' WHERE "id" = ? AND "status" = ? AND "updatedAt" = ?' + technicianGuard + requestGuard
     ).bind(...values),
     assertOneChange(),
   ];
