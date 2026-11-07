@@ -168,8 +168,44 @@ describe("read-only offline reconciliation endpoints", () => {
       inspectionFee: 100, travelFee: 20, platformCommission: 12, netEarnings: 108,
       financialUnitStatus: "VERIFIED_IRR",
     });
-    mocks.walletTxn.mockResolvedValue({ id: "txn" });
-    mocks.ledger.mockResolvedValue({ id: "ledger" });
+    mocks.walletTxn.mockImplementation(async (args: { where?: { idempotencyKey?: string } }) => {
+      const key = args.where?.idempotencyKey;
+      if (key === "prepay:job-1:PREPAY") {
+        return {
+          id: "txn-prepay", walletId: "wallet-1", jobId: "job-1",
+          kind: "PREPAY", status: "PENDING", grossAmount: 120,
+          commissionAmount: 12, netAmount: 108,
+          idempotencyKey: key, financialUnitStatus: "VERIFIED_IRR",
+        };
+      }
+      if (key === "prepay:job-1:COMMISSION") {
+        return {
+          id: "txn-commission", walletId: "wallet-1", jobId: "job-1",
+          kind: "COMMISSION", status: "COMPLETED", grossAmount: 0,
+          commissionAmount: 12, netAmount: -12,
+          idempotencyKey: key, financialUnitStatus: "VERIFIED_IRR",
+        };
+      }
+      return null;
+    });
+    mocks.ledger.mockImplementation(async (args: { where?: { idempotencyKey?: string } }) => {
+      const key = args.where?.idempotencyKey;
+      if (key === "prepay:job-1:LEDGER_HOLD") {
+        return {
+          id: "ledger-hold", walletId: "wallet-1", type: "HOLD", amount: 108,
+          balanceBefore: 0, balanceAfter: 108, referenceType: "Job", referenceId: "job-1",
+          idempotencyKey: key, financialUnitStatus: "VERIFIED_IRR",
+        };
+      }
+      if (key === "prepay:job-1:LEDGER_COMMISSION") {
+        return {
+          id: "ledger-commission", walletId: "wallet-1", type: "COMMISSION", amount: -12,
+          balanceBefore: 108, balanceAfter: 108, referenceType: "Job", referenceId: "job-1",
+          idempotencyKey: key, financialUnitStatus: "VERIFIED_IRR",
+        };
+      }
+      return null;
+    });
     const response = await getPrepayStatus(request("/api/prepay/status?jobId=job-1"));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
