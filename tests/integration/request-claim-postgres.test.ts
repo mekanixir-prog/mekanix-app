@@ -38,6 +38,7 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
         startDate: new Date("2026-01-01T00:00:00.000Z"),
         endDate: new Date("2027-01-01T00:00:00.000Z"),
         premiumAmount: 1000,
+        financialUnitStatus: "VERIFIED_IRR",
         status: "active",
       },
     });
