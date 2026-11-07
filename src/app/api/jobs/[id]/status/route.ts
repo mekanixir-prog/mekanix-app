@@ -148,6 +148,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // The estimate is a hard consent gate: no actor may start or complete work
   // from WAITING_APPROVAL until the customer has accepted the estimate.
   const targetStatus = status ?? existing.status;
+  if (targetStatus === "WAITING_APPROVAL" && existing.status === "REPAIRING" && existing.invoice) {
+    return NextResponse.json(
+      { error: "این پیش‌فاکتور قبلاً صادر شده است؛ برای ارسال مجدد از مسیر اطلاع‌رسانی فاکتور استفاده کنید", code: "ESTIMATE_ALREADY_ISSUED" },
+      { status: 409 },
+    );
+  }
+
   if (targetStatus === "REPAIRING" && !["DIAGNOSING", "WAITING_APPROVAL"].includes(existing.status)) {
     return NextResponse.json(
       { error: "برای ورود به مرحله تعمیر، ابتدا باید عیب‌یابی انجام شود و پیش‌فاکتور در مسیر مجاز بررسی شود", code: "REPAIR_ESTIMATE_REQUIRED" },
