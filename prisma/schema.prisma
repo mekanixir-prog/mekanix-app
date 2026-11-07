@@ -845,6 +845,28 @@ enum GatewayStatus {
   CANCELLED
 }
 
+// Durable transactional outbox for payment lifecycle events.
+// Consumers must claim rows and use idempotencyKey for side-effect deduplication.
+model PaymentOutboxEvent {
+  id             String   @id @default(cuid())
+  eventType      String
+  aggregateType  String
+  aggregateId    String
+  payload        String   // JSON snapshot; never store card secrets or OTPs
+  idempotencyKey String   @unique
+  status         String   @default("PENDING") // PENDING | PROCESSING | PROCESSED | DEAD
+  attempts       Int      @default(0)
+  availableAt    DateTime @default(now())
+  lockedAt       DateTime?
+  processedAt    DateTime?
+  lastError      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status, availableAt])
+  @@index([aggregateType, aggregateId, createdAt])
+}
+
 model PaymentGatewayLog {
   financialUnitStatus String   @default("UNVERIFIED")
   // Server-owned target for purpose-specific gateway attempts (currently VIP plan).
