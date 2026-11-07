@@ -4,7 +4,7 @@
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Candidate PR:** [#137 — feat(pricing): add editable versioned IRR rate card](https://github.com/mekanixir-prog/mekanix-app/pull/137)  
 **Candidate branch:** `feat/admin-editable-irr-rate-card`  
-**Code candidate SHA reviewed before this audit-record update:** `24891c606797b1f4cc82f7d898c7a310db748db2`  
+**Exact code candidate SHA with all seven required workflows green:** `9f2326ec9234eb1f05806f4710232d489473535b`  
 **Main branch SHA observed:** `10080473dd6b87ec725a5c6c22803f5d5d872342`
 
 This is a code/repository review, not evidence of a live deployment. No production host, domain, DNS/TLS, remote D1 database, SMS provider, payment gateway, production secret, or production data was activated or changed.
@@ -26,20 +26,28 @@ This is a code/repository review, not evidence of a live deployment. No producti
 
 ## 2. CI evidence
 
-On the prior code candidate `01b44b38651f216d4373bda69c1a3bcbaa4697f2`, all seven required PR workflows completed successfully:
+All seven required PR workflows have now completed successfully on the exact current candidate SHA `9f2326ec9234eb1f05806f4710232d489473535b` (short SHA `9f2326e`). The GitHub Checks API reports eight completed successful check runs:
 
-| Workflow | Run ID | Result |
+| Workflow / check | Run ID or check | Result |
 |---|---:|---|
-| CI | 41860979640 | success |
-| Production readiness | 41860980087 | success |
-| Docker E2E | 41860979432 | success |
-| PostgreSQL CI | 41860979655 | success |
-| Cloudflare Build | 41860979781 | success |
-| CodeQL Security Analysis | 41860979785 | success |
-| Secret Scan | 41860980078 | success |
+| CI — Lint + TypeCheck + Test | 42334019865 | success |
+| Production readiness | 42334019942 | success |
+| Docker E2E — Compose + Health | 42334019894 | success |
+| PostgreSQL CI — Migration + Build | 42334019923 | success |
+| Cloudflare Build — OpenNext → Cloudflare Worker | 42334019874 | success |
+| CodeQL Security Analysis | 42334019872 | success |
+| Secret Scan | 42334019871 | success |
+| Analyze JavaScript and TypeScript | check run on the same SHA | success |
 
-**Important:** the later CARE quote/UI/schema/test, production no-fallback, and strict audit changes require fresh checks on the final code candidate. The run IDs above validate only the earlier SHA. The current PR checks page is the source of truth for the latest head:
-https://github.com/mekanixir-prog/mekanix-app/pull/137
+Additional verified evidence on this exact SHA:
+- Prisma Client generation, ESLint, TypeScript, unit/integration tests, and security audit passed.
+- PostgreSQL migrations deployed; isolated backup/restore rehearsal and encrypted-backup/safe-restore checks passed; TypeScript, tests, and production build passed.
+- Docker Compose build and health checks passed, PostgreSQL backend verification passed, and production OTP correctly failed closed without a real SMS provider.
+- Cloudflare Worker build and artifact verification passed.
+- No check above deploys the application or verifies live external providers.
+
+Exact checks: https://github.com/mekanixir-prog/mekanix-app/commit/9f2326ec9234eb1f05806f4710232d489473535b/checks
+
 
 ## 3. Financial proposal — owner approval still required
 
@@ -78,7 +86,7 @@ Enable the ruleset and configure required checks before relying on PR gating. Ma
 ## 6. Release sequence
 
 ### Complete before merge
-- [ ] Confirm all seven workflows pass on the exact final PR head after the last code/documentation change.
+- [x] All seven required workflows pass on exact candidate SHA `9f2326ec9234eb1f05806f4710232d489473535b`; any further code or documentation edit requires a fresh exact-head check run.
 - [ ] Review the full PR diff and SQLite/D1 plus PostgreSQL migration tracks.
 - [ ] Review the CARE quote endpoint, quote-version conflict behavior, and customer-facing Toman display.
 - [ ] Approve the actual tariff values and the extra-distance calculation method.
