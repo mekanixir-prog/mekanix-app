@@ -4,7 +4,8 @@
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Candidate PR:** [#137 — feat(pricing): add editable versioned IRR rate card](https://github.com/mekanixir-prog/mekanix-app/pull/137)  
 **Candidate branch:** `feat/admin-editable-irr-rate-card`  
-**Exact code candidate SHA with all seven required workflows green:** `9f2326ec9234eb1f05806f4710232d489473535b`  
+**Exact code-tree SHA with all seven required workflows green:** `0b6b319b040031f4d68d0dcda2965a3fd0cb39bd`  
+**PR synchronization merge commit:** `a00017bc86896630e26f39045da8bf8d3b50b703` (same tree as the validated code candidate; branch now has zero commits behind `main`).  
 **Main branch SHA observed:** `10080473dd6b87ec725a5c6c22803f5d5d872342`
 
 This is a code/repository review, not evidence of a live deployment. No production host, domain, DNS/TLS, remote D1 database, SMS provider, payment gateway, production secret, or production data was activated or changed.
@@ -26,27 +27,28 @@ This is a code/repository review, not evidence of a live deployment. No producti
 
 ## 2. CI evidence
 
-All seven required PR workflows have now completed successfully on the exact current candidate SHA `9f2326ec9234eb1f05806f4710232d489473535b` (short SHA `9f2326e`). The GitHub Checks API reports eight completed successful check runs:
+All seven required PR workflows completed successfully on exact code-tree commit `0b6b319b040031f4d68d0dcda2965a3fd0cb39bd` (short SHA `0b6b319`). The feature branch was then synchronized with the current `main` using merge commit `a00017bc86896630e26f39045da8bf8d3b50b703`; its Git tree is identical to the validated code tree. On that synchronization commit, six workflows have completed successfully and Docker E2E is re-running; Docker E2E also passed on the identical code tree at run `42337312577`.
 
-| Workflow / check | Run ID or check | Result |
+| Workflow / check | Run ID | Result on validated code tree |
 |---|---:|---|
-| CI — Lint + TypeCheck + Test | 42334019865 | success |
-| Production readiness | 42334019942 | success |
-| Docker E2E — Compose + Health | 42334019894 | success |
-| PostgreSQL CI — Migration + Build | 42334019923 | success |
-| Cloudflare Build — OpenNext → Cloudflare Worker | 42334019874 | success |
-| CodeQL Security Analysis | 42334019872 | success |
-| Secret Scan | 42334019871 | success |
-| Analyze JavaScript and TypeScript | check run on the same SHA | success |
+| CI — Lint + TypeCheck + Test | 42337312580 | success |
+| Production readiness | 42337312597 | success |
+| Docker E2E — Compose + Health | 42337312577 | success |
+| PostgreSQL CI — Migration + Build | 42337312576 | success |
+| Cloudflare Build — OpenNext → Cloudflare Worker | 42337312578 | success |
+| CodeQL Security Analysis | 42337312604 | success |
+| Secret Scan | 42337312573 | success |
 
-Additional verified evidence on this exact SHA:
-- Prisma Client generation, ESLint, TypeScript, unit/integration tests, and security audit passed.
+Additional exact-code-tree evidence:
+- Prisma Client generation, repository hygiene, ESLint, TypeScript, unit/integration tests, and security audit passed.
 - PostgreSQL migrations deployed; isolated backup/restore rehearsal and encrypted-backup/safe-restore checks passed; TypeScript, tests, and production build passed.
 - Docker Compose build and health checks passed, PostgreSQL backend verification passed, and production OTP correctly failed closed without a real SMS provider.
-- Cloudflare Worker build and artifact verification passed.
-- No check above deploys the application or verifies live external providers.
+- Cloudflare Worker build, local D1 scheduled escrow-release test, and artifact verification passed.
+- The new admin rate-card compare-and-set regression test and required CARE quote-version schema tests passed in CI.
+- None of these checks deploys the application or verifies live external providers.
 
-Exact checks: https://github.com/mekanixir-prog/mekanix-app/commit/9f2326ec9234eb1f05806f4710232d489473535b/checks
+Exact validated code-tree checks: https://github.com/mekanixir-prog/mekanix-app/commit/0b6b319b040031f4d68d0dcda2965a3fd0cb39bd/checks  
+Current PR head: https://github.com/mekanixir-prog/mekanix-app/pull/137
 
 
 ## 3. Financial proposal — owner approval still required
@@ -64,7 +66,7 @@ The proposal includes:
 
 No value in this proposal should be activated in production until the owner signs off on the exact passenger and heavy-equipment values, scope, region policy, and effective date.
 
-## 4. Technical risks still requiring closure
+## 4. Additional concurrency hardening completed\n\n- Admin rate-card updates now compare-and-set against the exact PlatformSetting row read at the beginning of the request. A second read after audit persistence is no longer allowed to replace the original CAS predicate; concurrent changes return HTTP 409. A regression test covers this race.\n- CARE booking now requires `expectedPricingVersion`; requests without the server-quoted version are rejected, and a changed rate-card version returns HTTP 409.\n- The feature branch is synchronized with `main` (zero commits behind); the synchronization merge commit preserves the already-tested feature tree.\n\n## 5. Technical risks still requiring closure
 
 1. **Extra-distance method:** the current invoice calculation estimates road distance as Haversine straight-line distance × 1.3, rounded up. This is not a navigation-provider route. Obtain explicit approval for this estimation policy or replace it with a verified routing provider before extra-kilometre billing is enabled.
 2. **Legacy financial provenance:** old technician fees, job-part prices, wallet/invoice values, and withdrawals still require record-level reconciliation. Do not infer old units or mass-convert historical rows.
@@ -74,7 +76,7 @@ No value in this proposal should be activated in production until the owner sign
 6. **Warranty terms:** any warranty duration, coverage, exclusions, and claims workflow must be owner-approved and recorded in the actual service agreement. Do not restore a six-month or twelve-month promise based on old copy.
 7. **Customer-facing price read paths:** PR #137 updates the CARE booking quote. A separate audit must still verify every other wallet, invoice, package, and legacy financial read path before live financial display is enabled.
 
-## 5. Repository governance
+## 6. Repository governance
 
 GitHub currently reports:
 - `main` branch `protected=false`;
@@ -83,7 +85,7 @@ GitHub currently reports:
 
 Enable the ruleset and configure required checks before relying on PR gating. Match required checks to actual workflow triggers; do not require path-filtered checks on PRs that cannot trigger them. Avoid requiring a second approval if no second maintainer exists unless a deliberate administrator bypass is configured.
 
-## 6. Release sequence
+## 7. Release sequence
 
 ### Complete before merge
 - [x] All seven required workflows pass on exact candidate SHA `9f2326ec9234eb1f05806f4710232d489473535b`; any further code or documentation edit requires a fresh exact-head check run.
@@ -112,6 +114,6 @@ Enable the ruleset and configure required checks before relying on PR gating. Ma
 - [ ] Apply approved production migrations after fresh backup and verified recovery path.
 - [ ] Run real-domain smoke tests and obtain explicit owner Go/No-Go approval.
 
-## 7. Safety decision
+## 8. Safety decision
 
 PR #137 may be reviewed as a bounded code change, but **it is not a production release approval**. Keep production pricing approval unset, keep payment/VIP/tax/commission disabled, and do not deploy public traffic until all gates above have evidence and the owner explicitly approves launch.
