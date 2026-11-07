@@ -450,6 +450,7 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
     mockPaymentFindUnique.mockReset();
     mockPaymentFindUnique.mockImplementation(async ({ where }: any) => where?.id ? existingPayment : null);
     mockPaymentCreate.mockResolvedValue(existingPayment);
+    mockRecordVerifiedGatewayPayment.mockReset();
     mockRecordVerifiedGatewayPayment.mockResolvedValue("pay-1");
     mockPaymentGatewayLogUpdate.mockResolvedValue({});
   });
