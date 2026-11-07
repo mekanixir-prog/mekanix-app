@@ -4,7 +4,7 @@
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Candidate PR:** [#137 — feat(pricing): add editable versioned IRR rate card](https://github.com/mekanixir-prog/mekanix-app/pull/137)  
 **Candidate branch:** `feat/admin-editable-irr-rate-card`  
-**Code candidate SHA reviewed before this audit-record update:** `a78e7a15e431c088a776b05994195082dcc5ecc6`  
+**Code candidate SHA reviewed before this audit-record update:** `24891c606797b1f4cc82f7d898c7a310db748db2`  
 **Main branch SHA observed:** `10080473dd6b87ec725a5c6c22803f5d5d872342`
 
 This is a code/repository review, not evidence of a live deployment. No production host, domain, DNS/TLS, remote D1 database, SMS provider, payment gateway, production secret, or production data was activated or changed.
@@ -38,7 +38,7 @@ On the prior code candidate `01b44b38651f216d4373bda69c1a3bcbaa4697f2`, all seve
 | CodeQL Security Analysis | 41860979785 | success |
 | Secret Scan | 41860980078 | success |
 
-**Important:** the later CARE quote/UI/schema/test changes and release-documentation updates require fresh checks on the final PR head. Do not treat the seven runs above as validation of later commits. The current PR checks page is the source of truth for the latest head:
+**Important:** the later CARE quote/UI/schema/test, production no-fallback, and strict audit changes require fresh checks on the final code candidate. The run IDs above validate only the earlier SHA. The current PR checks page is the source of truth for the latest head:
 https://github.com/mekanixir-prog/mekanix-app/pull/137
 
 ## 3. Financial proposal — owner approval still required
