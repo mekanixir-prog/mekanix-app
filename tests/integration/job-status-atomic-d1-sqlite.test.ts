@@ -238,7 +238,7 @@ describe("job status D1 SQLite transaction", () => {
     })).rejects.toBeInstanceOf(JobStatusConflictError);
 
     expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
-      .toEqual({ status: "REPAIRING" });
+      .toEqual({ status: "DIAGNOSING" });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "Invoice" WHERE "jobId" = ?').get("job-1"))
       .toEqual({ count: 0 });
   });
