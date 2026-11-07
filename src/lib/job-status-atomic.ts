@@ -33,6 +33,7 @@ export type AtomicInvoiceInput = {
   discount: number;
   total: number;
   currency: string;
+  pricingVersion: string;
   financialUnitStatus: "VERIFIED_IRR";
   status: "SENT";
   notes: string;
@@ -192,8 +193,8 @@ async function transitionWithD1(
         'INSERT INTO "Invoice"' +
         ' ("id", "code", "jobId", "laborHours", "laborRate", "laborTotal", "partsTotal",' +
         ' "travelFee", "inspectionFee", "emergencyFee", "subtotal", "taxRate", "taxTotal", "discount", "total", "currency",' +
-        ' "financialUnitStatus", "status", "notes", "createdAt", "updatedAt")' +
-        ' SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?' +
+        ' "pricingVersion", "financialUnitStatus", "status", "notes", "createdAt", "updatedAt")' +
+        ' SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?' +
         ' WHERE EXISTS (SELECT 1 FROM "Job" j WHERE j."id" = ? AND j."status" = ?)' +
         ' AND NOT EXISTS (SELECT 1 FROM "Invoice" i WHERE i."jobId" = ?)'
       ).bind(
@@ -213,6 +214,7 @@ async function transitionWithD1(
         invoice.discount,
         invoice.total,
         invoice.currency,
+        invoice.pricingVersion,
         invoice.financialUnitStatus,
         invoice.status,
         invoice.notes,
