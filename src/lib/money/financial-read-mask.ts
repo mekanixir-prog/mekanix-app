@@ -33,6 +33,11 @@ const TECHNICIAN_FEE_FIELDS = [
   "inspectionFee",
   "inspectionFeeHeavy",
 ] as const;
+
+/** Fail-closed projection for technician compensation and service fees. */
+export function maskTechnicianFinancialData<T extends object>(technician: T): T {
+  return maskFinancialFields(technician, TECHNICIAN_FEE_FIELDS);
+}
 const JOB_FIELDS = [
   "inspectionFee",
   "travelFee",
