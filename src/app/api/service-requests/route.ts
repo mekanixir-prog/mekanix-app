@@ -4,7 +4,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { getCustomerFromSession, getTechnicianFromSession } from "@/lib/auth";
 import { IdempotencyConflictError, readIdempotencyKey, requestFingerprint } from "@/lib/idempotency";
-import { createServiceRequestAtomically } from "@/lib/service-request-atomic";
+import { createServiceRequestAtomically, ServiceRequestVehicleError } from "@/lib/service-request-atomic";
 import { maskFinancialFields, maskJobFinancialData } from "@/lib/money/financial-read-mask";
 import { isVehicleInSupportedScope } from "@/lib/vehicle-scope";
 
@@ -127,9 +127,6 @@ export async function POST(req: Request) {
     actorUserId: session.userId,
     customerId,
     vehicleId,
-    machineType: vehicle.type,
-    make: vehicle.make.slice(0, 100),
-    model: vehicle.model.slice(0, 100),
     category: body.category.trim().slice(0, 50),
     urgency: (["NORMAL", "URGENT", "EMERGENCY"].includes(body.urgency) ? body.urgency : "NORMAL") as "NORMAL" | "URGENT" | "EMERGENCY",
     title: body.title.trim().slice(0, 200),
@@ -207,6 +204,9 @@ export async function POST(req: Request) {
     };
     return NextResponse.json(safeRequestRecord, { status: result.created ? 201 : 200 });
   } catch (error) {
+    if (error instanceof ServiceRequestVehicleError) {
+      return NextResponse.json({ error: "وسیله ثبت‌شده دیگر در دسترس این مشتری نیست", code: "VEHICLE_NOT_AVAILABLE" }, { status: 409 });
+    }
     if (error instanceof IdempotencyConflictError) {
       return NextResponse.json({ error: "این کلید قبلاً برای اطلاعات متفاوتی استفاده شده است" }, { status: 409 });
     }
