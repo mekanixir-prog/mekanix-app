@@ -24,10 +24,7 @@ const serviceInput = {
   code: "SR-INTEGRATION-001",
   customerId: "customer-1",
   actorUserId: "user-1",
-  vehicleId: null,
-  machineType: "EXCAVATOR",
-  make: "CAT",
-  model: "320",
+  vehicleId: "vehicle-1",
   category: "engine",
   urgency: "URGENT" as const,
   title: "Engine fault",
@@ -132,8 +129,19 @@ function makeD1() {
   return { sqlite, d1 };
 }
 
+function seedServiceVehicle(sqlite: DatabaseSync) {
+  sqlite.prepare(`INSERT INTO "Vehicle" ("id", "customerId", "type", "make", "model", "year", "createdAt")
+    VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+    "vehicle-1", "customer-1", "EXCAVATOR", "CAT", "320", 2024, now
+  );
+}
+
 function makeDb(sqlite: DatabaseSync) {
   return {
+    vehicle: {
+      findUnique: async ({ where }: any) =>
+        sqlite.prepare('SELECT "id", "customerId" FROM "Vehicle" WHERE "id" = ?').get(where.id) ?? null,
+    },
     serviceRequest: {
       findUnique: async ({ where }: any) =>
         sqlite.prepare('SELECT "id", "requestFingerprint" FROM "ServiceRequest" WHERE "idempotencyKey" = ?')
@@ -160,9 +168,10 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
     for (const database of databases.splice(0)) database.close();
   });
 
-  it("creates the ad-hoc vehicle and service request exactly once under 100 concurrent retries", async () => {
+  it("creates one service request for a registered vehicle under 100 concurrent retries", async () => {
     const { sqlite, d1 } = makeD1();
     databases.push(sqlite);
+    seedServiceVehicle(sqlite);
     mocks.getD1Binding.mockResolvedValue(d1);
 
     const results = await Promise.all(
@@ -177,22 +186,24 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceRequest"').get()).toEqual({ count: 1 });
   });
 
-  it("rolls back the ad-hoc vehicle when the dependent request insert fails", async () => {
+  it("does not create a request when the registered vehicle request insert fails", async () => {
     const { sqlite, d1 } = makeD1();
     databases.push(sqlite);
+    seedServiceVehicle(sqlite);
     sqlite.exec(`CREATE TRIGGER "fail_service_request" BEFORE INSERT ON "ServiceRequest"
       BEGIN SELECT RAISE(ABORT, 'request insert failed'); END;`);
     mocks.getD1Binding.mockResolvedValue(d1);
 
     await expect(createServiceRequestAtomically(makeDb(sqlite), serviceInput))
       .rejects.toThrow("request insert failed");
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "Vehicle"').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "Vehicle"').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceRequest"').get()).toEqual({ count: 0 });
   });
 
   it("replays the same service request and rejects a reused key with a different fingerprint", async () => {
     const { sqlite, d1 } = makeD1();
     databases.push(sqlite);
+    seedServiceVehicle(sqlite);
     mocks.getD1Binding.mockResolvedValue(d1);
     const db = makeDb(sqlite);
 
