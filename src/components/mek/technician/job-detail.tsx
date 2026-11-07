@@ -191,7 +191,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
   if (!job) return null;
 
   const next = getNextJobStatus(job);
-  const nextMeta = job.status === "WAITING_APPROVAL" && job.customerApproved
+  const nextMeta = job.status === "WAITING_APPROVAL" && job.customerApproved && job.invoice
     ? NEXT_ACTION_KEYS.DIAGNOSING
     : job.status === "REPAIRING" && job.invoice
       ? { key: "tech.jobDetail.action.completeRepair", icon: CircleCheck }
@@ -445,7 +445,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
 
 function getNextJobStatus(job: Job): string {
   if (job.status === "REPAIRING") return job.invoice ? "COMPLETED" : "WAITING_APPROVAL";
-  if (job.status === "WAITING_APPROVAL") return job.customerApproved ? "REPAIRING" : "WAITING_APPROVAL";
+  if (job.status === "WAITING_APPROVAL") return job.customerApproved && job.invoice ? "REPAIRING" : "WAITING_APPROVAL";
   return NEXT_STATUS[job.status] ?? job.status;
 }
 
