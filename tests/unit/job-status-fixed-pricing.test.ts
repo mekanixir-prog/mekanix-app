@@ -215,7 +215,37 @@ describe("job status approval estimate uses the fixed rate card", () => {
       customerApproved: true,
     }), { params: Promise.resolve({ id: "job-1" }) });
 
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "REPAIR_NOT_STARTED" });
+    expect(mocks.transition).not.toHaveBeenCalled();
+  });
+
+  it("does not let a technician impersonate customer approval", async () => {
+    mocks.auth.mockResolvedValue({ userId: "technician-user-1", role: "TECHNICIAN" });
+    const response = await PATCH(request({
+      status: "REPAIRING",
+      customerApproved: true,
+    }), { params: Promise.resolve({ id: "job-1" }) });
+
     expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "CUSTOMER_APPROVAL_FORBIDDEN" });
+    expect(mocks.transition).not.toHaveBeenCalled();
+  });
+
+  it("does not let a technician start repair before the stored customer approval", async () => {
+    mocks.auth.mockResolvedValue({ userId: "technician-user-1", role: "TECHNICIAN" });
+    mocks.jobFindUnique.mockReset().mockResolvedValueOnce({
+      ...beforeJob,
+      status: "WAITING_APPROVAL",
+      customerApproved: false,
+    });
+
+    const response = await PATCH(request({ status: "REPAIRING" }), {
+      params: Promise.resolve({ id: "job-1" }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "CUSTOMER_APPROVAL_REQUIRED" });
     expect(mocks.transition).not.toHaveBeenCalled();
   });
 });
