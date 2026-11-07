@@ -29,6 +29,10 @@ export async function POST(req: Request) {
   if (input.purpose !== "vip" || typeof input.planId !== "string" || !input.planId.trim()) {
     return NextResponse.json({ error: "A valid VIP plan is required", code: "VIP_PLAN_REQUIRED" }, { status: 400 });
   }
+  if (typeof input.idempotencyKey !== "string" || !/^[A-Za-z0-9._:-]{16,128}$/.test(input.idempotencyKey.trim())) {
+    return NextResponse.json({ error: "A valid idempotencyKey is required", code: "IDEMPOTENCY_KEY_REQUIRED" }, { status: 400 });
+  }
+  const idempotencyKey = input.idempotencyKey.trim();
   if (input.mobile != null && (typeof input.mobile !== "string" || input.mobile.length > 20)) {
     return NextResponse.json({ error: "Invalid mobile value" }, { status: 400 });
   }
@@ -53,9 +57,28 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "مبلغ طرح خارج از محدوده مجاز است", code: "VIP_PLAN_AMOUNT_INVALID" }, { status: 409 });
   }
 
+  const existingAttempt = await db.paymentGatewayLog.findUnique({ where: { idempotencyKey } });
+  if (existingAttempt) {
+    if (
+      existingAttempt.userId !== session.userId ||
+      existingAttempt.purpose !== "vip" ||
+      existingAttempt.targetPlanId !== plan.id ||
+      Number(existingAttempt.amount) !== amount ||
+      existingAttempt.currency !== "IRR" ||
+      existingAttempt.financialUnitStatus !== "VERIFIED_IRR" ||
+      existingAttempt.status === "FAILED" ||
+      existingAttempt.status === "CANCELLED"
+    ) {
+      return NextResponse.json({ error: "Idempotency key was already used for a different or closed payment attempt", code: "IDEMPOTENCY_KEY_CONFLICT" }, { status: 409 });
+    }
+    return initiationResponse(existingAttempt, plan.id);
+  }
+
   const code = `PG-${crypto.randomUUID()}`;
   const referenceId = `SIM-${crypto.randomUUID()}`;
-  const log = await db.paymentGatewayLog.create({
+  let log;
+  try {
+    log = await db.paymentGatewayLog.create({
     data: {
       code,
       userId: session.userId,
@@ -66,21 +89,45 @@ export async function POST(req: Request) {
       status: "REDIRECTED",
       purpose: "vip",
       targetPlanId: plan.id,
+      idempotencyKey,
       referenceId,
       cardNumber: input.cardNumber ? maskCard(input.cardNumber) : null,
       mobile: typeof input.mobile === "string" ? input.mobile : null,
       description: `VIP plan: ${plan.name}`,
     },
-  });
+    });
+  } catch (error: any) {
+    if (error?.code !== "P2002" && !/unique constraint/i.test(String(error?.message ?? ""))) throw error;
+    const racedAttempt = await db.paymentGatewayLog.findUnique({ where: { idempotencyKey } });
+    if (
+      !racedAttempt ||
+      racedAttempt.userId !== session.userId ||
+      racedAttempt.purpose !== "vip" ||
+      racedAttempt.targetPlanId !== plan.id ||
+      Number(racedAttempt.amount) !== amount ||
+      racedAttempt.currency !== "IRR" ||
+      racedAttempt.financialUnitStatus !== "VERIFIED_IRR" ||
+      racedAttempt.status === "FAILED" ||
+      racedAttempt.status === "CANCELLED"
+    ) {
+      return NextResponse.json({ error: "Idempotency key conflict", code: "IDEMPOTENCY_KEY_CONFLICT" }, { status: 409 });
+    }
+    log = racedAttempt;
+  }
 
+  return NextResponse.json({ ok: true, code: log.code, referenceId: log.referenceId, amount: Number(log.amount), currency: "IRR", purpose: "vip", planId: plan.id, reused: false });
+}
+
+function initiationResponse(log: { code: string; referenceId: string | null; amount: unknown }, planId: string) {
   return NextResponse.json({
     ok: true,
     code: log.code,
-    referenceId,
-    amount,
+    referenceId: log.referenceId,
+    amount: Number(log.amount),
     currency: "IRR",
     purpose: "vip",
-    planId: plan.id,
+    planId,
+    reused: true,
   });
 }
 
