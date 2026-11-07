@@ -117,6 +117,25 @@ describe("VIP gateway initiation", () => {
     expect(mockGatewayCreate).not.toHaveBeenCalled();
   });
 
+  it("recovers the winning attempt when concurrent requests race on the unique key", async () => {
+    const winner = {
+      code: "PG-race-winner", referenceId: "SIM-race-winner", amount: 125_000,
+      userId: "customer-1", purpose: "vip", targetPlanId: "plan-gold",
+      currency: "IRR", financialUnitStatus: "VERIFIED_IRR", status: "REDIRECTED",
+    };
+    mockGatewayFindUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(winner);
+    mockGatewayCreate.mockRejectedValueOnce({ code: "P2002", message: "Unique constraint failed" });
+
+    const response = await POST(request({
+      purpose: "vip", planId: "plan-gold", idempotencyKey: "vip-checkout-attempt-0001",
+    }));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.code).toBe("PG-race-winner");
+    expect(body.reused).toBe(true);
+    expect(mockGatewayCreate).toHaveBeenCalledTimes(1);
+  });
+
   it("requires an idempotency key", async () => {
     const response = await POST(request({ purpose: "vip", planId: "plan-gold" }));
     expect(response.status).toBe(400);
