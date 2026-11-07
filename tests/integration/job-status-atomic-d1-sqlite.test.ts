@@ -96,6 +96,7 @@ const baseInput = {
   actorRole: "TECHNICIAN" as const,
   actorTechnicianId: "tech-1",
   currentStatus: "REPAIRING" as const,
+  expectedUpdatedAt: new Date("2026-11-02T10:00:00.000Z"),
   nextStatus: "COMPLETED" as const,
   updates: { completedAt: new Date("2026-11-02T10:00:00.000Z") },
 };
@@ -131,8 +132,8 @@ describe("job status D1 SQLite transaction", () => {
     const instance = makeD1();
     sqlite = instance.sqlite;
     d1 = instance.d1;
-    sqlite.prepare('INSERT INTO "Job" ("id", "requestId", "technicianId", "status") VALUES (?, ?, ?, ?)')
-      .run("job-1", "request-1", "tech-1", "REPAIRING");
+    sqlite.prepare('INSERT INTO "Job" ("id", "requestId", "technicianId", "status", "updatedAt") VALUES (?, ?, ?, ?, ?)')
+      .run("job-1", "request-1", "tech-1", "REPAIRING", "2026-11-02T10:00:00.000Z");
     sqlite.prepare('INSERT INTO "ServiceRequest" ("id", "status", "matchedTechId") VALUES (?, ?, ?)')
       .run("request-1", "ASSIGNED", "tech-1");
     sqlite.prepare('INSERT INTO "Technician" ("id", "status") VALUES (?, ?)')
