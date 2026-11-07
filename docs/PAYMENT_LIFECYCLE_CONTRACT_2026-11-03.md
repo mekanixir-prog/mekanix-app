@@ -194,3 +194,14 @@ The local VIP simulator now uses a server-owned plan snapshot rather than trusti
 - The gateway initiation/verification routes and their dialog branch are VIP-only. Prepay retains its separate local /api/prepay simulator writer; it no longer sends fake card data or creates an unrelated gateway Payment row. The prepay API still computes its own server-authoritative fees and remains blocked unless its separate policy-approval gate is enabled. Invoice and wallet-top-up are not treated as supported by either simulator path.
 
 This is a local simulator safety improvement, not a production payment attempt/outbox implementation. Provider callbacks, provider API verification, replay protection, timeout reconciliation, refund handling and purpose-specific outbox fulfillment remain open under Issue #24. Legacy gateway logs without `targetPlanId` cannot be used to activate a new VIP subscription through this path.
+
+
+## 12. VIP simulator initiation idempotency — 2026-11-07
+
+- The VIP initiation client supplies a random request idempotency key. The key is not a payment amount or authorization token.
+- The database enforces global uniqueness for the key. Repeated requests by the same authenticated user for the same active, verified VIP plan return the original gateway attempt rather than creating another one.
+- Reusing a key for another user, another plan, an invalid attempt, or an attempt already marked failed/cancelled returns a conflict.
+- The original amount remains the immutable attempt snapshot. A later edit to the VIP plan price does not change the amount returned for a retry of that attempt.
+- If two identical initiation requests race, the unique constraint selects one persisted attempt; the losing request reloads and returns that attempt.
+- The dialog preserves the same key after a transient initiation failure so a manual retry does not create a second attempt. Closing the dialog resets the key for a genuinely new checkout.
+- This protects simulator initiation from duplicate requests. It does not replace provider-side idempotency, signed callback verification, durable outbox processing, reconciliation, or refund handling.
