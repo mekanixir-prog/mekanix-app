@@ -24,7 +24,6 @@ export function PaymentGatewayDialog({
   amount,
   purpose,
   description,
-  userId,
   planId,
   onSuccess,
 }: {
@@ -33,7 +32,6 @@ export function PaymentGatewayDialog({
   amount: number; // Display-only fallback; server resolves the payable IRR amount from planId.
   purpose: "vip" | "prepay" | "invoice" | "wallet_topup";
   description?: string;
-  userId?: string;
   planId: string;
   onSuccess?: (paymentId: string, amount: number) => void;
 }) {
@@ -117,7 +115,7 @@ export function PaymentGatewayDialog({
       const res = await authFetch("/api/gateway/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, otp, purpose, userId }),
+        body: JSON.stringify({ code, otp }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -204,7 +202,7 @@ export function PaymentGatewayDialog({
               </div>
               <p className="text-[10px] text-muted-foreground">{t("pay.gateway.demoNote")}</p>
               <Button onClick={initiate} className="w-full bg-amber text-black hover:bg-amber/90" size="lg">
-                <Lock className="mr-2 size-4" /> {t("pay.gateway.pay").replace("{amount}", money(amount))}
+                <Lock className="mr-2 size-4" /> {t("pay.gateway.pay").replace("{amount}", money(serverAmount ?? amount))}
               </Button>
             </motion.div>
           )}
