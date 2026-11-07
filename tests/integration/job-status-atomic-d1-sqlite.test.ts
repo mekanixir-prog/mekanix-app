@@ -9,6 +9,7 @@ import {
   JobStatusConflictError,
   transitionJobStatusAtomically,
 } from "@/lib/job-status-atomic";
+import { addJobPartBeforeInvoice } from "@/lib/job-parts-atomic";
 
 function makeD1() {
   const sqlite = new DatabaseSync(":memory:");
@@ -41,6 +42,16 @@ function makeD1() {
       "jobId" TEXT NOT NULL,
       "status" TEXT NOT NULL,
       "holdUntil" TEXT
+    );
+    CREATE TABLE "Part" (
+      "id" TEXT PRIMARY KEY NOT NULL,
+      "jobId" TEXT NOT NULL,
+      "name" TEXT NOT NULL,
+      "sku" TEXT,
+      "quantity" INTEGER NOT NULL,
+      "unitPrice" REAL NOT NULL,
+      "financialUnitStatus" TEXT NOT NULL,
+      "createdAt" TEXT NOT NULL
     );
     CREATE TABLE "Invoice" (
       "id" TEXT PRIMARY KEY NOT NULL,
@@ -161,6 +172,39 @@ describe("job status D1 SQLite transaction", () => {
       .toEqual({ holdUntil: holdUntil.toISOString() });
     expect(sqlite.prepare('SELECT "status" FROM "Technician" WHERE "id" = ?').get("tech-1"))
       .toEqual({ status: "ONLINE" });
+  });
+
+  it("serializes a D1 part edit against the status transition and prevents a stale invoice", async () => {
+    const oldRevision = baseInput.expectedUpdatedAt.toISOString();
+    const db = {
+      job: {
+        findUnique: async () => sqlite.prepare('SELECT "status", "updatedAt" FROM "Job" WHERE "id" = ?').get("job-1"),
+      },
+      part: {
+        findUnique: async ({ where }: { where: { id: string } }) =>
+          sqlite.prepare('SELECT * FROM "Part" WHERE "id" = ?').get(where.id),
+      },
+    } as any;
+
+    const part = await addJobPartBeforeInvoice(db, {
+      jobId: "job-1",
+      name: "Oil filter",
+      sku: "OF-1",
+      quantity: 1,
+      unitPrice: 1_000_000,
+    });
+    expect(part).toMatchObject({ jobId: "job-1", financialUnitStatus: "VERIFIED_IRR" });
+    const revised = sqlite.prepare('SELECT "updatedAt" FROM "Job" WHERE "id" = ?').get("job-1") as { updatedAt: string };
+    expect(new Date(revised.updatedAt).getTime()).toBeGreaterThan(new Date(oldRevision).getTime());
+
+    await expect(transitionJobStatusAtomically(db, {
+      ...baseInput,
+      invoice,
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+    expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
+      .toEqual({ status: "REPAIRING" });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "Invoice" WHERE "jobId" = ?').get("job-1"))
+      .toEqual({ count: 0 });
   });
 
   it("rejects a stale job revision when parts changed after the estimate was read", async () => {
