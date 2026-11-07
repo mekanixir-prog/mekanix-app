@@ -90,11 +90,14 @@ export async function recordVerifiedGatewayPaymentAtomically(
 
     const assertVerifiedAndEnqueued = d1.prepare(
       'SELECT CASE WHEN EXISTS (SELECT 1 FROM "Payment" p JOIN "PaymentGatewayLog" g ON g."id" = p."gatewayLogId" ' +
-      'JOIN "PaymentOutboxEvent" o ON o."idempotencyKey" = ? AND o."aggregateId" = p."id" ' +
+      'JOIN "PaymentOutboxEvent" o ON o."idempotencyKey" = ? AND o."aggregateId" = p."id" AND o."eventType" = \'PAYMENT_SUCCEEDED\' ' +
+      'AND json_extract(o."payload", \'$.paymentId\') = p."id" AND json_extract(o."payload", \'$.gatewayLogId\') = p."gatewayLogId" ' +
+      'AND json_extract(o."payload", \'$.userId\') = p."userId" AND json_extract(o."payload", \'$.amount\') = p."amount" ' +
+      'AND json_extract(o."payload", \'$.targetPlanId\') = ? ' +
       'WHERE p."gatewayLogId" = ? AND p."userId" = ? AND p."amount" = ? AND p."currency" = \'IRR\' AND p."status" = \'SUCCEEDED\' ' +
       'AND p."financialUnitStatus" = \'VERIFIED_IRR\' AND g."status" = \'VERIFIED\' AND g."paymentId" = p."id") ' +
       'THEN 1 ELSE json_extract(\'not-json\', \'$\') END'
-    ).bind(eventKey, input.gatewayLogId, input.userId, input.amount);
+    ).bind(eventKey, input.targetPlanId, input.gatewayLogId, input.userId, input.amount);
 
     await d1.batch([paymentInsert, linkAndVerify, outboxInsert, assertVerifiedAndEnqueued]);
     const row = await d1.prepare('SELECT "id" FROM "Payment" WHERE "gatewayLogId" = ?').bind(input.gatewayLogId).first<{ id: string }>();
@@ -174,7 +177,7 @@ export async function recordVerifiedGatewayPaymentAtomically(
       },
       update: {},
     });
-    if (event.eventType !== "PAYMENT_SUCCEEDED" || event.aggregateType !== "Payment" || event.aggregateId !== payment.id) {
+    if (event.eventType !== "PAYMENT_SUCCEEDED" || event.aggregateType !== "Payment" || event.aggregateId !== payment.id || event.payload !== payload) {
       throw new Error("Outbox idempotency key is bound to a different event");
     }
     return payment.id;
