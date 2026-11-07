@@ -223,7 +223,7 @@ describe("job status D1 SQLite transaction", () => {
       invoice,
     })).rejects.toBeInstanceOf(JobStatusConflictError);
     expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
-      .toEqual({ status: "DIAGNOSING" });
+      .toEqual({ status: "REPAIRING" });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "Invoice" WHERE "jobId" = ?').get("job-1"))
       .toEqual({ count: 0 });
   });
@@ -238,7 +238,7 @@ describe("job status D1 SQLite transaction", () => {
     })).rejects.toBeInstanceOf(JobStatusConflictError);
 
     expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
-      .toEqual({ status: "DIAGNOSING" });
+      .toEqual({ status: "REPAIRING" });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "Invoice" WHERE "jobId" = ?').get("job-1"))
       .toEqual({ count: 0 });
   });
@@ -255,10 +255,10 @@ describe("job status D1 SQLite transaction", () => {
   });
 
   it("creates the approval invoice in the same D1 transaction as WAITING_APPROVAL", async () => {
-    sqlite.prepare('UPDATE "Job" SET "status" = ? WHERE "id" = ?').run("DIAGNOSING", "job-1");
+    sqlite.prepare('UPDATE "Job" SET "status" = ? WHERE "id" = ?').run("REPAIRING", "job-1");
     await expect(transitionJobStatusAtomically({} as any, {
       ...baseInput,
-      currentStatus: "DIAGNOSING",
+      currentStatus: "REPAIRING",
       nextStatus: "WAITING_APPROVAL",
       updates: {},
       invoice,
@@ -279,7 +279,7 @@ describe("job status D1 SQLite transaction", () => {
   });
 
   it("rolls back WAITING_APPROVAL when a job invoice already exists", async () => {
-    sqlite.prepare('UPDATE "Job" SET "status" = ? WHERE "id" = ?').run("DIAGNOSING", "job-1");
+    sqlite.prepare('UPDATE "Job" SET "status" = ? WHERE "id" = ?').run("REPAIRING", "job-1");
     sqlite.prepare(
       'INSERT INTO "Invoice" ("id", "code", "jobId", "laborHours", "laborRate", "laborTotal", "partsTotal", "travelFee", "inspectionFee", "emergencyFee", "subtotal", "taxRate", "taxTotal", "discount", "total", "currency", "pricingVersion", "financialUnitStatus", "status", "notes", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(
@@ -288,14 +288,14 @@ describe("job status D1 SQLite transaction", () => {
 
     await expect(transitionJobStatusAtomically({} as any, {
       ...baseInput,
-      currentStatus: "DIAGNOSING",
+      currentStatus: "REPAIRING",
       nextStatus: "WAITING_APPROVAL",
       updates: {},
       invoice,
     })).rejects.toBeInstanceOf(JobStatusConflictError);
 
     expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
-      .toEqual({ status: "DIAGNOSING" });
+      .toEqual({ status: "REPAIRING" });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "Invoice" WHERE "jobId" = ?').get("job-1"))
       .toEqual({ count: 1 });
   });
