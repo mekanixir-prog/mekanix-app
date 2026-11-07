@@ -211,6 +211,25 @@ describe("atomic job status writer", () => {
     });
   });
 
+  it("rejects a technician transition that skips the allowed state machine", async () => {
+    const db = { $transaction: vi.fn() } as any;
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      nextStatus: "EN_ROUTE" as any,
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects a technician actor id that differs from the assigned technician id", async () => {
+    const db = { $transaction: vi.fn() } as any;
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      actorTechnicianId: "different-technician",
+      nextStatus: "ACCEPTED" as any,
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
   it("does not allow a technician to set the customer approval flag", async () => {
     const db = { $transaction: vi.fn() } as any;
     await expect(transitionJobStatusAtomically(db, {
