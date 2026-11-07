@@ -41,6 +41,7 @@ import { PATCH } from "@/app/api/jobs/[id]/status/route";
 
 const beforeJob = {
   status: "DIAGNOSING",
+  updatedAt: new Date("2026-11-06T10:00:00.000Z"),
   technicianId: "tech-1",
   requestId: "request-1",
   code: "JOB-1",
