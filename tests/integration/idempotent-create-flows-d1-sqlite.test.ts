@@ -14,7 +14,7 @@ vi.mock("@/lib/idempotency", () => {
 });
 
 import { IdempotencyConflictError } from "@/lib/idempotency";
-import { createServiceRequestAtomically } from "@/lib/service-request-atomic";
+import { createServiceRequestAtomically, ServiceRequestVehicleError } from "@/lib/service-request-atomic";
 import { createInsuranceClaimAtomically } from "@/lib/insurance-claim-atomic";
 
 const now = "2026-11-01T12:00:00.000Z";
@@ -184,6 +184,29 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
     expect(results.filter((result) => result.created)).toHaveLength(1);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "Vehicle"').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceRequest"').get()).toEqual({ count: 1 });
+  });
+
+  it("rechecks passenger vehicle scope in the D1 insert if the vehicle changes after preflight", async () => {
+    const { sqlite, d1 } = makeD1();
+    databases.push(sqlite);
+    seedServiceVehicle(sqlite);
+    sqlite.prepare('UPDATE "Vehicle" SET "type" = ?, "make" = ? WHERE "id" = ?')
+      .run("CAR", "IKCO", "vehicle-1");
+
+    // Simulate a supported preflight read followed by an out-of-scope stored
+    // value at the atomic SQL write boundary.
+    const db = makeDb(sqlite);
+    db.vehicle.findUnique = async () => ({
+      id: "vehicle-1",
+      customerId: "customer-1",
+      type: "CAR",
+      make: "Kerman Motor",
+    });
+    mocks.getD1Binding.mockResolvedValue(d1);
+
+    await expect(createServiceRequestAtomically(db, serviceInput))
+      .rejects.toBeInstanceOf(ServiceRequestVehicleError);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceRequest"').get()).toEqual({ count: 0 });
   });
 
   it("does not create a request when the registered vehicle request insert fails", async () => {
