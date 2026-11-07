@@ -298,8 +298,9 @@ export function CustomerTracking({ customer }: { customer: DemoUser }) {
                 setJob(data.job);
                 toast.success(t("fees.prepayPaid"));
                 setPrepayOpen(false);
+                return Number(data.amount);
               } catch (e: any) {
-                toast.error(e.message ?? t("pay.gateway.failed"));
+                throw e;
               } finally {
                 setPrepayBusy(false);
               }
