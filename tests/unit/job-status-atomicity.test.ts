@@ -151,12 +151,12 @@ describe("atomic job status writer", () => {
 
     await expect(transitionJobStatusAtomically(db, {
       ...input,
-      currentStatus: "DIAGNOSING",
+      currentStatus: "REPAIRING",
       nextStatus: "WAITING_APPROVAL",
       invoice,
     })).resolves.toBeUndefined();
     expect(tx.job.updateMany).toHaveBeenCalledWith({
-      where: { id: input.jobId, status: "DIAGNOSING", technicianId: input.actorTechnicianId, updatedAt: input.expectedUpdatedAt },
+      where: { id: input.jobId, status: "REPAIRING", technicianId: input.actorTechnicianId, updatedAt: input.expectedUpdatedAt },
       data: { status: "WAITING_APPROVAL", customerApproved: false },
     });
     expect(tx.invoice.create).toHaveBeenCalledWith({ data: invoice });
@@ -323,7 +323,7 @@ describe("atomic job status writer", () => {
 
     await expect(transitionJobStatusAtomically({} as any, {
       ...input,
-      currentStatus: "DIAGNOSING",
+      currentStatus: "REPAIRING",
       nextStatus: "WAITING_APPROVAL",
       invoice,
     })).resolves.toBeUndefined();
