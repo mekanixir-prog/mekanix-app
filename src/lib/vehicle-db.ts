@@ -710,7 +710,7 @@ export function getIranianMakes(mode: "passenger" | "heavy" = "passenger"): Vehi
 // Get the rich catalog entry for a specific make+model
 export function getModelMeta(make: string, modelName: string): VehicleModel | undefined {
   // Match by Persian make OR English makeEn
-  const makeObj = PASSENGER_MAKES.find((m) => m.make === make || (m.makeEn && m.makeEn === make))
+  const makeObj = getMakesForMode("passenger").find((m) => m.make === make || (m.makeEn && m.makeEn === make))
     || HEAVY_MAKES.find((m) => m.make === make || (m.makeEn && m.makeEn === make));
   return makeObj?.catalog?.find((c) => c.name === modelName);
 }
