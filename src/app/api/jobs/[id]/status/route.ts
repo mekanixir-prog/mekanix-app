@@ -5,6 +5,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
 import { calculatePrice } from "@/lib/pricing";
+import { maskJobFinancialData } from "@/lib/money/financial-read-mask";
 import { areJobPartPriceSourcesVerified } from "@/lib/money/provenance";
 import { estimateTravelDistanceKm, serviceCodeFromCategory } from "@/lib/job-invoice-pricing";
 import {
@@ -397,5 +398,5 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   }
 
-  return NextResponse.json(job);
+  return NextResponse.json(maskJobFinancialData(job as unknown as Record<string, unknown>));
 }
