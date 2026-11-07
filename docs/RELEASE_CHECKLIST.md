@@ -3,7 +3,9 @@
 **Status date:** 2026-11-07  
 **Current main baseline:** `10080473dd6b87ec725a5c6c22803f5d5d872342`  
 **Open release candidate:** PR #137 — `feat/admin-editable-irr-rate-card` (not merged)  
-**Release decision:** <strong>NO-GO</strong> — code hardening and release evidence remain incomplete.
+**Release decision:** <strong>NO-GO</strong> — CI is green on the current pricing candidate, but state-machine authorization, financial read masking, legacy provenance, payment lifecycle, commercial approval and isolated staging remain incomplete.
+
+**PR #137 status:** Draft (2026-11-07). It was returned to Draft after review found that customer approval can be combined with an arbitrary job status, non-Boolean approval values are coerced to `true`, and invoice/wallet read paths still lack complete provenance masking. All seven required workflows passed on exact PR head `92eb29b255946c5a3ffa6374ce47bd0d52f253f9`; this does not override the review blockers.
 
 This replaces the historical checklist snapshots from October. Do not use old “Release Candidate — all checks passed” or old staging/load-test claims as current release evidence.
 
@@ -42,9 +44,18 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - [x] Production pricing remains disabled until explicit owner approval through `MEKANIX_PRICING_IRR_APPROVED=true`; saving a proposed card does not activate it.
 - [x] CARE customer preview now requests a server-calculated quote from the same rate-card engine, formats verified IRR as Toman, and pins the quote version when booking. API schema now requires that version; omitting it cannot bypass the stale-quote guard.
 - [x] Legacy hardcoded CARE preview amounts, the unapproved 9% tax display, and unsupported six-month warranty promises removed from the reviewed booking/invoice copy. VIP copy now describes periodic visits only; repairs and parts are excluded.
-- [x] Ambiguous CARE service types are rejected instead of silently falling back to diagnostic pricing.\n- [x] Admin rate-card writes compare-and-set against the original row read; concurrent admin updates return 409 rather than overwriting each other, with a regression test.\n- [x] Feature branch synchronized with `main`; zero commits behind.
-- [x] All seven required workflows passed on code-tree SHA `0b6b319b040031f4d68d0dcda2965a3fd0cb39bd`. PR head `a00017bc86896630e26f39045da8bf8d3b50b703` is a synchronization merge commit with identical tree; all seven workflows also passed on that merge commit. The current documentation-only head is being revalidated.
+- [x] Ambiguous CARE service types are rejected instead of silently falling back to diagnostic pricing.
+- [x] Admin rate-card writes compare-and-set against the original row read; concurrent admin updates return 409 rather than overwriting each other, with a regression test.
+- [x] Feature branch synchronized with `main`; zero commits behind.
+- [ ] Make `customerApproved` accept Boolean values only; reject strings/numbers instead of coercing with `Boolean(value)`.
+- [ ] Prevent customer approval requests from changing `status`; enforce role-specific state transitions in both the route and atomic Prisma/D1 writer.
+- [ ] Add provenance masking to `GET /api/invoices` including nested payment/parts, and to wallet/withdrawal reads; PR #136 is still Draft and diverged from current main.
+- [ ] Make `serviceCode` required in the pricing-engine contract; remove the legacy diagnostic fallback or prove every remaining caller is explicit.
+- [x] All seven required workflows passed on exact final PR head `92eb29b255946c5a3ffa6374ce47bd0d52f253f9` (CI `42337964172`, Production readiness `42337964175`, Docker E2E `42337964188`, PostgreSQL CI `42337964200`, Cloudflare Build `42337964205`, CodeQL `42337964192`, Secret Scan `42337964182`). The validated code-tree SHA is `0b6b319b040031f4d68d0dcda2965a3fd0cb39bd`; the synchronization merge commit is `a00017bc86896630e26f39045da8bf8d3b50b703`. The PR is now Draft because code-review blockers remain.
 - [ ] Owner must review and explicitly approve the actual passenger/heavy rate values. Heavy-equipment estimates still require regional technician/supplier sampling.
+- [ ] Fix customer approval route/atomic state-machine authorization before merging PR #137; review references: `5810169420`, `5810173066`.
+- [ ] Complete invoice/wallet provenance masking before any financial read path is enabled; review reference: `5810161985`.
+
 - [ ] Approve or replace the current extra-distance estimation method (Haversine × 1.3); it is not a navigation-provider route measurement.
 - [ ] Review the full PR diff and both provider migration tracks before merge. PR #137 remains open and unmerged.
 
@@ -66,9 +77,9 @@ This replaces the historical checklist snapshots from October. Do not use old �
 - [ ] Keep the single-maintainer workflow usable; do not require a second approval unless a second maintainer is available and an explicit administrator bypass is configured.
 
 ### Current financial blockers
-- [ ] Issue #24 — authoritative real-provider lifecycle is not wired; current invoice/gateway/prepay routes are simulator-only and production-disabled.
-- [ ] Issue #81 — integer IRR is approved, but legacy row provenance, mixed-unit seed values, wallet/invoice read masking, and payout reconciliation remain unresolved.
-- [ ] Issue #130 — Persian IRR formatting still passes through mutable USD FX; wallet/invoice GET paths expose unverified amounts; safe-integer writer enforcement is incomplete.
+- [ ] Issue #24 — provider adapters exist but the authoritative payment-attempt → provider initiation/verification → purpose-specific fulfillment → invoice/technician ledger/escrow lifecycle is not wired end-to-end. Simulator routes are production-disabled; no live credentials are needed during current development.
+- [ ] Issue #81 — integer IRR is approved, but record-level legacy provenance, mixed-unit seed values, wallet/invoice read masking, and payout reconciliation remain unresolved. Do not infer units from magnitude or bulk-convert unknown records.
+- [ ] Issue #130 — current `fmtMoney` no longer applies live USD FX to IRR on main. Remaining work: connect exact `formatTomanFromIrr` only after provenance validation if Toman-only Persian display is retained; unknown currency must not silently fall back to USD; wallet/invoice GET paths still expose unverified nested amounts; safe-integer writer enforcement remains incomplete.
 - [ ] Issue #99 — preserve confirmed scope: fixed-fee labor, heavy machinery priority, non-Iranian passenger vehicles only (exclude Iran Khodro/Saipa), annual VIP with free periodic visits only (repairs/parts not free). PR #137 supplies an initial editable proposal only; its actual amounts, heavy-equipment calibration, tax, commission, escrow/release, VIP price/refunds and withdrawal limits remain owner decisions. Prior 15%/sample-price examples are not approved.
 - [ ] Technician invoice earnings are not yet credited to the wallet through a complete idempotent escrow/commission flow.
 - [ ] Do not activate live payment, wallet top-up, withdrawal, or bank payout until these are resolved.
