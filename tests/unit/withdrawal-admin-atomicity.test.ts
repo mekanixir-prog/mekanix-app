@@ -89,7 +89,11 @@ describe("admin withdrawal transitions", () => {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       walletTransaction: { create: vi.fn().mockResolvedValue({}) },
-      wallet: { findUnique: vi.fn().mockResolvedValue({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: 0 }), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      walletLedger: { create: vi.fn().mockResolvedValue({}) },
+      wallet: {
+        findUnique: vi.fn().mockResolvedValue({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: 0 }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
     };
     const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
     await expect(updateWithdrawalWithPrisma(db, { ...input, action: "PAID", payoutReference: "BANK-TRX-2026-0001" })).resolves.toBe(true);
@@ -108,6 +112,20 @@ describe("admin withdrawal transitions", () => {
     expect(tx.wallet.updateMany).toHaveBeenCalledWith({
       where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR" },
       data: { totalWithdrawn: { increment: 500 } },
+    });
+    expect(tx.walletLedger.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: "PAYOUT",
+        amount: 0,
+        balanceBefore: 1000,
+        balanceAfter: 1000,
+        referenceType: "Withdrawal",
+        referenceId: "wd-1",
+        idempotencyKey: "withdrawal:wd-1:PAYOUT_LEDGER",
+        financialUnitStatus: "VERIFIED_IRR",
+        createdBy: "admin-1",
+        description: expect.stringContaining("BANK-TRX-2026-0001"),
+      }),
     });
   });
 
@@ -162,12 +180,16 @@ describe("admin withdrawal transitions", () => {
         { meta: { changes: 1 } }, { meta: { changes: 0 } },
         { meta: { changes: 1 } }, { meta: { changes: 0 } },
         { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
       ]),
     };
     await expect(updateWithdrawalWithD1(d1 as any, { ...input, action: "PAID", payoutReference: "BANK-TRX-2026-0001" })).resolves.toBe(true);
     expect(statements[2].sql).toContain('INSERT INTO "WalletTransaction"');
     expect(statements[4].sql).toContain('SELECT "amount" FROM "WithdrawalRequest"');
     expect(statements[4].sql).toContain('"totalWithdrawn" = "totalWithdrawn" + CASE WHEN changes() = 1 THEN');
+    expect(statements[6].sql).toContain('INSERT INTO "WalletLedger"');
+    expect(statements[6].sql).toContain("'PAYOUT', 0, w.\"balance\", w.\"balance\"");
+    expect(statements[6].values).toContain("withdrawal:wd-1:PAYOUT_LEDGER");
     expect(statements[4].values).toContain("wd-1");
   });
 
