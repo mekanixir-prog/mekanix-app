@@ -205,3 +205,16 @@ This is a local simulator safety improvement, not a production payment attempt/o
 - If two identical initiation requests race, the unique constraint selects one persisted attempt; the losing request reloads and returns that attempt.
 - The dialog preserves the same key after a transient initiation failure so a manual retry does not create a second attempt. Closing the dialog resets the key for a genuinely new checkout.
 - This protects simulator initiation from duplicate requests. It does not replace provider-side idempotency, signed callback verification, durable outbox processing, reconciliation, or refund handling.
+
+
+## 13. Verified payment transaction and transactional outbox — 2026-11-07
+
+- A verified VIP simulator payment is persisted as one atomic unit: the Payment row, the PaymentGatewayLog VERIFIED link, and one PaymentOutboxEvent row.
+- The outbox event is `PAYMENT_SUCCEEDED`, aggregated on the Payment ID, and carries a minimal server-authored JSON snapshot. It must never contain card PAN, CVV, expiry, OTP, or raw provider secrets.
+- The stable event idempotency key is `payment.succeeded:<gatewayLogId>`. Repeated verification repairs/reuses the Payment and ensures the same outbox event exists rather than adding a second event.
+- SQLite/D1 uses a single transactional D1 batch with SQL assertions; PostgreSQL/Prisma uses an interactive transaction. A failed required write must roll back all three persistence changes.
+- The outbox table is durable storage, not a completed worker. No dispatcher, provider callback verification, signed webhook, retries/backoff, dead-letter operator UI, reconciliation scheduler, or refund workflow is claimed by this change.
+- Outbox consumers must claim events safely, apply bounded retries, and use the event idempotency key to deduplicate side effects before any external notification or subscription fulfillment.
+- The current simulator's OTP remains test-only and is not evidence of a real provider settlement.
+
+- A legacy simulator callback that already has a verified, user-owned Payment linked by `PaymentGatewayLog.paymentId` may be repaired only if the Payment is SUCCEEDED, IRR-provenanced, amount-equal, and has no conflicting `gatewayLogId`. The repair binds that exact Payment to the gateway attempt and writes the same idempotent outbox event atomically. If the Payment is already bound elsewhere or any invariant differs, recovery fails closed.

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { isSafeStoredIrrAmount } from "@/lib/money/financial-read-mask";
+import { recordVerifiedGatewayPaymentAtomically } from "@/lib/payment-verification-atomic";
 
 // Verify a payment (simulated Shaparak OTP flow).
 // Simulator-only: real provider callbacks must use provider signature verification.
@@ -61,18 +62,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "این پرداخت ناموفق یا لغو شده است" }, { status: 409 });
   }
 
-  // Recover safely if a previous request created the Payment but failed before
-  // linking it to the gateway log. gatewayLogId is a database-enforced unique key.
-  let payment = await db.payment.findUnique({ where: { gatewayLogId: log.id } });
-  if (payment) {
-    if (payment.userId !== session.userId || payment.status !== "SUCCEEDED" || payment.currency !== "IRR" || payment.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(payment.amount) || Number(payment.amount) !== Number(log.amount)) {
+  // Recover safely if a prior request persisted the Payment. The helper also
+  // repairs the gateway link and guarantees the matching outbox event exists.
+  const existingPayment = await db.payment.findUnique({ where: { gatewayLogId: log.id } });
+  if (existingPayment) {
+    if (existingPayment.userId !== session.userId || existingPayment.status !== "SUCCEEDED" || existingPayment.currency !== "IRR" || existingPayment.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(existingPayment.amount) || Number(existingPayment.amount) !== Number(log.amount)) {
       return NextResponse.json({ error: "وضعیت پرداخت قابل تأیید نیست" }, { status: 409 });
     }
-    await db.paymentGatewayLog.update({
-      where: { id: log.id },
-      data: { status: "VERIFIED", financialUnitStatus: "VERIFIED_IRR", verifiedAt: log.verifiedAt ?? new Date(), paymentId: payment.id },
+    const paymentId = await recordVerifiedGatewayPaymentAtomically(db, {
+      gatewayLogId: log.id,
+      userId: session.userId,
+      paymentId: existingPayment.id,
+      paymentCode: existingPayment.code,
+      amount: Number(log.amount),
+      targetPlanId: log.targetPlanId,
+      verifiedAt: log.verifiedAt ?? new Date(),
     });
-    return NextResponse.json({ ok: true, paymentId: payment.id, amount: Number(payment.amount), purpose: log.purpose, alreadyVerified: true });
+    return NextResponse.json({ ok: true, paymentId, amount: Number(existingPayment.amount), purpose: log.purpose, alreadyVerified: true });
   }
 
   // Legacy simulator callbacks marked the log VERIFIED before creating and
@@ -90,44 +96,54 @@ export async function POST(req: Request) {
     if (!legacyPayment || legacyPayment.userId !== session.userId || legacyPayment.status !== "SUCCEEDED" || legacyPayment.currency !== "IRR" || legacyPayment.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(legacyPayment.amount) || Number(legacyPayment.amount) !== Number(log.amount)) {
       return NextResponse.json({ error: "رکورد پرداخت قبلی قابل تطبیق نیست؛ بررسی دستی لازم است" }, { status: 409 });
     }
+    const paymentId = await recordVerifiedGatewayPaymentAtomically(db, {
+      gatewayLogId: log.id,
+      userId: session.userId,
+      paymentId: legacyPayment.id,
+      paymentCode: legacyPayment.code,
+      legacyPaymentId: legacyPayment.id,
+      amount: Number(log.amount),
+      targetPlanId: log.targetPlanId,
+      verifiedAt: log.verifiedAt ?? new Date(),
+    });
     return NextResponse.json({
-      ok: true, paymentId: legacyPayment.id, amount: Number(legacyPayment.amount),
+      ok: true, paymentId, amount: Number(legacyPayment.amount),
       purpose: log.purpose, alreadyVerified: true,
     });
   }
 
-  // Create first with a unique idempotency key. If two callbacks race, the
-  // database permits exactly one Payment row. The losing request reloads it.
+  // Persist Payment, VERIFIED gateway state, and PAYMENT_SUCCEEDED outbox
+  // event atomically. A unique-key race is recovered by loading the winner and
+  // retrying the atomic helper, which also ensures its outbox event exists.
+  let paymentId: string;
   try {
-    payment = await db.payment.create({
-      data: {
-        code: `PAY-${log.code}`,
-        invoiceId: null,
-        userId: session.userId,
-        amount: log.amount,
-        currency: log.currency || "IRR",
-        method: "card",
-        status: "SUCCEEDED",
-        financialUnitStatus: "VERIFIED_IRR",
-        gatewayLogId: log.id,
-      },
+    paymentId = await recordVerifiedGatewayPaymentAtomically(db, {
+      gatewayLogId: log.id,
+      userId: session.userId,
+      paymentId: crypto.randomUUID(),
+      paymentCode: `PAY-${log.code}`,
+      amount: Number(log.amount),
+      targetPlanId: log.targetPlanId,
+      verifiedAt: log.verifiedAt ?? new Date(),
     });
   } catch (error: any) {
-    if (error?.code !== "P2002" && !error?.message?.includes("Unique constraint")) {
+    if (error?.code !== "P2002" && !/unique constraint/i.test(String(error?.message ?? ""))) throw error;
+    const racedPayment = await db.payment.findUnique({ where: { gatewayLogId: log.id } });
+    if (!racedPayment || racedPayment.userId !== session.userId || racedPayment.status !== "SUCCEEDED" || racedPayment.currency !== "IRR" || racedPayment.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(racedPayment.amount) || Number(racedPayment.amount) !== Number(log.amount)) {
       throw error;
     }
-    payment = await db.payment.findUnique({ where: { gatewayLogId: log.id } });
-    if (!payment || payment.userId !== session.userId || payment.status !== "SUCCEEDED" || payment.currency !== "IRR" || payment.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(payment.amount) || Number(payment.amount) !== Number(log.amount)) {
-      throw error;
-    }
+    paymentId = await recordVerifiedGatewayPaymentAtomically(db, {
+      gatewayLogId: log.id,
+      userId: session.userId,
+      paymentId: racedPayment.id,
+      paymentCode: racedPayment.code,
+      amount: Number(log.amount),
+      targetPlanId: log.targetPlanId,
+      verifiedAt: log.verifiedAt ?? new Date(),
+    });
   }
 
-  // If this write fails, the payment remains discoverable by gatewayLogId;
-  // retrying this endpoint repairs the log instead of losing the payment.
-  await db.paymentGatewayLog.update({
-    where: { id: log.id },
-    data: { status: "VERIFIED", financialUnitStatus: "VERIFIED_IRR", verifiedAt: log.verifiedAt ?? new Date(), paymentId: payment.id },
-  });
-
+  const payment = await db.payment.findUnique({ where: { id: paymentId } });
+  if (!payment) throw new Error("Verified Payment disappeared after atomic persistence");
   return NextResponse.json({ ok: true, paymentId: payment.id, amount: Number(payment.amount), purpose: log.purpose });
 }
