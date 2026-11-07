@@ -38,14 +38,18 @@ export async function addJobPartBeforeInvoice(db: PrismaClient, input: NewJobPar
   const d1 = await getD1Binding();
 
   if (d1) {
-    const statement = d1.prepare(
+    const touchJob = d1.prepare(
+      'UPDATE "Job" SET "updatedAt" = ? WHERE "id" = ? AND "status" = \'REPAIRING\'' +
+      ' AND NOT EXISTS (SELECT 1 FROM "Invoice" WHERE "jobId" = ?)'
+    ).bind(now.toISOString(), input.jobId, input.jobId);
+    const insertPart = d1.prepare(
       'INSERT INTO "Part" ("id", "jobId", "name", "sku", "quantity", "unitPrice", "financialUnitStatus", "createdAt")' +
       ' SELECT ?, ?, ?, ?, ?, ?, ?, ?' +
-      ' WHERE EXISTS (SELECT 1 FROM "Job" WHERE "id" = ? AND "status" = \'REPAIRING\')' +
+      ' WHERE EXISTS (SELECT 1 FROM "Job" WHERE "id" = ? AND "status" = \'REPAIRING\' AND "updatedAt" = ?)' +
       ' AND NOT EXISTS (SELECT 1 FROM "Invoice" WHERE "jobId" = ?)'
-    ).bind(id, input.jobId, input.name, input.sku, input.quantity, input.unitPrice, "VERIFIED_IRR", now.toISOString(), input.jobId, input.jobId);
+    ).bind(id, input.jobId, input.name, input.sku, input.quantity, input.unitPrice, "VERIFIED_IRR", now.toISOString(), input.jobId, now.toISOString(), input.jobId);
     try {
-      await d1.batch([statement, assertOneChange(d1)]);
+      await d1.batch([touchJob, assertOneChange(d1), insertPart, assertOneChange(d1)]);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/malformed json|not-json/i.test(message)) throw new JobPartMutationConflictError();
@@ -81,13 +85,17 @@ export async function addJobPartBeforeInvoice(db: PrismaClient, input: NewJobPar
 export async function removeJobPartBeforeInvoice(db: PrismaClient, jobId: string, partId: string) {
   const d1 = await getD1Binding();
   if (d1) {
-    const statement = d1.prepare(
+    const touchJob = d1.prepare(
+      'UPDATE "Job" SET "updatedAt" = ? WHERE "id" = ? AND "status" = \'REPAIRING\'' +
+      ' AND NOT EXISTS (SELECT 1 FROM "Invoice" WHERE "jobId" = ?)'
+    ).bind(new Date().toISOString(), jobId, jobId);
+    const deletePart = d1.prepare(
       'DELETE FROM "Part" WHERE "id" = ? AND "jobId" = ?' +
       ' AND EXISTS (SELECT 1 FROM "Job" WHERE "id" = ? AND "status" = \'REPAIRING\')' +
       ' AND NOT EXISTS (SELECT 1 FROM "Invoice" WHERE "jobId" = ?)'
     ).bind(partId, jobId, jobId, jobId);
     try {
-      await d1.batch([statement, assertOneChange(d1)]);
+      await d1.batch([touchJob, assertOneChange(d1), deletePart, assertOneChange(d1)]);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/malformed json|not-json/i.test(message)) throw new JobPartMutationConflictError();
