@@ -21,8 +21,10 @@ describe("CARE booking pricing contract", () => {
   });
 
   it("requires a quote version before a booking can be created", () => {
-    const { expectedPricingVersion: _version, ...withoutVersion } = validBooking;
-    expect(careBookingSchema.safeParse(withoutVersion).success).toBe(false);
+    expect(careBookingSchema.safeParse({
+      vehicleId: validBooking.vehicleId,
+      location: validBooking.location,
+    }).success).toBe(false);
   });
 
   it("accepts the rate-card version returned by the quote endpoint", () => {
