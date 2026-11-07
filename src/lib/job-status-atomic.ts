@@ -66,7 +66,7 @@ function assertRoleTransition(input: AtomicJobStatusInput) {
   if (input.updates.customerApproved !== undefined && !isCustomerActor) {
     throw new JobStatusConflictError();
   }
-  if (input.currentStatus === "WAITING_APPROVAL" && input.nextStatus === "COMPLETED") {
+  if (input.nextStatus === "COMPLETED" && input.currentStatus !== "REPAIRING") {
     throw new JobStatusConflictError();
   }
 
