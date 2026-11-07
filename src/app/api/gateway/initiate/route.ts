@@ -63,7 +63,9 @@ export async function POST(req: Request) {
       existingAttempt.userId !== session.userId ||
       existingAttempt.purpose !== "vip" ||
       existingAttempt.targetPlanId !== plan.id ||
-      Number(existingAttempt.amount) !== amount ||
+      !isSafeStoredIrrAmount(existingAttempt.amount) ||
+      Number(existingAttempt.amount) <= 0 ||
+      Number(existingAttempt.amount) > 100_000_000 ||
       existingAttempt.currency !== "IRR" ||
       existingAttempt.financialUnitStatus !== "VERIFIED_IRR" ||
       existingAttempt.status === "FAILED" ||
@@ -77,6 +79,7 @@ export async function POST(req: Request) {
   const code = `PG-${crypto.randomUUID()}`;
   const referenceId = `SIM-${crypto.randomUUID()}`;
   let log;
+  let reused = false;
   try {
     log = await db.paymentGatewayLog.create({
     data: {
@@ -104,7 +107,9 @@ export async function POST(req: Request) {
       racedAttempt.userId !== session.userId ||
       racedAttempt.purpose !== "vip" ||
       racedAttempt.targetPlanId !== plan.id ||
-      Number(racedAttempt.amount) !== amount ||
+      !isSafeStoredIrrAmount(racedAttempt.amount) ||
+      Number(racedAttempt.amount) <= 0 ||
+      Number(racedAttempt.amount) > 100_000_000 ||
       racedAttempt.currency !== "IRR" ||
       racedAttempt.financialUnitStatus !== "VERIFIED_IRR" ||
       racedAttempt.status === "FAILED" ||
@@ -113,9 +118,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Idempotency key conflict", code: "IDEMPOTENCY_KEY_CONFLICT" }, { status: 409 });
     }
     log = racedAttempt;
+    reused = true;
   }
 
-  return NextResponse.json({ ok: true, code: log.code, referenceId: log.referenceId, amount: Number(log.amount), currency: "IRR", purpose: "vip", planId: plan.id, reused: false });
+  return NextResponse.json({ ok: true, code: log.code, referenceId: log.referenceId, amount: Number(log.amount), currency: "IRR", purpose: "vip", planId: plan.id, reused });
 }
 
 function initiationResponse(log: { code: string; referenceId: string | null; amount: unknown }, planId: string) {
