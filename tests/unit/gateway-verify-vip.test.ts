@@ -8,6 +8,11 @@ const mockGatewayUpdate = vi.fn();
 const mockPlanFindUnique = vi.fn();
 const mockPaymentFindUnique = vi.fn();
 const mockPaymentCreate = vi.fn();
+const mockRecordVerifiedPayment = vi.fn();
+
+vi.mock("@/lib/payment-verification-atomic", () => ({
+  recordVerifiedGatewayPaymentAtomically: (...args: unknown[]) => mockRecordVerifiedPayment(...args),
+}));
 
 vi.mock("@/lib/api-helpers", () => ({
   requireAuth: (...args: unknown[]) => mockRequireAuth(...args),
@@ -69,6 +74,10 @@ describe("VIP gateway simulator verification", () => {
       status: "SUCCEEDED",
       financialUnitStatus: "VERIFIED_IRR",
     });
+    mockRecordVerifiedPayment.mockResolvedValue("payment-1");
+    mockPaymentFindUnique.mockImplementation(async ({ where }: { where: { gatewayLogId?: string; id?: string } }) =>
+      where.id ? { id: "payment-1", code: "PAY-PG-test", userId: "customer-1", amount: 100_000, currency: "IRR", status: "SUCCEEDED", financialUnitStatus: "VERIFIED_IRR" } : null
+    );
     mockGatewayUpdate.mockResolvedValue({});
   });
 
@@ -79,13 +88,12 @@ describe("VIP gateway simulator verification", () => {
     expect(body.paymentId).toBe("payment-1");
     expect(body.amount).toBe(100_000);
 
-    const createArgs = mockPaymentCreate.mock.calls[0][0];
-    expect(createArgs.data.userId).toBe("customer-1");
-    expect(createArgs.data.amount).toBe(100_000);
-    expect(createArgs.data.gatewayLogId).toBe("gateway-1");
-    expect(mockGatewayUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: "gateway-1" },
-      data: expect.objectContaining({ status: "VERIFIED", paymentId: "payment-1" }),
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
+    expect(mockRecordVerifiedPayment).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      gatewayLogId: "gateway-1",
+      userId: "customer-1",
+      amount: 100_000,
+      targetPlanId: "plan-1",
     }));
   });
 
@@ -146,6 +154,9 @@ describe("VIP gateway simulator verification", () => {
     const response = await POST(request({ code: "PG-test", otp: "1234" }));
     expect(response.status).toBe(200);
     expect(mockPaymentCreate).not.toHaveBeenCalled();
-    expect(mockGatewayUpdate).toHaveBeenCalled();
+    expect(mockRecordVerifiedPayment).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      gatewayLogId: "gateway-1",
+      paymentId: "payment-1",
+    }));
   });
 });
