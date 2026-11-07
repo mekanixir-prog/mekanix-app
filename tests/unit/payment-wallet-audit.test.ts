@@ -39,6 +39,7 @@ import { NextResponse } from "next/server";
 const mockInvoiceFindUnique = vi.fn();
 const mockPaymentFindUnique = vi.fn();
 const mockPaymentCreate = vi.fn();
+const mockRecordVerifiedGatewayPayment = vi.fn();
 const mockPaymentUpdate = vi.fn();
 const mockInvoiceUpdateMany = vi.fn();
 const mockJobUpdateMany = vi.fn();
@@ -63,6 +64,10 @@ const mockUserVipSubscriptionUpdateMany = vi.fn();
 const mockUserVipSubscriptionCreate = vi.fn();
 const mockUserVipSubscriptionFindUnique = vi.fn();
 const mockCreateVipSubscriptionAtomically = vi.fn();
+
+vi.mock("@/lib/payment-verification-atomic", () => ({
+  recordVerifiedGatewayPaymentAtomically: (...args: any[]) => mockRecordVerifiedGatewayPayment(...args),
+}));
 
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: vi.fn(async () => ({
@@ -442,36 +447,29 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
       targetPlanId: "plan-1",
       verifiedAt: null,
     });
-    mockPaymentFindUnique.mockResolvedValue(null);
+    mockPaymentFindUnique.mockReset();
+    mockPaymentFindUnique.mockImplementation(async ({ where }: any) => where?.id ? existingPayment : null);
     mockPaymentCreate.mockResolvedValue(existingPayment);
+    mockRecordVerifiedGatewayPayment.mockResolvedValue("pay-1");
     mockPaymentGatewayLogUpdate.mockResolvedValue({});
   });
 
-  it("creates one payment keyed by gatewayLogId and then marks the log verified", async () => {
+  it("atomically persists one payment, verified gateway link, and outbox event", async () => {
     const res = await verifyPOST(makePostRequest("http://localhost/api/gateway/verify", {
       code: "PG-7001",
       otp: "1234",
     }));
 
     expect(res.status).toBe(200);
-    expect(mockPaymentCreate).toHaveBeenCalledTimes(1);
-    expect(mockPaymentCreate.mock.calls[0][0].data).toMatchObject({
-      userId: "user-1",
-      amount: 100_000,
-      status: "SUCCEEDED",
-      financialUnitStatus: "VERIFIED_IRR",
-      gatewayLogId: "log-1",
-    });
-    expect(mockPaymentGatewayLogUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: "log-1" },
-      data: expect.objectContaining({ status: "VERIFIED", paymentId: "pay-1" }),
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
+    expect(mockRecordVerifiedGatewayPayment).toHaveBeenCalledTimes(1);
+    expect(mockRecordVerifiedGatewayPayment).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      gatewayLogId: "log-1", userId: "user-1", amount: 100_000, targetPlanId: "plan-1",
     }));
   });
 
   it("replays the same successful payment instead of rejecting or creating a duplicate", async () => {
-    mockPaymentFindUnique
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(existingPayment);
+    mockPaymentFindUnique.mockImplementation(async () => existingPayment);
 
     const req = () => makePostRequest("http://localhost/api/gateway/verify", {
       code: "PG-7001",
@@ -483,16 +481,14 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     expect((await second.json()).alreadyVerified).toBe(true);
-    expect(mockPaymentCreate).toHaveBeenCalledTimes(1);
+    expect(mockRecordVerifiedGatewayPayment).toHaveBeenCalledTimes(2);
   });
 
   it("recovers when Payment creation succeeded but gateway-log linking failed", async () => {
-    mockPaymentFindUnique
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(existingPayment);
-    mockPaymentGatewayLogUpdate
+    mockPaymentFindUnique.mockImplementation(async ({ where }: any) => where?.id ? existingPayment : null);
+    mockRecordVerifiedGatewayPayment
       .mockRejectedValueOnce(new Error("temporary database failure"))
-      .mockResolvedValueOnce({});
+      .mockResolvedValueOnce("pay-1");
 
     const req = () => makePostRequest("http://localhost/api/gateway/verify", {
       code: "PG-7001",
@@ -503,21 +499,12 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
     const retry = await verifyPOST(req());
 
     expect(retry.status).toBe(200);
-    expect(mockPaymentCreate).toHaveBeenCalledTimes(1);
-    expect(mockPaymentGatewayLogUpdate).toHaveBeenCalledTimes(2);
+    expect(mockRecordVerifiedGatewayPayment).toHaveBeenCalledTimes(2);
   });
 
   it("handles concurrent callbacks through the database unique constraint", async () => {
-    mockPaymentFindUnique
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(existingPayment);
-    mockPaymentCreate
-      .mockResolvedValueOnce(existingPayment)
-      .mockRejectedValueOnce({
-        code: "P2002",
-        message: "Unique constraint failed on gatewayLogId",
-      });
+    mockPaymentFindUnique.mockImplementation(async ({ where }: any) => where?.id ? existingPayment : null);
+    mockRecordVerifiedGatewayPayment.mockResolvedValue("pay-1");
 
     const req = () => makePostRequest("http://localhost/api/gateway/verify", {
       code: "PG-7001",
@@ -526,8 +513,7 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
     const results = await Promise.all([verifyPOST(req()), verifyPOST(req())]);
 
     expect(results.map((r) => r.status)).toEqual([200, 200]);
-    expect(mockPaymentCreate).toHaveBeenCalledTimes(2);
-    expect(mockPaymentGatewayLogUpdate).toHaveBeenCalledTimes(2);
+    expect(mockRecordVerifiedGatewayPayment).toHaveBeenCalledTimes(2);
   });
 
   it("recovers a legacy VERIFIED log only when its paymentId identifies the existing successful payment", async () => {
@@ -693,6 +679,9 @@ describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
 // ──────────────────────────────────────────────────────────────────────────
 describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", () => {
   beforeEach(() => {
+    // Clear one-time mock queues left by the gateway-verification cases above.
+    mockPaymentFindUnique.mockReset();
+    mockPaymentGatewayLogFindUnique.mockReset();
     mockRequireAuth.mockResolvedValue({
       userId: "user-1",
       role: "CUSTOMER",
