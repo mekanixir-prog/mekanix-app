@@ -89,7 +89,12 @@ export function normalizeVehicleAssetClass(vehicleType: string): AssetClass {
 export async function getPricingRateCard(): Promise<PricingRateCard> {
   const db = await getDbForLib();
   const row = await db.platformSetting.findUnique({ where: { key: PRICING_RATE_CARD_KEY } });
-  if (!row) return DEFAULT_PRICING_RATE_CARD;
+  if (!row) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("No persisted owner-approved IRR rate card is configured");
+    }
+    return DEFAULT_PRICING_RATE_CARD;
+  }
   let parsed: unknown;
   try { parsed = JSON.parse(row.value); } catch { throw new Error("نرخ‌نامه ذخیره‌شده خراب است؛ محاسبه قیمت متوقف شد"); }
   if (!isRecord(parsed) || !isRecord(parsed.current)) throw new Error("ساختار نرخ‌نامه ذخیره‌شده نامعتبر است");
