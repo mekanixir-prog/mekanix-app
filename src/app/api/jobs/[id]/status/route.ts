@@ -68,7 +68,7 @@ function isAllowedTransition(
   // Special: customer setting customerApproved=true (approve repair)
   if (actsAsCustomer) {
     if (customerApproved === true) {
-      return currentStatus === "WAITING_APPROVAL";
+      return currentStatus === "WAITING_APPROVAL" && nextStatus === currentStatus;
     }
     if (nextStatus === "CANCELLED") {
       return CUSTOMER_CANCEL_FROM.includes(currentStatus as Status);
@@ -101,7 +101,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "بدنه درخواست نامعتبر است" }, { status: 400 });
+  }
   const { status, ...extra } = body;
+  const hasCustomerApproval = Object.prototype.hasOwnProperty.call(extra, "customerApproved");
+  if (hasCustomerApproval && extra.customerApproved !== true) {
+    return NextResponse.json(
+      { error: "تأیید مشتری باید با مقدار Boolean واقعی true ارسال شود", code: "CUSTOMER_APPROVAL_INVALID" },
+      { status: 400 },
+    );
+  }
 
   // Load the current job so we can validate the transition
   const db = await getDbForLib();
@@ -124,7 +134,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // For technicians, ensure they are the ASSIGNED technician (requireJobParticipant already checked)
   // For customers, ensure they own the request (requireJobParticipant already checked)
 
-  const customerApproved = extra.customerApproved != null ? Boolean(extra.customerApproved) : undefined;
+  const customerApproved = hasCustomerApproval ? true : undefined;
 
   // If neither status nor customerApproved is provided, nothing to do
   if (!status && customerApproved === undefined) {
