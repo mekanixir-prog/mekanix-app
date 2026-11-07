@@ -17,10 +17,6 @@ export function CareDetail() {
     const amount = safeInteger(value);
     return amount === null ? "—" : `${formatTomanFromIrr(amount, locale)} ${isFa ? "تومان" : "Toman"}`;
   };
-  const moneyToman = (value: unknown) => {
-    const amount = safeInteger(value);
-    return amount === null ? "—" : `${new Intl.NumberFormat(locale).format(amount)} ${isFa ? "تومان" : "Toman"}`;
-  };
   const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -103,11 +99,11 @@ export function CareDetail() {
               <div className="mt-2 flex items-center justify-between">
                 <div className="text-sm">
                   <span className="text-muted-foreground">{isFa ? "قطعه:" : "Part:"} </span>
-                  <span className="font-medium">{moneyToman(Number(ap.partPrice) * Number(ap.quantity))}</span>
+                  <span className="font-medium">{moneyIrr(Number(ap.partPrice) * Number(ap.quantity))}</span>
                   <span className="ms-3 text-muted-foreground">{isFa ? "اجرت:" : "Labor:"} </span>
-                  <span className="font-medium">{moneyToman(ap.laborPrice)}</span>
+                  <span className="font-medium">{moneyIrr(ap.laborPrice)}</span>
                 </div>
-                <span className="font-display text-lg font-bold text-amber">{moneyToman(ap.totalPrice)}</span>
+                <span className="font-display text-lg font-bold text-amber">{moneyIrr(ap.totalPrice)}</span>
               </div>
               <div className="mt-3 flex gap-2">
                 <Button size="sm" onClick={() => handleApprove(ap.id)} className="bg-emerald-600 text-white hover:bg-emerald-700">
