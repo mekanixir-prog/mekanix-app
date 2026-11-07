@@ -94,7 +94,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       where: { id },
       include: { job: true, payment: true },
     });
-    return NextResponse.json(fresh);
+    return NextResponse.json(fresh ? maskInvoiceFinancialData(fresh as unknown as Record<string, unknown>) : null);
   }
 
   const updated = await db.invoice.update({
