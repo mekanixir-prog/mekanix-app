@@ -138,7 +138,7 @@ describe("admin withdrawal transitions", () => {
       walletTransaction: { create: vi.fn().mockResolvedValue({}) },
       walletLedger: { create: vi.fn().mockRejectedValue(new Error("payout ledger failed")) },
       wallet: {
-        findUnique: vi.fn().mockResolvedValue({ financialUnitStatus: "VERIFIED_IRR", balance: 1000 }),
+        findUnique: vi.fn().mockResolvedValue({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: 0 }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
     };
