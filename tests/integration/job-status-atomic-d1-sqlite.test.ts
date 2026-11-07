@@ -51,12 +51,16 @@ function makeD1() {
       "laborTotal" REAL NOT NULL,
       "partsTotal" REAL NOT NULL,
       "travelFee" REAL NOT NULL,
+      "inspectionFee" REAL NOT NULL DEFAULT 0,
+      "emergencyFee" REAL NOT NULL DEFAULT 0,
       "subtotal" REAL NOT NULL,
       "taxRate" REAL NOT NULL,
       "taxTotal" REAL NOT NULL,
       "discount" REAL NOT NULL,
       "total" REAL NOT NULL,
       "currency" TEXT NOT NULL,
+      "pricingVersion" TEXT,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "status" TEXT NOT NULL,
       "notes" TEXT NOT NULL,
       "createdAt" TEXT NOT NULL,
@@ -100,19 +104,23 @@ const invoice = {
   id: "invoice-1",
   code: "INV-123456789ABC",
   jobId: "job-1",
-  laborHours: 1.5,
-  laborRate: 15,
-  laborTotal: 22.5,
-  partsTotal: 10,
-  travelFee: 3,
-  subtotal: 35.5,
-  taxRate: 0.09,
-  taxTotal: 3.195,
+  laborHours: 1,
+  laborRate: 18_000_000,
+  laborTotal: 18_000_000,
+  partsTotal: 10_000_000,
+  travelFee: 5_000_000,
+  inspectionFee: 6_000_000,
+  emergencyFee: 0,
+  subtotal: 39_000_000,
+  taxRate: 0,
+  taxTotal: 0,
   discount: 0,
-  total: 38.695,
+  total: 39_000_000,
   currency: "IRR",
+  pricingVersion: "rate-card-2",
+  financialUnitStatus: "VERIFIED_IRR" as const,
   status: "SENT" as const,
-  notes: "Parts covered by 6-month warranty.",
+  notes: "Fixed-fee rate card rate-card-2; warranty terms follow the approved service agreement.",
 };
 
 describe("job status D1 SQLite transaction", () => {
@@ -181,9 +189,9 @@ describe("job status D1 SQLite transaction", () => {
 
   it("rolls back WAITING_APPROVAL when a job invoice already exists", async () => {
     sqlite.prepare(
-      'INSERT INTO "Invoice" ("id", "code", "jobId", "laborHours", "laborRate", "laborTotal", "partsTotal", "travelFee", "subtotal", "taxRate", "taxTotal", "discount", "total", "currency", "status", "notes", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO "Invoice" ("id", "code", "jobId", "laborHours", "laborRate", "laborTotal", "partsTotal", "travelFee", "inspectionFee", "emergencyFee", "subtotal", "taxRate", "taxTotal", "discount", "total", "currency", "pricingVersion", "financialUnitStatus", "status", "notes", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(
-      "old-invoice", "INV-OLD", "job-1", 1, 15, 15, 0, 3, 18, 0.09, 1.62, 0, 19.62, "IRR", "SENT", "existing", "2026-11-01T00:00:00.000Z", "2026-11-01T00:00:00.000Z",
+      "old-invoice", "INV-OLD", "job-1", 1, 1_500_000, 1_500_000, 0, 3_000_000, 600_000, 0, 5_100_000, 0, 0, 0, 5_100_000, "IRR", "rate-card-1", "VERIFIED_IRR", "SENT", "existing", "2026-11-01T00:00:00.000Z", "2026-11-01T00:00:00.000Z",
     );
 
     await expect(transitionJobStatusAtomically({} as any, {
