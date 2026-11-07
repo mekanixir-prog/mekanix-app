@@ -91,9 +91,12 @@ describe("atomic verified gateway payment persistence", () => {
       id: "payment-legacy", userId: "customer-1", amount: 100_000, currency: "IRR",
       status: "SUCCEEDED", financialUnitStatus: "VERIFIED_IRR", gatewayLogId: null,
     };
-    mockPaymentFindUnique.mockImplementation(async ({ where }: { where: { gatewayLogId?: string; id?: string } }) =>
-      where.id ? legacy : { ...legacy, id: "payment-legacy", gatewayLogId: "gateway-1" }
-    );
+    let gatewayLookupCount = 0;
+    mockPaymentFindUnique.mockImplementation(async ({ where }: { where: { gatewayLogId?: string; id?: string } }) => {
+      if (where.id) return legacy;
+      gatewayLookupCount += 1;
+      return gatewayLookupCount === 1 ? null : { ...legacy, gatewayLogId: "gateway-1" };
+    });
     const result = await recordVerifiedGatewayPaymentAtomically(makeDb(), {
       ...input, paymentId: "payment-legacy", legacyPaymentId: "payment-legacy",
     });
