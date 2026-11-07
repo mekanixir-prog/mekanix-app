@@ -36,7 +36,8 @@ Emergency surcharge is 30% of fixed labor only. Parts are separately quoted and 
 - No ambiguous legacy seed values are reused or re-labelled. Existing historical financial records remain unverified.
 - A new rate version applies only to new price calculations; existing orders retain their frozen PricingSnapshot.
 - This baseline is a proposal, not an approved production tariff. Production remains disabled until the owner reviews the actual rates and deliberately enables the approval gate.
-- Extra-distance billing uses the earliest job-scoped tracking point. If no job tracking point exists, only the base dispatch fee is charged; no unverified extra kilometres are estimated.
+- Customer CARE quote is served by authenticated POST /api/care/bookings/quote, checks vehicle ownership, and uses the same rate-card engine as booking. The booking request carries the quoted rate-card version; if it changes before submission, booking returns 409 and requires a refreshed quote.
+- Extra-distance billing uses the earliest job-scoped tracking point. The current road-distance estimate is Haversine straight-line distance multiplied by 1.3 and rounded up; it is not a routing-provider measurement. This estimation method needs explicit business approval or replacement with a verified routing provider before extra-kilometre charges are enabled in production. If no job tracking point exists, only the base dispatch fee is charged.
 - Admin editor: /admin-panel/pricing. API: GET/PUT /api/admin-panel/pricing. Storage: PlatformSetting key mekanix.pricing.rate-card.v1. Every update is audited.
 - Production calculation remains fail-closed until MEKANIX_PRICING_IRR_APPROVED=true; live payment, commission settlement, tax, and VIP activation remain separate release gates.
 
