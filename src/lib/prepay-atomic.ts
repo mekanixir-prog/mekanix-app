@@ -134,7 +134,14 @@ export async function recordPrepayWithPrisma(
     });
 
     const walletUpdate = await tx.wallet.updateMany({
-      where: { id: wallet.id, financialUnitStatus: "VERIFIED_IRR" },
+      // Compare-and-set the pending balance used to calculate ledger
+      // before/after values. Concurrent wallet writes must retry, not commit
+      // a ledger sequence based on a stale balance snapshot.
+      where: {
+        id: wallet.id,
+        financialUnitStatus: "VERIFIED_IRR",
+        pendingBalance: wallet.pendingBalance,
+      },
       data: {
         pendingBalance: { increment: input.net },
         totalEarned: { increment: input.gross },
