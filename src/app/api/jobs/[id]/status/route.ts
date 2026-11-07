@@ -110,7 +110,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       requestId: true,
       code: true,
       parts: { select: { unitPrice: true, quantity: true } },
-      technician: { select: { hourlyRate: true, travelFeeBase: true } },
+      request: { select: { category: true, urgency: true, lat: true, lng: true, vehicle: { select: { type: true } } } },
+      tracking: { orderBy: { ts: "asc" }, take: 1, select: { lat: true, lng: true } },
       invoice: { select: { id: true } },
     },
   });
@@ -147,62 +148,83 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "فقط مکانیک مسئول این کار مجاز است" }, { status: 403 });
   }
 
-  if (status === "WAITING_APPROVAL" && extra.laborHours !== undefined &&
-      (typeof extra.laborHours !== "number" || !Number.isFinite(extra.laborHours) ||
-       extra.laborHours <= 0 || extra.laborHours > 24)) {
-    return NextResponse.json({ error: "مدت کار باید عددی بین ۰ تا ۲۴ ساعت باشد" }, { status: 400 });
-  }
+  // Legacy laborHours input is ignored: labor is priced as a fixed service unit.
 
   let invoiceInput: AtomicInvoiceInput | null = null;
   if (status === "WAITING_APPROVAL" && !existing.invoice) {
-    const laborHours = extra.laborHours ?? 1.5;
-    const laborRate = Number(existing.technician.hourlyRate);
-    const travelFee = Number(existing.technician.travelFeeBase);
+    if (!existing.request?.vehicle?.type) {
+      return NextResponse.json({ error: "نوع وسیله برای محاسبه تعرفه مشخص نیست", code: "VEHICLE_RATE_CLASS_REQUIRED" }, { status: 409 });
+    }
+    if (!areJobPartPriceSourcesVerified(existing.parts.length > 0)) {
+      return NextResponse.json(
+        { error: "واحد قیمت قطعات هنوز به ریال تطبیق داده نشده است؛ صدور پیش‌فاکتور پس از تأیید سوابق قطعات فعال می‌شود", code: "JOB_PART_CURRENCY_UNVERIFIED" },
+        { status: 409 },
+      );
+    }
     const partsTotal = existing.parts.reduce((sum, part) => {
       const unitPrice = Number(part.unitPrice);
       const quantity = Number(part.quantity);
-      if (!Number.isFinite(unitPrice) || unitPrice < 0 ||
-          !Number.isSafeInteger(quantity) || quantity < 0) {
-        return Number.NaN;
-      }
-      return sum + unitPrice * quantity;
+      if (!Number.isSafeInteger(unitPrice) || unitPrice < 0 ||
+          !Number.isSafeInteger(quantity) || quantity < 0) return Number.NaN;
+      const next = sum + unitPrice * quantity;
+      return Number.isSafeInteger(next) ? next : Number.NaN;
     }, 0);
-
-    if (!Number.isFinite(laborRate) || laborRate < 0 ||
-        !Number.isFinite(travelFee) || travelFee < 0 ||
-        !Number.isFinite(partsTotal) || partsTotal < 0) {
-      return NextResponse.json({ error: "اطلاعات قیمت‌گذاری کار نامعتبر است" }, { status: 409 });
+    if (!Number.isSafeInteger(partsTotal) || partsTotal < 0) {
+      return NextResponse.json({ error: "مبلغ قطعات باید ریال صحیح و تأییدشده باشد", code: "PART_AMOUNT_UNVERIFIED" }, { status: 409 });
     }
 
-    const subtotal = laborHours * laborRate + partsTotal + travelFee;
-    const taxSetting = await db.platformSetting.findUnique({ where: { key: "tax_rate" } });
-    const taxRate = taxSetting?.value == null ? 0.09 : (taxSetting.value.trim() ? Number(taxSetting.value) : Number.NaN);
-    if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 1) {
-      return NextResponse.json({ error: "تنظیمات مالیات نامعتبر است" }, { status: 503 });
+    const serviceCode = serviceCodeFromCategory(existing.request.category);
+    if (!serviceCode) {
+      return NextResponse.json(
+        { error: "دسته خدمت در نرخ‌نامه تعریف نشده است؛ پیش از تأیید برآورد باید خدمت به کد تعرفه متصل شود", code: "SERVICE_RATE_MAPPING_REQUIRED" },
+        { status: 409 },
+      );
     }
-    const taxTotal = subtotal * taxRate;
-    const total = subtotal + taxTotal;
-    if (![subtotal, taxTotal, total].every(Number.isFinite)) {
-      return NextResponse.json({ error: "محاسبه مبلغ فاکتور نامعتبر است" }, { status: 409 });
+    const dispatchOrigin = existing.tracking[0];
+    const travelDistanceKm = dispatchOrigin
+      ? estimateTravelDistanceKm(
+          { lat: dispatchOrigin.lat, lng: dispatchOrigin.lng },
+          { lat: existing.request.lat, lng: existing.request.lng },
+        )
+      : 0;
+
+    let pricing: Awaited<ReturnType<typeof calculatePrice>>;
+    try {
+      pricing = await calculatePrice({
+        vehicleType: existing.request.vehicle.type,
+        serviceCode,
+        laborHours: 0,
+        partsCost: partsTotal,
+        travelDistanceKm,
+        isEmergency: existing.request.urgency === "EMERGENCY",
+      });
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "محاسبه تعرفه ممکن نیست", code: "PRICING_NOT_AVAILABLE" },
+        { status: 409 },
+      );
     }
 
     invoiceInput = {
       id: crypto.randomUUID(),
       code: `INV-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`,
       jobId: id,
-      laborHours,
-      laborRate,
-      laborTotal: laborHours * laborRate,
+      laborHours: 1,
+      laborRate: pricing.labor,
+      laborTotal: pricing.labor,
       partsTotal,
-      travelFee,
-      subtotal,
-      taxRate,
-      taxTotal,
-      discount: 0,
-      total,
+      travelFee: pricing.travel,
+      inspectionFee: pricing.inspection,
+      emergencyFee: pricing.emergency,
+      subtotal: pricing.subtotal,
+      taxRate: pricing.taxRate,
+      taxTotal: pricing.taxTotal,
+      discount: pricing.discount,
+      total: pricing.total,
       currency: "IRR",
+      financialUnitStatus: "VERIFIED_IRR",
       status: "SENT" as const,
-      notes: "Parts covered by 6-month warranty.",
+      notes: `Fixed-fee rate card ${pricing.pricingVersion}; service ${serviceCode}; estimated technician travel ${travelDistanceKm} km. Warranty terms, if applicable, follow the separately approved service agreement.`,
     };
   }
   const holdUntil = status === "COMPLETED"
