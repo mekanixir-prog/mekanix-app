@@ -46,7 +46,7 @@ export interface VehicleMake {
 // Iranian assemblers / manufacturers FIRST, then importers,
 // then major foreign brands commonly seen on Iranian roads.
 
-export const PASSENGER_MAKES: VehicleMake[] = [
+const PASSENGER_MAKES_ALL: VehicleMake[] = [
   // ═══════════ Iranian Manufacturers / Assemblers ═══════════
   {
     make: "ایران خودرو",
@@ -597,6 +597,14 @@ export const PASSENGER_MAKES: VehicleMake[] = [
   { make: "Jaguar", country: "انگلیس", models: ["XE", "XF", "F-Pace", "E-Pace", "I-Pace"] },
 ];
 
+// Public passenger catalog is filtered at the export boundary so direct
+// imports cannot accidentally re-expose excluded assembler groups.
+export const PASSENGER_MAKES: VehicleMake[] = PASSENGER_MAKES_ALL.filter((make) =>
+  !isExcludedPassengerMake(make.make) &&
+  !isExcludedPassengerMake(make.makeEn) &&
+  !isExcludedPassengerMake(make.assembler)
+);
+
 // ─── Heavy Machinery & Commercial (ماشین‌آلات سنگین) ───
 export const HEAVY_MAKES: VehicleMake[] = [
   // Trucks
@@ -694,12 +702,7 @@ export const HEAVY_MAKES: VehicleMake[] = [
 
 // Get makes for a given mode
 export function getMakesForMode(mode: "passenger" | "heavy"): VehicleMake[] {
-  if (mode === "heavy") return HEAVY_MAKES;
-  return PASSENGER_MAKES.filter((make) =>
-    !isExcludedPassengerMake(make.make) &&
-    !isExcludedPassengerMake(make.makeEn) &&
-    !isExcludedPassengerMake(make.assembler)
-  );
+  return mode === "passenger" ? PASSENGER_MAKES : HEAVY_MAKES;
 }
 
 // Get only Iranian assemblers/importers (for the catalog page)
