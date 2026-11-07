@@ -251,12 +251,14 @@ describe("job status approval estimate uses the fixed rate card", () => {
   });
 
   it("allows the technician to enter pre-estimate preparation after diagnosis", async () => {
-    mocks.jobFindUnique.mockReset().mockResolvedValueOnce({
-      ...beforeJob,
-      status: "DIAGNOSING",
-      invoice: null,
-      customerApproved: false,
-    });
+    mocks.jobFindUnique.mockReset()
+      .mockResolvedValueOnce({
+        ...beforeJob,
+        status: "DIAGNOSING",
+        invoice: null,
+        customerApproved: false,
+      })
+      .mockResolvedValueOnce(updatedJob);
 
     const response = await PATCH(request({ status: "REPAIRING" }), {
       params: Promise.resolve({ id: "job-1" }),
