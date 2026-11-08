@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
-import { maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { markFinancialRecordUnverifiedWhenFieldsChanged, maskFinancialFields, TECHNICIAN_FEE_FIELDS } from "@/lib/money/financial-read-mask";
 
 // Public-facing technician fields — never expose sensitive data.
 const PUBLIC_USER_FIELDS = {
@@ -97,7 +97,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const updated = await (await getDbForLib()).technician.update({
     where: { id },
-    data: safe as any,
+    data: markFinancialRecordUnverifiedWhenFieldsChanged(safe, TECHNICIAN_FEE_FIELDS) as any,
     include: {
       user: { select: PUBLIC_USER_FIELDS },
       specialties: true,
