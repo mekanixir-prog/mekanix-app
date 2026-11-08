@@ -44,6 +44,47 @@ describe("atomic prepay recording", () => {
     });
   });
 
+
+  it("promotes a read-created empty unverified wallet only after a zero-history guard", async () => {
+    const tx = {
+      job: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      wallet: {
+        upsert: vi.fn().mockResolvedValue({
+          id: "wallet-1", balance: 0, pendingBalance: 0,
+          totalEarned: 0, totalCommission: 0, totalWithdrawn: 0,
+          financialUnitStatus: "UNVERIFIED",
+        }),
+        updateMany: vi.fn()
+          .mockResolvedValueOnce({ count: 1 })
+          .mockResolvedValueOnce({ count: 1 }),
+      },
+      walletTransaction: { create: vi.fn().mockResolvedValue({}) },
+      walletLedger: { create: vi.fn().mockResolvedValue({}) },
+    };
+    const db = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)),
+    } as any;
+
+    await expect(recordPrepayWithPrisma(db, input)).resolves.toBe(true);
+    expect(tx.wallet.updateMany).toHaveBeenNthCalledWith(1, {
+      where: {
+        id: "wallet-1",
+        financialUnitStatus: "UNVERIFIED",
+        balance: 0,
+        pendingBalance: 0,
+        totalEarned: 0,
+        totalCommission: 0,
+        totalWithdrawn: 0,
+        transactions: { none: {} },
+        ledger: { none: {} },
+        withdrawals: { none: {} },
+      },
+      data: { financialUnitStatus: "VERIFIED_IRR" },
+    });
+    expect(tx.walletTransaction.create).toHaveBeenCalledTimes(2);
+    expect(tx.walletLedger.create).toHaveBeenCalledTimes(2);
+  });
+
   it("does not create financial rows when another request won the job transition", async () => {
     const tx = {
       job: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
@@ -122,11 +163,12 @@ describe("atomic prepay recording", () => {
 
     await expect(recordPrepayWithD1(d1 as any, input)).resolves.toBe(true);
     expect(d1.batch).toHaveBeenCalledTimes(1);
-    expect(d1.batch.mock.calls[0][0]).toHaveLength(15);
-    expect(statements[5].sql).toContain("changes() = 1");
-    expect(statements[4].sql).toContain('"idempotencyKey"');
-    expect(statements[8].sql).toContain("'HOLD'");
-    expect(statements[10].sql).toContain("financialUnitStatus");
+    expect(d1.batch.mock.calls[0][0]).toHaveLength(16);
+    expect(statements[5].sql).toContain('"idempotencyKey"');
+    expect(statements[3].sql).toContain('NOT EXISTS (SELECT 1 FROM "WalletLedger"');
+    expect(statements[4].sql).toContain("financialUnitStatus");
+    expect(statements[9].sql).toContain("'HOLD'");
+    expect(statements[11].sql).toContain("financialUnitStatus");
   });
 
   it("does not report success when the guarded Job update loses a race", async () => {

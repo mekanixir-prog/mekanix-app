@@ -40,14 +40,40 @@ export async function recordPrepayWithPrisma(
 ): Promise<boolean> {
   if (!isValidPrepayInput(input)) return false;
   return db.$transaction(async (tx) => {
-    const wallet = await tx.wallet.upsert({
+    let wallet = await tx.wallet.upsert({
       where: { technicianId: input.technicianId },
       create: { technicianId: input.technicianId, financialUnitStatus: "VERIFIED_IRR" },
       update: {},
-      select: { id: true, balance: true, pendingBalance: true, totalEarned: true, totalCommission: true, financialUnitStatus: true },
+      select: { id: true, balance: true, pendingBalance: true, totalEarned: true, totalCommission: true, totalWithdrawn: true, financialUnitStatus: true },
     });
+
+    // GET may have created an empty UNVERIFIED wallet before the first prepay.
+    // Promote it only with a conditional write proving every aggregate is zero
+    // and no transaction, ledger, or withdrawal history exists.
+    if (wallet.financialUnitStatus === "UNVERIFIED") {
+      const aggregates = [wallet.balance, wallet.pendingBalance, wallet.totalEarned, wallet.totalCommission, wallet.totalWithdrawn];
+      if (!aggregates.every(isSafeStoredIrrAmount) || aggregates.some((value) => Number(value) !== 0)) return false;
+      const promotion = await tx.wallet.updateMany({
+        where: {
+          id: wallet.id,
+          financialUnitStatus: "UNVERIFIED",
+          balance: 0,
+          pendingBalance: 0,
+          totalEarned: 0,
+          totalCommission: 0,
+          totalWithdrawn: 0,
+          transactions: { none: {} },
+          ledger: { none: {} },
+          withdrawals: { none: {} },
+        },
+        data: { financialUnitStatus: "VERIFIED_IRR" },
+      });
+      if (promotion.count !== 1) return false;
+      wallet = { ...wallet, financialUnitStatus: "VERIFIED_IRR" };
+    }
+
     if (wallet.financialUnitStatus !== "VERIFIED_IRR" ||
-        ![wallet.balance, wallet.pendingBalance, wallet.totalEarned, wallet.totalCommission].every(isSafeStoredIrrAmount)) return false;
+        ![wallet.balance, wallet.pendingBalance, wallet.totalEarned, wallet.totalCommission, wallet.totalWithdrawn].every(isSafeStoredIrrAmount)) return false;
     const nextAggregates = [
       Number(wallet.pendingBalance) + input.net,
       Number(wallet.totalEarned) + input.gross,
@@ -188,6 +214,15 @@ export async function recordPrepayWithD1(
       "SELECT 1 FROM \"Job\" WHERE \"id\" = ? AND \"prepayPaid\" = 1 AND \"prepayPaidAt\" = ?" +
       ") ON CONFLICT(\"technicianId\") DO NOTHING"
     ).bind(walletId, input.technicianId, at, at, input.jobId, at),
+    d1.prepare(
+      "UPDATE \"Wallet\" SET \"financialUnitStatus\" = 'VERIFIED_IRR' " +
+      "WHERE \"technicianId\" = ? AND \"financialUnitStatus\" = 'UNVERIFIED' " +
+      "AND \"balance\" = 0 AND \"pendingBalance\" = 0 AND \"totalEarned\" = 0 " +
+      "AND \"totalCommission\" = 0 AND \"totalWithdrawn\" = 0 " +
+      "AND NOT EXISTS (SELECT 1 FROM \"WalletTransaction\" WHERE \"walletId\" = \"Wallet\".\"id\") " +
+      "AND NOT EXISTS (SELECT 1 FROM \"WalletLedger\" WHERE \"walletId\" = \"Wallet\".\"id\") " +
+      "AND NOT EXISTS (SELECT 1 FROM \"WithdrawalRequest\" WHERE \"walletId\" = \"Wallet\".\"id\")"
+    ).bind(input.technicianId),
     assertVerifiedWallet(),
 
     d1.prepare(
