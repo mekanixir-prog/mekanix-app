@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
-import { isSafeStoredIrrAmount } from "@/lib/money/financial-read-mask";
+import { sumVerifiedPositiveIrrAmounts } from "@/lib/money/financial-read-mask";
 
 // GET /api/dashboard — platform-wide administrative analytics.
 // Admin-only: the response includes financial aggregates, technician-level
@@ -34,10 +34,13 @@ export async function GET(req: Request) {
         },
       }),
       db.job.count({ where: { status: "COMPLETED", completedAt: { gte: since } } }),
-      db.payment.findMany({ where: { status: "SUCCEEDED", currency: "IRR", financialUnitStatus: "VERIFIED_IRR", createdAt: { gte: since } } }),
+      db.payment.findMany({
+        where: { status: "SUCCEEDED", currency: "IRR", financialUnitStatus: "VERIFIED_IRR", createdAt: { gte: since } },
+        select: { amount: true },
+      }),
     ]);
 
-  const revenue30d = payments30d.reduce((s, p) => s + (isSafeStoredIrrAmount(p.amount) ? Number(p.amount) : 0), 0);
+  const revenue30d = sumVerifiedPositiveIrrAmounts(payments30d.map((payment) => payment.amount));
 
   const techs = await db.technician.findMany({ select: { responseMins: true } });
   const avgResponseMins = techs.length
@@ -49,15 +52,18 @@ export async function GET(req: Request) {
     ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
     : 0;
 
-  const revenueSeries: { date: string; revenue: number; jobs: number }[] = [];
+  const revenueSeries: { date: string; revenue: number | null; jobs: number }[] = [];
   for (let i = 13; i >= 0; i--) {
     const start = new Date(now - (i + 1) * day);
     const end = new Date(now - i * day);
-    const pays = await db.payment.findMany({ where: { status: "SUCCEEDED", currency: "IRR", financialUnitStatus: "VERIFIED_IRR", createdAt: { gte: start, lt: end } } });
+    const pays = await db.payment.findMany({
+      where: { status: "SUCCEEDED", currency: "IRR", financialUnitStatus: "VERIFIED_IRR", createdAt: { gte: start, lt: end } },
+      select: { amount: true },
+    });
     const jobs = await db.job.count({ where: { status: "COMPLETED", completedAt: { gte: start, lt: end } } });
     revenueSeries.push({
       date: end.toISOString().slice(5, 10),
-      revenue: Math.round(pays.reduce((s, p) => s + (isSafeStoredIrrAmount(p.amount) ? Number(p.amount) : 0), 0)),
+      revenue: sumVerifiedPositiveIrrAmounts(pays.map((payment) => payment.amount)),
       jobs,
     });
   }
@@ -68,15 +74,22 @@ export async function GET(req: Request) {
   const cats = await db.serviceRequest.groupBy({ by: ["category"], _count: true });
   const categoryBreakdown = await Promise.all(
     cats.map(async (c) => {
-      const reqs = await db.serviceRequest.findMany({
-        where: { category: c.category },
-        select: { job: { select: { invoice: { select: { total: true, currency: true, financialUnitStatus: true } } } } },
+      // Revenue means successful, verified payments—not merely issued invoice
+      // totals. An unverified or unsafe amount makes this aggregate unavailable.
+      const payments = await db.payment.findMany({
+        where: {
+          status: "SUCCEEDED",
+          currency: "IRR",
+          financialUnitStatus: "VERIFIED_IRR",
+          invoice: { job: { request: { category: c.category } } },
+        },
+        select: { amount: true },
       });
-      const revenue = reqs.reduce(
-        (s, r) => s + (r.job?.invoice?.total != null && r.job.invoice.currency === "IRR" && r.job.invoice.financialUnitStatus === "VERIFIED_IRR" && isSafeStoredIrrAmount(r.job.invoice.total) ? Number(r.job.invoice.total) : 0),
-        0
-      );
-      return { category: c.category, count: c._count, revenue: Math.round(revenue) };
+      return {
+        category: c.category,
+        count: c._count,
+        revenue: sumVerifiedPositiveIrrAmounts(payments.map((payment) => payment.amount)),
+      };
     })
   );
 
@@ -87,10 +100,15 @@ export async function GET(req: Request) {
     allTechs.map(async (t) => {
       const jobCount = await db.job.count({ where: { technicianId: t.id, status: "COMPLETED" } });
       const pays = await db.payment.findMany({
-        where: { status: "SUCCEEDED", currency: "IRR", financialUnitStatus: "VERIFIED_IRR", invoice: { job: { technicianId: t.id } } },
+        where: {
+          status: "SUCCEEDED",
+          currency: "IRR",
+          financialUnitStatus: "VERIFIED_IRR",
+          invoice: { job: { technicianId: t.id } },
+        },
         select: { amount: true },
       });
-      const revenue = Math.round(pays.reduce((s, p) => s + (isSafeStoredIrrAmount(p.amount) ? Number(p.amount) : 0), 0));
+      const revenue = sumVerifiedPositiveIrrAmounts(pays.map((payment) => payment.amount));
       return {
         name: t.user.name,
         jobs: jobCount,
@@ -99,7 +117,11 @@ export async function GET(req: Request) {
       };
     })
   );
-  techPerformance.sort((a, b) => b.revenue - a.revenue);
+  techPerformance.sort((a, b) => {
+    if (a.revenue === null) return b.revenue === null ? 0 : 1;
+    if (b.revenue === null) return -1;
+    return b.revenue - a.revenue;
+  });
 
   const recentJobs = await db.job.findMany({
     take: 8,
@@ -124,7 +146,7 @@ export async function GET(req: Request) {
         techniciansOnline,
         jobsInProgress,
         completedJobs30d,
-        revenue30d: Math.round(revenue30d),
+        revenue30d,
         avgResponseMins,
         customerSatisfaction: Math.round(customerSatisfaction * 10) / 10,
       },
