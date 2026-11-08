@@ -9,6 +9,7 @@ import { maskJobFinancialData } from "@/lib/money/financial-read-mask";
 import { areJobPartPriceSourcesVerified } from "@/lib/money/provenance";
 import { estimateTravelDistanceKm, serviceCodeFromCategory } from "@/lib/job-invoice-pricing";
 import {
+  isAllowedJobStatusTransition,
   type AtomicInvoiceInput,
   JobStatusConflictError,
   transitionJobStatusAtomically,
@@ -28,62 +29,7 @@ const include = {
 // 12-hour hold from job completion before funds become withdrawable
 const HOLD_HOURS = 12;
 
-// ──────────── Job State Machine ────────────
-// Per-role allowed transitions. The current job status must be one of
-// `from[]` for the transition into `to` to be valid for that role.
-
-type Status =
-  | "REQUESTED" | "ACCEPTED" | "EN_ROUTE" | "ARRIVED" | "DIAGNOSING"
-  | "REPAIRING" | "WAITING_APPROVAL" | "COMPLETED" | "CANCELLED" | "REJECTED";
-
-const TECH_TRANSITIONS: { to: Status; from: Status[] }[] = [
-  { to: "ACCEPTED", from: ["REQUESTED"] },
-  { to: "EN_ROUTE", from: ["ACCEPTED"] },
-  { to: "ARRIVED", from: ["EN_ROUTE", "ACCEPTED"] },
-  { to: "DIAGNOSING", from: ["ARRIVED", "EN_ROUTE", "ACCEPTED"] },
-  { to: "REPAIRING", from: ["DIAGNOSING", "WAITING_APPROVAL"] },
-  { to: "WAITING_APPROVAL", from: ["REPAIRING"] },
-  { to: "COMPLETED", from: ["REPAIRING"] },
-  { to: "REJECTED", from: ["REQUESTED"] },
-];
-
-// Customer transitions:
-//  - CANCEL only before technician arrives (REQUESTED, ACCEPTED, EN_ROUTE)
-//  - APPROVE_REPAIR (customerApproved=true) only when WAITING_APPROVAL
-const CUSTOMER_CANCEL_FROM: Status[] = ["REQUESTED", "ACCEPTED", "EN_ROUTE"];
-
-function isAllowedTransition(
-  role: "CUSTOMER" | "TECHNICIAN" | "ADMIN" | "FLEET_MANAGER" | "PARTNER",
-  currentStatus: string,
-  nextStatus: string,
-  customerApproved: boolean | undefined
-): boolean {
-  if (role === "ADMIN") return true;
-
-  // FLEET_MANAGER behaves like a customer for the job-status state machine
-  // (can cancel pre-service and approve repair estimates for fleet vehicles).
-  // PARTNER is read-only and cannot transition anything.
-  const actsAsCustomer = role === "CUSTOMER" || role === "FLEET_MANAGER";
-  if (role === "PARTNER") return false;
-
-  // Special: customer setting customerApproved=true (approve repair)
-  if (actsAsCustomer) {
-    if (customerApproved === true) {
-      return currentStatus === "WAITING_APPROVAL" && nextStatus === currentStatus;
-    }
-    if (nextStatus === "CANCELLED") {
-      return CUSTOMER_CANCEL_FROM.includes(currentStatus as Status);
-    }
-    return false;
-  }
-
-  if (role === "TECHNICIAN") {
-    const rule = TECH_TRANSITIONS.find((t) => t.to === (nextStatus as Status));
-    if (!rule) return false;
-    return rule.from.includes(currentStatus as Status);
-  }
-  return false;
-}
+// The role transition matrix is shared with the atomic Prisma/D1 write boundary.
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await requireAuth(req);
@@ -215,7 +161,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   // Validate state-machine transition
-  const allowed = isAllowedTransition(session.role, existing.status, targetStatus, customerApproved);
+  const allowed = isAllowedJobStatusTransition(session.role, existing.status, targetStatus, customerApproved);
   if (!allowed) {
     return NextResponse.json(
       { error: `انتقال مجاز نیست: ${existing.status} → ${targetStatus} برای نقش ${session.role}` },
