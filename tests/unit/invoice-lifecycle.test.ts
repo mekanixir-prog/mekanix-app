@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   invoiceUpdateMany: vi.fn(),
   jobFindUnique: vi.fn(),
   jobUpdateMany: vi.fn(),
+  transition: vi.fn(),
   taxFindUnique: vi.fn(),
   notificationCreate: vi.fn(),
   messageCreate: vi.fn(),
@@ -20,6 +21,10 @@ vi.mock("@/lib/api-helpers", () => ({ requireAuth: mocks.auth }));
 vi.mock("@/lib/auth", () => ({
   requireJobParticipant: mocks.participant,
   getTechnicianFromSession: mocks.technician,
+}));
+vi.mock("@/lib/job-status-atomic", () => ({
+  JobStatusConflictError: class JobStatusConflictError extends Error {},
+  transitionJobStatusAtomically: mocks.transition,
 }));
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: vi.fn(async () => ({
@@ -95,6 +100,7 @@ beforeEach(() => {
   mocks.invoiceUpdateMany.mockResolvedValue({ count: 1 });
   mocks.jobFindUnique.mockResolvedValue(pricingJob);
   mocks.jobUpdateMany.mockResolvedValue({ count: 1 });
+  mocks.transition.mockResolvedValue(undefined);
   mocks.taxFindUnique.mockResolvedValue(null);
   mocks.notificationCreate.mockResolvedValue({});
   mocks.messageCreate.mockResolvedValue({});
@@ -218,6 +224,63 @@ describe("POST /api/invoices lifecycle", () => {
 });
 
 describe("PATCH /api/invoices/[id] status transitions", () => {
+  it("records customer estimate approval through the atomic job-status writer", async () => {
+    mocks.auth.mockResolvedValue({ userId: "customer-1", role: "CUSTOMER" });
+    const updatedAt = new Date("2026-11-07T10:00:00.000Z");
+    const invoiceWithJob = {
+      ...existingInvoice,
+      job: {
+        status: "WAITING_APPROVAL",
+        customerApproved: false,
+        updatedAt,
+        technicianId: "tech-1",
+        requestId: "request-1",
+      },
+    };
+    mocks.invoiceFindUnique
+      .mockResolvedValueOnce(invoiceWithJob)
+      .mockResolvedValueOnce({ ...invoiceWithJob, job: { ...invoiceWithJob.job, customerApproved: true }, payment: null });
+
+    const response = await patchInvoice(patchRequest({ customerApproved: true }), {
+      params: Promise.resolve({ id: "inv-1" }),
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.transition).toHaveBeenCalledWith(expect.any(Object), {
+      jobId: "job-1",
+      requestId: "request-1",
+      technicianId: "tech-1",
+      actorRole: "CUSTOMER",
+      actorTechnicianId: null,
+      currentStatus: "WAITING_APPROVAL",
+      expectedUpdatedAt: updatedAt,
+      nextStatus: "WAITING_APPROVAL",
+      updates: { customerApproved: true },
+    });
+    expect(mocks.jobUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects customer approval for an unverified invoice without writing the job", async () => {
+    mocks.auth.mockResolvedValue({ userId: "customer-1", role: "CUSTOMER" });
+    mocks.invoiceFindUnique.mockResolvedValueOnce({
+      ...existingInvoice,
+      financialUnitStatus: "UNVERIFIED",
+      job: {
+        status: "WAITING_APPROVAL",
+        customerApproved: false,
+        updatedAt: new Date("2026-11-07T10:00:00.000Z"),
+        technicianId: "tech-1",
+        requestId: "request-1",
+      },
+    });
+
+    const response = await patchInvoice(patchRequest({ customerApproved: true }), {
+      params: Promise.resolve({ id: "inv-1" }),
+    });
+    expect(response.status).toBe(409);
+    expect(mocks.transition).not.toHaveBeenCalled();
+    expect(mocks.jobUpdateMany).not.toHaveBeenCalled();
+  });
+
   it("rejects CANCELLED because it is not a supported InvoiceStatus", async () => {
     mocks.invoiceFindUnique.mockResolvedValueOnce({ ...existingInvoice, status: "SENT" });
 
