@@ -48,7 +48,7 @@ beforeEach(() => {
   mocks.auth.mockResolvedValue(technicianSession);
   mocks.technician.mockResolvedValue({ id: "tech-1" });
   mocks.participant.mockResolvedValue(null);
-  mocks.wallet.mockResolvedValue({ id: "wallet-1" });
+  mocks.wallet.mockResolvedValue({ id: "wallet-1", financialUnitStatus: "VERIFIED_IRR" });
   mocks.withdrawal.mockResolvedValue(null);
   mocks.withdrawalLedger.mockResolvedValue(null);
   mocks.job.mockResolvedValue({
@@ -67,7 +67,7 @@ describe("read-only offline reconciliation endpoints", () => {
       financialUnitStatus: "VERIFIED_IRR",
       status: "REQUESTED", requestedAt: new Date("2026-10-31T10:00:00Z"), processedAt: null,
     });
-    mocks.withdrawalLedger.mockResolvedValue({ id: "ledger-1", referenceId: "wd-1", amount: -500, financialUnitStatus: "VERIFIED_IRR" });
+    mocks.withdrawalLedger.mockResolvedValue({ id: "ledger-1", walletId: "wallet-1", type: "WITHDRAWAL", amount: -500, balanceBefore: 1000, balanceAfter: 500, referenceType: "Withdrawal", referenceId: "wd-1", financialUnitStatus: "VERIFIED_IRR" });
     const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
@@ -86,7 +86,9 @@ describe("read-only offline reconciliation endpoints", () => {
       status: "REQUESTED", requestedAt: new Date("2026-10-31T10:00:00Z"), processedAt: null,
     });
     mocks.withdrawalLedger.mockResolvedValue({
-      id: "ledger-1", referenceId: "wd-1", amount: -500, financialUnitStatus: "UNVERIFIED",
+      id: "ledger-1", walletId: "wallet-1", type: "WITHDRAWAL", amount: -500,
+      balanceBefore: 1000, balanceAfter: 500, referenceType: "Withdrawal",
+      referenceId: "wd-1", financialUnitStatus: "UNVERIFIED",
     });
     const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
     expect(response.status).toBe(409);
@@ -94,6 +96,22 @@ describe("read-only offline reconciliation endpoints", () => {
       state: "RECONCILIATION_REQUIRED",
       reason: "FINANCIAL_PROVENANCE_UNVERIFIED",
     });
+  });
+
+  it("rejects a debit ledger that would overdraw the wallet", async () => {
+    mocks.withdrawal.mockResolvedValue({
+      id: "wd-1", walletId: "wallet-1", code: "WD-1001", amount: 500,
+      financialUnitStatus: "VERIFIED_IRR", status: "REQUESTED",
+      requestedAt: new Date("2026-10-31T10:00:00Z"), processedAt: null,
+    });
+    mocks.withdrawalLedger.mockResolvedValue({
+      id: "ledger-1", walletId: "wallet-1", type: "WITHDRAWAL", amount: -500,
+      balanceBefore: 400, balanceAfter: -100, referenceType: "Withdrawal",
+      referenceId: "wd-1", financialUnitStatus: "VERIFIED_IRR",
+    });
+    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ state: "RECONCILIATION_REQUIRED" });
   });
 
   it("does not report a withdrawal committed when its debit ledger row is missing", async () => {
