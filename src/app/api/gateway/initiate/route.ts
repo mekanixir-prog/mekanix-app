@@ -63,6 +63,7 @@ export async function POST(req: Request) {
       existingAttempt.userId !== session.userId ||
       existingAttempt.purpose !== "vip" ||
       existingAttempt.targetPlanId !== plan.id ||
+      !Number.isSafeInteger(existingAttempt.targetPlanDurationDays) || Number(existingAttempt.targetPlanDurationDays) <= 0 ||
       !isSafeStoredIrrAmount(existingAttempt.amount) ||
       Number(existingAttempt.amount) <= 0 ||
       Number(existingAttempt.amount) > 100_000_000 ||
@@ -92,6 +93,7 @@ export async function POST(req: Request) {
       status: "REDIRECTED",
       purpose: "vip",
       targetPlanId: plan.id,
+      targetPlanDurationDays: plan.durationDays,
       idempotencyKey,
       referenceId,
       cardNumber: input.cardNumber ? maskCard(input.cardNumber) : null,
@@ -107,6 +109,7 @@ export async function POST(req: Request) {
       racedAttempt.userId !== session.userId ||
       racedAttempt.purpose !== "vip" ||
       racedAttempt.targetPlanId !== plan.id ||
+      !Number.isSafeInteger(racedAttempt.targetPlanDurationDays) || Number(racedAttempt.targetPlanDurationDays) <= 0 ||
       !isSafeStoredIrrAmount(racedAttempt.amount) ||
       Number(racedAttempt.amount) <= 0 ||
       Number(racedAttempt.amount) > 100_000_000 ||
@@ -121,10 +124,10 @@ export async function POST(req: Request) {
     reused = true;
   }
 
-  return NextResponse.json({ ok: true, code: log.code, referenceId: log.referenceId, amount: Number(log.amount), currency: "IRR", purpose: "vip", planId: plan.id, reused });
+  return NextResponse.json({ ok: true, code: log.code, referenceId: log.referenceId, amount: Number(log.amount), currency: "IRR", purpose: "vip", planId: plan.id, durationDays: log.targetPlanDurationDays, reused });
 }
 
-function initiationResponse(log: { code: string; referenceId: string | null; amount: unknown }, planId: string) {
+function initiationResponse(log: { code: string; referenceId: string | null; amount: unknown; targetPlanDurationDays: number | null }, planId: string) {
   return NextResponse.json({
     ok: true,
     code: log.code,
@@ -133,6 +136,7 @@ function initiationResponse(log: { code: string; referenceId: string | null; amo
     currency: "IRR",
     purpose: "vip",
     planId,
+    durationDays: log.targetPlanDurationDays,
     reused: true,
   });
 }
