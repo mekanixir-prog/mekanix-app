@@ -29,12 +29,14 @@ describe("MEKANIX owner-approved fixed rate card", () => {
 
   it("requires every approved labor category for each asset class", () => {
     const input = rateCardIrrToTomanInput(createDefaultRateCardIrr());
-    const { diagnostics: _removed, ...missingPassenger } = input.passenger.laborToman;
+    const missingPassenger = { ...input.passenger.laborToman };
+    delete missingPassenger.diagnostics;
     expect(() => parseRateCardTomanInput({
       ...input,
       passenger: { ...input.passenger, laborToman: missingPassenger },
     })).toThrow();
-    const { hydraulics: _removedHeavy, ...missingHeavy } = input.heavy.laborToman;
+    const missingHeavy = { ...input.heavy.laborToman };
+    delete missingHeavy.hydraulics;
     expect(() => parseRateCardTomanInput({
       ...input,
       heavy: { ...input.heavy, laborToman: missingHeavy },
