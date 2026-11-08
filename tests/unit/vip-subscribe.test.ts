@@ -102,6 +102,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip",
       targetPlanId: "plan-1",
+      targetPlanDurationDays: 30,
       paymentId: "pay-1",
       amount: 100_000,
       currency: "IRR",
@@ -374,13 +375,18 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       id: "plan-1",
       name: "Gold",
       priceIrr: 150_000, // price changed after the attempt was initiated
-      durationDays: 30,
-      active: true,
+      durationDays: 365, // mutable catalog value differs from purchase snapshot
+      active: false, // a paid attempt remains entitled after the plan is deactivated
       financialUnitStatus: "VERIFIED_IRR",
     });
     const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
     expect(res.status).toBe(200);
-    expect(mockCreateVipSubscriptionAtomically).toHaveBeenCalled();
+    expect(mockCreateVipSubscriptionAtomically).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ expiresAt: expect.any(Date) }),
+    );
+    const input = mockCreateVipSubscriptionAtomically.mock.calls[0][1];
+    expect(input.expiresAt.getTime() - input.startedAt.getTime()).toBe(30 * 86400000);
   });
 
   it("rejects a gateway attempt not linked back to the selected payment", async () => {
