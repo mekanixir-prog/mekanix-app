@@ -55,6 +55,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (amountError === "PART_UNIT_PRICE_MUST_BE_NON_NEGATIVE_INTEGER_IRR") {
     return NextResponse.json({ error: "قیمت واحد قطعه باید عدد صحیح نامنفی به ریال باشد", code: amountError }, { status: 400 });
   }
+  if (amountError === "PART_LINE_TOTAL_EXCEEDS_SAFE_INTEGER_IRR") {
+    return NextResponse.json({ error: "حاصل‌ضرب تعداد و قیمت قطعه از محدوده امن مبلغ ریالی بیشتر است", code: amountError }, { status: 400 });
+  }
 
   const part = await (await getDbForLib()).part.create({
     data: {
