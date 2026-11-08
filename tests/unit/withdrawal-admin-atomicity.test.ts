@@ -33,6 +33,7 @@ describe("admin withdrawal transitions", () => {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       wallet: { findUnique: vi.fn().mockResolvedValue({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: 0 }) },
+      walletLedger: { findUnique: vi.fn().mockResolvedValue(debitLedger) },
     };
     const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
     await expect(updateWithdrawalWithPrisma(db, { ...input, action: "APPROVED" })).resolves.toBe(true);
@@ -76,7 +77,7 @@ describe("admin withdrawal transitions", () => {
     const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
     await expect(updateWithdrawalWithPrisma(db, input)).resolves.toBe(true);
     expect(tx.wallet.updateMany).toHaveBeenCalledWith({
-      where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR" },
+      where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR", balance: 1000 },
       data: { balance: { increment: 500 } },
     });
     expect(tx.walletLedger.create).toHaveBeenCalledWith({
@@ -135,7 +136,7 @@ describe("admin withdrawal transitions", () => {
       }),
     });
     expect(tx.wallet.updateMany).toHaveBeenCalledWith({
-      where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR" },
+      where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR", totalWithdrawn: 0 },
       data: { totalWithdrawn: { increment: 500 } },
     });
   });
