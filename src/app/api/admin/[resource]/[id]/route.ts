@@ -6,7 +6,7 @@ import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/admin-api";
 import { updateWithdrawalAtomically } from "@/lib/withdrawal-admin-atomic";
 import { isValidIranianSheba } from "@/lib/iranian-iban";
-import { isSafeStoredIrrAmount, maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { isSafeStoredIrrAmount, markFinancialRecordUnverifiedWhenFieldsChanged, maskFinancialFields, TECHNICIAN_FEE_FIELDS } from "@/lib/money/financial-read-mask";
 
 // Mass-assignment protection: define per-resource whitelists.
 const RESOURCE_ALLOWED_FIELDS: Record<string, readonly string[]> = {
@@ -109,8 +109,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     const safe = sanitizeInput(body, allowed);
     // SEC-4: snapshot BEFORE the update for audit log.
     const before = await db.technician.findUnique({ where: { id } });
-    const feeChanged = ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"].some((field) => safe[field] !== undefined);
-    result = await db.technician.update({ where: { id }, data: { ...safe, ...(feeChanged ? { financialUnitStatus: "UNVERIFIED" } : {}) } as any, include: { user: { select: ADMIN_USER_SELECT } } });
+    result = await db.technician.update({ where: { id }, data: markFinancialRecordUnverifiedWhenFieldsChanged(safe, TECHNICIAN_FEE_FIELDS) as any, include: { user: { select: ADMIN_USER_SELECT } } });
     await safeAudit({ session: adminSession, action: "UPDATE_TECHNICIAN", entity: "technician", entityId: id, before, after: result, req });
   } else if (resource === "customers") {
     // Allow direct updates to customer record (company, taxId) — but block userId
