@@ -172,7 +172,15 @@ export async function updateWithdrawalWithD1(
         SET "status" = 'APPROVED', "reviewerId" = ?, "adminNotes" = ?
         WHERE "id" = ? AND "status" = 'REQUESTED' AND "financialUnitStatus" = 'VERIFIED_IRR'
           AND "amount" > 0 AND "amount" = CAST("amount" AS INTEGER) AND abs("amount") <= 9007199254740991
-          AND EXISTS (SELECT 1 FROM "Wallet" w WHERE w."id" = "WithdrawalRequest"."walletId" AND w."financialUnitStatus" = 'VERIFIED_IRR')
+          AND EXISTS (
+            SELECT 1 FROM "Wallet" w
+            WHERE w."id" = "WithdrawalRequest"."walletId"
+              AND w."financialUnitStatus" = 'VERIFIED_IRR'
+              AND w."balance" = CAST(w."balance" AS INTEGER)
+              AND w."balance" >= 0 AND abs(w."balance") <= 9007199254740991
+              AND w."totalWithdrawn" = CAST(w."totalWithdrawn" AS INTEGER)
+              AND w."totalWithdrawn" >= 0 AND abs(w."totalWithdrawn") <= 9007199254740991
+          )
           AND EXISTS (
             SELECT 1 FROM "WalletLedger" l
             WHERE l."idempotencyKey" = 'withdrawal:' || "WithdrawalRequest"."idempotencyKey" || ':LEDGER'
@@ -202,7 +210,15 @@ export async function updateWithdrawalWithD1(
         SET "status" = 'REJECTED', "reviewerId" = ?, "adminNotes" = ?, "processedAt" = ?
         WHERE "id" = ? AND "status" IN ('REQUESTED', 'APPROVED') AND "financialUnitStatus" = 'VERIFIED_IRR'
           AND "amount" > 0 AND "amount" = CAST("amount" AS INTEGER) AND abs("amount") <= 9007199254740991
-          AND EXISTS (SELECT 1 FROM "Wallet" w WHERE w."id" = "WithdrawalRequest"."walletId" AND w."financialUnitStatus" = 'VERIFIED_IRR')
+          AND EXISTS (
+            SELECT 1 FROM "Wallet" w
+            WHERE w."id" = "WithdrawalRequest"."walletId"
+              AND w."financialUnitStatus" = 'VERIFIED_IRR'
+              AND w."balance" = CAST(w."balance" AS INTEGER)
+              AND w."balance" >= 0 AND abs(w."balance") <= 9007199254740991
+              AND w."totalWithdrawn" = CAST(w."totalWithdrawn" AS INTEGER)
+              AND w."totalWithdrawn" >= 0 AND abs(w."totalWithdrawn") <= 9007199254740991
+          )
           AND EXISTS (
             SELECT 1 FROM "WalletLedger" l
             WHERE l."idempotencyKey" = 'withdrawal:' || "WithdrawalRequest"."idempotencyKey" || ':LEDGER'
@@ -280,7 +296,15 @@ export async function updateWithdrawalWithD1(
           "processedAt" = ?, "txnId" = ?
       WHERE "id" = ? AND "status" = 'APPROVED' AND "financialUnitStatus" = 'VERIFIED_IRR'
         AND "amount" > 0 AND "amount" = CAST("amount" AS INTEGER) AND abs("amount") <= 9007199254740991
-        AND EXISTS (SELECT 1 FROM "Wallet" w WHERE w."id" = "WithdrawalRequest"."walletId" AND w."financialUnitStatus" = 'VERIFIED_IRR')
+        AND EXISTS (
+            SELECT 1 FROM "Wallet" w
+            WHERE w."id" = "WithdrawalRequest"."walletId"
+              AND w."financialUnitStatus" = 'VERIFIED_IRR'
+              AND w."balance" = CAST(w."balance" AS INTEGER)
+              AND w."balance" >= 0 AND abs(w."balance") <= 9007199254740991
+              AND w."totalWithdrawn" = CAST(w."totalWithdrawn" AS INTEGER)
+              AND w."totalWithdrawn" >= 0 AND abs(w."totalWithdrawn") <= 9007199254740991
+          )
           AND EXISTS (
             SELECT 1 FROM "WalletLedger" l
             WHERE l."idempotencyKey" = 'withdrawal:' || "WithdrawalRequest"."idempotencyKey" || ':LEDGER'
