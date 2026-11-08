@@ -24,6 +24,7 @@ describe("admin withdrawal D1 transaction integration", () => {
         "amount" REAL NOT NULL,
         "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
         "status" TEXT NOT NULL,
+        "idempotencyKey" TEXT NOT NULL,
         "reviewerId" TEXT,
         "adminNotes" TEXT,
         "processedAt" TEXT,
@@ -59,8 +60,14 @@ describe("admin withdrawal D1 transaction integration", () => {
       );
       INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "totalWithdrawn", "updatedAt")
         VALUES ('wallet-1', 'VERIFIED_IRR', 1000, 0, '2026-10-30T09:00:00.000Z');
-      INSERT INTO "WithdrawalRequest" ("id", "walletId", "amount", "financialUnitStatus", "status")
-        VALUES ('wd-1', 'wallet-1', 500, 'VERIFIED_IRR', 'REQUESTED');
+      INSERT INTO "WithdrawalRequest" ("id", "walletId", "amount", "financialUnitStatus", "status", "idempotencyKey")
+        VALUES ('wd-1', 'wallet-1', 500, 'VERIFIED_IRR', 'REQUESTED', 'idem-1');
+      INSERT INTO "WalletLedger"
+        ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
+         "referenceType", "referenceId", "description", "idempotencyKey", "financialUnitStatus", "createdBy", "createdAt")
+        VALUES ('debit-1', 'wallet-1', 'WITHDRAWAL', -500, 1000, 500,
+                'Withdrawal', 'wd-1', 'initial debit', 'withdrawal:idem-1:LEDGER',
+                'VERIFIED_IRR', 'tech-1', '2026-10-30T09:30:00.000Z');
     `);
     d1 = {
       prepare: (sql: string) => ({
@@ -100,7 +107,7 @@ describe("admin withdrawal D1 transaction integration", () => {
       .toEqual({ status: "REJECTED" });
     expect(sqlite.prepare('SELECT "balance" FROM "Wallet" WHERE "id" = ?').get("wallet-1"))
       .toEqual({ balance: 1500 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletLedger"').get()).toEqual({ n: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletLedger"').get()).toEqual({ n: 2 });
   });
 
   it("rolls back the status transition when the wallet refund cannot be applied", async () => {
@@ -111,7 +118,7 @@ describe("admin withdrawal D1 transaction integration", () => {
     })).resolves.toBe(false);
     expect(sqlite.prepare('SELECT "status" FROM "WithdrawalRequest" WHERE "id" = ?').get("wd-1"))
       .toEqual({ status: "REQUESTED" });
-    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletLedger"').get()).toEqual({ n: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletLedger"').get()).toEqual({ n: 1 });
   });
 
   it("commits payout state, immutable transaction and wallet aggregate together", async () => {
@@ -140,7 +147,7 @@ describe("admin withdrawal D1 transaction integration", () => {
       .toEqual({ status: "REQUESTED" });
     expect(sqlite.prepare('SELECT "balance" FROM "Wallet" WHERE "id" = ?').get("wallet-1"))
       .toEqual({ balance: 1000 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletLedger"').get()).toEqual({ n: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletLedger"').get()).toEqual({ n: 1 });
   });
 
   it("rolls back payout state and payout ledger when the wallet aggregate update changes zero rows", async () => {
