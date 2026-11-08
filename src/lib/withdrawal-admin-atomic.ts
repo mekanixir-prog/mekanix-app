@@ -170,6 +170,7 @@ export async function updateWithdrawalWithD1(
           AND "amount" > 0 AND "amount" = CAST("amount" AS INTEGER) AND abs("amount") <= 9007199254740991
           AND EXISTS (SELECT 1 FROM "Wallet" w WHERE w."id" = "WithdrawalRequest"."walletId" AND w."financialUnitStatus" = 'VERIFIED_IRR')
         ${debitLedgerProof}
+        ${debitLedgerProof}
       `).bind(input.adminId, input.adminNotes, input.withdrawalId),
     ]);
     return result[0]?.meta?.changes === 1;
@@ -183,6 +184,7 @@ export async function updateWithdrawalWithD1(
         WHERE "id" = ? AND "status" IN ('REQUESTED', 'APPROVED') AND "financialUnitStatus" = 'VERIFIED_IRR'
           AND "amount" > 0 AND "amount" = CAST("amount" AS INTEGER) AND abs("amount") <= 9007199254740991
           AND EXISTS (SELECT 1 FROM "Wallet" w WHERE w."id" = "WithdrawalRequest"."walletId" AND w."financialUnitStatus" = 'VERIFIED_IRR')
+        ${debitLedgerProof}
       `).bind(input.adminId, input.adminNotes, at, input.withdrawalId),
       assertOneChange(),
       d1.prepare(`
@@ -244,6 +246,7 @@ export async function updateWithdrawalWithD1(
       WHERE "id" = ? AND "status" = 'APPROVED' AND "financialUnitStatus" = 'VERIFIED_IRR'
         AND "amount" > 0 AND "amount" = CAST("amount" AS INTEGER) AND abs("amount") <= 9007199254740991
         AND EXISTS (SELECT 1 FROM "Wallet" w WHERE w."id" = "WithdrawalRequest"."walletId" AND w."financialUnitStatus" = 'VERIFIED_IRR')
+        ${debitLedgerProof}
     `).bind(input.adminId, input.adminNotes, at, payoutReference, input.withdrawalId),
     assertOneChange(),
     d1.prepare(`
@@ -332,6 +335,7 @@ export async function updateWithdrawalAtomically(
         WHERE "id" = ? AND "status" = 'REQUESTED' AND "financialUnitStatus" = 'VERIFIED_IRR'
           AND "amount" > 0 AND "amount" = CAST("amount" AS INTEGER) AND abs("amount") <= 9007199254740991
           AND EXISTS (SELECT 1 FROM "Wallet" w WHERE w."id" = "WithdrawalRequest"."walletId" AND w."financialUnitStatus" = 'VERIFIED_IRR')
+        ${debitLedgerProof}
       `).bind(input.adminId, input.adminNotes, input.withdrawalId),
     ]);
     return result[0]?.meta?.changes === 1;
@@ -345,6 +349,7 @@ export async function updateWithdrawalAtomically(
         WHERE "id" = ? AND "status" IN ('REQUESTED', 'APPROVED') AND "financialUnitStatus" = 'VERIFIED_IRR'
           AND "amount" > 0 AND "amount" = CAST("amount" AS INTEGER) AND abs("amount") <= 9007199254740991
           AND EXISTS (SELECT 1 FROM "Wallet" w WHERE w."id" = "WithdrawalRequest"."walletId" AND w."financialUnitStatus" = 'VERIFIED_IRR')
+        ${debitLedgerProof}
       `).bind(input.adminId, input.adminNotes, at, input.withdrawalId),
       assertOneChange(),
       d1.prepare(`
@@ -406,6 +411,7 @@ export async function updateWithdrawalAtomically(
       WHERE "id" = ? AND "status" = 'APPROVED' AND "financialUnitStatus" = 'VERIFIED_IRR'
         AND "amount" > 0 AND "amount" = CAST("amount" AS INTEGER) AND abs("amount") <= 9007199254740991
         AND EXISTS (SELECT 1 FROM "Wallet" w WHERE w."id" = "WithdrawalRequest"."walletId" AND w."financialUnitStatus" = 'VERIFIED_IRR')
+        ${debitLedgerProof}
     `).bind(input.adminId, input.adminNotes, at, payoutReference, input.withdrawalId),
     assertOneChange(),
     d1.prepare(`
