@@ -86,8 +86,13 @@ export function sumSafeStoredIrrAmounts(values: readonly unknown[]): number | nu
 }
 
 /** Sum a set of payment amounts only when every stored amount is present and safe. */
-export function sumVerifiedIrrAmounts(values: readonly unknown[]): number | null {
-  if (values.some((value) => value === null || value === undefined || !isSafeStoredIrrAmount(value))) {
+export function sumVerifiedPositiveIrrAmounts(values: readonly unknown[]): number | null {
+  if (values.some((value) =>
+    value === null ||
+    value === undefined ||
+    !isSafeStoredIrrAmount(value) ||
+    !new Decimal(typeof value === "object" && value !== null ? value.toString() : String(value)).gt(0)
+  )) {
     return null;
   }
   return sumSafeStoredIrrAmounts(values);
