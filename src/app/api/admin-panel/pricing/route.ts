@@ -73,7 +73,7 @@ export async function PATCH(req: Request) {
 
   const next: Envelope = {
     current: { version: current.current.version + 1, updatedAt: new Date().toISOString(), updatedBy: session.adminId, rateCard },
-    history: [current.current, ...current.history].slice(0, RATE_CARD_HISTORY_LIMIT),
+    history: [current.current, ...current.history].slice(0, RATE_CARD_HISTORY_LIMIT - 1),
   };
   const serialized = JSON.stringify(next);
   try {
