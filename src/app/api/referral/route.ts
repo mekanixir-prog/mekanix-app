@@ -110,39 +110,3 @@ export async function PATCH(req: Request) {
     { status: 409 },
   );
 }
-  // reporting success for the same reward.
-  const claimed = await db.referral.updateMany({
-    where: {
-      id: referralId,
-      referrerId: session.userId,
-      status: "first_job",
-      rewardClaimed: false,
-      financialUnitStatus: "VERIFIED_IRR",
-    },
-    data: { rewardClaimed: true, status: "rewarded", completedAt: new Date() },
-  });
-  if (claimed.count !== 1) {
-    return NextResponse.json({ error: "این پاداش هم‌زمان دریافت شده یا دیگر قابل دریافت نیست" }, { status: 409 });
-  }
-  const updated = await db.referral.findUnique({ where: { id: referralId } });
-  if (!updated) {
-    return NextResponse.json({ error: "وضعیت دریافت پاداش نیازمند بررسی است" }, { status: 409 });
-  }
-
-  // Notification — best-effort, never fail a reward claim over a notification.
-  try {
-    await db.notification.create({
-      data: {
-        userId: updated.referrerId,
-        type: "referral_rewarded",
-        title: "Referral reward claimed!",
-        body: `Your referral reward ${updated.code} has been claimed.`,
-        category: "system",
-        link: "customer/referral",
-      },
-    });
-  } catch (e) {
-    console.error("[referral/claim] Failed to create notification (reward still claimed):", e);
-  }
-  return NextResponse.json({ ok: true, referral: maskFinancialFields(updated, ["rewardAmount"]) });
-}
