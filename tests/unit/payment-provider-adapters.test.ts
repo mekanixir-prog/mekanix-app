@@ -244,3 +244,85 @@ describe("raw adapter test-only access", () => {
     );
   });
 });
+
+
+describe("Zarinpal sandbox request payload", () => {
+  const provider = createZarinpalProviderForTesting("merchant-test-123");
+
+  it("sends the persisted IRR amount and callback details to the sandbox request API", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({
+      data: { code: 100, authority: "authority-payload-42" },
+      errors: [],
+    }));
+
+    const request = {
+      amount: 250_000,
+      description: "Invoice INV-42",
+      callbackUrl: "https://mekanix.example/api/gateway/callback?attempt=pay-42",
+      mobile: "09120000000",
+      orderId: "mek-order-42",
+    };
+    const result = await provider.create(request);
+
+    expect(result.success).toBe(true);
+    expect(result.orderId).toBe(request.orderId);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://sandbox.zarinpal.com/pg/v4/payment/request.json");
+    expect(init.method).toBe("POST");
+    expect(init.headers).toEqual({ "Content-Type": "application/json" });
+    expect(JSON.parse(String(init.body))).toEqual({
+      merchant_id: "merchant-test-123",
+      amount: 250_000,
+      description: "Invoice INV-42",
+      callback_url: request.callbackUrl,
+      mobile: "09120000000",
+    });
+  });
+
+  it("verifies the exact persisted authority and IRR amount with the configured merchant", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({
+      data: { code: 100, ref_id: 7654321 },
+      errors: [],
+    }));
+
+    const result = await provider.verify("authority-persisted-42", 250_000);
+
+    expect(result).toEqual({
+      success: true,
+      refId: "7654321",
+      amount: 250_000,
+    });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://sandbox.zarinpal.com/pg/v4/payment/verify.json");
+    expect(JSON.parse(String(init.body))).toEqual({
+      merchant_id: "merchant-test-123",
+      authority: "authority-persisted-42",
+      amount: 250_000,
+    });
+  });
+
+  it("rejects an unsafe verification amount without contacting Zarinpal", async () => {
+    const result = await provider.verify("authority-persisted-42", Number.MAX_SAFE_INTEGER + 1);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/positive safe integer/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the sandbox returns malformed JSON", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("not-json", {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+
+    const result = await provider.create({
+      amount: 250_000,
+      description: "Invoice INV-42",
+      callbackUrl: "https://mekanix.example/api/gateway/callback",
+      orderId: "mek-order-42",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeTruthy();
+  });
+});
