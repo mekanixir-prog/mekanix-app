@@ -132,7 +132,7 @@ describe("atomic prepay recording", () => {
       wallet: {
         upsert: vi.fn().mockResolvedValue({
           id: "wallet-1", balance: 0, pendingBalance: 100,
-          totalEarned: 0, totalCommission: 0, financialUnitStatus: "UNVERIFIED",
+          totalEarned: 0, totalCommission: 0, totalWithdrawn: 0, financialUnitStatus: "UNVERIFIED",
         }),
         updateMany: vi.fn(),
       },
@@ -153,7 +153,7 @@ describe("atomic prepay recording", () => {
     const tx = {
       job: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       wallet: {
-        upsert: vi.fn().mockResolvedValue({ id: "wallet-1", balance: 0, pendingBalance: 0, totalEarned: 0, totalCommission: 0, financialUnitStatus: "VERIFIED_IRR" }),
+        upsert: vi.fn().mockResolvedValue({ id: "wallet-1", balance: 0, pendingBalance: 0, totalEarned: 0, totalCommission: 0, totalWithdrawn: 0, financialUnitStatus: "VERIFIED_IRR" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       walletTransaction: { create: vi.fn().mockResolvedValue({}) },
