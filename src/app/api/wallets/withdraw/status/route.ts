@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
@@ -23,7 +22,7 @@ export async function GET(req: Request) {
   const db = await getDbForLib();
   const wallet = await db.wallet.findUnique({
     where: { technicianId: technician.id },
-    select: { id: true },
+    select: { id: true, financialUnitStatus: true },
   });
   const [request, ledger] = await Promise.all([
     db.withdrawalRequest.findUnique({
@@ -41,7 +40,7 @@ export async function GET(req: Request) {
     }),
     db.walletLedger.findUnique({
       where: { idempotencyKey: `withdrawal:${key}:LEDGER` },
-      select: { id: true, referenceId: true, amount: true, financialUnitStatus: true },
+      select: { id: true, walletId: true, type: true, amount: true, balanceBefore: true, balanceAfter: true, referenceType: true, referenceId: true, financialUnitStatus: true },
     }),
   ]);
 
@@ -74,23 +73,26 @@ export async function GET(req: Request) {
       requestFound: true,
     }, { status: 409 });
   }
-  if (
-    request!.financialUnitStatus !== "VERIFIED_IRR" ||
-    ledger.financialUnitStatus !== "VERIFIED_IRR" ||
-    !isSafeStoredIrrAmount(request!.amount) ||
-    !isSafeStoredIrrAmount(ledger.amount)
-  ) {
-    return NextResponse.json({
-      state: "RECONCILIATION_REQUIRED",
-      withdrawalCode: request!.code,
-      requestFound: true,
-      ledgerFound: true,
-      reason: "FINANCIAL_PROVENANCE_UNVERIFIED",
-    }, { status: 409 });
-  }
-
-  const expectedDebit = new Prisma.Decimal(request!.amount).negated();
-  if (ledger.referenceId !== request!.id || !expectedDebit.equals(ledger.amount)) {
+  const requestAmount = request!.amount;
+  const ledgerAmount = ledger?.amount;
+  const financiallyVerified =
+    wallet.financialUnitStatus === "VERIFIED_IRR" &&
+    request!.financialUnitStatus === "VERIFIED_IRR" &&
+    isSafeStoredIrrAmount(requestAmount) &&
+    Number(requestAmount) > 0 &&
+    ledger?.financialUnitStatus === "VERIFIED_IRR" &&
+    ledger.walletId === wallet.id &&
+    ledger.type === "WITHDRAWAL" &&
+    ledger.referenceType === "Withdrawal" &&
+    isSafeStoredIrrAmount(ledgerAmount) &&
+    Number(ledgerAmount) === -Number(requestAmount) &&
+    isSafeStoredIrrAmount(ledger.balanceBefore) &&
+    isSafeStoredIrrAmount(ledger.balanceAfter) &&
+    Number(ledger.balanceBefore) >= Number(requestAmount) &&
+    Number(ledger.balanceAfter) >= 0 &&
+    Number.isSafeInteger(Number(ledger.balanceBefore) + Number(ledgerAmount)) &&
+    Number(ledger.balanceAfter) === Number(ledger.balanceBefore) + Number(ledgerAmount);
+  if (!ledger || !financiallyVerified || ledger.referenceId !== request!.id) {
     return NextResponse.json({
       state: "RECONCILIATION_REQUIRED",
       withdrawalCode: request!.code,
