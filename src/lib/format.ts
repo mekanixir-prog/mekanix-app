@@ -15,7 +15,11 @@ function toPersianDigits(s: string | number): string {
  * provenance masking guarantees that only verified IRR reaches this formatter.
  */
 export function fmtMoney(amount: number, currency = "IRR", lang: "en" | "fa" = "en"): string {
-  const c = CURRENCIES[currency] ?? CURRENCIES.USD;
+  if (!Object.prototype.hasOwnProperty.call(CURRENCIES, currency)) {
+    return lang === "fa" ? "واحد نامشخص" : "Unknown currency";
+  }
+
+  const c = CURRENCIES[currency];
   if (typeof amount !== "number" || !Number.isFinite(amount)) return "—";
   if (currency === "IRR" && !Number.isSafeInteger(amount)) return "—";
 
