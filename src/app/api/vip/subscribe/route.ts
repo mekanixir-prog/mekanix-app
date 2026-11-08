@@ -89,12 +89,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Payment is not a verified VIP payment" }, { status: 400 });
   }
 
-  // Check if this payment has already been used for a VIP subscription
+  // The paymentId unique constraint is the final replay guard. Return the
+  // already-created subscription for a retry instead of reporting a false
+  // failure or attempting to consume the same payment again.
   const existingSub = await db.userVipSubscription.findFirst({
     where: { paymentId, status: { in: ["ACTIVE", "CANCELLED", "EXPIRED"] } },
+    include: { plan: true },
   });
   if (existingSub) {
-    return NextResponse.json({ error: "این پرداخت قبلاً برای اشتراک VIP استفاده شده است" }, { status: 409 });
+    if (existingSub.userId !== userId || existingSub.planId !== planId) {
+      return NextResponse.json({ error: "پرداخت قبلاً به اشتراک دیگری متصل شده است" }, { status: 409 });
+    }
+    return NextResponse.json({
+      ok: true,
+      alreadyProcessed: true,
+      subscription: {
+        ...existingSub,
+        plan: maskFinancialFields(existingSub.plan, ["priceIrr"]),
+      },
+    });
   }
 
   const startedAt = new Date();
@@ -119,6 +132,22 @@ export async function POST(req: Request) {
     if (!sub) throw new Error("VIP subscription could not be loaded after atomic creation");
   } catch (e: any) {
     if (e?.code === "P2002" || /unique constraint/i.test(String(e?.message ?? ""))) {
+      // A concurrent request may have consumed this payment after the initial
+      // read. Recover only the exact same payment/user/plan binding.
+      const racedSub = await db.userVipSubscription.findFirst({
+        where: { paymentId, status: { in: ["ACTIVE", "CANCELLED", "EXPIRED"] } },
+        include: { plan: true },
+      });
+      if (racedSub && racedSub.userId === userId && racedSub.planId === planId) {
+        return NextResponse.json({
+          ok: true,
+          alreadyProcessed: true,
+          subscription: {
+            ...racedSub,
+            plan: maskFinancialFields(racedSub.plan, ["priceIrr"]),
+          },
+        });
+      }
       return NextResponse.json(
         { error: "پرداخت قبلاً استفاده شده یا اشتراک فعال دیگری ثبت شده است" },
         { status: 409 }
