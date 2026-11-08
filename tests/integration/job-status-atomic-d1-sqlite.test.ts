@@ -174,6 +174,20 @@ describe("job status D1 SQLite transaction", () => {
       .toEqual({ status: "ONLINE" });
   });
 
+  it("rejects a technician transition outside the role matrix before touching D1", async () => {
+    const batch = vi.spyOn(d1, "batch");
+    await expect(transitionJobStatusAtomically({} as any, {
+      ...baseInput,
+      currentStatus: "REQUESTED",
+      nextStatus: "EN_ROUTE",
+      updates: {},
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+
+    expect(batch).not.toHaveBeenCalled();
+    expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
+      .toEqual({ status: "REPAIRING" });
+  });
+
   it("requires customer approval before a technician can start repair", async () => {
     sqlite.prepare('UPDATE "Job" SET "status" = ?, "customerApproved" = 0 WHERE "id" = ?')
       .run("WAITING_APPROVAL", "job-1");
