@@ -24,7 +24,7 @@ function parseEnvelope(raw: string): Envelope | null {
     const value = JSON.parse(raw) as Envelope;
     if (!value?.current || !Number.isSafeInteger(value.current.version) || value.current.version < 1 ||
       !isValidStoredRateCard(value.current.rateCard) || !Array.isArray(value.history) ||
-      value.history.length > RATE_CARD_HISTORY_LIMIT ||
+      value.history.length > RATE_CARD_HISTORY_LIMIT - 1 ||
       value.history.some((entry) => !entry || !Number.isSafeInteger(entry.version) ||
         entry.version < 1 || !isValidStoredRateCard(entry.rateCard))) return null;
     return value;
