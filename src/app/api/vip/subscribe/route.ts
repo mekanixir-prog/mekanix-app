@@ -111,10 +111,11 @@ export async function POST(req: Request) {
 
   // Entitlement duration is immutable: use the value captured at payment initiation,
   // never the mutable VipPlan.durationDays field.
-  if (!Number.isSafeInteger(gatewayLog.targetPlanDurationDays) || Number(gatewayLog.targetPlanDurationDays) <= 0 || Number(gatewayLog.targetPlanDurationDays) > 36500) {
+  const durationSnapshot = gatewayLog.targetPlanDurationDays;
+  if (typeof durationSnapshot !== "number" || !Number.isSafeInteger(durationSnapshot) || durationSnapshot <= 0 || durationSnapshot > 36500) {
     return NextResponse.json({ error: "مدت ثبت‌شده برای این پرداخت معتبر نیست و نیاز به بررسی دارد", code: "VIP_DURATION_SNAPSHOT_MISSING" }, { status: 409 });
   }
-  const durationDays = gatewayLog.targetPlanDurationDays;
+  const durationDays = durationSnapshot;
 
   const startedAt = new Date();
   const expiresAt = new Date(startedAt.getTime() + durationDays * 24 * 60 * 60 * 1000);
