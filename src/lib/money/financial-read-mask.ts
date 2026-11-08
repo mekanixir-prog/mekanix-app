@@ -27,7 +27,7 @@ const INVOICE_FIELDS = [
   "taxTotal",
   "total",
 ] as const;
-const TECHNICIAN_FEE_FIELDS = [
+export const TECHNICIAN_FEE_FIELDS = [
   "hourlyRate",
   "travelFeeBase",
   "inspectionFee",
@@ -105,6 +105,15 @@ export function sumVerifiedPositiveIrrAmounts(values: readonly unknown[]): numbe
   } catch {
     return null;
   }
+}
+
+/** Any edit to a technician fee invalidates its previous IRR attestation. */
+export function markFinancialRecordUnverifiedWhenFieldsChanged<T extends Record<string, unknown>>(
+  data: T,
+  financialFields: readonly string[],
+): T & { financialUnitStatus?: string } {
+  const changed = financialFields.some((field) => data[field] !== undefined);
+  return changed ? { ...data, financialUnitStatus: "UNVERIFIED" } : data;
 }
 
 /**
