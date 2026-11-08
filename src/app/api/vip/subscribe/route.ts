@@ -168,7 +168,7 @@ export async function POST(req: Request) {
         userId,
         type: "vip_activated",
         title: "اشتراک VIP فعال شد",
-        body: `اشتراک ${plan.name} تا ${expiresAt.toLocaleDateString("fa-IR")} فعال است.`,
+        body: "اشتراک VIP شما ثبت و فعال‌سازی شد.",
         category: "system",
         link: "customer/settings",
       },
