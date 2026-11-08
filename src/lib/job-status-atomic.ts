@@ -53,6 +53,46 @@ export type AtomicJobStatusInput = {
   holdUntil?: Date | null;
 };
 
+export type JobStatusActorRole = AtomicJobStatusInput["actorRole"] | "PARTNER";
+
+const TECHNICIAN_TRANSITIONS: Readonly<Record<string, readonly string[]>> = {
+  ACCEPTED: ["REQUESTED"],
+  EN_ROUTE: ["ACCEPTED"],
+  ARRIVED: ["EN_ROUTE", "ACCEPTED"],
+  DIAGNOSING: ["ARRIVED", "EN_ROUTE", "ACCEPTED"],
+  REPAIRING: ["DIAGNOSING", "WAITING_APPROVAL"],
+  WAITING_APPROVAL: ["REPAIRING"],
+  COMPLETED: ["REPAIRING"],
+  REJECTED: ["REQUESTED"],
+};
+
+const CUSTOMER_CANCEL_FROM = ["REQUESTED", "ACCEPTED", "EN_ROUTE"] as const;
+
+/**
+ * Shared role matrix for both the HTTP route and the final Prisma/D1 write
+ * boundary. ADMIN bypasses role-specific transitions deliberately, but the
+ * atomic writer still enforces universal repair/estimate invariants.
+ */
+export function isAllowedJobStatusTransition(
+  role: JobStatusActorRole,
+  currentStatus: string,
+  nextStatus: string,
+  customerApproved: boolean | undefined,
+): boolean {
+  if (role === "ADMIN") return true;
+  if (role === "PARTNER") return false;
+
+  if (role === "CUSTOMER" || role === "FLEET_MANAGER") {
+    if (customerApproved === true) {
+      return currentStatus === "WAITING_APPROVAL" && nextStatus === currentStatus;
+    }
+    return nextStatus === "CANCELLED" &&
+      CUSTOMER_CANCEL_FROM.includes(currentStatus as (typeof CUSTOMER_CANCEL_FROM)[number]);
+  }
+
+  return TECHNICIAN_TRANSITIONS[nextStatus]?.includes(currentStatus) ?? false;
+}
+
 function isRequestTerminalTransition(status: string) {
   return status === "CANCELLED" || status === "REJECTED";
 }
@@ -63,10 +103,8 @@ function isTechnicianReleaseTransition(status: string) {
 
 function assertRoleTransition(input: AtomicJobStatusInput) {
   const isCustomerActor = input.actorRole === "CUSTOMER" || input.actorRole === "FLEET_MANAGER";
-  if (input.updates.customerApproved !== undefined && !isCustomerActor) {
-    throw new JobStatusConflictError();
-  }
-  if (input.nextStatus === "COMPLETED" && input.currentStatus !== "REPAIRING") {
+  if (input.updates.customerApproved !== undefined &&
+      (!isCustomerActor || input.updates.customerApproved !== true)) {
     throw new JobStatusConflictError();
   }
 
@@ -78,6 +116,20 @@ function assertRoleTransition(input: AtomicJobStatusInput) {
     input.updates.customerApproved === true &&
     updateKeys.every((key) => key === "customerApproved");
 
+  if (!isAllowedJobStatusTransition(
+    input.actorRole,
+    input.currentStatus,
+    input.nextStatus,
+    input.updates.customerApproved,
+  )) {
+    throw new JobStatusConflictError();
+  }
+
+  // Universal lifecycle invariants apply even to ADMIN. The admin bypass is
+  // limited to the role matrix; it cannot skip diagnosis, repair, or consent.
+  if (input.nextStatus === "COMPLETED" && input.currentStatus !== "REPAIRING") {
+    throw new JobStatusConflictError();
+  }
   // REPAIRING without an invoice is the pre-estimate parts-preparation stage;
   // REPAIRING after customer approval is the actual repair stage.
   if (input.nextStatus === "REPAIRING" && !["DIAGNOSING", "WAITING_APPROVAL"].includes(input.currentStatus)) {
@@ -86,15 +138,8 @@ function assertRoleTransition(input: AtomicJobStatusInput) {
   if (input.nextStatus === "WAITING_APPROVAL" && input.currentStatus !== "REPAIRING" && !approvalOnly) {
     throw new JobStatusConflictError();
   }
-
-  if (isCustomerActor) {
-    const allowedCancellation =
-      input.nextStatus === "CANCELLED" &&
-      ["REQUESTED", "ACCEPTED", "EN_ROUTE"].includes(input.currentStatus) &&
-      updateKeys.length === 0;
-    if (!approvalOnly && !allowedCancellation) {
-      throw new JobStatusConflictError();
-    }
+  if (isCustomerActor && input.nextStatus === "CANCELLED" && updateKeys.length !== 0) {
+    throw new JobStatusConflictError();
   }
 }
 
