@@ -110,6 +110,22 @@ describe("admin withdrawal transitions", () => {
     await expect(updateWithdrawalWithPrisma(db, input)).rejects.toThrow("ledger failed");
   });
 
+  it("does not pay an approved withdrawal when the totalWithdrawn aggregate is negative", async () => {
+    const tx = {
+      withdrawalRequest: {
+        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "APPROVED", financialUnitStatus: "VERIFIED_IRR", idempotencyKey: "wd-key-1" }),
+        updateMany: vi.fn(),
+      },
+      walletLedger: { findUnique: vi.fn().mockResolvedValue(validDebitLedger) },
+      walletTransaction: { create: vi.fn() },
+      wallet: { findUnique: vi.fn().mockResolvedValue({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: -1 }), updateMany: vi.fn() },
+    };
+    const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
+    await expect(updateWithdrawalWithPrisma(db, { ...input, action: "PAID", payoutReference: "BANK-TRX-2026-0001" })).resolves.toBe(false);
+    expect(tx.withdrawalRequest.updateMany).not.toHaveBeenCalled();
+    expect(tx.walletTransaction.create).not.toHaveBeenCalled();
+  });
+
   it("marks an approved request paid, creates one payout transaction and updates totalWithdrawn", async () => {
     const tx = {
       withdrawalRequest: {
