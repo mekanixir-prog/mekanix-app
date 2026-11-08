@@ -41,6 +41,7 @@ jobs:
           test -f /tmp/mekanix-build/prisma/migrations/20260927000000_vip_paymentid_unique/migration.sql
           test -f /tmp/mekanix-build/prisma/migrations/20261101000000_care_booking_idempotency/migration.sql
           test -f /tmp/mekanix-build/prisma/migrations/20261101010000_request_claim_idempotency/migration.sql
+          test -f /tmp/mekanix-build/prisma/migrations/20261108000000_vip_gateway_duration_snapshot/migration.sql
           test -f /tmp/mekanix-build/prisma/migrations/migration_lock.toml
           
           sed -i 's/provider = "sqlite"/provider = "postgresql"/' \
@@ -110,6 +111,12 @@ jobs:
             psql -U mekanix -d mekanix -Atc "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND column_name='requestFingerprint' AND table_name IN ('ServiceBooking','ServiceRequest','InsuranceClaim');")
           if [ "$FINGERPRINT_COLUMNS" != "3" ]; then
             echo "❌ Expected all three request fingerprint columns; found $FINGERPRINT_COLUMNS of 3"
+            exit 1
+          fi
+          VIP_DURATION_SNAPSHOT=$(docker compose -f /tmp/mekanix-build/docker-compose.yml exec -T db \
+            psql -U mekanix -d mekanix -Atc "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='PaymentGatewayLog' AND column_name='targetPlanDurationDays';")
+          if [ "$VIP_DURATION_SNAPSHOT" != "1" ]; then
+            echo "❌ VIP purchase-time duration snapshot column is missing"
             exit 1
           fi
           echo "✅ Wallet, VIP, CARE, service-request, and insurance-claim migration objects exist"
