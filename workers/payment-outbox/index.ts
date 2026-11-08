@@ -115,7 +115,7 @@ async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
      WHERE p."id"=? AND p."userId"=? AND p."amount"=? AND p."currency"='IRR'
        AND p."status"='SUCCEEDED' AND p."financialUnitStatus"='VERIFIED_IRR'
        AND p."gatewayLogId"=? AND g."paymentId"=p."id" AND g."status"='VERIFIED'
-       AND g."purpose"='vip' AND g."targetPlanId"=? AND g."amount"=p."amount"
+       AND g."purpose"='vip' AND g."targetPlanId"=? AND g."targetPlanDurationDays"=? AND g."amount"=p."amount"
        AND g."currency"='IRR' AND g."financialUnitStatus"='VERIFIED_IRR'
        AND NOT EXISTS (SELECT 1 FROM "UserVipSubscription" s WHERE s."paymentId"=p."id")`
   ).bind(subscriptionId,p.targetPlanId,started,expires,started,started,p.targetPlanId,p.paymentId,p.userId,p.amount,p.gatewayLogId,p.targetPlanId,p.durationDays);
