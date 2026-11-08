@@ -28,8 +28,13 @@ function makeD1() {
       "pendingBalance" REAL NOT NULL DEFAULT 0,
       "totalEarned" REAL NOT NULL DEFAULT 0,
       "totalCommission" REAL NOT NULL DEFAULT 0,
+      "totalWithdrawn" REAL NOT NULL DEFAULT 0,
       "createdAt" TEXT NOT NULL,
       "updatedAt" TEXT NOT NULL
+    );
+    CREATE TABLE "WithdrawalRequest" (
+      "id" TEXT PRIMARY KEY,
+      "walletId" TEXT NOT NULL REFERENCES "Wallet"("id")
     );
     CREATE TABLE "WalletTransaction" (
       "id" TEXT PRIMARY KEY,
@@ -126,6 +131,29 @@ describe("atomic prepay D1 SQLite integration", () => {
     expect(sqlite.prepare('SELECT "kind", "status", "netAmount" FROM "WalletTransaction" ORDER BY "kind"').all())
       .toEqual([{ kind: "COMMISSION", status: "COMPLETED", netAmount: -100 }, { kind: "PREPAY", status: "PENDING", netAmount: 900 }]);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 2 });
+  });
+
+  it("promotes a pristine zero-balance UNVERIFIED wallet inside the D1 batch", async () => {
+    const { sqlite, d1 } = makeD1(); databases.push(sqlite); seed(sqlite);
+    sqlite.prepare('UPDATE "Wallet" SET "financialUnitStatus" = ?, "pendingBalance" = 0 WHERE "id" = ?')
+      .run("UNVERIFIED", "wallet-1");
+
+    expect(await recordPrepayWithD1(d1 as never, input)).toBe(true);
+    expect(sqlite.prepare('SELECT "financialUnitStatus", "pendingBalance" FROM "Wallet" WHERE "id" = ?').get("wallet-1"))
+      .toEqual({ financialUnitStatus: "VERIFIED_IRR", pendingBalance: 900 });
+  });
+
+  it("rejects a negative wallet aggregate before any D1 financial record commits", async () => {
+    const { sqlite, d1 } = makeD1(); databases.push(sqlite); seed(sqlite);
+    sqlite.prepare('UPDATE "Wallet" SET "pendingBalance" = -1 WHERE "id" = ?').run("wallet-1");
+
+    await expect(recordPrepayWithD1(d1 as never, input)).resolves.toBe(false);
+    expect(sqlite.prepare('SELECT "prepayPaid" FROM "Job" WHERE "id" = ?').get("job-1"))
+      .toEqual({ prepayPaid: 0 });
+    expect(sqlite.prepare('SELECT "pendingBalance" FROM "Wallet" WHERE "id" = ?').get("wallet-1"))
+      .toEqual({ pendingBalance: -1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletTransaction"').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
   });
 
   it("rolls back the paid marker when the existing wallet lacks verified IRR provenance", async () => {
