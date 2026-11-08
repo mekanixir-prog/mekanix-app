@@ -107,7 +107,9 @@ describe("prepay reconciliation evidence", () => {
     expect(check({ wallet: { ...wallet, financialUnitStatus: "UNVERIFIED" } })).toBe(false);
   });
 
-  it("checks the hold ledger arithmetic rather than just its existence", () => {
+  it("checks hold arithmetic and rejects negative balance evidence", () => {
     expect(check({ holdLedger: { ...holdLedger, balanceAfter: 999 } })).toBe(false);
+    expect(check({ holdLedger: { ...holdLedger, balanceBefore: -100, balanceAfter: 800 } })).toBe(false);
+    expect(check({ wallet: { ...wallet, pendingBalance: -1 } })).toBe(false);
   });
 });
