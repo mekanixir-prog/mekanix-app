@@ -196,7 +196,8 @@ export async function recordPrepayWithD1(
     "AND \"balance\" = CAST(\"balance\" AS INTEGER) AND abs(\"balance\") <= 9007199254740991 " +
     "AND \"pendingBalance\" = CAST(\"pendingBalance\" AS INTEGER) AND abs(\"pendingBalance\") <= 9007199254740991 " +
     "AND \"totalEarned\" = CAST(\"totalEarned\" AS INTEGER) AND abs(\"totalEarned\") <= 9007199254740991 " +
-    "AND \"totalCommission\" = CAST(\"totalCommission\" AS INTEGER) AND abs(\"totalCommission\") <= 9007199254740991" +
+    "AND \"totalCommission\" = CAST(\"totalCommission\" AS INTEGER) AND abs(\"totalCommission\") <= 9007199254740991 " +
+    "AND \"totalWithdrawn\" = CAST(\"totalWithdrawn\" AS INTEGER) AND abs(\"totalWithdrawn\") <= 9007199254740991" +
     ") THEN 1 ELSE json_extract('not-json', '$') END"
   ).bind(input.technicianId);
 
