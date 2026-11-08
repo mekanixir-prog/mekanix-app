@@ -41,12 +41,11 @@ export async function POST(req: Request) {
 
   const db = await getDbForLib();
 
+  // The payment attempt is the authoritative purchase snapshot. A plan may be
+  // deactivated or edited after payment; that must not invalidate an already-paid entitlement.
   const plan = await db.vipPlan.findUnique({ where: { id: planId } });
-  if (!plan || !plan.active) {
-    return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
-  }
-  if (plan.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(plan.priceIrr)) {
-    return NextResponse.json({ error: "قیمت طرح VIP هنوز از نظر منشأ مالی تأیید نشده است", code: "VIP_PLAN_PRICE_UNVERIFIED" }, { status: 409 });
+  if (!plan) {
+    return NextResponse.json({ error: "Plan not found" }, { status: 404 });
   }
 
   // 3. Validate paymentId — must be a real SUCCEEDED payment by this user
