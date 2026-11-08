@@ -110,6 +110,19 @@ describe("admin withdrawal D1 transaction integration", () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletLedger"').get()).toEqual({ n: 2 });
   });
 
+  it("does not refund a request when its original debit ledger proof is missing", async () => {
+    sqlite.prepare('DELETE FROM "WalletLedger" WHERE "id" = ?').run("debit-1");
+    await expect(updateWithdrawalWithD1(d1 as any, {
+      withdrawalId: "wd-1", action: "REJECTED", adminId: "admin-1",
+      adminNotes: null, at: new Date("2026-10-30T10:00:00.000Z"),
+    })).resolves.toBe(false);
+    expect(sqlite.prepare('SELECT "status" FROM "WithdrawalRequest" WHERE "id" = ?').get("wd-1"))
+      .toEqual({ status: "REQUESTED" });
+    expect(sqlite.prepare('SELECT "balance" FROM "Wallet" WHERE "id" = ?').get("wallet-1"))
+      .toEqual({ balance: 1000 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletLedger"').get()).toEqual({ n: 0 });
+  });
+
   it("rolls back the status transition when the wallet refund cannot be applied", async () => {
     sqlite.prepare('UPDATE "WithdrawalRequest" SET "walletId" = ? WHERE "id" = ?').run("missing-wallet", "wd-1");
     await expect(updateWithdrawalWithD1(d1 as any, {
