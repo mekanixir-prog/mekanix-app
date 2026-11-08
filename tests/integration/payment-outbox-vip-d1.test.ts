@@ -25,6 +25,11 @@ function makeD1(onBeforeBatch?: (sqlite:DatabaseSync)=>void) {
       "id" TEXT PRIMARY KEY, "durationDays" INTEGER NOT NULL, "active" INTEGER NOT NULL,
       "financialUnitStatus" TEXT NOT NULL
     );
+    CREATE TABLE "Notification" (
+      "id" TEXT PRIMARY KEY, "userId" TEXT NOT NULL, "type" TEXT NOT NULL, "title" TEXT NOT NULL,
+      "body" TEXT NOT NULL, "category" TEXT NOT NULL, "link" TEXT, "read" INTEGER NOT NULL DEFAULT 0,
+      "createdAt" TEXT NOT NULL
+    );
     CREATE TABLE "UserVipSubscription" (
       "id" TEXT PRIMARY KEY, "userId" TEXT NOT NULL, "planId" TEXT NOT NULL, "status" TEXT NOT NULL,
       "startedAt" TEXT, "expiresAt" TEXT, "paymentId" TEXT UNIQUE, "createdAt" TEXT NOT NULL, "updatedAt" TEXT NOT NULL
@@ -62,7 +67,7 @@ const now = new Date("2026-11-08T10:00:00.000Z");
 function seed(sqlite:DatabaseSync, amount=100000) {
   const payload=JSON.stringify({
     eventType:"PAYMENT_SUCCEEDED",paymentId:"payment-1",gatewayLogId:"gateway-1",
-    userId:"user-1",amount,currency:"IRR",purpose:"vip",targetPlanId:"plan-1",
+    userId:"user-1",amount,currency:"IRR",purpose:"vip",targetPlanId:"plan-1",durationDays:30,
   });
   sqlite.prepare(`INSERT INTO "Payment" VALUES (?,?,?,?,?,?,?)`).run("payment-1","user-1",100000,"IRR","SUCCEEDED","VERIFIED_IRR","gateway-1");
   sqlite.prepare(`INSERT INTO "PaymentGatewayLog" VALUES (?,?,?,?,?,?,?,?,?)`).run("gateway-1","user-1","payment-1",100000,"IRR","VERIFIED","vip","plan-1","VERIFIED_IRR");
@@ -94,6 +99,18 @@ describe("VIP payment outbox dispatcher D1 integration",()=>{
     });
     await runWorker(d1);
     expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "UserVipSubscription"`).get()).toEqual({count:1});
+    expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "Notification"`).get()).toEqual({count:1});
+  });
+
+  it("uses the purchase-time duration snapshot after the VIP plan is edited and emits one notice",async()=>{
+    const {sqlite,d1}=makeD1(); dbs.push(sqlite); seed(sqlite);
+    sqlite.prepare(`UPDATE "VipPlan" SET "durationDays"=365 WHERE "id"='plan-1'`).run();
+    await runWorker(d1);
+    const expectedExpiry=new Date(now.getTime()+30*86400000).toISOString();
+    expect(sqlite.prepare(`SELECT "expiresAt" FROM "UserVipSubscription" WHERE "paymentId"='payment-1'`).get()).toEqual({expiresAt:expectedExpiry});
+    expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "Notification" WHERE "id"='vip-activated:payment-1'`).get()).toEqual({count:1});
+    await runWorker(d1);
+    expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "Notification" WHERE "id"='vip-activated:payment-1'`).get()).toEqual({count:1});
   });
 
   it("preserves an API-created subscription inserted after the worker initial read",async()=>{
