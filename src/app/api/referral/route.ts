@@ -98,6 +98,18 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "این پاداش قابل دریافت نیست" }, { status: 400 });
   }
 
+  // Claiming a reward without atomically crediting the verified wallet and
+  // writing its immutable ledger entry would falsely report a settlement.
+  // Keep this mutation closed until the owner approves the accounting contract
+  // and the Prisma/D1 atomic settlement implementation is available.
+  return NextResponse.json(
+    {
+      error: "تسویهٔ پاداش معرفی هنوز آماده نیست؛ تا تکمیل ثبت اتمیک اعتبار کیف پول، امکان دریافت وجود ندارد",
+      code: "REFERRAL_REWARD_SETTLEMENT_NOT_IMPLEMENTED",
+    },
+    { status: 409 },
+  );
+
   // Compare-and-set prevents two concurrent claim requests from both
   // reporting success for the same reward.
   const claimed = await db.referral.updateMany({
