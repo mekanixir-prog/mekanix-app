@@ -103,6 +103,7 @@ describe("admin withdrawal transitions", () => {
       },
       walletTransaction: { create: vi.fn().mockResolvedValue({}) },
       wallet: { findUnique: vi.fn().mockResolvedValue({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: 0 }), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      walletLedger: { findUnique: vi.fn().mockResolvedValue(validDebitLedger) },
     };
     const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
     await expect(updateWithdrawalWithPrisma(db, { ...input, action: "PAID", payoutReference: "BANK-TRX-2026-0001" })).resolves.toBe(true);
@@ -131,7 +132,7 @@ describe("admin withdrawal transitions", () => {
         updateMany: vi.fn(),
       },
       wallet: { updateMany: vi.fn(), findUnique: vi.fn().mockResolvedValue({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: 0 }) },
-      walletLedger: { create: vi.fn() },
+      walletLedger: { findUnique: vi.fn().mockResolvedValue(validDebitLedger), create: vi.fn() },
       walletTransaction: { create: vi.fn() },
     };
     const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
