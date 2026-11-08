@@ -445,6 +445,7 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
       status: "REDIRECTED",
       purpose: "vip",
       targetPlanId: "plan-1",
+      targetPlanDurationDays: 30,
       verifiedAt: null,
     });
     mockPaymentFindUnique.mockReset();
@@ -466,6 +467,7 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
     expect(mockRecordVerifiedGatewayPayment).toHaveBeenCalledTimes(1);
     expect(mockRecordVerifiedGatewayPayment).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       gatewayLogId: "log-1", userId: "user-1", amount: 100_000, targetPlanId: "plan-1",
+      targetPlanDurationDays: 30,
     }));
   });
 
@@ -528,6 +530,7 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
       financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip",
       targetPlanId: "plan-1",
+      targetPlanDurationDays: 30,
       paymentId: "pay-1",
       verifiedAt: new Date("2026-10-30T10:00:00.000Z"),
     });
@@ -557,6 +560,7 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
       financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip",
       targetPlanId: "plan-1",
+      targetPlanDurationDays: 30,
       paymentId: null,
       verifiedAt: new Date("2026-10-30T10:00:00.000Z"),
     });
@@ -713,6 +717,7 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
       financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip",
       targetPlanId: "plan-1",
+      targetPlanDurationDays: 30,
       paymentId: "pay-1",
       amount: 100_000,
       currency: "IRR",
@@ -823,6 +828,7 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
       financialUnitStatus: "VERIFIED_IRR",
         purpose: "vip",
         targetPlanId: "plan-1",
+      targetPlanDurationDays: 30,
         paymentId: where.id.replace("gateway-", ""),
         amount: 100_000,
         currency: "IRR",
