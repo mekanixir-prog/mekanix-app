@@ -8,6 +8,7 @@ import {
   maskJobFinancialData,
   maskWalletFinancialData,
   sumSafeStoredIrrAmounts,
+  sumVerifiedIrrAmounts,
 } from "@/lib/money/financial-read-mask";
 
 describe("financial read masking", () => {
@@ -39,6 +40,14 @@ describe("financial read masking", () => {
     expect(sumSafeStoredIrrAmounts(["10", "0.5"])).toBeNull();
     expect(sumSafeStoredIrrAmounts(["9007199254740992"])).toBeNull();
     expect(sumSafeStoredIrrAmounts([])).toBe(0);
+  });
+
+  it("returns no verified revenue aggregate when an amount is missing or unsafe", () => {
+    expect(sumVerifiedIrrAmounts([100, "250"])).toBe(350);
+    expect(sumVerifiedIrrAmounts([100, null])).toBeNull();
+    expect(sumVerifiedIrrAmounts(["10.5"])).toBeNull();
+    expect(sumVerifiedIrrAmounts([Number.MAX_SAFE_INTEGER, 1])).toBeNull();
+    expect(sumVerifiedIrrAmounts([])).toBe(0);
   });
 
   it("masks all monetary fields when provenance is absent or unverified", () => {
