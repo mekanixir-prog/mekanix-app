@@ -130,8 +130,16 @@ function maskInvoiceFields<T extends object>(invoice: T): T {
 export function maskJobFinancialData<T extends object>(job: T): T {
   const source = job as FinancialRecord;
   const masked = maskFinancialFields(job, JOB_FIELDS);
-  const technician = source.technician && typeof source.technician === "object"
-    ? maskFinancialFields(source.technician as FinancialRecord, TECHNICIAN_FEE_FIELDS)
+  const technicianSource = source.technician && typeof source.technician === "object"
+    ? source.technician as FinancialRecord
+    : null;
+  const technician = technicianSource
+    ? {
+        ...maskFinancialFields(technicianSource, TECHNICIAN_FEE_FIELDS),
+        wallet: technicianSource.wallet && typeof technicianSource.wallet === "object"
+          ? maskWalletFinancialData(technicianSource.wallet as FinancialRecord)
+          : technicianSource.wallet,
+      }
     : source.technician;
   const parts = Array.isArray(source.parts)
     ? source.parts.map((part) => maskFinancialFields(part as FinancialRecord, ["unitPrice"]))
