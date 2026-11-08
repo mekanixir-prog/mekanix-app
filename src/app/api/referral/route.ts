@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
-import { isSafeStoredIrrAmount, maskFinancialFields, sumSafeStoredIrrAmounts } from "@/lib/money/financial-read-mask";
+import { isSafeStoredIrrAmount, maskFinancialFields, sumVerifiedPositiveIrrAmounts } from "@/lib/money/financial-read-mask";
 
 // GET: list user's referrals + stats.
 // referrerId is derived from the session — the `userId` query param is IGNORED (BOLA protection).
@@ -17,17 +17,17 @@ export async function GET(req: Request) {
     orderBy: { createdAt: "desc" },
     include: { referredUser: true },
   });
-  const allRewardsVerified = referrals.every((referral) => referral.financialUnitStatus === "VERIFIED_IRR" && isSafeStoredIrrAmount(referral.rewardAmount));
+  const allRewardsVerified = referrals.every((referral) => referral.financialUnitStatus === "VERIFIED_IRR" && referral.rewardAmount !== null && referral.rewardAmount !== undefined && isSafeStoredIrrAmount(referral.rewardAmount) && Number(referral.rewardAmount) >= 0);
   const safeReferrals = referrals.map((referral) => maskFinancialFields(referral, ["rewardAmount"]));
   const stats = {
     total: referrals.length,
     signedUp: referrals.filter((r) => r.status === "signed_up" || r.status === "first_job" || r.status === "rewarded").length,
     firstJob: referrals.filter((r) => r.status === "first_job" || r.status === "rewarded").length,
     earned: allRewardsVerified
-      ? sumSafeStoredIrrAmounts(referrals.filter((r) => r.rewardClaimed).map((r) => r.rewardAmount))
+      ? sumVerifiedPositiveIrrAmounts(referrals.filter((r) => r.rewardClaimed).map((r) => r.rewardAmount))
       : null,
     available: allRewardsVerified
-      ? sumSafeStoredIrrAmounts(referrals.filter((r) => r.status === "first_job" && !r.rewardClaimed).map((r) => r.rewardAmount))
+      ? sumVerifiedPositiveIrrAmounts(referrals.filter((r) => r.status === "first_job" && !r.rewardClaimed).map((r) => r.rewardAmount))
       : null,
   };
   return NextResponse.json({ referrals: safeReferrals, stats });
@@ -88,7 +88,7 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "ارجاع به خود مجاز نیست" }, { status: 400 });
   }
 
-  if (referral.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(referral.rewardAmount)) {
+  if (referral.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(referral.rewardAmount) || Number(referral.rewardAmount) <= 0) {
     return NextResponse.json({ error: "منشأ مالی پاداش ارجاع تأیید نشده است", code: "REFERRAL_REWARD_PROVENANCE_UNVERIFIED" }, { status: 409 });
   }
 
