@@ -174,6 +174,7 @@ export async function recordVerifiedGatewayPaymentAtomically(
         userId: input.userId,
         purpose: "vip",
         targetPlanId: input.targetPlanId,
+        targetPlanDurationDays: input.durationDays,
         amount: input.amount,
         currency: "IRR",
         financialUnitStatus: "VERIFIED_IRR",
