@@ -68,6 +68,8 @@ describe("VIP gateway initiation", () => {
     const createArgs = mockGatewayCreate.mock.calls[0][0];
     expect(createArgs.data.amount).toBe(125_000);
     expect(createArgs.data.targetPlanId).toBe("plan-gold");
+    expect(createArgs.data.targetPlanDurationDays).toBe(30);
+    expect(body.durationDays).toBe(30);
     expect(createArgs.data.idempotencyKey).toBe("vip-checkout-attempt-0001");
     expect(createArgs.data.purpose).toBe("vip");
     expect(createArgs.data.financialUnitStatus).toBe("VERIFIED_IRR");
