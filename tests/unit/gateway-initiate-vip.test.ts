@@ -37,6 +37,7 @@ describe("VIP gateway initiation", () => {
       id: "plan-gold",
       name: "Gold",
       priceIrr: 125_000,
+      durationDays: 30,
       financialUnitStatus: "VERIFIED_IRR",
       active: true,
     });
@@ -78,6 +79,7 @@ describe("VIP gateway initiation", () => {
     mockGatewayFindUnique.mockResolvedValue({
       code: "PG-existing", referenceId: "SIM-existing", amount: 125_000,
       userId: "customer-1", purpose: "vip", targetPlanId: "plan-gold",
+      targetPlanDurationDays: 30,
       currency: "IRR", financialUnitStatus: "VERIFIED_IRR", status: "REDIRECTED",
     });
     const response = await POST(request({ purpose: "vip", planId: "plan-gold", idempotencyKey: "vip-checkout-attempt-0001" }));
@@ -96,6 +98,7 @@ describe("VIP gateway initiation", () => {
     mockGatewayFindUnique.mockResolvedValue({
       code: "PG-original", referenceId: "SIM-original", amount: 125_000,
       userId: "customer-1", purpose: "vip", targetPlanId: "plan-gold",
+      targetPlanDurationDays: 30,
       currency: "IRR", financialUnitStatus: "VERIFIED_IRR", status: "REDIRECTED",
     });
     const response = await POST(request({ purpose: "vip", planId: "plan-gold", idempotencyKey: "vip-checkout-attempt-0001" }));
@@ -110,6 +113,7 @@ describe("VIP gateway initiation", () => {
     mockGatewayFindUnique.mockResolvedValue({
       code: "PG-existing", referenceId: "SIM-existing", amount: 125_000,
       userId: "someone-else", purpose: "vip", targetPlanId: "plan-gold",
+      targetPlanDurationDays: 30,
       currency: "IRR", financialUnitStatus: "VERIFIED_IRR", status: "REDIRECTED",
     });
     const response = await POST(request({ purpose: "vip", planId: "plan-gold", idempotencyKey: "vip-checkout-attempt-0001" }));
@@ -121,6 +125,7 @@ describe("VIP gateway initiation", () => {
     const winner = {
       code: "PG-race-winner", referenceId: "SIM-race-winner", amount: 125_000,
       userId: "customer-1", purpose: "vip", targetPlanId: "plan-gold",
+      targetPlanDurationDays: 30,
       currency: "IRR", financialUnitStatus: "VERIFIED_IRR", status: "REDIRECTED",
     };
     mockGatewayFindUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(winner);
@@ -147,6 +152,7 @@ describe("VIP gateway initiation", () => {
       id: "plan-gold",
       name: "Gold",
       priceIrr: 125_000,
+      durationDays: 30,
       financialUnitStatus: "UNVERIFIED",
       active: true,
     });
