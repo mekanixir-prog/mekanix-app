@@ -27,6 +27,20 @@ describe("MEKANIX owner-approved fixed rate card", () => {
     expect(rateCardIrrToTomanInput(updated).passenger.dispatchToman).toBe(725_000);
   });
 
+  it("requires every approved labor category for each asset class", () => {
+    const input = rateCardIrrToTomanInput(createDefaultRateCardIrr());
+    const { diagnostics: _removed, ...missingPassenger } = input.passenger.laborToman;
+    expect(() => parseRateCardTomanInput({
+      ...input,
+      passenger: { ...input.passenger, laborToman: missingPassenger },
+    })).toThrow();
+    const { hydraulics: _removedHeavy, ...missingHeavy } = input.heavy.laborToman;
+    expect(() => parseRateCardTomanInput({
+      ...input,
+      heavy: { ...input.heavy, laborToman: missingHeavy },
+    })).toThrow();
+  });
+
   it("rejects fractional, negative, unsafe and unsupported money values", () => {
     const input = rateCardIrrToTomanInput(createDefaultRateCardIrr());
     expect(() => parseRateCardTomanInput({ ...input, passenger: { ...input.passenger, dispatchToman: 1.5 } })).toThrow();
