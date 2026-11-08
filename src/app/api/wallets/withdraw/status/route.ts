@@ -92,12 +92,22 @@ export async function GET(req: Request) {
     Number(ledger.balanceAfter) >= 0 &&
     Number.isSafeInteger(Number(ledger.balanceBefore) + Number(ledgerAmount)) &&
     Number(ledger.balanceAfter) === Number(ledger.balanceBefore) + Number(ledgerAmount);
-  if (!ledger || !financiallyVerified || ledger.referenceId !== request!.id) {
+  if (!ledger || !financiallyVerified) {
     return NextResponse.json({
       state: "RECONCILIATION_REQUIRED",
       withdrawalCode: request!.code,
       ledgerFound: Boolean(ledger),
       requestFound: true,
+      reason: "FINANCIAL_PROVENANCE_UNVERIFIED",
+    }, { status: 409 });
+  }
+  if (ledger.referenceId !== request!.id) {
+    return NextResponse.json({
+      state: "RECONCILIATION_REQUIRED",
+      withdrawalCode: request!.code,
+      ledgerFound: true,
+      requestFound: true,
+      reason: "LEDGER_REFERENCE_MISMATCH",
     }, { status: 409 });
   }
 
