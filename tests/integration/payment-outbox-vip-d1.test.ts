@@ -134,6 +134,18 @@ describe("VIP payment outbox dispatcher D1 integration",()=>{
     expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "UserVipSubscription" WHERE "paymentId"='payment-1'`).get()).toEqual({count:1});
     expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "Notification" WHERE "id"='vip-activated:payment-1'`).get()).toEqual({count:1});
   });
+  it("refuses to complete against an existing subscription with a different duration",async()=>{
+    const {sqlite,d1}=makeD1(); dbs.push(sqlite); seed(sqlite);
+    sqlite.prepare(`INSERT INTO "UserVipSubscription" VALUES (?,?,?,?,?,?,?,?,?)`).run(
+      "wrong-duration","user-1","plan-1","ACTIVE",now.toISOString(),
+      new Date(now.getTime()+365*86400000).toISOString(),"payment-1",now.toISOString(),now.toISOString()
+    );
+    await runWorker(d1);
+    expect(sqlite.prepare(`SELECT "status","attempts" FROM "PaymentOutboxEvent"`).get()).toEqual({status:"PENDING",attempts:1});
+    expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "Notification"`).get()).toEqual({count:0});
+    expect(sqlite.prepare(`SELECT "status" FROM "UserVipSubscription" WHERE "id"='wrong-duration'`).get()).toEqual({status:"ACTIVE"});
+  });
+
   it("reclaims an abandoned PROCESSING event after its lease expires",async()=>{
     const {sqlite,d1}=makeD1(); dbs.push(sqlite); seed(sqlite);
     sqlite.prepare(`UPDATE "PaymentOutboxEvent" SET "status"='PROCESSING',"lockedAt"=? WHERE "id"='event-1'`)
