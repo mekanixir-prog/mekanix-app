@@ -4,7 +4,8 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant } from "@/lib/auth";
 import { recordPrepayAtomically } from "@/lib/prepay-atomic";
-import { isSafeStoredIrrAmount, maskFinancialFields, maskJobFinancialData } from "@/lib/money/financial-read-mask";
+import { isSafeStoredIrrAmount, maskJobFinancialData } from "@/lib/money/financial-read-mask";
+import { isCommittedPrepayConsistent } from "@/lib/prepay-reconciliation";
 
 // Pre-service payment: customer pays inspection fee + travel fee.
 // This activates chat/call with the mechanic.
@@ -27,6 +28,30 @@ import { isSafeStoredIrrAmount, maskFinancialFields, maskJobFinancialData } from
 //
 // MIGRATION: Uses getDbForLib() instead of direct db import.
 
+
+async function inspectPrepayEvidence(db: Awaited<ReturnType<typeof getDbForLib>>, job: any) {
+  const [wallet, prepayTransaction, commissionTransaction, holdLedger, commissionLedger] = await Promise.all([
+    db.wallet.findUnique({
+      where: { technicianId: job.technicianId },
+      select: {
+        id: true, financialUnitStatus: true, balance: true, pendingBalance: true,
+        totalEarned: true, totalCommission: true, totalWithdrawn: true,
+      },
+    }),
+    db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${job.id}:PREPAY` } }),
+    db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${job.id}:COMMISSION` } }),
+    db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_HOLD` } }),
+    db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_COMMISSION` } }),
+  ]);
+  const rows = [prepayTransaction, commissionTransaction, holdLedger, commissionLedger];
+  return {
+    wallet,
+    recordCount: rows.filter(Boolean).length,
+    consistent: isCommittedPrepayConsistent(
+      job, wallet, prepayTransaction, commissionTransaction, holdLedger, commissionLedger,
+    ),
+  };
+}
 
 function isHeavyMachine(type: string): boolean {
   return type !== "CAR";
@@ -73,27 +98,23 @@ export async function POST(req: Request) {
   // partial-write state. Do not guess whether to credit again; surface it for
   // explicit reconciliation instead of silently claiming the wallet is correct.
   if (job.prepayPaid) {
-    const [prepayTxn, commissionTxn, holdLedger, commissionLedger] = await Promise.all([
-      db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${job.id}:PREPAY` } }),
-      db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${job.id}:COMMISSION` } }),
-      db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_HOLD` } }),
-      db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_COMMISSION` } }),
-    ]);
-    if (!prepayTxn || !commissionTxn || !holdLedger || !commissionLedger) {
+    const evidence = await inspectPrepayEvidence(db, job);
+    if (!evidence.consistent) {
       return NextResponse.json({
         error: "Pre-service payment requires financial reconciliation",
         reconciliationRequired: true,
         jobId: job.id,
+        recordedFinancialRows: evidence.recordCount,
+        expectedFinancialRows: 4,
       }, { status: 409 });
     }
-    const safeJob = maskFinancialFields(job, ["inspectionFee", "travelFee", "platformCommission", "netEarnings"]);
     return NextResponse.json({
       ok: true,
       alreadyPaid: true,
-      job: safeJob,
-      amount: safeJob.inspectionFee == null || safeJob.travelFee == null ? null : Number(safeJob.inspectionFee) + Number(safeJob.travelFee),
-      commission: safeJob.platformCommission == null ? null : Number(safeJob.platformCommission),
-      net: safeJob.netEarnings == null ? null : Number(safeJob.netEarnings),
+      job: maskJobFinancialData(job as unknown as Record<string, unknown>),
+      amount: Number(job.inspectionFee) + Number(job.travelFee),
+      commission: Number(job.platformCommission),
+      net: Number(job.netEarnings),
     });
   }
 
@@ -141,13 +162,23 @@ export async function POST(req: Request) {
   if (!recorded) {
     const currentJob = await db.job.findUnique({ where: { id: jobId } });
     if (currentJob?.prepayPaid) {
+      const evidence = await inspectPrepayEvidence(db, currentJob);
+      if (!evidence.consistent) {
+        return NextResponse.json({
+          error: "Pre-service payment requires financial reconciliation",
+          reconciliationRequired: true,
+          jobId: currentJob.id,
+          recordedFinancialRows: evidence.recordCount,
+          expectedFinancialRows: 4,
+        }, { status: 409 });
+      }
       return NextResponse.json({
         ok: true,
         alreadyPaid: true,
-        job: maskFinancialFields(currentJob, ["inspectionFee", "travelFee", "platformCommission", "netEarnings"]),
-        amount: currentJob.financialUnitStatus === "VERIFIED_IRR" ? Number(currentJob.inspectionFee) + Number(currentJob.travelFee) : null,
-        commission: currentJob.financialUnitStatus === "VERIFIED_IRR" ? Number(currentJob.platformCommission) : null,
-        net: currentJob.financialUnitStatus === "VERIFIED_IRR" ? Number(currentJob.netEarnings) : null,
+        job: maskJobFinancialData(currentJob as unknown as Record<string, unknown>),
+        amount: Number(currentJob.inspectionFee) + Number(currentJob.travelFee),
+        commission: Number(currentJob.platformCommission),
+        net: Number(currentJob.netEarnings),
       });
     }
     return NextResponse.json({ error: "Pre-service payment could not be recorded; retry safely" }, { status: 409 });
