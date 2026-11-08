@@ -29,7 +29,6 @@ export async function GET(req: Request) {
       id: true,
       code: true,
       technicianId: true,
-      financialUnitStatus: true,
       prepayPaid: true,
       prepayPaidAt: true,
       inspectionFee: true,
