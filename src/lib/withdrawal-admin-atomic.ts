@@ -52,7 +52,7 @@ export async function updateWithdrawalWithPrisma(
     const walletProvenance = await tx.wallet.findUnique({ where: { id: withdrawal.walletId }, select: { financialUnitStatus: true, balance: true, totalWithdrawn: true } });
     if (walletProvenance?.financialUnitStatus !== "VERIFIED_IRR") return false;
     if (input.action === "REJECTED" && (!isSafeStoredIrrAmount(walletProvenance.balance) || Number(walletProvenance.balance) < 0 || !Number.isSafeInteger(Number(walletProvenance.balance) + Number(withdrawal.amount)))) return false;
-    if (input.action === "PAID" && (!isSafeStoredIrrAmount(walletProvenance.totalWithdrawn) || !Number.isSafeInteger(Number(walletProvenance.totalWithdrawn) + Number(withdrawal.amount)))) return false;
+    if (input.action === "PAID" && (!isSafeStoredIrrAmount(walletProvenance.totalWithdrawn) || Number(walletProvenance.totalWithdrawn) < 0 || !Number.isSafeInteger(Number(walletProvenance.totalWithdrawn) + Number(withdrawal.amount)))) return false;
 
     if (input.action === "APPROVED") {
       if (withdrawal.status !== "REQUESTED") return false;
@@ -326,7 +326,7 @@ export async function updateWithdrawalWithD1(
         SELECT "walletId" FROM "WithdrawalRequest"
         WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?
       ) AND "financialUnitStatus" = 'VERIFIED_IRR'
-        AND "totalWithdrawn" = CAST("totalWithdrawn" AS INTEGER) AND abs("totalWithdrawn") <= 9007199254740991
+        AND "totalWithdrawn" = CAST("totalWithdrawn" AS INTEGER) AND "totalWithdrawn" >= 0 AND "totalWithdrawn" <= 9007199254740991
         AND "totalWithdrawn" <= 9007199254740991 - (SELECT "amount" FROM "WithdrawalRequest" WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?)
         AND changes() = 1
     `).bind(input.withdrawalId, payoutReference, at, input.withdrawalId, payoutReference, input.withdrawalId, payoutReference),
