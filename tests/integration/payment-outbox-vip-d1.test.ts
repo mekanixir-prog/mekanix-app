@@ -19,7 +19,7 @@ function makeD1(onBeforeBatch?: (sqlite:DatabaseSync)=>void) {
     CREATE TABLE "PaymentGatewayLog" (
       "id" TEXT PRIMARY KEY, "userId" TEXT NOT NULL, "paymentId" TEXT, "amount" REAL NOT NULL,
       "currency" TEXT NOT NULL, "status" TEXT NOT NULL, "purpose" TEXT NOT NULL,
-      "targetPlanId" TEXT, "financialUnitStatus" TEXT NOT NULL
+      "targetPlanId" TEXT, "targetPlanDurationDays" INTEGER, "financialUnitStatus" TEXT NOT NULL
     );
     CREATE TABLE "VipPlan" (
       "id" TEXT PRIMARY KEY, "durationDays" INTEGER NOT NULL, "active" INTEGER NOT NULL,
@@ -70,7 +70,7 @@ function seed(sqlite:DatabaseSync, amount=100000) {
     userId:"user-1",amount,currency:"IRR",purpose:"vip",targetPlanId:"plan-1",durationDays:30,
   });
   sqlite.prepare(`INSERT INTO "Payment" VALUES (?,?,?,?,?,?,?)`).run("payment-1","user-1",100000,"IRR","SUCCEEDED","VERIFIED_IRR","gateway-1");
-  sqlite.prepare(`INSERT INTO "PaymentGatewayLog" VALUES (?,?,?,?,?,?,?,?,?)`).run("gateway-1","user-1","payment-1",100000,"IRR","VERIFIED","vip","plan-1","VERIFIED_IRR");
+  sqlite.prepare(`INSERT INTO "PaymentGatewayLog" VALUES (?,?,?,?,?,?,?,?,?,?)`).run("gateway-1","user-1","payment-1",100000,"IRR","VERIFIED","vip","plan-1",30,"VERIFIED_IRR");
   sqlite.prepare(`INSERT INTO "VipPlan" VALUES (?,?,?,?)`).run("plan-1",30,1,"VERIFIED_IRR");
   sqlite.prepare(`INSERT INTO "PaymentOutboxEvent" VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     "event-1","PAYMENT_SUCCEEDED","Payment","payment-1",payload,"payment.succeeded:gateway-1",
