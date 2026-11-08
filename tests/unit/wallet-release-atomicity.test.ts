@@ -34,7 +34,7 @@ describe("wallet escrow release atomicity", () => {
     }));
     expect(tx.walletTransaction.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.wallet.updateMany).toHaveBeenCalledWith({
-      where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR", pendingBalance: { gte: netAmount } },
+      where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR", balance: { gte: 0 }, pendingBalance: { gte: netAmount } },
       data: {
         pendingBalance: { decrement: netAmount },
         balance: { increment: netAmount },
@@ -114,6 +114,7 @@ describe("wallet escrow release atomicity", () => {
     expect(statements[0].sql).toContain("'RELEASE'");
     expect(statements[0].sql).toContain('"balanceBefore"');
     expect(statements[0].sql).toContain('"balanceAfter"');
+    expect(statements[0].sql).toContain('w."balance" >= 0');
     expect(statements[1].sql).toContain('"pendingBalance"');
     expect(statements[1].sql).toContain('"balanceBefore" = w."balance"');
     expect(statements[2].sql).toContain('"status" = \'PENDING\'');
