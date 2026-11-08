@@ -40,7 +40,7 @@ export async function GET(req: Request) {
       }),
     ]);
 
-  const revenue30d = sumVerifiedIrrAmounts(payments30d.map((payment) => payment.amount));
+  const revenue30d = sumVerifiedPositiveIrrAmounts(payments30d.map((payment) => payment.amount));
 
   const techs = await db.technician.findMany({ select: { responseMins: true } });
   const avgResponseMins = techs.length
@@ -63,7 +63,7 @@ export async function GET(req: Request) {
     const jobs = await db.job.count({ where: { status: "COMPLETED", completedAt: { gte: start, lt: end } } });
     revenueSeries.push({
       date: end.toISOString().slice(5, 10),
-      revenue: sumVerifiedIrrAmounts(pays.map((payment) => payment.amount)),
+      revenue: sumVerifiedPositiveIrrAmounts(pays.map((payment) => payment.amount)),
       jobs,
     });
   }
@@ -88,7 +88,7 @@ export async function GET(req: Request) {
       return {
         category: c.category,
         count: c._count,
-        revenue: sumVerifiedIrrAmounts(payments.map((payment) => payment.amount)),
+        revenue: sumVerifiedPositiveIrrAmounts(payments.map((payment) => payment.amount)),
       };
     })
   );
@@ -108,7 +108,7 @@ export async function GET(req: Request) {
         },
         select: { amount: true },
       });
-      const revenue = sumVerifiedIrrAmounts(pays.map((payment) => payment.amount));
+      const revenue = sumVerifiedPositiveIrrAmounts(pays.map((payment) => payment.amount));
       return {
         name: t.user.name,
         jobs: jobCount,
