@@ -23,7 +23,8 @@ type PrepayWallet = AmountRecord & {
 };
 
 function sameAmount(value: unknown, expected: number): boolean {
-  return isSafeStoredIrrAmount(value) && Number(value) === expected;
+  return value !== null && value !== undefined &&
+    isSafeStoredIrrAmount(value) && Number(value) === expected;
 }
 
 /**
@@ -46,7 +47,7 @@ export function isCommittedPrepayConsistent(
     !wallet ||
     wallet.financialUnitStatus !== "VERIFIED_IRR" ||
     ![wallet.balance, wallet.pendingBalance, wallet.totalEarned, wallet.totalCommission, wallet.totalWithdrawn]
-      .every(isSafeStoredIrrAmount) ||
+      .every((value) => value !== null && value !== undefined && isSafeStoredIrrAmount(value)) ||
     !prepayTransaction ||
     !commissionTransaction ||
     !holdLedger ||
@@ -54,7 +55,7 @@ export function isCommittedPrepayConsistent(
   ) return false;
 
   const amounts = [job.inspectionFee, job.travelFee, job.platformCommission, job.netEarnings];
-  if (!amounts.every(isSafeStoredIrrAmount)) return false;
+  if (!amounts.every((value) => value !== null && value !== undefined && isSafeStoredIrrAmount(value))) return false;
   const [inspectionFee, travelFee, commission, net] = amounts.map(Number);
   const gross = inspectionFee + travelFee;
   if (
@@ -90,6 +91,7 @@ export function isCommittedPrepayConsistent(
     !verified(holdLedger) || !linked(holdLedger) ||
     holdLedger.type !== "HOLD" || holdLedger.referenceType !== "Job" ||
     holdLedger.referenceId !== job.id || !sameAmount(holdLedger.amount, net) ||
+    holdBefore === null || holdBefore === undefined || holdAfter === null || holdAfter === undefined ||
     !isSafeStoredIrrAmount(holdBefore) || !isSafeStoredIrrAmount(holdAfter) ||
     Number(holdAfter) !== Number(holdBefore) + net
   ) return false;
