@@ -42,10 +42,11 @@ describe("VIP gateway initiation", () => {
       active: true,
     });
     mockGatewayFindUnique.mockResolvedValue(null);
-    mockGatewayCreate.mockImplementation(async ({ data }: { data: { code: string; referenceId: string; amount: number } }) => ({
+    mockGatewayCreate.mockImplementation(async ({ data }: { data: { code: string; referenceId: string; amount: number; targetPlanDurationDays: number } }) => ({
       code: data.code,
       referenceId: data.referenceId,
       amount: data.amount,
+      targetPlanDurationDays: data.targetPlanDurationDays,
     }));
   });
 
@@ -95,6 +96,7 @@ describe("VIP gateway initiation", () => {
   it("reuses the original attempt snapshot when the plan price changes", async () => {
     mockVipPlanFindUnique.mockResolvedValue({
       id: "plan-gold", name: "Gold", priceIrr: 150_000,
+      durationDays: 30,
       financialUnitStatus: "VERIFIED_IRR", active: true,
     });
     mockGatewayFindUnique.mockResolvedValue({
