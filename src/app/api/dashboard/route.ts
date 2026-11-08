@@ -1,22 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
-import { isSafeStoredIrrAmount, sumSafeStoredIrrAmounts } from "@/lib/money/financial-read-mask";
-
-type PaymentAmountRow = { amount: unknown };
-
-/**
- * An aggregate is only meaningful when every included payment amount is a
- * verified safe integer. Never silently drop a malformed row or overflow into
- * an apparently valid dashboard total.
- */
-function sumVerifiedPaymentAmounts(rows: readonly PaymentAmountRow[]): number | null {
-  const amounts = rows.map((row) => row.amount);
-  if (amounts.some((amount) => amount === null || amount === undefined || !isSafeStoredIrrAmount(amount))) {
-    return null;
-  }
-  return sumSafeStoredIrrAmounts(amounts);
-}
+import { sumVerifiedIrrAmounts } from "@/lib/money/financial-read-mask";
 
 // GET /api/dashboard — platform-wide administrative analytics.
 // Admin-only: the response includes financial aggregates, technician-level
@@ -55,7 +40,7 @@ export async function GET(req: Request) {
       }),
     ]);
 
-  const revenue30d = sumVerifiedPaymentAmounts(payments30d);
+  const revenue30d = sumVerifiedIrrAmounts(payments30d.map((payment) => payment.amount));
 
   const techs = await db.technician.findMany({ select: { responseMins: true } });
   const avgResponseMins = techs.length
@@ -78,7 +63,7 @@ export async function GET(req: Request) {
     const jobs = await db.job.count({ where: { status: "COMPLETED", completedAt: { gte: start, lt: end } } });
     revenueSeries.push({
       date: end.toISOString().slice(5, 10),
-      revenue: sumVerifiedPaymentAmounts(pays),
+      revenue: sumVerifiedIrrAmounts(pays.map((payment) => payment.amount)),
       jobs,
     });
   }
@@ -103,7 +88,7 @@ export async function GET(req: Request) {
       return {
         category: c.category,
         count: c._count,
-        revenue: sumVerifiedPaymentAmounts(payments),
+        revenue: sumVerifiedIrrAmounts(payments.map((payment) => payment.amount)),
       };
     })
   );
@@ -123,7 +108,7 @@ export async function GET(req: Request) {
         },
         select: { amount: true },
       });
-      const revenue = sumVerifiedPaymentAmounts(pays);
+      const revenue = sumVerifiedIrrAmounts(pays.map((payment) => payment.amount));
       return {
         name: t.user.name,
         jobs: jobCount,
