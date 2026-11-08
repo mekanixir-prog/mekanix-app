@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
-import { isSafeStoredIrrAmount, maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { isSafeStoredIrrAmount, maskFinancialFields, sumSafeStoredIrrAmounts } from "@/lib/money/financial-read-mask";
 
 // GET: list user's referrals + stats.
 // referrerId is derived from the session — the `userId` query param is IGNORED (BOLA protection).
@@ -23,8 +23,12 @@ export async function GET(req: Request) {
     total: referrals.length,
     signedUp: referrals.filter((r) => r.status === "signed_up" || r.status === "first_job" || r.status === "rewarded").length,
     firstJob: referrals.filter((r) => r.status === "first_job" || r.status === "rewarded").length,
-    earned: allRewardsVerified ? referrals.filter((r) => r.rewardClaimed).reduce((s, r) => s + Number(r.rewardAmount), 0) : null,
-    available: allRewardsVerified ? referrals.filter((r) => r.status === "first_job" && !r.rewardClaimed).reduce((s, r) => s + Number(r.rewardAmount), 0) : null,
+    earned: allRewardsVerified
+      ? sumSafeStoredIrrAmounts(referrals.filter((r) => r.rewardClaimed).map((r) => r.rewardAmount))
+      : null,
+    available: allRewardsVerified
+      ? sumSafeStoredIrrAmounts(referrals.filter((r) => r.status === "first_job" && !r.rewardClaimed).map((r) => r.rewardAmount))
+      : null,
   };
   return NextResponse.json({ referrals: safeReferrals, stats });
 }
@@ -92,25 +96,15 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "این پاداش قابل دریافت نیست" }, { status: 400 });
   }
 
-  const updated = await db.referral.update({
-    where: { id: referralId },
-    data: { rewardClaimed: true, status: "rewarded", completedAt: new Date() },
-  });
-
-  // Notification — best-effort, never fail a reward claim over a notification.
-  try {
-    await db.notification.create({
-      data: {
-        userId: updated.referrerId,
-        type: "referral_rewarded",
-        title: "Referral reward claimed!",
-        body: `Your referral reward ${updated.code} has been claimed.`,
-        category: "system",
-        link: "customer/referral",
-      },
-    });
-  } catch (e) {
-    console.error("[referral/claim] Failed to create notification (reward still claimed):", e);
-  }
-  return NextResponse.json({ ok: true, referral: maskFinancialFields(updated, ["rewardAmount"]) });
+  // Claiming a reward without atomically crediting the verified wallet and
+  // writing its immutable ledger entry would falsely report a settlement.
+  // Keep this mutation closed until the owner approves the accounting contract
+  // and the Prisma/D1 atomic settlement implementation is available.
+  return NextResponse.json(
+    {
+      error: "تسویهٔ پاداش معرفی هنوز آماده نیست؛ تا تکمیل ثبت اتمیک اعتبار کیف پول، امکان دریافت وجود ندارد",
+      code: "REFERRAL_REWARD_SETTLEMENT_NOT_IMPLEMENTED",
+    },
+    { status: 409 },
+  );
 }
