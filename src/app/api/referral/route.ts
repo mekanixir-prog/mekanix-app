@@ -98,10 +98,25 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "این پاداش قابل دریافت نیست" }, { status: 400 });
   }
 
-  const updated = await db.referral.update({
-    where: { id: referralId },
+  // Compare-and-set prevents two concurrent claim requests from both
+  // reporting success for the same reward.
+  const claimed = await db.referral.updateMany({
+    where: {
+      id: referralId,
+      referrerId: session.userId,
+      status: "first_job",
+      rewardClaimed: false,
+      financialUnitStatus: "VERIFIED_IRR",
+    },
     data: { rewardClaimed: true, status: "rewarded", completedAt: new Date() },
   });
+  if (claimed.count !== 1) {
+    return NextResponse.json({ error: "این پاداش هم‌زمان دریافت شده یا دیگر قابل دریافت نیست" }, { status: 409 });
+  }
+  const updated = await db.referral.findUnique({ where: { id: referralId } });
+  if (!updated) {
+    return NextResponse.json({ error: "وضعیت دریافت پاداش نیازمند بررسی است" }, { status: 409 });
+  }
 
   // Notification — best-effort, never fail a reward claim over a notification.
   try {
