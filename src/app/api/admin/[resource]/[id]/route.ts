@@ -176,7 +176,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
     const before = await db.withdrawalRequest.findUnique({
       where: { id },
       select: {
-        id: true, code: true, walletId: true, amount: true, financialUnitStatus: true, method: true,
+        id: true, code: true, walletId: true, amount: true, financialUnitStatus: true, idempotencyKey: true, method: true,
         status: true, requestedAt: true, processedAt: true, reviewerId: true,
         adminNotes: true, txnId: true, shebaNumber: true,
         wallet: { select: { financialUnitStatus: true, technician: { select: { userId: true } } } },
@@ -209,8 +209,34 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
         return NextResponse.json({ error: "شناسه پیگیری واقعی انتقال بانکی الزامی و نامعتبر است" }, { status: 400 });
       }
       if (before.status === "PAID") {
-        if (before.txnId === payoutReference) return NextResponse.json({ ...before, idempotent: true });
-        return NextResponse.json({ error: "این برداشت قبلاً با شناسه پیگیری دیگری پرداخت شده است" }, { status: 409 });
+        if (before.txnId !== payoutReference) {
+          return NextResponse.json({ error: "این برداشت قبلاً با شناسه پیگیری دیگری پرداخت شده است" }, { status: 409 });
+        }
+        const debitLedger = before.idempotencyKey
+          ? await db.walletLedger.findUnique({ where: { idempotencyKey: `withdrawal:${before.idempotencyKey}:LEDGER` } })
+          : null;
+        const amount = Number(before.amount);
+        const debitBefore = debitLedger?.balanceBefore;
+        const debitAfter = debitLedger?.balanceAfter;
+        const consistent = Boolean(
+          debitLedger &&
+          debitLedger.walletId === before.walletId &&
+          debitLedger.financialUnitStatus === "VERIFIED_IRR" &&
+          debitLedger.type === "WITHDRAWAL" &&
+          isSafeStoredIrrAmount(debitLedger.amount) &&
+          Number(debitLedger.amount) === -amount &&
+          debitLedger.referenceType === "Withdrawal" &&
+          debitLedger.referenceId === before.id &&
+          isSafeStoredIrrAmount(debitBefore) &&
+          isSafeStoredIrrAmount(debitAfter) &&
+          Number(debitBefore) >= amount &&
+          Number(debitAfter) >= 0 &&
+          Number(debitAfter) === Number(debitBefore) - amount
+        );
+        if (!consistent) {
+          return NextResponse.json({ error: "سابقه برداشت نیازمند تطبیق دفترکل است", code: "WITHDRAWAL_RECONCILIATION_REQUIRED" }, { status: 409 });
+        }
+        return NextResponse.json({ ...before, idempotent: true });
       }
       if (before.status !== "APPROVED") {
         return NextResponse.json({ error: "ابتدا باید درخواست برداشت تأیید شود" }, { status: 409 });
