@@ -25,10 +25,30 @@ export async function updateWithdrawalWithPrisma(
   return db.$transaction(async (tx) => {
     const withdrawal = await tx.withdrawalRequest.findUnique({
       where: { id: input.withdrawalId },
-      select: { id: true, walletId: true, amount: true, status: true, financialUnitStatus: true },
+      select: { id: true, walletId: true, amount: true, status: true, financialUnitStatus: true, idempotencyKey: true },
     });
     if (!withdrawal) throw new Error("درخواست برداشت پیدا نشد");
     if (withdrawal.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(withdrawal.amount) || Number(withdrawal.amount) <= 0) return false;
+    const amount = Number(withdrawal.amount);
+    const debitLedger = withdrawal.idempotencyKey
+      ? await tx.walletLedger.findUnique({ where: { idempotencyKey: `withdrawal:${withdrawal.idempotencyKey}:LEDGER` } })
+      : null;
+    const debitBefore = debitLedger?.balanceBefore;
+    const debitAfter = debitLedger?.balanceAfter;
+    const debitLedgerVerified = Boolean(
+      debitLedger &&
+      debitLedger.walletId === withdrawal.walletId &&
+      debitLedger.financialUnitStatus === "VERIFIED_IRR" &&
+      debitLedger.type === "WITHDRAWAL" &&
+      debitLedger.amount !== null && debitLedger.amount !== undefined &&
+      isSafeStoredIrrAmount(debitLedger.amount) && Number(debitLedger.amount) === -amount &&
+      debitLedger.referenceType === "Withdrawal" && debitLedger.referenceId === withdrawal.id &&
+      isSafeStoredIrrAmount(debitBefore) && isSafeStoredIrrAmount(debitAfter) &&
+      Number(debitBefore) >= amount && Number(debitAfter) >= 0 &&
+      Number(debitAfter) === Number(debitBefore) - amount
+    );
+    if (!debitLedgerVerified) return false;
+
     const walletProvenance = await tx.wallet.findUnique({ where: { id: withdrawal.walletId }, select: { financialUnitStatus: true, balance: true, totalWithdrawn: true } });
     if (walletProvenance?.financialUnitStatus !== "VERIFIED_IRR") return false;
     if (input.action === "REJECTED" && (!isSafeStoredIrrAmount(walletProvenance.balance) || !Number.isSafeInteger(Number(walletProvenance.balance) + Number(withdrawal.amount)))) return false;
