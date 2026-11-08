@@ -16,6 +16,12 @@
 - If a worker crashes after claiming, another run may reclaim the row after lease expiry.
 - If a worker crashes after successful fulfillment, the event and subscription are already committed together. A retry recognizes the existing exact payment binding and does not create a second subscription.
 - The existing `/api/vip/subscribe` endpoint remains compatible: it returns the same subscription on exact replay. Whichever path fulfills first wins through the unique `paymentId` constraint; the other path recovers the same result.
+- The Worker explicitly excludes the current `paymentId` when retiring previous active subscriptions. This prevents a subscription created by `/api/vip/subscribe` between the Worker's initial lookup and its D1 batch from being cancelled by that same batch.
+- An integration test injects that API-created subscription at the read/batch boundary and verifies that it remains ACTIVE, the older subscription is cancelled, and the outbox event is processed exactly once.
+
+## CI validation
+- The Cloudflare workflow runs a Wrangler `deploy --dry-run` build for this Worker whenever its source, config, integration test, or runbook changes. This compiles/validates the dedicated Worker bundle without publishing it.
+- The normal application OpenNext build and the payment outbox Worker dry-run are separate checks; one does not substitute for the other.
 
 ## Staging-only deployment
 1. Create a dedicated isolated staging D1 database. Do not point this worker at the production application database.
