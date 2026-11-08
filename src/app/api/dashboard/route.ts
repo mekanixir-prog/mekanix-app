@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
-import { sumVerifiedIrrAmounts } from "@/lib/money/financial-read-mask";
+import { sumVerifiedPositiveIrrAmounts } from "@/lib/money/financial-read-mask";
 
 // GET /api/dashboard — platform-wide administrative analytics.
 // Admin-only: the response includes financial aggregates, technician-level
