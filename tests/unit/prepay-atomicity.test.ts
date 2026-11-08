@@ -20,7 +20,7 @@ describe("atomic prepay recording", () => {
     const tx = {
       job: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       wallet: {
-        upsert: vi.fn().mockResolvedValue({ id: "wallet-1", balance: 0, pendingBalance: 50, totalEarned: 0, totalCommission: 0, financialUnitStatus: "VERIFIED_IRR" }),
+        upsert: vi.fn().mockResolvedValue({ id: "wallet-1", balance: 0, pendingBalance: 50, totalEarned: 0, totalCommission: 0, totalWithdrawn: 0, financialUnitStatus: "VERIFIED_IRR" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       walletTransaction: { create: vi.fn().mockResolvedValue({}) },
@@ -51,10 +51,34 @@ describe("atomic prepay recording", () => {
     });
   });
 
+  it("rejects a verified wallet with a negative aggregate before creating financial rows", async () => {
+    const tx = {
+      job: { updateMany: vi.fn() },
+      wallet: {
+        upsert: vi.fn().mockResolvedValue({
+          id: "wallet-1", balance: 0, pendingBalance: -1,
+          totalEarned: 0, totalCommission: 0, totalWithdrawn: 0,
+          financialUnitStatus: "VERIFIED_IRR",
+        }),
+        updateMany: vi.fn(),
+      },
+      walletTransaction: { create: vi.fn() },
+      walletLedger: { create: vi.fn() },
+    };
+    const db = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)),
+    } as any;
+
+    await expect(recordPrepayWithPrisma(db, input)).resolves.toBe(false);
+    expect(tx.job.updateMany).not.toHaveBeenCalled();
+    expect(tx.walletTransaction.create).not.toHaveBeenCalled();
+    expect(tx.walletLedger.create).not.toHaveBeenCalled();
+  });
+
   it("does not create financial rows when another request won the job transition", async () => {
     const tx = {
       job: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
-      wallet: { upsert: vi.fn().mockResolvedValue({ id: "wallet-1", balance: 0, pendingBalance: 0, totalEarned: 0, totalCommission: 0, financialUnitStatus: "VERIFIED_IRR" }), updateMany: vi.fn() },
+      wallet: { upsert: vi.fn().mockResolvedValue({ id: "wallet-1", balance: 0, pendingBalance: 0, totalEarned: 0, totalCommission: 0, totalWithdrawn: 0, financialUnitStatus: "VERIFIED_IRR" }), updateMany: vi.fn() },
       walletTransaction: { create: vi.fn() },
       walletLedger: { create: vi.fn() },
     };
@@ -74,7 +98,7 @@ describe("atomic prepay recording", () => {
       wallet: {
         upsert: vi.fn().mockResolvedValue({
           id: "wallet-1", balance: 0, pendingBalance: 100,
-          totalEarned: 0, totalCommission: 0, financialUnitStatus: "UNVERIFIED",
+          totalEarned: 0, totalCommission: 0, totalWithdrawn: 0, financialUnitStatus: "UNVERIFIED",
         }),
         updateMany: vi.fn(),
       },
@@ -101,6 +125,7 @@ describe("atomic prepay recording", () => {
           pendingBalance: 50,
           totalEarned: 0,
           totalCommission: 0,
+          totalWithdrawn: 0,
           financialUnitStatus: "VERIFIED_IRR",
         }),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -123,7 +148,7 @@ describe("atomic prepay recording", () => {
     const tx = {
       job: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       wallet: {
-        upsert: vi.fn().mockResolvedValue({ id: "wallet-1", balance: 0, pendingBalance: 0, totalEarned: 0, totalCommission: 0, financialUnitStatus: "VERIFIED_IRR" }),
+        upsert: vi.fn().mockResolvedValue({ id: "wallet-1", balance: 0, pendingBalance: 0, totalEarned: 0, totalCommission: 0, totalWithdrawn: 0, financialUnitStatus: "VERIFIED_IRR" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       walletTransaction: { create: vi.fn().mockResolvedValue({}) },
@@ -151,17 +176,17 @@ describe("atomic prepay recording", () => {
         },
       }),
       batch: vi.fn().mockResolvedValue(
-        Array.from({ length: 15 }, () => ({ meta: { changes: 1 } }))
+        Array.from({ length: 16 }, () => ({ meta: { changes: 1 } }))
       ),
     };
 
     await expect(recordPrepayWithD1(d1 as any, input)).resolves.toBe(true);
     expect(d1.batch).toHaveBeenCalledTimes(1);
-    expect(d1.batch.mock.calls[0][0]).toHaveLength(15);
+    expect(d1.batch.mock.calls[0][0]).toHaveLength(16);
     expect(statements[5].sql).toContain("changes() = 1");
     expect(statements[4].sql).toContain('"idempotencyKey"');
     expect(statements[8].sql).toContain("'HOLD'");
-    expect(statements[10].sql).toContain("financialUnitStatus");
+    expect(statements.some((statement) => statement.sql.includes("totalWithdrawn") && statement.sql.includes(">= 0"))).toBe(true);
   });
 
   it("does not report success when the guarded Job update loses a race", async () => {
