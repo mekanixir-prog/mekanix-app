@@ -467,7 +467,7 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
     expect(mockRecordVerifiedGatewayPayment).toHaveBeenCalledTimes(1);
     expect(mockRecordVerifiedGatewayPayment).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       gatewayLogId: "log-1", userId: "user-1", amount: 100_000, targetPlanId: "plan-1",
-      targetPlanDurationDays: 30,
+      durationDays: 30,
     }));
   });
 
