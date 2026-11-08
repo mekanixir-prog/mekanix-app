@@ -27,7 +27,8 @@ describe("admin withdrawal D1 transaction integration", () => {
         "reviewerId" TEXT,
         "adminNotes" TEXT,
         "processedAt" TEXT,
-        "txnId" TEXT
+        "txnId" TEXT,
+        "idempotencyKey" TEXT
       );
       CREATE TABLE "WalletLedger" (
         "id" TEXT PRIMARY KEY,
@@ -59,8 +60,14 @@ describe("admin withdrawal D1 transaction integration", () => {
       );
       INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "totalWithdrawn", "updatedAt")
         VALUES ('wallet-1', 'VERIFIED_IRR', 1000, 0, '2026-10-30T09:00:00.000Z');
-      INSERT INTO "WithdrawalRequest" ("id", "walletId", "amount", "financialUnitStatus", "status")
-        VALUES ('wd-1', 'wallet-1', 500, 'VERIFIED_IRR', 'REQUESTED');
+      INSERT INTO "WithdrawalRequest" ("id", "walletId", "amount", "financialUnitStatus", "status", "idempotencyKey")
+        VALUES ('wd-1', 'wallet-1', 500, 'VERIFIED_IRR', 'REQUESTED', 'wd-key-1');
+      INSERT INTO "WalletLedger"
+        ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
+         "referenceType", "referenceId", "description", "idempotencyKey", "financialUnitStatus", "createdBy", "createdAt")
+        VALUES ('wd-ledger-1', 'wallet-1', 'WITHDRAWAL', -500, 1500, 1000,
+          'Withdrawal', 'wd-1', 'Withdrawal debit proof', 'withdrawal:wd-key-1:LEDGER',
+          'VERIFIED_IRR', 'user-1', '2026-10-30T09:00:00.000Z');
     `);
     d1 = {
       prepare: (sql: string) => ({
@@ -101,6 +108,17 @@ describe("admin withdrawal D1 transaction integration", () => {
     expect(sqlite.prepare('SELECT "balance" FROM "Wallet" WHERE "id" = ?').get("wallet-1"))
       .toEqual({ balance: 1500 });
     expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletLedger"').get()).toEqual({ n: 1 });
+  });
+
+  it("refuses admin settlement when the original debit ledger proof is missing", async () => {
+    sqlite.prepare('DELETE FROM "WalletLedger" WHERE "idempotencyKey" = ?').run("withdrawal:wd-key-1:LEDGER");
+    const result = await updateWithdrawalWithD1(d1 as any, {
+      withdrawalId: "wd-1", action: "APPROVED", adminId: "admin-1",
+      adminNotes: null, at: new Date("2026-10-30T10:00:00.000Z"),
+    });
+    expect(result).toBe(false);
+    expect(sqlite.prepare('SELECT "status" FROM "WithdrawalRequest" WHERE "id" = ?').get("wd-1"))
+      .toEqual({ status: "REQUESTED" });
   });
 
   it("rolls back the status transition when the wallet refund cannot be applied", async () => {
