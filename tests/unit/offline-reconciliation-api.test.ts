@@ -128,6 +128,8 @@ describe("read-only offline reconciliation endpoints", () => {
       { ...baseLedger, walletId: "wallet-other" },
       { ...baseLedger, type: "REFUND" },
       { ...baseLedger, balanceAfter: 501 },
+      // The arithmetic is internally consistent, but this debit would overdraw the wallet.
+      { ...baseLedger, balanceBefore: 400, balanceAfter: -100 },
     ]) {
       mocks.withdrawalLedger.mockResolvedValueOnce(invalidLedger);
       const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
