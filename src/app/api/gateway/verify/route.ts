@@ -52,10 +52,8 @@ export async function POST(req: Request) {
   const targetPlan = await db.vipPlan.findUnique({ where: { id: log.targetPlanId } });
   if (
     !Number.isSafeInteger(log.targetPlanDurationDays) || Number(log.targetPlanDurationDays) <= 0 ||
-    !targetPlan ||
-    !targetPlan.active ||
-    targetPlan.financialUnitStatus !== "VERIFIED_IRR" ||
-    !isSafeStoredIrrAmount(targetPlan.priceIrr)
+    Number(log.targetPlanDurationDays) > 36500 ||
+    !targetPlan
   ) {
     return NextResponse.json({ error: "طرح یا مبلغ تلاش پرداخت دیگر قابل تأیید نیست", code: "VIP_PLAN_SNAPSHOT_MISMATCH" }, { status: 409 });
   }
