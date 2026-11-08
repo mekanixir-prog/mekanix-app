@@ -211,6 +211,76 @@ describe("atomic job status writer", () => {
     });
   });
 
+  it("enforces the exact technician transition matrix before either database adapter writes", async () => {
+    const invalidTransitions = [
+      { currentStatus: "REQUESTED" as const, nextStatus: "EN_ROUTE" as const },
+      { currentStatus: "REQUESTED" as const, nextStatus: "REPAIRING" as const },
+      { currentStatus: "ACCEPTED" as const, nextStatus: "COMPLETED" as const },
+      { currentStatus: "ARRIVED" as const, nextStatus: "COMPLETED" as const },
+      { currentStatus: "REPAIRING" as const, nextStatus: "ACCEPTED" as const },
+      { currentStatus: "DIAGNOSING" as const, nextStatus: "COMPLETED" as const },
+    ];
+
+    for (const transition of invalidTransitions) {
+      const prismaDb = { $transaction: vi.fn() } as any;
+      mocks.getD1Binding.mockResolvedValue(null);
+      await expect(transitionJobStatusAtomically(prismaDb, {
+        ...input,
+        ...transition,
+        updates: {},
+      })).rejects.toBeInstanceOf(JobStatusConflictError);
+      expect(prismaDb.$transaction).not.toHaveBeenCalled();
+
+      const d1 = {
+        prepare: vi.fn(() => ({ bind: vi.fn(() => ({})) })),
+        batch: vi.fn(),
+      };
+      const d1Db = {} as any;
+      mocks.getD1Binding.mockResolvedValue(d1);
+      await expect(transitionJobStatusAtomically(d1Db, {
+        ...input,
+        ...transition,
+        updates: {},
+      })).rejects.toBeInstanceOf(JobStatusConflictError);
+      expect(d1.batch).not.toHaveBeenCalled();
+      expect(d1.prepare).not.toHaveBeenCalled();
+    }
+  });
+
+  it("documents the explicit ADMIN role-matrix bypass while retaining universal lifecycle guards", async () => {
+    const tx = {
+      job: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      serviceRequest: { updateMany: vi.fn() },
+      technician: { updateMany: vi.fn() },
+    };
+    const db = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
+    } as any;
+
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      actorRole: "ADMIN",
+      actorTechnicianId: null,
+      nextStatus: "EN_ROUTE",
+      updates: {},
+    })).resolves.toBeUndefined();
+    expect(tx.job.updateMany).toHaveBeenCalledWith({
+      where: { id: input.jobId, status: input.currentStatus, updatedAt: input.expectedUpdatedAt },
+      data: { status: "EN_ROUTE" },
+    });
+
+    const invalidAdminDb = { $transaction: vi.fn() } as any;
+    await expect(transitionJobStatusAtomically(invalidAdminDb, {
+      ...input,
+      actorRole: "ADMIN",
+      actorTechnicianId: null,
+      currentStatus: "WAITING_APPROVAL",
+      nextStatus: "COMPLETED",
+      updates: {},
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+    expect(invalidAdminDb.$transaction).not.toHaveBeenCalled();
+  });
+
   it("does not allow a technician to set the customer approval flag", async () => {
     const db = { $transaction: vi.fn() } as any;
     await expect(transitionJobStatusAtomically(db, {
