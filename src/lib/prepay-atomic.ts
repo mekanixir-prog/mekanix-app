@@ -73,7 +73,8 @@ export async function recordPrepayWithPrisma(
     }
 
     if (wallet.financialUnitStatus !== "VERIFIED_IRR" ||
-        ![wallet.balance, wallet.pendingBalance, wallet.totalEarned, wallet.totalCommission, wallet.totalWithdrawn].every(isSafeStoredIrrAmount)) return false;
+        ![wallet.balance, wallet.pendingBalance, wallet.totalEarned, wallet.totalCommission, wallet.totalWithdrawn]
+          .every((value) => isSafeStoredIrrAmount(value) && Number(value) >= 0)) return false;
     const nextAggregates = [
       Number(wallet.pendingBalance) + input.net,
       Number(wallet.totalEarned) + input.gross,
@@ -193,11 +194,11 @@ export async function recordPrepayWithD1(
   const assertVerifiedWallet = () => d1.prepare(
     "SELECT CASE WHEN EXISTS (" +
     "SELECT 1 FROM \"Wallet\" WHERE \"technicianId\" = ? AND \"financialUnitStatus\" = 'VERIFIED_IRR' " +
-    "AND \"balance\" = CAST(\"balance\" AS INTEGER) AND abs(\"balance\") <= 9007199254740991 " +
-    "AND \"pendingBalance\" = CAST(\"pendingBalance\" AS INTEGER) AND abs(\"pendingBalance\") <= 9007199254740991 " +
-    "AND \"totalEarned\" = CAST(\"totalEarned\" AS INTEGER) AND abs(\"totalEarned\") <= 9007199254740991 " +
-    "AND \"totalCommission\" = CAST(\"totalCommission\" AS INTEGER) AND abs(\"totalCommission\") <= 9007199254740991 " +
-    "AND \"totalWithdrawn\" = CAST(\"totalWithdrawn\" AS INTEGER) AND abs(\"totalWithdrawn\") <= 9007199254740991" +
+    "AND \"balance\" = CAST(\"balance\" AS INTEGER) AND \"balance\" >= 0 AND abs(\"balance\") <= 9007199254740991 " +
+    "AND \"pendingBalance\" = CAST(\"pendingBalance\" AS INTEGER) AND \"pendingBalance\" >= 0 AND abs(\"pendingBalance\") <= 9007199254740991 " +
+    "AND \"totalEarned\" = CAST(\"totalEarned\" AS INTEGER) AND \"totalEarned\" >= 0 AND abs(\"totalEarned\") <= 9007199254740991 " +
+    "AND \"totalCommission\" = CAST(\"totalCommission\" AS INTEGER) AND \"totalCommission\" >= 0 AND abs(\"totalCommission\") <= 9007199254740991 " +
+    "AND \"totalWithdrawn\" = CAST(\"totalWithdrawn\" AS INTEGER) AND \"totalWithdrawn\" >= 0 AND abs(\"totalWithdrawn\") <= 9007199254740991" +
     ") THEN 1 ELSE json_extract('not-json', '$') END"
   ).bind(input.technicianId);
 
