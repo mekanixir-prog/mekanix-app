@@ -68,6 +68,45 @@ export function isSafeStoredIrrAmount(value: unknown): boolean {
   }
 }
 
+/** Sum stored IRR amounts without floating-point overflow or rounding. */
+export function sumSafeStoredIrrAmounts(values: readonly unknown[]): number | null {
+  try {
+    let total = new Decimal(0);
+    for (const value of values) {
+      if (!isSafeStoredIrrAmount(value)) return null;
+      if (value !== null && value !== undefined) {
+        const raw = typeof value === "object" && value !== null
+          ? value.toString()
+          : String(value);
+        total = total.plus(new Decimal(raw));
+      }
+    }
+    if (!total.isFinite() || !total.isInteger() || total.abs().gt(Number.MAX_SAFE_INTEGER)) {
+      return null;
+    }
+    return total.toNumber();
+  } catch {
+    return null;
+  }
+}
+
+/** Sum positive, verified IRR amounts only; any missing/unsafe row masks the aggregate. */
+export function sumVerifiedPositiveIrrAmounts(values: readonly unknown[]): number | null {
+  try {
+    if (values.some((value) =>
+      value === null ||
+      value === undefined ||
+      !isSafeStoredIrrAmount(value) ||
+      !new Decimal(typeof value === "object" && value !== null ? value.toString() : String(value)).gt(0)
+    )) {
+      return null;
+    }
+    return sumSafeStoredIrrAmounts(values);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Fail-closed projection for a record whose listed monetary fields share one
  * unit. Unknown/missing attestations never expose numeric values. A claimed
