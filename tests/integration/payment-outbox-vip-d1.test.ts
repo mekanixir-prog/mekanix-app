@@ -74,7 +74,7 @@ function seed(sqlite:DatabaseSync, amount=100000) {
 
 async function runWorker(d1:unknown) {
   let task:Promise<unknown>|undefined;
-  worker.scheduled({scheduledTime:now.getTime()},{DB:d1} as never,{waitUntil(p){task=p;}});
+  worker.scheduled({scheduledTime:now.getTime()},{DB:d1} as never,{waitUntil(p:Promise<unknown>){task=p;}});
   await task;
 }
 
