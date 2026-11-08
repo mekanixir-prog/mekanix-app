@@ -40,7 +40,7 @@ export async function GET(req: Request) {
     }),
     db.walletLedger.findUnique({
       where: { idempotencyKey: `withdrawal:${key}:LEDGER` },
-      select: { id: true, referenceId: true, amount: true, financialUnitStatus: true },
+      select: { id: true, walletId: true, type: true, amount: true, balanceBefore: true, balanceAfter: true, referenceType: true, referenceId: true, financialUnitStatus: true },
     }),
   ]);
 
@@ -73,8 +73,14 @@ export async function GET(req: Request) {
     isSafeStoredIrrAmount(requestAmount) &&
     Number(requestAmount) > 0 &&
     ledger?.financialUnitStatus === "VERIFIED_IRR" &&
+    ledger.walletId === wallet.id &&
+    ledger.type === "WITHDRAWAL" &&
+    ledger.referenceType === "Withdrawal" &&
     isSafeStoredIrrAmount(ledgerAmount) &&
-    Number(ledgerAmount) === -Number(requestAmount);
+    Number(ledgerAmount) === -Number(requestAmount) &&
+    isSafeStoredIrrAmount(ledger.balanceBefore) &&
+    isSafeStoredIrrAmount(ledger.balanceAfter) &&
+    Number(ledger.balanceAfter) === Number(ledger.balanceBefore) + Number(ledgerAmount);
   if (!ledger || !financiallyVerified || ledger.referenceId !== request!.id) {
     return NextResponse.json({
       state: "RECONCILIATION_REQUIRED",
