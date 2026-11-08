@@ -109,8 +109,7 @@ export async function PATCH(req: Request) {
     },
     { status: 409 },
   );
-
-  // Compare-and-set prevents two concurrent claim requests from both
+}
   // reporting success for the same reward.
   const claimed = await db.referral.updateMany({
     where: {
