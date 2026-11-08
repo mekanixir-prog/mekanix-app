@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
-import { isSafeStoredIrrAmount, maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { isSafeStoredIrrAmount, maskFinancialFields, sumSafeStoredIrrAmounts } from "@/lib/money/financial-read-mask";
 
 // GET: list user's referrals + stats.
 // referrerId is derived from the session — the `userId` query param is IGNORED (BOLA protection).
@@ -19,12 +19,18 @@ export async function GET(req: Request) {
   });
   const allRewardsVerified = referrals.every((referral) => referral.financialUnitStatus === "VERIFIED_IRR" && isSafeStoredIrrAmount(referral.rewardAmount));
   const safeReferrals = referrals.map((referral) => maskFinancialFields(referral, ["rewardAmount"]));
+  const earned = allRewardsVerified
+    ? sumSafeStoredIrrAmounts(referrals.filter((r) => r.rewardClaimed).map((r) => r.rewardAmount))
+    : null;
+  const available = allRewardsVerified
+    ? sumSafeStoredIrrAmounts(referrals.filter((r) => r.status === "first_job" && !r.rewardClaimed).map((r) => r.rewardAmount))
+    : null;
   const stats = {
     total: referrals.length,
     signedUp: referrals.filter((r) => r.status === "signed_up" || r.status === "first_job" || r.status === "rewarded").length,
     firstJob: referrals.filter((r) => r.status === "first_job" || r.status === "rewarded").length,
-    earned: allRewardsVerified ? referrals.filter((r) => r.rewardClaimed).reduce((s, r) => s + Number(r.rewardAmount), 0) : null,
-    available: allRewardsVerified ? referrals.filter((r) => r.status === "first_job" && !r.rewardClaimed).reduce((s, r) => s + Number(r.rewardAmount), 0) : null,
+    earned,
+    available,
   };
   return NextResponse.json({ referrals: safeReferrals, stats });
 }
