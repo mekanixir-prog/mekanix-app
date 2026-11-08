@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant } from "@/lib/auth";
-import { maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { isCommittedPrepayConsistent } from "@/lib/prepay-reconciliation";
 
 // Read-only reconciliation lookup. It verifies the job marker and all
 // four financial records written by recordPrepayAtomically().
@@ -28,6 +28,8 @@ export async function GET(req: Request) {
     select: {
       id: true,
       code: true,
+      technicianId: true,
+      financialUnitStatus: true,
       prepayPaid: true,
       prepayPaidAt: true,
       inspectionFee: true,
@@ -39,30 +41,37 @@ export async function GET(req: Request) {
   });
   if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
 
-  const safeJob = maskFinancialFields(job as unknown as Record<string, unknown>, [
-    "inspectionFee", "travelFee", "platformCommission", "netEarnings",
+  const [wallet, prepayTxn, commissionTxn, holdLedger, commissionLedger] = await Promise.all([
+    db.wallet.findUnique({
+      where: { technicianId: job.technicianId },
+      select: {
+        id: true, financialUnitStatus: true, balance: true, pendingBalance: true,
+        totalEarned: true, totalCommission: true, totalWithdrawn: true,
+      },
+    }),
+    db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${job.id}:PREPAY` } }),
+    db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${job.id}:COMMISSION` } }),
+    db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_HOLD` } }),
+    db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_COMMISSION` } }),
   ]);
 
-  const [prepayTxn, commissionTxn, holdLedger, commissionLedger] = await Promise.all([
-    db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${job.id}:PREPAY` }, select: { id: true } }),
-    db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${job.id}:COMMISSION` }, select: { id: true } }),
-    db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_HOLD` }, select: { id: true } }),
-    db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_COMMISSION` }, select: { id: true } }),
-  ]);
-
-  const recordCount = [prepayTxn, commissionTxn, holdLedger, commissionLedger].filter(Boolean).length;
-  if (job.prepayPaid && recordCount === 4) {
+  const records = [prepayTxn, commissionTxn, holdLedger, commissionLedger];
+  const recordCount = records.filter(Boolean).length;
+  const consistent = isCommittedPrepayConsistent(
+    job, wallet, prepayTxn, commissionTxn, holdLedger, commissionLedger,
+  );
+  if (consistent) {
     return NextResponse.json({
       state: "COMMITTED",
       prepay: {
         jobId: job.id,
         jobCode: job.code,
         paidAt: job.prepayPaidAt,
-        inspectionFee: safeJob.inspectionFee == null ? null : String(safeJob.inspectionFee),
-        travelFee: safeJob.travelFee == null ? null : String(safeJob.travelFee),
-        commission: safeJob.platformCommission == null ? null : String(safeJob.platformCommission),
-        net: safeJob.netEarnings == null ? null : String(safeJob.netEarnings),
-        financialUnitStatus: safeJob.financialUnitStatus,
+        inspectionFee: String(job.inspectionFee),
+        travelFee: String(job.travelFee),
+        commission: String(job.platformCommission),
+        net: String(job.netEarnings),
+        financialUnitStatus: job.financialUnitStatus,
       },
     });
   }
