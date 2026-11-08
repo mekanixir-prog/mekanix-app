@@ -5,6 +5,7 @@ const { db, atomic, rateLimit } = vi.hoisted(() => ({
   db: {
     wallet: { findUnique: vi.fn() },
     withdrawalRequest: { findUnique: vi.fn() },
+    walletLedger: { findUnique: vi.fn() },
     notification: { create: vi.fn() },
   },
   atomic: vi.fn(),
@@ -39,6 +40,7 @@ beforeEach(() => {
   rateLimit.mockResolvedValue({ success: true, resetMs: 60000 });
   db.wallet.findUnique.mockResolvedValue({ id: "wallet-1", balance: 1000, financialUnitStatus: "VERIFIED_IRR" });
   db.withdrawalRequest.findUnique.mockResolvedValue(null);
+  db.walletLedger.findUnique.mockResolvedValue(null);
 });
 
 describe("atomic withdrawal route", () => {
@@ -57,11 +59,27 @@ describe("atomic withdrawal route", () => {
 
   it("returns the existing request on retry without debiting again", async () => {
     db.withdrawalRequest.findUnique.mockResolvedValue({
-      id: "wd-existing", walletId: "wallet-1", amount: 500, method: "bank", cardNumber: null, bankName: null, shebaNumber: "IR062960000000100324200001", status: "REQUESTED",
+      id: "wd-existing", walletId: "wallet-1", amount: 500, method: "bank", cardNumber: null, bankName: null, shebaNumber: "IR062960000000100324200001", status: "REQUESTED", financialUnitStatus: "VERIFIED_IRR", idempotencyKey: "withdrawal-request-0001",
+    });
+    db.walletLedger.findUnique.mockResolvedValue({
+      walletId: "wallet-1", financialUnitStatus: "VERIFIED_IRR", type: "WITHDRAWAL",
+      amount: -500, referenceType: "Withdrawal", referenceId: "wd-existing",
+      balanceBefore: 1000, balanceAfter: 500,
     });
     const response = await POST(request({ amount: 500 }));
     expect(response.status).toBe(200);
     expect((await response.json()).idempotent).toBe(true);
+    expect(atomic).not.toHaveBeenCalled();
+  });
+
+  it("requires ledger evidence before returning an idempotent withdrawal retry", async () => {
+    db.withdrawalRequest.findUnique.mockResolvedValue({
+      id: "wd-existing", walletId: "wallet-1", amount: 500, method: "bank", cardNumber: null, bankName: null, shebaNumber: "IR062960000000100324200001", status: "REQUESTED", financialUnitStatus: "VERIFIED_IRR", idempotencyKey: "withdrawal-request-0001",
+    });
+    db.walletLedger.findUnique.mockResolvedValue(null);
+    const response = await POST(request({ amount: 500 }));
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("WITHDRAWAL_RECONCILIATION_REQUIRED");
     expect(atomic).not.toHaveBeenCalled();
   });
 
