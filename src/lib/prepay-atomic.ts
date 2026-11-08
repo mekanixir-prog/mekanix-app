@@ -44,10 +44,34 @@ export async function recordPrepayWithPrisma(
       where: { technicianId: input.technicianId },
       create: { technicianId: input.technicianId, financialUnitStatus: "VERIFIED_IRR" },
       update: {},
-      select: { id: true, balance: true, pendingBalance: true, totalEarned: true, totalCommission: true, financialUnitStatus: true },
+      select: { id: true, balance: true, pendingBalance: true, totalEarned: true, totalCommission: true, totalWithdrawn: true, financialUnitStatus: true },
     });
+    if (wallet.financialUnitStatus === "UNVERIFIED") {
+      const aggregates = [wallet.balance, wallet.pendingBalance, wallet.totalEarned, wallet.totalCommission, wallet.totalWithdrawn];
+      if (!aggregates.every((value) => value !== null && value !== undefined && isSafeStoredIrrAmount(value)) ||
+          aggregates.some((value) => Number(value) !== 0)) return false;
+      const promotion = await tx.wallet.updateMany({
+        where: {
+          id: wallet.id,
+          financialUnitStatus: "UNVERIFIED",
+          balance: 0,
+          pendingBalance: 0,
+          totalEarned: 0,
+          totalCommission: 0,
+          totalWithdrawn: 0,
+          transactions: { none: {} },
+          ledger: { none: {} },
+          withdrawals: { none: {} },
+        },
+        data: { financialUnitStatus: "VERIFIED_IRR" },
+      });
+      if (promotion.count !== 1) return false;
+      wallet.financialUnitStatus = "VERIFIED_IRR";
+    }
+    const walletAggregates = [wallet.balance, wallet.pendingBalance, wallet.totalEarned, wallet.totalCommission, wallet.totalWithdrawn];
     if (wallet.financialUnitStatus !== "VERIFIED_IRR" ||
-        ![wallet.balance, wallet.pendingBalance, wallet.totalEarned, wallet.totalCommission].every(isSafeStoredIrrAmount)) return false;
+        !walletAggregates.every((value) => value !== null && value !== undefined &&
+          isSafeStoredIrrAmount(value) && Number(value) >= 0)) return false;
     const nextAggregates = [
       Number(wallet.pendingBalance) + input.net,
       Number(wallet.totalEarned) + input.gross,
@@ -140,7 +164,11 @@ export async function recordPrepayWithPrisma(
       where: {
         id: wallet.id,
         financialUnitStatus: "VERIFIED_IRR",
+        balance: wallet.balance,
         pendingBalance: wallet.pendingBalance,
+        totalEarned: wallet.totalEarned,
+        totalCommission: wallet.totalCommission,
+        totalWithdrawn: wallet.totalWithdrawn,
       },
       data: {
         pendingBalance: { increment: input.net },
@@ -176,10 +204,11 @@ export async function recordPrepayWithD1(
   const assertVerifiedWallet = () => d1.prepare(
     "SELECT CASE WHEN EXISTS (" +
     "SELECT 1 FROM \"Wallet\" WHERE \"technicianId\" = ? AND \"financialUnitStatus\" = 'VERIFIED_IRR' " +
-    "AND \"balance\" = CAST(\"balance\" AS INTEGER) AND abs(\"balance\") <= 9007199254740991 " +
-    "AND \"pendingBalance\" = CAST(\"pendingBalance\" AS INTEGER) AND abs(\"pendingBalance\") <= 9007199254740991 " +
-    "AND \"totalEarned\" = CAST(\"totalEarned\" AS INTEGER) AND abs(\"totalEarned\") <= 9007199254740991 " +
-    "AND \"totalCommission\" = CAST(\"totalCommission\" AS INTEGER) AND abs(\"totalCommission\") <= 9007199254740991" +
+    "AND \"balance\" = CAST(\"balance\" AS INTEGER) AND \"balance\" >= 0 AND abs(\"balance\") <= 9007199254740991 " +
+    "AND \"pendingBalance\" = CAST(\"pendingBalance\" AS INTEGER) AND \"pendingBalance\" >= 0 AND abs(\"pendingBalance\") <= 9007199254740991 " +
+    "AND \"totalEarned\" = CAST(\"totalEarned\" AS INTEGER) AND \"totalEarned\" >= 0 AND abs(\"totalEarned\") <= 9007199254740991 " +
+    "AND \"totalCommission\" = CAST(\"totalCommission\" AS INTEGER) AND \"totalCommission\" >= 0 AND abs(\"totalCommission\") <= 9007199254740991 " +
+    "AND \"totalWithdrawn\" = CAST(\"totalWithdrawn\" AS INTEGER) AND \"totalWithdrawn\" >= 0 AND abs(\"totalWithdrawn\") <= 9007199254740991" +
     ") THEN 1 ELSE json_extract('not-json', '$') END"
   ).bind(input.technicianId);
 
@@ -197,6 +226,15 @@ export async function recordPrepayWithD1(
       "SELECT 1 FROM \"Job\" WHERE \"id\" = ? AND \"prepayPaid\" = 1 AND \"prepayPaidAt\" = ?" +
       ") ON CONFLICT(\"technicianId\") DO NOTHING"
     ).bind(walletId, input.technicianId, at, at, input.jobId, at),
+    d1.prepare(
+      "UPDATE \"Wallet\" SET \"financialUnitStatus\" = 'VERIFIED_IRR' " +
+      "WHERE \"technicianId\" = ? AND \"financialUnitStatus\" = 'UNVERIFIED' " +
+      "AND \"balance\" = 0 AND \"pendingBalance\" = 0 AND \"totalEarned\" = 0 " +
+      "AND \"totalCommission\" = 0 AND \"totalWithdrawn\" = 0 " +
+      "AND NOT EXISTS (SELECT 1 FROM \"WalletTransaction\" WHERE \"walletId\" = \"Wallet\".\"id\") " +
+      "AND NOT EXISTS (SELECT 1 FROM \"WalletLedger\" WHERE \"walletId\" = \"Wallet\".\"id\") " +
+      "AND NOT EXISTS (SELECT 1 FROM \"WithdrawalRequest\" WHERE \"walletId\" = \"Wallet\".\"id\")"
+    ).bind(input.technicianId),
     assertVerifiedWallet(),
 
     d1.prepare(
@@ -243,9 +281,11 @@ export async function recordPrepayWithD1(
       "UPDATE \"Wallet\" SET \"pendingBalance\" = \"pendingBalance\" + ?, " +
       "\"totalEarned\" = \"totalEarned\" + ?, \"totalCommission\" = \"totalCommission\" + ?, " +
       "\"updatedAt\" = ? WHERE \"technicianId\" = ? AND \"financialUnitStatus\" = 'VERIFIED_IRR' " +
-      "AND \"pendingBalance\" = CAST(\"pendingBalance\" AS INTEGER) AND abs(\"pendingBalance\") <= 9007199254740991 " +
-      "AND \"totalEarned\" = CAST(\"totalEarned\" AS INTEGER) AND abs(\"totalEarned\") <= 9007199254740991 " +
-      "AND \"totalCommission\" = CAST(\"totalCommission\" AS INTEGER) AND abs(\"totalCommission\") <= 9007199254740991 " +
+      "AND \"balance\" = CAST(\"balance\" AS INTEGER) AND \"balance\" >= 0 AND abs(\"balance\") <= 9007199254740991 " +
+      "AND \"pendingBalance\" = CAST(\"pendingBalance\" AS INTEGER) AND \"pendingBalance\" >= 0 AND abs(\"pendingBalance\") <= 9007199254740991 " +
+      "AND \"totalEarned\" = CAST(\"totalEarned\" AS INTEGER) AND \"totalEarned\" >= 0 AND abs(\"totalEarned\") <= 9007199254740991 " +
+      "AND \"totalCommission\" = CAST(\"totalCommission\" AS INTEGER) AND \"totalCommission\" >= 0 AND abs(\"totalCommission\") <= 9007199254740991 " +
+      "AND \"totalWithdrawn\" = CAST(\"totalWithdrawn\" AS INTEGER) AND \"totalWithdrawn\" >= 0 AND abs(\"totalWithdrawn\") <= 9007199254740991 " +
       "AND EXISTS (SELECT 1 FROM \"WalletLedger\" WHERE \"idempotencyKey\" = ? AND \"walletId\" = \"Wallet\".\"id\")"
     ).bind(input.net, input.gross, input.commission, at, input.technicianId, holdLedgerKey),
     assertOneChange(),
