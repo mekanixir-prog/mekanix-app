@@ -48,7 +48,7 @@ beforeEach(() => {
   mocks.auth.mockResolvedValue(technicianSession);
   mocks.technician.mockResolvedValue({ id: "tech-1" });
   mocks.participant.mockResolvedValue(null);
-  mocks.wallet.mockResolvedValue({ id: "wallet-1", financialUnitStatus: "VERIFIED_IRR" });
+  mocks.wallet.mockResolvedValue({ id: "wallet-1", financialUnitStatus: "VERIFIED_IRR", balance: 0, pendingBalance: 0, totalEarned: 0, totalCommission: 0, totalWithdrawn: 0 });
   mocks.withdrawal.mockResolvedValue(null);
   mocks.withdrawalLedger.mockResolvedValue(null);
   mocks.job.mockResolvedValue({
@@ -185,8 +185,32 @@ describe("read-only offline reconciliation endpoints", () => {
       prepayPaidAt: new Date("2026-10-31T10:00:00Z"),
       inspectionFee: 100, travelFee: 20, platformCommission: 12, netEarnings: 108,
     });
-    mocks.walletTxn.mockResolvedValue({ id: "txn", financialUnitStatus: "VERIFIED_IRR" });
-    mocks.ledger.mockResolvedValue({ id: "ledger", financialUnitStatus: "VERIFIED_IRR" });
+    mocks.wallet.mockResolvedValue({
+      id: "wallet-1", financialUnitStatus: "VERIFIED_IRR",
+      balance: 0, pendingBalance: 108, totalEarned: 120, totalCommission: 12, totalWithdrawn: 0,
+    });
+    mocks.walletTxn
+      .mockResolvedValueOnce({
+        id: "prepay-txn", walletId: "wallet-1", jobId: "job-1", kind: "PREPAY",
+        status: "PENDING", grossAmount: 120, commissionAmount: 12, netAmount: 108,
+        financialUnitStatus: "VERIFIED_IRR",
+      })
+      .mockResolvedValueOnce({
+        id: "commission-txn", walletId: "wallet-1", jobId: "job-1", kind: "COMMISSION",
+        status: "COMPLETED", grossAmount: 0, commissionAmount: 12, netAmount: -12,
+        financialUnitStatus: "VERIFIED_IRR",
+      });
+    mocks.ledger
+      .mockResolvedValueOnce({
+        id: "hold-ledger", walletId: "wallet-1", type: "HOLD", amount: 108,
+        balanceBefore: 0, balanceAfter: 108, referenceType: "Job", referenceId: "job-1",
+        financialUnitStatus: "VERIFIED_IRR",
+      })
+      .mockResolvedValueOnce({
+        id: "commission-ledger", walletId: "wallet-1", type: "COMMISSION", amount: -12,
+        balanceBefore: 0, balanceAfter: 0, referenceType: "Job", referenceId: "job-1",
+        financialUnitStatus: "VERIFIED_IRR",
+      });
     const response = await getPrepayStatus(request("/api/prepay/status?jobId=job-1"));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
