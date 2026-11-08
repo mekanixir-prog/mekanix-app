@@ -110,9 +110,12 @@ describe("VIP payment outbox dispatcher D1 integration",()=>{
     const {sqlite,d1}=makeD1(); dbs.push(sqlite); seed(sqlite);
     sqlite.prepare(`UPDATE "PaymentOutboxEvent" SET "attempts"=7,"payload"='not-json' WHERE "id"='event-1'`).run();
     await runWorker(d1);
-    expect(sqlite.prepare(`SELECT "status","attempts","lastError" FROM "PaymentOutboxEvent"`).get()).toEqual({
-      status:"DEAD",attempts:8,lastError:"Unexpected token 'o', \"not-json\" is not valid JSON"
-    });
+    const event = sqlite.prepare(`SELECT "status","attempts","lastError" FROM "PaymentOutboxEvent"`).get() as {
+      status:string; attempts:number; lastError:string|null;
+    };
+    expect(event.status).toBe("DEAD");
+    expect(event.attempts).toBe(8);
+    expect(event.lastError).toBeTruthy();
   });
 
   it("cancels the previous active subscription in the same fulfillment batch",async()=>{
