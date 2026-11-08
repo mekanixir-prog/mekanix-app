@@ -54,6 +54,7 @@ describe("VIP gateway simulator verification", () => {
       financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip",
       targetPlanId: "plan-1",
+      targetPlanDurationDays: 30,
       paymentId: null,
       verifiedAt: null,
     });
@@ -94,6 +95,7 @@ describe("VIP gateway simulator verification", () => {
       userId: "customer-1",
       amount: 100_000,
       targetPlanId: "plan-1",
+      targetPlanDurationDays: 30,
     }));
   });
 
@@ -108,6 +110,7 @@ describe("VIP gateway simulator verification", () => {
       financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip",
       targetPlanId: "plan-1",
+      targetPlanDurationDays: 30,
       paymentId: "payment-legacy",
       verifiedAt: new Date("2026-11-01T10:00:00.000Z"),
     });
@@ -143,7 +146,7 @@ describe("VIP gateway simulator verification", () => {
     expect(mockPaymentCreate).not.toHaveBeenCalled();
   });
 
-  it("rejects an inactive or financially unverified target plan", async () => {
+  it("honors a verified attempt after the plan is deactivated", async () => {
     mockPlanFindUnique.mockResolvedValue({
       id: "plan-1",
       active: false,
@@ -151,7 +154,8 @@ describe("VIP gateway simulator verification", () => {
       financialUnitStatus: "VERIFIED_IRR",
     });
     const response = await POST(request({ code: "PG-test", otp: "1234" }));
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(200);
+    expect(mockRecordVerifiedPayment).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ durationDays: 30 }));
     expect(mockPaymentCreate).not.toHaveBeenCalled();
   });
 
@@ -164,6 +168,7 @@ describe("VIP gateway simulator verification", () => {
       financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip",
       targetPlanId: "plan-1",
+      targetPlanDurationDays: 30,
       status: "REDIRECTED",
     });
     const response = await POST(request({ code: "PG-test", otp: "1234" }));
