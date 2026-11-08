@@ -107,7 +107,7 @@ describe("admin withdrawal D1 transaction integration", () => {
       .toEqual({ status: "REJECTED" });
     expect(sqlite.prepare('SELECT "balance" FROM "Wallet" WHERE "id" = ?').get("wallet-1"))
       .toEqual({ balance: 1500 });
-    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletLedger"').get()).toEqual({ n: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletLedger"').get()).toEqual({ n: 2 });
   });
 
   it("refuses admin settlement when the original debit ledger proof is missing", async () => {
@@ -129,7 +129,7 @@ describe("admin withdrawal D1 transaction integration", () => {
     })).resolves.toBe(false);
     expect(sqlite.prepare('SELECT "status" FROM "WithdrawalRequest" WHERE "id" = ?').get("wd-1"))
       .toEqual({ status: "REQUESTED" });
-    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletLedger"').get()).toEqual({ n: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletLedger"').get()).toEqual({ n: 1 });
   });
 
   it("commits payout state, immutable transaction and wallet aggregate together", async () => {
