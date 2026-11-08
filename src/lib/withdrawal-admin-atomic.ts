@@ -25,14 +25,36 @@ export async function updateWithdrawalWithPrisma(
   return db.$transaction(async (tx) => {
     const withdrawal = await tx.withdrawalRequest.findUnique({
       where: { id: input.withdrawalId },
-      select: { id: true, walletId: true, amount: true, status: true, financialUnitStatus: true },
+      select: { id: true, walletId: true, amount: true, status: true, financialUnitStatus: true, idempotencyKey: true },
     });
     if (!withdrawal) throw new Error("درخواست برداشت پیدا نشد");
     if (withdrawal.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(withdrawal.amount) || Number(withdrawal.amount) <= 0) return false;
+    const amount = Number(withdrawal.amount);
+    const debitLedger = withdrawal.idempotencyKey
+      ? await tx.walletLedger.findUnique({ where: { idempotencyKey: "withdrawal:" + withdrawal.idempotencyKey + ":LEDGER" } })
+      : null;
+    const debitBefore = debitLedger?.balanceBefore;
+    const debitAfter = debitLedger?.balanceAfter;
+    const debitLedgerVerified = Boolean(
+      debitLedger &&
+      debitLedger.walletId === withdrawal.walletId &&
+      debitLedger.financialUnitStatus === "VERIFIED_IRR" &&
+      debitLedger.type === "WITHDRAWAL" &&
+      debitLedger.amount !== null && debitLedger.amount !== undefined &&
+      isSafeStoredIrrAmount(debitLedger.amount) && Number(debitLedger.amount) === -amount &&
+      debitLedger.referenceType === "Withdrawal" && debitLedger.referenceId === withdrawal.id &&
+      isSafeStoredIrrAmount(debitBefore) && isSafeStoredIrrAmount(debitAfter) &&
+      Number(debitBefore) >= amount && Number(debitAfter) >= 0 &&
+      Number(debitAfter) === Number(debitBefore) - amount
+    );
+    if (!debitLedgerVerified) return false;
+
     const walletProvenance = await tx.wallet.findUnique({ where: { id: withdrawal.walletId }, select: { financialUnitStatus: true, balance: true, totalWithdrawn: true } });
-    if (walletProvenance?.financialUnitStatus !== "VERIFIED_IRR") return false;
-    if (input.action === "REJECTED" && (!isSafeStoredIrrAmount(walletProvenance.balance) || !Number.isSafeInteger(Number(walletProvenance.balance) + Number(withdrawal.amount)))) return false;
-    if (input.action === "PAID" && (!isSafeStoredIrrAmount(walletProvenance.totalWithdrawn) || !Number.isSafeInteger(Number(walletProvenance.totalWithdrawn) + Number(withdrawal.amount)))) return false;
+    if (walletProvenance?.financialUnitStatus !== "VERIFIED_IRR" ||
+        !isSafeStoredIrrAmount(walletProvenance.balance) || Number(walletProvenance.balance) < 0 ||
+        !isSafeStoredIrrAmount(walletProvenance.totalWithdrawn) || Number(walletProvenance.totalWithdrawn) < 0) return false;
+    if (input.action === "REJECTED" && !Number.isSafeInteger(Number(walletProvenance.balance) + amount)) return false;
+    if (input.action === "PAID" && !Number.isSafeInteger(Number(walletProvenance.totalWithdrawn) + amount)) return false;
 
     if (input.action === "APPROVED") {
       if (withdrawal.status !== "REQUESTED") return false;
@@ -57,7 +79,7 @@ export async function updateWithdrawalWithPrisma(
       if (transition.count !== 1) return false;
 
       const walletUpdate = await tx.wallet.updateMany({
-        where: { id: withdrawal.walletId, financialUnitStatus: "VERIFIED_IRR" },
+        where: { id: withdrawal.walletId, financialUnitStatus: "VERIFIED_IRR", balance: walletProvenance.balance },
         data: { balance: { increment: withdrawal.amount } },
       });
       if (walletUpdate.count !== 1) {
@@ -67,7 +89,7 @@ export async function updateWithdrawalWithPrisma(
         where: { id: withdrawal.walletId },
         select: { balance: true, financialUnitStatus: true },
       });
-      if (!wallet || wallet.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(wallet.balance)) throw new Error("کیف پول پس از بازگشت وجه از نظر مالی معتبر نیست");
+      if (!wallet || wallet.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(wallet.balance) || Number(wallet.balance) < 0) throw new Error("کیف پول پس از بازگشت وجه از نظر مالی معتبر نیست");
 
       await tx.walletLedger.create({
         data: {
@@ -120,7 +142,7 @@ export async function updateWithdrawalWithPrisma(
       },
     });
     const walletUpdate = await tx.wallet.updateMany({
-      where: { id: withdrawal.walletId, financialUnitStatus: "VERIFIED_IRR" },
+      where: { id: withdrawal.walletId, financialUnitStatus: "VERIFIED_IRR", totalWithdrawn: walletProvenance.totalWithdrawn },
       data: { totalWithdrawn: { increment: withdrawal.amount } },
     });
     if (walletUpdate.count !== 1) {
@@ -151,6 +173,23 @@ export async function updateWithdrawalWithD1(
         WHERE "id" = ? AND "status" = 'REQUESTED' AND "financialUnitStatus" = 'VERIFIED_IRR'
           AND "amount" > 0 AND "amount" = CAST("amount" AS INTEGER) AND abs("amount") <= 9007199254740991
           AND EXISTS (SELECT 1 FROM "Wallet" w WHERE w."id" = "WithdrawalRequest"."walletId" AND w."financialUnitStatus" = 'VERIFIED_IRR')
+          AND EXISTS (
+            SELECT 1 FROM "WalletLedger" l
+            WHERE l."idempotencyKey" = 'withdrawal:' || "WithdrawalRequest"."idempotencyKey" || ':LEDGER'
+              AND l."walletId" = "WithdrawalRequest"."walletId"
+              AND l."financialUnitStatus" = 'VERIFIED_IRR'
+              AND l."type" = 'WITHDRAWAL'
+              AND l."amount" = -"WithdrawalRequest"."amount"
+              AND l."referenceType" = 'Withdrawal'
+              AND l."referenceId" = "WithdrawalRequest"."id"
+              AND l."balanceBefore" = CAST(l."balanceBefore" AS INTEGER)
+              AND abs(l."balanceBefore") <= 9007199254740991
+              AND l."balanceBefore" >= "WithdrawalRequest"."amount"
+              AND l."balanceAfter" = CAST(l."balanceAfter" AS INTEGER)
+              AND abs(l."balanceAfter") <= 9007199254740991
+              AND l."balanceAfter" >= 0
+              AND l."balanceAfter" = l."balanceBefore" - "WithdrawalRequest"."amount"
+          )
       `).bind(input.adminId, input.adminNotes, input.withdrawalId),
     ]);
     return result[0]?.meta?.changes === 1;
@@ -164,6 +203,23 @@ export async function updateWithdrawalWithD1(
         WHERE "id" = ? AND "status" IN ('REQUESTED', 'APPROVED') AND "financialUnitStatus" = 'VERIFIED_IRR'
           AND "amount" > 0 AND "amount" = CAST("amount" AS INTEGER) AND abs("amount") <= 9007199254740991
           AND EXISTS (SELECT 1 FROM "Wallet" w WHERE w."id" = "WithdrawalRequest"."walletId" AND w."financialUnitStatus" = 'VERIFIED_IRR')
+          AND EXISTS (
+            SELECT 1 FROM "WalletLedger" l
+            WHERE l."idempotencyKey" = 'withdrawal:' || "WithdrawalRequest"."idempotencyKey" || ':LEDGER'
+              AND l."walletId" = "WithdrawalRequest"."walletId"
+              AND l."financialUnitStatus" = 'VERIFIED_IRR'
+              AND l."type" = 'WITHDRAWAL'
+              AND l."amount" = -"WithdrawalRequest"."amount"
+              AND l."referenceType" = 'Withdrawal'
+              AND l."referenceId" = "WithdrawalRequest"."id"
+              AND l."balanceBefore" = CAST(l."balanceBefore" AS INTEGER)
+              AND abs(l."balanceBefore") <= 9007199254740991
+              AND l."balanceBefore" >= "WithdrawalRequest"."amount"
+              AND l."balanceAfter" = CAST(l."balanceAfter" AS INTEGER)
+              AND abs(l."balanceAfter") <= 9007199254740991
+              AND l."balanceAfter" >= 0
+              AND l."balanceAfter" = l."balanceBefore" - "WithdrawalRequest"."amount"
+          )
       `).bind(input.adminId, input.adminNotes, at, input.withdrawalId),
       assertOneChange(),
       d1.prepare(`
@@ -176,7 +232,7 @@ export async function updateWithdrawalWithD1(
           SELECT "walletId" FROM "WithdrawalRequest"
           WHERE "id" = ? AND "status" = 'REJECTED' AND "processedAt" = ?
         ) AND "financialUnitStatus" = 'VERIFIED_IRR'
-          AND "balance" = CAST("balance" AS INTEGER) AND abs("balance") <= 9007199254740991
+          AND "balance" = CAST("balance" AS INTEGER) AND "balance" >= 0
           AND "balance" <= 9007199254740991 - (SELECT "amount" FROM "WithdrawalRequest" WHERE "id" = ? AND "status" = 'REJECTED' AND "processedAt" = ?)
           AND changes() = 1
       `).bind(input.withdrawalId, at, at, input.withdrawalId, at, input.withdrawalId, at),
@@ -225,6 +281,23 @@ export async function updateWithdrawalWithD1(
       WHERE "id" = ? AND "status" = 'APPROVED' AND "financialUnitStatus" = 'VERIFIED_IRR'
         AND "amount" > 0 AND "amount" = CAST("amount" AS INTEGER) AND abs("amount") <= 9007199254740991
         AND EXISTS (SELECT 1 FROM "Wallet" w WHERE w."id" = "WithdrawalRequest"."walletId" AND w."financialUnitStatus" = 'VERIFIED_IRR')
+          AND EXISTS (
+            SELECT 1 FROM "WalletLedger" l
+            WHERE l."idempotencyKey" = 'withdrawal:' || "WithdrawalRequest"."idempotencyKey" || ':LEDGER'
+              AND l."walletId" = "WithdrawalRequest"."walletId"
+              AND l."financialUnitStatus" = 'VERIFIED_IRR'
+              AND l."type" = 'WITHDRAWAL'
+              AND l."amount" = -"WithdrawalRequest"."amount"
+              AND l."referenceType" = 'Withdrawal'
+              AND l."referenceId" = "WithdrawalRequest"."id"
+              AND l."balanceBefore" = CAST(l."balanceBefore" AS INTEGER)
+              AND abs(l."balanceBefore") <= 9007199254740991
+              AND l."balanceBefore" >= "WithdrawalRequest"."amount"
+              AND l."balanceAfter" = CAST(l."balanceAfter" AS INTEGER)
+              AND abs(l."balanceAfter") <= 9007199254740991
+              AND l."balanceAfter" >= 0
+              AND l."balanceAfter" = l."balanceBefore" - "WithdrawalRequest"."amount"
+          )
     `).bind(input.adminId, input.adminNotes, at, payoutReference, input.withdrawalId),
     assertOneChange(),
     d1.prepare(`
@@ -255,7 +328,7 @@ export async function updateWithdrawalWithD1(
         SELECT "walletId" FROM "WithdrawalRequest"
         WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?
       ) AND "financialUnitStatus" = 'VERIFIED_IRR'
-        AND "totalWithdrawn" = CAST("totalWithdrawn" AS INTEGER) AND abs("totalWithdrawn") <= 9007199254740991
+        AND "totalWithdrawn" = CAST("totalWithdrawn" AS INTEGER) AND "totalWithdrawn" >= 0 AND "totalWithdrawn" <= 9007199254740991
         AND "totalWithdrawn" <= 9007199254740991 - (SELECT "amount" FROM "WithdrawalRequest" WHERE "id" = ? AND "status" = 'PAID' AND "txnId" = ?)
         AND changes() = 1
     `).bind(input.withdrawalId, payoutReference, at, input.withdrawalId, payoutReference, input.withdrawalId, payoutReference),
