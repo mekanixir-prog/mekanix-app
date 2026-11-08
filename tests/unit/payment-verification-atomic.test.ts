@@ -30,6 +30,7 @@ const input = {
   paymentCode: "PAY-PG-test",
   amount: 100_000,
   targetPlanId: "plan-1",
+  durationDays: 30,
   verifiedAt: new Date("2026-11-07T10:00:00.000Z"),
 };
 
@@ -37,7 +38,7 @@ describe("atomic verified gateway payment persistence", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockLogFindUnique.mockResolvedValue({
-      id: "gateway-1", userId: "customer-1", purpose: "vip", targetPlanId: "plan-1",
+      id: "gateway-1", userId: "customer-1", purpose: "vip", targetPlanId: "plan-1", targetPlanDurationDays: 30,
       amount: 100_000, currency: "IRR", financialUnitStatus: "VERIFIED_IRR",
       status: "REDIRECTED", verifiedAt: null,
     });
