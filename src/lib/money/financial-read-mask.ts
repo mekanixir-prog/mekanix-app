@@ -85,6 +85,14 @@ export function sumSafeStoredIrrAmounts(values: readonly unknown[]): number | nu
   }
 }
 
+/** Sum a set of payment amounts only when every stored amount is present and safe. */
+export function sumVerifiedIrrAmounts(values: readonly unknown[]): number | null {
+  if (values.some((value) => value === null || value === undefined || !isSafeStoredIrrAmount(value))) {
+    return null;
+  }
+  return sumSafeStoredIrrAmounts(values);
+}
+
 /**
  * Fail-closed projection for a record whose listed monetary fields share one
  * unit. Unknown/missing attestations never expose numeric values. A claimed
