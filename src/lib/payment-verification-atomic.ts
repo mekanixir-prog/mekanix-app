@@ -76,7 +76,7 @@ export async function recordVerifiedGatewayPaymentAtomically(
     const linkAndVerify = d1.prepare(
       'UPDATE "PaymentGatewayLog" SET "status" = \'VERIFIED\', "financialUnitStatus" = \'VERIFIED_IRR\', ' +
       '"verifiedAt" = COALESCE("verifiedAt", ?), "paymentId" = (SELECT p."id" FROM "Payment" p WHERE p."gatewayLogId" = ? AND p."userId" = ? AND p."amount" = ? AND p."currency" = \'IRR\' AND p."status" = \'SUCCEEDED\' AND p."financialUnitStatus" = \'VERIFIED_IRR\') ' +
-      'WHERE "id" = ? AND "userId" = ? AND "purpose" = \'vip\' AND "targetPlanId" = ? AND "amount" = ? AND "currency" = \'IRR\' AND "financialUnitStatus" = \'VERIFIED_IRR\' ' +
+      'WHERE "id" = ? AND "userId" = ? AND "purpose" = \'vip\' AND "targetPlanId" = ? AND "targetPlanDurationDays" = ? AND "amount" = ? AND "currency" = \'IRR\' AND "financialUnitStatus" = \'VERIFIED_IRR\' ' +
       'AND ("status" = \'REDIRECTED\' OR ("status" = \'VERIFIED\' AND ("paymentId" IS NULL OR "paymentId" = (SELECT p."id" FROM "Payment" p WHERE p."gatewayLogId" = ? AND p."userId" = ?)))) ' +
       'AND EXISTS (SELECT 1 FROM "Payment" p WHERE p."gatewayLogId" = ? AND p."userId" = ? AND p."amount" = ? AND p."currency" = \'IRR\' AND p."status" = \'SUCCEEDED\' AND p."financialUnitStatus" = \'VERIFIED_IRR\')'
     ).bind(
@@ -103,7 +103,7 @@ export async function recordVerifiedGatewayPaymentAtomically(
       'AND json_extract(o."payload", \'$.targetPlanId\') = ? AND json_extract(o."payload", \'$.durationDays\') = ? ' +
       'WHERE p."gatewayLogId" = ? AND p."userId" = ? AND p."amount" = ? AND p."currency" = \'IRR\' AND p."status" = \'SUCCEEDED\' ' +
       'AND p."financialUnitStatus" = \'VERIFIED_IRR\' AND g."status" = \'VERIFIED\' AND g."paymentId" = p."id" ' +
-      'AND g."purpose" = \'vip\' AND g."targetPlanId" = ? AND g."financialUnitStatus" = \'VERIFIED_IRR\') ' +
+      'AND g."purpose" = \'vip\' AND g."targetPlanId" = ? AND g."targetPlanDurationDays" = ? AND g."financialUnitStatus" = \'VERIFIED_IRR\') ' +
       'THEN 1 ELSE json_extract(\'not-json\', \'$\') END'
     ).bind(eventKey, input.targetPlanId, input.durationDays, input.gatewayLogId, input.userId, input.amount, input.targetPlanId, input.durationDays);
 
