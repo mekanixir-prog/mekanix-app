@@ -8,6 +8,13 @@ describe("job-part integer IRR validation", () => {
     expect(getJobPartAmountError(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER)).toBeNull();
   });
 
+  it("rejects a line total that exceeds the safe integer IRR range", () => {
+    expect(getJobPartAmountError(2, Number.MAX_SAFE_INTEGER)).toBe(
+      "PART_LINE_TOTAL_EXCEEDS_SAFE_INTEGER_IRR",
+    );
+    expect(getJobPartAmountError(1, Number.MAX_SAFE_INTEGER)).toBeNull();
+  });
+
   it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "2", null, undefined])(
     "rejects invalid quantity %s",
     (quantity) => {
