@@ -60,20 +60,25 @@ async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
     `SELECT "id","userId","planId","startedAt","expiresAt" FROM "UserVipSubscription" WHERE "paymentId"=?`
   ).bind(p.paymentId).first<{id:string;userId:string;planId:string;startedAt:string|null;expiresAt:string|null}>();
   if (existing) {
-    if (existing.userId!==p.userId || existing.planId!==p.targetPlanId) throw new Error("PAYMENT_ALREADY_BOUND_TO_DIFFERENT_SUBSCRIPTION");
+    if (existing.userId!==p.userId || existing.planId!==p.targetPlanId) {
+      throw new Error("PAYMENT_ALREADY_BOUND_TO_DIFFERENT_SUBSCRIPTION");
+    }
     if (!existing.startedAt || !existing.expiresAt || Date.parse(existing.expiresAt)-Date.parse(existing.startedAt)!==p.durationDays*86400000) {
       throw new Error("EXISTING_SUBSCRIPTION_DURATION_SNAPSHOT_MISMATCH");
     }
+
     const notification = db.prepare(
       `INSERT INTO "Notification" ("id","userId","type","title","body","category","link","read","createdAt")
        SELECT ?,?,'vip_activated','اشتراک VIP فعال شد','اشتراک VIP شما ثبت و فعال‌سازی شد.','system','customer/settings',0,?
        WHERE EXISTS (SELECT 1 FROM "UserVipSubscription" WHERE "paymentId"=? AND "userId"=? AND "planId"=?)
        ON CONFLICT("id") DO NOTHING`
     ).bind(`vip-activated:${p.paymentId}`,p.userId,now.toISOString(),p.paymentId,p.userId,p.targetPlanId);
+
     const done = db.prepare(
       `UPDATE "PaymentOutboxEvent" SET "status"='PROCESSED',"processedAt"=?,"lockedAt"=NULL,"lastError"=NULL,"updatedAt"=?
        WHERE "id"=? AND "status"='PROCESSING' AND "lockedAt"=? AND "idempotencyKey"=?`
     ).bind(now.toISOString(),now.toISOString(),event.id,event.lockedAt,event.idempotencyKey);
+
     const assertion = db.prepare(
       `SELECT CASE WHEN EXISTS (
          SELECT 1 FROM "PaymentOutboxEvent" o JOIN "UserVipSubscription" s ON s."paymentId"=?
@@ -81,7 +86,11 @@ async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
            AND s."userId"=? AND s."planId"=?
            AND s."startedAt" IS NOT NULL AND s."expiresAt" IS NOT NULL
            AND (strftime('%s',s."expiresAt")-strftime('%s',s."startedAt"))=?*86400
-       ) THEN 1 ELSE json_extract('not-json','
+       ) THEN 1 ELSE json_extract('not-json','$') END`
+    ).bind(p.paymentId,event.id,now.toISOString(),p.userId,p.targetPlanId,p.durationDays);
+
+    await db.batch([notification,done,assertion]);
+    return;
   }
 
   // The payment event carries the immutable duration accepted at initiation.
