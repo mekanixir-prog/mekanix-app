@@ -103,6 +103,10 @@ function isTechnicianReleaseTransition(status: string) {
 
 function assertRoleTransition(input: AtomicJobStatusInput) {
   const isCustomerActor = input.actorRole === "CUSTOMER" || input.actorRole === "FLEET_MANAGER";
+  if (input.actorRole === "TECHNICIAN" &&
+      (!input.actorTechnicianId || input.actorTechnicianId !== input.technicianId)) {
+    throw new JobStatusConflictError();
+  }
   if (input.updates.customerApproved !== undefined &&
       (!isCustomerActor || input.updates.customerApproved !== true)) {
     throw new JobStatusConflictError();
@@ -123,6 +127,16 @@ function assertRoleTransition(input: AtomicJobStatusInput) {
     input.updates.customerApproved,
   )) {
     throw new JobStatusConflictError();
+  }
+
+  if (input.actorRole === "TECHNICIAN" || input.actorRole === "ADMIN") {
+    const allowedUpdates = new Set<string>(["technicianNotes"]);
+    if (input.nextStatus === "ACCEPTED") allowedUpdates.add("startedAt");
+    if (input.nextStatus === "ARRIVED") allowedUpdates.add("arrivedAt");
+    if (input.nextStatus === "COMPLETED") allowedUpdates.add("completedAt");
+    if (updateKeys.some((key) => !allowedUpdates.has(key))) {
+      throw new JobStatusConflictError();
+    }
   }
 
   // Universal lifecycle invariants apply even to ADMIN. The admin bypass is
