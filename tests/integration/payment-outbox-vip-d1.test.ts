@@ -95,6 +95,26 @@ describe("VIP payment outbox dispatcher D1 integration",()=>{
     expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "UserVipSubscription"`).get()).toEqual({count:1});
   });
 
+  it("reclaims an abandoned PROCESSING event after its lease expires",async()=>{
+    const {sqlite,d1}=makeD1(); dbs.push(sqlite); seed(sqlite);
+    sqlite.prepare(`UPDATE "PaymentOutboxEvent" SET "status"='PROCESSING',"lockedAt"=? WHERE "id"='event-1'`)
+      .run(new Date(now.getTime()-10*60*1000).toISOString());
+    await runWorker(d1);
+    expect(sqlite.prepare(`SELECT "status","attempts" FROM "PaymentOutboxEvent"`).get()).toEqual({
+      status:"PROCESSED",attempts:1
+    });
+    expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "UserVipSubscription"`).get()).toEqual({count:1});
+  });
+
+  it("moves a repeatedly failing event to DEAD after the configured eighth claim",async()=>{
+    const {sqlite,d1}=makeD1(); dbs.push(sqlite); seed(sqlite);
+    sqlite.prepare(`UPDATE "PaymentOutboxEvent" SET "attempts"=7,"payload"='not-json' WHERE "id"='event-1'`).run();
+    await runWorker(d1);
+    expect(sqlite.prepare(`SELECT "status","attempts","lastError" FROM "PaymentOutboxEvent"`).get()).toEqual({
+      status:"DEAD",attempts:8,lastError:"Unexpected token 'o', \"not-json\" is not valid JSON"
+    });
+  });
+
   it("cancels the previous active subscription in the same fulfillment batch",async()=>{
     const {sqlite,d1}=makeD1(); dbs.push(sqlite); seed(sqlite);
     sqlite.prepare(`INSERT INTO "UserVipSubscription" VALUES (?,?,?,?,?,?,?,?,?)`).run(
