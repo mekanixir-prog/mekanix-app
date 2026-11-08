@@ -211,6 +211,23 @@ describe("atomic job status writer", () => {
     });
   });
 
+  it("rejects technician identity mismatch and status-incompatible scalar updates", async () => {
+    const db = { $transaction: vi.fn() } as any;
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      actorTechnicianId: "another-technician",
+      nextStatus: "ACCEPTED",
+      updates: { startedAt: new Date("2026-11-06T10:01:00.000Z") },
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      nextStatus: "EN_ROUTE",
+      updates: { completedAt: new Date("2026-11-06T10:01:00.000Z") },
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
   it("enforces the exact technician transition matrix before either database adapter writes", async () => {
     const invalidTransitions = [
       { currentStatus: "REQUESTED" as const, nextStatus: "EN_ROUTE" as const },
