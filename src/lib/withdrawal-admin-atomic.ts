@@ -51,7 +51,7 @@ export async function updateWithdrawalWithPrisma(
 
     const walletProvenance = await tx.wallet.findUnique({ where: { id: withdrawal.walletId }, select: { financialUnitStatus: true, balance: true, totalWithdrawn: true } });
     if (walletProvenance?.financialUnitStatus !== "VERIFIED_IRR") return false;
-    if (input.action === "REJECTED" && (!isSafeStoredIrrAmount(walletProvenance.balance) || !Number.isSafeInteger(Number(walletProvenance.balance) + Number(withdrawal.amount)))) return false;
+    if (input.action === "REJECTED" && (!isSafeStoredIrrAmount(walletProvenance.balance) || Number(walletProvenance.balance) < 0 || !Number.isSafeInteger(Number(walletProvenance.balance) + Number(withdrawal.amount)))) return false;
     if (input.action === "PAID" && (!isSafeStoredIrrAmount(walletProvenance.totalWithdrawn) || !Number.isSafeInteger(Number(walletProvenance.totalWithdrawn) + Number(withdrawal.amount)))) return false;
 
     if (input.action === "APPROVED") {
@@ -230,7 +230,7 @@ export async function updateWithdrawalWithD1(
           SELECT "walletId" FROM "WithdrawalRequest"
           WHERE "id" = ? AND "status" = 'REJECTED' AND "processedAt" = ?
         ) AND "financialUnitStatus" = 'VERIFIED_IRR'
-          AND "balance" = CAST("balance" AS INTEGER) AND abs("balance") <= 9007199254740991
+          AND "balance" = CAST("balance" AS INTEGER) AND "balance" >= 0
           AND "balance" <= 9007199254740991 - (SELECT "amount" FROM "WithdrawalRequest" WHERE "id" = ? AND "status" = 'REJECTED' AND "processedAt" = ?)
           AND changes() = 1
       `).bind(input.withdrawalId, at, at, input.withdrawalId, at, input.withdrawalId, at),
