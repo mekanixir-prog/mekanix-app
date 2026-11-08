@@ -25,7 +25,7 @@ const INVOICE_FIELDS = [
   "taxTotal",
   "total",
 ] as const;
-const TECHNICIAN_FEE_FIELDS = [
+export const TECHNICIAN_FEE_FIELDS = [
   "hourlyRate",
   "travelFeeBase",
   "inspectionFee",
@@ -94,6 +94,15 @@ export function maskFinancialFields<T extends object>(
   }
 
   return masked as T;
+}
+
+/** Any edit to a technician fee invalidates its prior financial attestation. */
+export function markFinancialRecordUnverifiedWhenFieldsChanged<T extends Record<string, unknown>>(
+  data: T,
+  financialFields: readonly string[],
+): T & { financialUnitStatus?: string } {
+  const changed = financialFields.some((field) => data[field] !== undefined);
+  return changed ? { ...data, financialUnitStatus: "UNVERIFIED" } : data;
 }
 
 export function maskWalletFinancialData<T extends object>(wallet: T): T {
