@@ -51,6 +51,7 @@ export async function POST(req: Request) {
   }
   const targetPlan = await db.vipPlan.findUnique({ where: { id: log.targetPlanId } });
   if (
+    !Number.isSafeInteger(log.targetPlanDurationDays) || Number(log.targetPlanDurationDays) <= 0 ||
     !targetPlan ||
     !targetPlan.active ||
     targetPlan.financialUnitStatus !== "VERIFIED_IRR" ||
@@ -76,6 +77,7 @@ export async function POST(req: Request) {
       paymentCode: existingPayment.code,
       amount: Number(log.amount),
       targetPlanId: log.targetPlanId,
+      durationDays: log.targetPlanDurationDays!,
       verifiedAt: log.verifiedAt ?? new Date(),
     });
     return NextResponse.json({ ok: true, paymentId, amount: Number(existingPayment.amount), purpose: log.purpose, alreadyVerified: true });
