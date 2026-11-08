@@ -43,6 +43,8 @@ export async function updateWithdrawalWithPrisma(
       debitLedger.amount !== null && debitLedger.amount !== undefined &&
       isSafeStoredIrrAmount(debitLedger.amount) && Number(debitLedger.amount) === -amount &&
       debitLedger.referenceType === "Withdrawal" && debitLedger.referenceId === withdrawal.id &&
+      debitBefore !== null && debitBefore !== undefined &&
+      debitAfter !== null && debitAfter !== undefined &&
       isSafeStoredIrrAmount(debitBefore) && isSafeStoredIrrAmount(debitAfter) &&
       Number(debitBefore) >= amount && Number(debitAfter) >= 0 &&
       Number(debitAfter) === Number(debitBefore) - amount
@@ -51,6 +53,8 @@ export async function updateWithdrawalWithPrisma(
 
     const walletProvenance = await tx.wallet.findUnique({ where: { id: withdrawal.walletId }, select: { financialUnitStatus: true, balance: true, totalWithdrawn: true } });
     if (walletProvenance?.financialUnitStatus !== "VERIFIED_IRR" ||
+        walletProvenance.balance === null || walletProvenance.balance === undefined ||
+        walletProvenance.totalWithdrawn === null || walletProvenance.totalWithdrawn === undefined ||
         !isSafeStoredIrrAmount(walletProvenance.balance) || Number(walletProvenance.balance) < 0 ||
         !isSafeStoredIrrAmount(walletProvenance.totalWithdrawn) || Number(walletProvenance.totalWithdrawn) < 0) return false;
     if (input.action === "REJECTED" && !Number.isSafeInteger(Number(walletProvenance.balance) + amount)) return false;
