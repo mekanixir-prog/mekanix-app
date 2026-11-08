@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import Decimal from "decimal.js";
 import {
   isSafeStoredIrrAmount,
+  sumSafeStoredIrrAmounts,
+  sumVerifiedPositiveIrrAmounts,
   maskFinancialFields,
   maskInvoiceFinancialData,
   maskJobFinancialData,
@@ -16,6 +19,20 @@ describe("financial read masking", () => {
     expect(isSafeStoredIrrAmount("9007199254740992")).toBe(false);
     expect(isSafeStoredIrrAmount("not-a-number")).toBe(false);
     expect(isSafeStoredIrrAmount(null)).toBe(true);
+  });
+
+  it("sums exact IRR amounts and returns null on invalid or overflowing aggregates", () => {
+    expect(sumSafeStoredIrrAmounts([new Decimal("100"), "200", 300])).toBe(600);
+    expect(sumSafeStoredIrrAmounts([Number.MAX_SAFE_INTEGER, 1])).toBeNull();
+    expect(sumSafeStoredIrrAmounts([100, "1.5"])).toBeNull();
+  });
+
+  it("requires every dashboard amount to be present, safe, and positive", () => {
+    expect(sumVerifiedPositiveIrrAmounts([100, new Decimal("200")])).toBe(300);
+    expect(sumVerifiedPositiveIrrAmounts([])).toBe(0);
+    expect(sumVerifiedPositiveIrrAmounts([100, 0])).toBeNull();
+    expect(sumVerifiedPositiveIrrAmounts([100, null])).toBeNull();
+    expect(sumVerifiedPositiveIrrAmounts([Number.MAX_SAFE_INTEGER, 1])).toBeNull();
   });
 
   it("masks all monetary fields when provenance is absent or unverified", () => {
