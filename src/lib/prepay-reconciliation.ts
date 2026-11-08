@@ -143,6 +143,8 @@ export function validatePrepayRecordSet(input: PrepayRecordSet): PrepayReconcili
     holdAmount !== net ||
     holdBefore === null ||
     holdAfter === null ||
+    holdBefore < zero ||
+    holdAfter < zero ||
     holdBefore + net !== holdAfter
   ) {
     return { ok: false, reason: "HOLD_LEDGER_MISMATCH" };
