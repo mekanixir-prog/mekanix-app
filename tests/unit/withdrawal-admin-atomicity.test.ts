@@ -13,11 +13,23 @@ const input = {
   at: new Date("2026-10-30T10:00:00.000Z"),
 };
 
+const debitLedger = {
+  id: "debit-ledger-1",
+  walletId: "wallet-1",
+  type: "WITHDRAWAL",
+  amount: -500,
+  balanceBefore: 1000,
+  balanceAfter: 500,
+  referenceType: "Withdrawal",
+  referenceId: "wd-1",
+  financialUnitStatus: "VERIFIED_IRR",
+};
+
 describe("admin withdrawal transitions", () => {
   it("approves only a REQUESTED withdrawal", async () => {
     const tx = {
       withdrawalRequest: {
-        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "REQUESTED", financialUnitStatus: "VERIFIED_IRR" }),
+        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "REQUESTED", financialUnitStatus: "VERIFIED_IRR", idempotencyKey: "idem-1" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       wallet: { findUnique: vi.fn().mockResolvedValue({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: 0 }) },
@@ -30,10 +42,27 @@ describe("admin withdrawal transitions", () => {
     });
   });
 
+  it("refuses to approve a withdrawal without its matching verified debit ledger", async () => {
+    const tx = {
+      withdrawalRequest: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "wd-1", walletId: "wallet-1", amount: 500, status: "REQUESTED",
+          financialUnitStatus: "VERIFIED_IRR", idempotencyKey: "idem-1",
+        }),
+        updateMany: vi.fn(),
+      },
+      wallet: { findUnique: vi.fn().mockResolvedValue({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: 0 }) },
+      walletLedger: { findUnique: vi.fn().mockResolvedValue(null) },
+    };
+    const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
+    await expect(updateWithdrawalWithPrisma(db, { ...input, action: "APPROVED" })).resolves.toBe(false);
+    expect(tx.withdrawalRequest.updateMany).not.toHaveBeenCalled();
+  });
+
   it("refunds a rejected withdrawal and records the refund ledger in one transaction", async () => {
     const tx = {
       withdrawalRequest: {
-        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "APPROVED", financialUnitStatus: "VERIFIED_IRR" }),
+        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "APPROVED", financialUnitStatus: "VERIFIED_IRR", idempotencyKey: "idem-1" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       wallet: {
@@ -42,7 +71,7 @@ describe("admin withdrawal transitions", () => {
           .mockResolvedValueOnce({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: 0 })
           .mockResolvedValueOnce({ financialUnitStatus: "VERIFIED_IRR", balance: 1500 }),
       },
-      walletLedger: { create: vi.fn().mockResolvedValue({}) },
+      walletLedger: { findUnique: vi.fn().mockResolvedValue(debitLedger), create: vi.fn().mockResolvedValue({}) },
     };
     const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
     await expect(updateWithdrawalWithPrisma(db, input)).resolves.toBe(true);
@@ -67,7 +96,7 @@ describe("admin withdrawal transitions", () => {
   it("rolls back rejection if the refund ledger cannot be written", async () => {
     const tx = {
       withdrawalRequest: {
-        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "REQUESTED", financialUnitStatus: "VERIFIED_IRR" }),
+        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "REQUESTED", financialUnitStatus: "VERIFIED_IRR", idempotencyKey: "idem-1" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       wallet: {
@@ -76,7 +105,7 @@ describe("admin withdrawal transitions", () => {
           .mockResolvedValueOnce({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: 0 })
           .mockResolvedValueOnce({ financialUnitStatus: "VERIFIED_IRR", balance: 1500 }),
       },
-      walletLedger: { create: vi.fn().mockRejectedValue(new Error("ledger failed")) },
+      walletLedger: { findUnique: vi.fn().mockResolvedValue(debitLedger), create: vi.fn().mockRejectedValue(new Error("ledger failed")) },
     };
     const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
     await expect(updateWithdrawalWithPrisma(db, input)).rejects.toThrow("ledger failed");
@@ -85,7 +114,7 @@ describe("admin withdrawal transitions", () => {
   it("marks an approved request paid, creates one payout transaction and updates totalWithdrawn", async () => {
     const tx = {
       withdrawalRequest: {
-        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "APPROVED", financialUnitStatus: "VERIFIED_IRR" }),
+        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "APPROVED", financialUnitStatus: "VERIFIED_IRR", idempotencyKey: "idem-1" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       walletTransaction: { create: vi.fn().mockResolvedValue({}) },
@@ -114,11 +143,11 @@ describe("admin withdrawal transitions", () => {
   it("does not repeat an already completed transition", async () => {
     const tx = {
       withdrawalRequest: {
-        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "PAID", financialUnitStatus: "VERIFIED_IRR" }),
+        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "PAID", financialUnitStatus: "VERIFIED_IRR", idempotencyKey: "idem-1" }),
         updateMany: vi.fn(),
       },
       wallet: { updateMany: vi.fn(), findUnique: vi.fn().mockResolvedValue({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: 0 }) },
-      walletLedger: { create: vi.fn() },
+      walletLedger: { findUnique: vi.fn().mockResolvedValue(debitLedger), create: vi.fn() },
       walletTransaction: { create: vi.fn() },
     };
     const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
@@ -143,6 +172,7 @@ describe("admin withdrawal transitions", () => {
     await expect(updateWithdrawalWithD1(d1 as any, input)).resolves.toBe(true);
     expect(d1.batch).toHaveBeenCalledTimes(1);
     expect(d1.batch.mock.calls[0][0]).toHaveLength(6);
+    expect(statements[0].sql).toContain('FROM "WalletLedger" l');
     expect(statements[1].sql).toContain("json_extract('not-json'");
     expect(statements[2].sql).toContain("changes() = 1");
     expect(statements[3].sql).toContain("json_extract('not-json'");
