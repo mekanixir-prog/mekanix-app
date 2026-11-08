@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
-import { maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { isSafeStoredIrrAmount, maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 // Read-only reconciliation lookup. It never creates or mutates a wallet/request.
 export async function GET(req: Request) {
@@ -23,7 +22,7 @@ export async function GET(req: Request) {
   const db = await getDbForLib();
   const wallet = await db.wallet.findUnique({
     where: { technicianId: technician.id },
-    select: { id: true },
+    select: { id: true, financialUnitStatus: true },
   });
   const [request, ledger] = await Promise.all([
     db.withdrawalRequest.findUnique({
@@ -64,10 +63,19 @@ export async function GET(req: Request) {
     return NextResponse.json({ state: "KEY_CONFLICT" }, { status: 409 });
   }
 
-  // A WithdrawalRequest row alone is not proof that the wallet debit committed.
-  // Verify the matching immutable ledger row before telling the client it succeeded.
-  const expectedDebit = new Prisma.Decimal(request!.amount).negated();
-  if (!ledger || ledger.referenceId !== request!.id || !expectedDebit.equals(ledger.amount)) {
+  // A matching amount is not enough: the wallet, request, and immutable ledger
+  // must each carry an explicit IRR attestation and safe integer value.
+  const requestAmount = request!.amount;
+  const ledgerAmount = ledger?.amount;
+  const financiallyVerified =
+    wallet.financialUnitStatus === "VERIFIED_IRR" &&
+    request!.financialUnitStatus === "VERIFIED_IRR" &&
+    isSafeStoredIrrAmount(requestAmount) &&
+    Number(requestAmount) > 0 &&
+    ledger?.financialUnitStatus === "VERIFIED_IRR" &&
+    isSafeStoredIrrAmount(ledgerAmount) &&
+    Number(ledgerAmount) === -Number(requestAmount);
+  if (!ledger || !financiallyVerified || ledger.referenceId !== request!.id) {
     return NextResponse.json({
       state: "RECONCILIATION_REQUIRED",
       withdrawalCode: request!.code,
