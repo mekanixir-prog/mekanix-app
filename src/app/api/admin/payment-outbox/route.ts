@@ -15,7 +15,7 @@ function parsePositiveInteger(value: string | null, fallback: number, maximum: n
 
 function sanitizeLastError(value: string | null): string | null {
   if (!value) return null;
-  return value.replace(/[\u0000-\u001F\u007F]/g, " ").slice(0, 300);
+  return value.replace(/[\u0000-\u001F\u007F]/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
 }
 
 /**
