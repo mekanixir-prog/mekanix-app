@@ -29,6 +29,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { NextResponse } from "next/server";
+import Decimal from "decimal.js";
 
 // ──────────────────────────────────────────────────────────────────────────
 // Shared mock state (so a single mock for @/lib/db-access can serve all
@@ -303,6 +304,33 @@ describe("PAY-01 — /api/payments production guard", () => {
 // 2. /api/payments — BOLA: payment for another user's invoice → 403
 // ──────────────────────────────────────────────────────────────────────────
 describe("/api/payments — BOLA (payment for another user's invoice)", () => {
+  it("rejects a fractional Prisma Decimal amount that Number would round to an integer", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockInvoiceFindUnique.mockResolvedValue({
+      id: "inv-precision",
+      status: "SENT",
+      total: new Decimal("9007199254740991.1"),
+      currency: "IRR",
+      financialUnitStatus: "VERIFIED_IRR",
+      jobId: "job-precision",
+      code: "INV-PRECISION",
+      job: {
+        id: "job-precision",
+        request: { customer: { userId: "user-1" } },
+        technician: { userId: "tech-user-1" },
+      },
+    });
+
+    const res = await paymentsPOST(makePostRequest("http://localhost/api/payments", {
+      invoiceId: "inv-precision",
+      method: "card",
+    }));
+
+    expect(res.status).toBe(409);
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
+    expect(mockInvoiceUpdateMany).not.toHaveBeenCalled();
+  });
+
   it("returns 403 when session.customer does not own the invoice's job's customer record", async () => {
     vi.stubEnv("NODE_ENV", "test");
     mockInvoiceFindUnique.mockResolvedValue({
