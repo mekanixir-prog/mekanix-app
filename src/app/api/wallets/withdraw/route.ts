@@ -8,6 +8,39 @@ import { isValidIranianSheba } from "@/lib/iranian-iban";
 import { getApprovedIrrWithdrawalPolicy, isValidIrrWithdrawalAmount } from "@/lib/money/withdrawal-policy";
 import { isSafeStoredIrrAmount, maskFinancialFields } from "@/lib/money/financial-read-mask";
 
+function hasVerifiedWithdrawalDebit(request: any, ledger: any, walletId: string): boolean {
+  if (
+    !request ||
+    request.walletId !== walletId ||
+    request.financialUnitStatus !== "VERIFIED_IRR" ||
+    !isSafeStoredIrrAmount(request.amount) ||
+    Number(request.amount) <= 0 ||
+    !ledger ||
+    ledger.walletId !== walletId ||
+    ledger.financialUnitStatus !== "VERIFIED_IRR" ||
+    ledger.type !== "WITHDRAWAL" ||
+    !isSafeStoredIrrAmount(ledger.amount) ||
+    Number(ledger.amount) !== -Number(request.amount) ||
+    ledger.referenceType !== "Withdrawal" ||
+    ledger.referenceId !== request.id ||
+    !isSafeStoredIrrAmount(ledger.balanceBefore) ||
+    !isSafeStoredIrrAmount(ledger.balanceAfter)
+  ) return false;
+
+  const amount = Number(request.amount);
+  const before = Number(ledger.balanceBefore);
+  const after = Number(ledger.balanceAfter);
+  return before >= amount && after >= 0 && after === before - amount;
+}
+
+async function getVerifiedWithdrawalDebit(db: Awaited<ReturnType<typeof getDbForLib>>, request: any) {
+  if (!request?.idempotencyKey) return null;
+  const ledger = await db.walletLedger.findUnique({
+    where: { idempotencyKey: `withdrawal:${request.idempotencyKey}:LEDGER` },
+  });
+  return hasVerifiedWithdrawalDebit(request, ledger, request.walletId) ? ledger : null;
+}
+
 export async function POST(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
@@ -103,6 +136,10 @@ export async function POST(req: Request) {
         existing.bankName !== bankName || existing.shebaNumber !== shebaNumber) {
       return NextResponse.json({ error: "کلید درخواست قبلاً برای عملیات دیگری استفاده شده است" }, { status: 409 });
     }
+    const debitLedger = await getVerifiedWithdrawalDebit(db, existing);
+    if (!debitLedger) {
+      return NextResponse.json({ error: "سابقه برداشت نیازمند تطبیق دفترکل است", code: "WITHDRAWAL_RECONCILIATION_REQUIRED" }, { status: 409 });
+    }
     return NextResponse.json({ withdrawal: maskFinancialFields(existing, ["amount"]), newBalance: Number(wallet.balance), idempotent: true });
   }
 
@@ -145,6 +182,10 @@ export async function POST(req: Request) {
           withdrawal.bankName !== bankName || withdrawal.shebaNumber !== shebaNumber) {
         return NextResponse.json({ error: "کلید درخواست قبلاً برای عملیات دیگری استفاده شده است" }, { status: 409 });
       }
+      const debitLedger = await getVerifiedWithdrawalDebit(db, withdrawal);
+      if (!debitLedger) {
+        return NextResponse.json({ error: "سابقه برداشت نیازمند تطبیق دفترکل است", code: "WITHDRAWAL_RECONCILIATION_REQUIRED" }, { status: 409 });
+      }
       const currentWallet = await db.wallet.findUnique({ where: { id: wallet.id }, select: { balance: true, financialUnitStatus: true } });
       return NextResponse.json({
         withdrawal: maskFinancialFields(withdrawal, ["amount"]),
@@ -184,6 +225,10 @@ export async function POST(req: Request) {
     if (raced && raced.walletId === wallet.id && Number(raced.amount) === amount &&
         raced.method === method && raced.cardNumber === maskedCardNumber &&
         raced.bankName === bankName && raced.shebaNumber === shebaNumber) {
+      const debitLedger = await getVerifiedWithdrawalDebit(db, raced);
+      if (!debitLedger) {
+        return NextResponse.json({ error: "سابقه برداشت نیازمند تطبیق دفترکل است", code: "WITHDRAWAL_RECONCILIATION_REQUIRED" }, { status: 409 });
+      }
       const currentWallet = await db.wallet.findUnique({ where: { id: wallet.id }, select: { balance: true, financialUnitStatus: true } });
       return NextResponse.json({
         withdrawal: maskFinancialFields(raced, ["amount"]),
