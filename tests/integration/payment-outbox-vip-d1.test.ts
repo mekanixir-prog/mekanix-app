@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import worker from "../../workers/payment-outbox/index";
 
-function makeD1() {
+function makeD1(onBeforeBatch?: (sqlite:DatabaseSync)=>void) {
   const sqlite = new DatabaseSync(":memory:");
   sqlite.exec(`
     CREATE TABLE "PaymentOutboxEvent" (
@@ -42,6 +42,7 @@ function makeD1() {
       };
     },
     async batch(items: Array<{first?:()=>Promise<unknown>;run:()=>Promise<{meta:{changes:number}}>}>) {
+      onBeforeBatch?.(sqlite);
       try {
         sqlite.exec("BEGIN");
         const result: Array<{meta:{changes:number}}> = [];
@@ -95,6 +96,26 @@ describe("VIP payment outbox dispatcher D1 integration",()=>{
     expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "UserVipSubscription"`).get()).toEqual({count:1});
   });
 
+  it("preserves an API-created subscription inserted after the worker initial read",async()=>{
+    let injected=false;
+    const {sqlite,d1}=makeD1((db)=>{
+      if(injected) return;
+      injected=true;
+      db.prepare(`INSERT INTO "UserVipSubscription" VALUES (?,?,?,?,?,?,?,?,?)`).run(
+        "api-sub","user-1","plan-1","ACTIVE",now.toISOString(),
+        new Date(now.getTime()+30*86400000).toISOString(),"payment-1",now.toISOString(),now.toISOString()
+      );
+    });
+    dbs.push(sqlite); seed(sqlite);
+    sqlite.prepare(`INSERT INTO "UserVipSubscription" VALUES (?,?,?,?,?,?,?,?,?)`).run(
+      "old-sub","user-1","old-plan","ACTIVE",now.toISOString(),null,"old-payment",now.toISOString(),now.toISOString()
+    );
+    await runWorker(d1);
+    expect(sqlite.prepare(`SELECT "status" FROM "UserVipSubscription" WHERE "id"='api-sub'`).get()).toEqual({status:"ACTIVE"});
+    expect(sqlite.prepare(`SELECT "status" FROM "UserVipSubscription" WHERE "id"='old-sub'`).get()).toEqual({status:"CANCELLED"});
+    expect(sqlite.prepare(`SELECT "status" FROM "PaymentOutboxEvent"`).get()).toEqual({status:"PROCESSED"});
+    expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "UserVipSubscription" WHERE "paymentId"='payment-1'`).get()).toEqual({count:1});
+  });
   it("reclaims an abandoned PROCESSING event after its lease expires",async()=>{
     const {sqlite,d1}=makeD1(); dbs.push(sqlite); seed(sqlite);
     sqlite.prepare(`UPDATE "PaymentOutboxEvent" SET "status"='PROCESSING',"lockedAt"=? WHERE "id"='event-1'`)
