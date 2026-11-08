@@ -38,7 +38,7 @@ export async function releaseWalletTransactionWithPrisma(
     if (transition.count !== 1) return false;
 
     const walletUpdate = await tx.wallet.updateMany({
-      where: { id: walletId, financialUnitStatus: "VERIFIED_IRR", pendingBalance: { gte: transaction.netAmount } },
+      where: { id: walletId, financialUnitStatus: "VERIFIED_IRR", balance: { gte: 0 }, pendingBalance: { gte: transaction.netAmount } },
       data: {
         pendingBalance: { decrement: transaction.netAmount },
         balance: { increment: transaction.netAmount },
@@ -61,12 +61,16 @@ export async function releaseWalletTransactionWithPrisma(
 
     const amount = transaction.netAmount;
     const balanceAfter = updatedWallet.balance;
+    const balanceBefore = balanceAfter.minus(amount);
+    if (!isSafeStoredIrrAmount(balanceBefore) || balanceBefore.lessThan(0)) {
+      throw new Error("Wallet available balance is negative or outside the safe IRR range");
+    }
     await tx.walletLedger.create({
       data: {
         walletId,
         type: "RELEASE",
         amount,
-        balanceBefore: balanceAfter.minus(amount),
+        balanceBefore,
         balanceAfter,
         referenceType: "WalletTransaction",
         referenceId: transactionId,
