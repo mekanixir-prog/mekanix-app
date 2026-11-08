@@ -47,7 +47,7 @@ export function isCommittedPrepayConsistent(
     !wallet ||
     wallet.financialUnitStatus !== "VERIFIED_IRR" ||
     ![wallet.balance, wallet.pendingBalance, wallet.totalEarned, wallet.totalCommission, wallet.totalWithdrawn]
-      .every((value) => value !== null && value !== undefined && isSafeStoredIrrAmount(value)) ||
+      .every((value) => value !== null && value !== undefined && isSafeStoredIrrAmount(value) && Number(value) >= 0) ||
     !prepayTransaction ||
     !commissionTransaction ||
     !holdLedger ||
@@ -93,6 +93,7 @@ export function isCommittedPrepayConsistent(
     holdLedger.referenceId !== job.id || !sameAmount(holdLedger.amount, net) ||
     holdBefore === null || holdBefore === undefined || holdAfter === null || holdAfter === undefined ||
     !isSafeStoredIrrAmount(holdBefore) || !isSafeStoredIrrAmount(holdAfter) ||
+    Number(holdBefore) < 0 || Number(holdAfter) < 0 ||
     Number(holdAfter) !== Number(holdBefore) + net
   ) return false;
 
