@@ -76,6 +76,17 @@ export async function POST(req: Request) {
     return NextResponse.json(existing);
   }
 
+  // The current CARE calculator still derives labor from hours × an hourly
+  // base rate. MEKANIX's approved commercial direction is fixed labor fees;
+  // do not create production pricing snapshots from the legacy hourly model.
+  // Existing idempotent bookings are replayed above without recalculation.
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      { error: "تعرفه دستمزد ثابت هنوز پیاده‌سازی و تأیید نشده است؛ ثبت رزرو مالی CARE موقتاً مسدود است", code: "FIXED_LABOR_RATE_CARD_NOT_IMPLEMENTED" },
+      { status: 409 },
+    );
+  }
+
   const vipStatus = await checkVipStatus(session.userId);
   const pricing = await calculatePrice({
     packageId: packageId || undefined,
