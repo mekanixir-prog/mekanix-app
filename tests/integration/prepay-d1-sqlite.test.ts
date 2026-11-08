@@ -28,6 +28,7 @@ function makeD1() {
       "pendingBalance" REAL NOT NULL DEFAULT 0,
       "totalEarned" REAL NOT NULL DEFAULT 0,
       "totalCommission" REAL NOT NULL DEFAULT 0,
+      "totalWithdrawn" REAL NOT NULL DEFAULT 0,
       "createdAt" TEXT NOT NULL,
       "updatedAt" TEXT NOT NULL
     );
@@ -45,6 +46,10 @@ function makeD1() {
       "idempotencyKey" TEXT NOT NULL UNIQUE,
       "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "createdAt" TEXT NOT NULL
+    );
+    CREATE TABLE "WithdrawalRequest" (
+      "id" TEXT PRIMARY KEY,
+      "walletId" TEXT NOT NULL REFERENCES "Wallet"("id")
     );
     CREATE TABLE "WalletLedger" (
       "id" TEXT PRIMARY KEY,
@@ -125,6 +130,18 @@ describe("atomic prepay D1 SQLite integration", () => {
       .toEqual({ pendingBalance: 1000, totalEarned: 1000, totalCommission: 100 });
     expect(sqlite.prepare('SELECT "kind", "status", "netAmount" FROM "WalletTransaction" ORDER BY "kind"').all())
       .toEqual([{ kind: "COMMISSION", status: "COMPLETED", netAmount: -100 }, { kind: "PREPAY", status: "PENDING", netAmount: 900 }]);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 2 });
+  });
+
+  it("promotes an empty read-created wallet only when all aggregates and history are empty", async () => {
+    const { sqlite, d1 } = makeD1(); databases.push(sqlite); seed(sqlite);
+    sqlite.prepare('UPDATE "Wallet" SET "financialUnitStatus" = ?, "pendingBalance" = 0 WHERE "id" = ?')
+      .run("UNVERIFIED", "wallet-1");
+
+    expect(await recordPrepayWithD1(d1 as never, input)).toBe(true);
+    expect(sqlite.prepare('SELECT "financialUnitStatus", "pendingBalance", "totalEarned", "totalCommission" FROM "Wallet" WHERE "id" = ?').get("wallet-1"))
+      .toEqual({ financialUnitStatus: "VERIFIED_IRR", pendingBalance: 900, totalEarned: 1000, totalCommission: 100 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletTransaction"').get()).toEqual({ count: 2 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 2 });
   });
 

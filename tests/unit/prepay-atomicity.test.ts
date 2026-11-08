@@ -157,7 +157,7 @@ describe("atomic prepay recording", () => {
         },
       }),
       batch: vi.fn().mockResolvedValue(
-        Array.from({ length: 15 }, () => ({ meta: { changes: 1 } }))
+        Array.from({ length: 16 }, () => ({ meta: { changes: 1 } }))
       ),
     };
 
