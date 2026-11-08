@@ -3,7 +3,7 @@ type D1Statement = { bind(...values: unknown[]): D1Statement; first<T = unknown>
 type D1Database = { prepare(sql: string): D1Statement; batch(statements: D1Statement[]): Promise<D1Result[]> };
 type Env = { DB: D1Database };
 type OutboxRow = { id:string; eventType:string; aggregateType:string; aggregateId:string; payload:string; idempotencyKey:string; attempts:number; lockedAt:string|null };
-type VipPayload = { eventType:"PAYMENT_SUCCEEDED"; paymentId:string; gatewayLogId:string; userId:string; amount:number; currency:"IRR"; purpose:"vip"; targetPlanId:string };
+type VipPayload = { eventType:"PAYMENT_SUCCEEDED"; paymentId:string; gatewayLogId:string; userId:string; amount:number; currency:"IRR"; purpose:"vip"; targetPlanId:string; durationDays:number };
 
 const BATCH_SIZE = 25;
 const MAX_ATTEMPTS = 8;
@@ -15,7 +15,8 @@ function parsePayload(raw:string):VipPayload {
   if (v.eventType !== "PAYMENT_SUCCEEDED" || typeof v.paymentId !== "string" || !v.paymentId ||
       typeof v.gatewayLogId !== "string" || !v.gatewayLogId || typeof v.userId !== "string" || !v.userId ||
       !Number.isSafeInteger(v.amount) || (v.amount ?? 0) <= 0 || v.currency !== "IRR" ||
-      v.purpose !== "vip" || typeof v.targetPlanId !== "string" || !v.targetPlanId) {
+      v.purpose !== "vip" || typeof v.targetPlanId !== "string" || !v.targetPlanId ||
+      !Number.isSafeInteger(v.durationDays) || (v.durationDays ?? 0) <= 0 || (v.durationDays ?? 0) > 36500) {
     throw new Error("INVALID_VIP_OUTBOX_PAYLOAD");
   }
   return v as VipPayload;
@@ -56,24 +57,32 @@ async function recordFailure(db:D1Database,event:OutboxRow,now:Date,error:unknow
 
 async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
   const existing = await db.prepare(
-    `SELECT "id","userId","planId" FROM "UserVipSubscription" WHERE "paymentId"=?`
-  ).bind(p.paymentId).first<{id:string;userId:string;planId:string}>();
+    `SELECT "id","userId","planId","expiresAt" FROM "UserVipSubscription" WHERE "paymentId"=?`
+  ).bind(p.paymentId).first<{id:string;userId:string;planId:string;expiresAt:string|null}>();
   if (existing) {
     if (existing.userId!==p.userId || existing.planId!==p.targetPlanId) throw new Error("PAYMENT_ALREADY_BOUND_TO_DIFFERENT_SUBSCRIPTION");
-    const done = await db.prepare(
+    const notification = db.prepare(
+      `INSERT INTO "Notification" ("id","userId","type","title","body","category","link","read","createdAt")
+       SELECT ?,?,'vip_activated','اشتراک VIP فعال شد','اشتراک VIP شما فعال است.','system','customer/settings',0,?
+       WHERE EXISTS (SELECT 1 FROM "UserVipSubscription" WHERE "paymentId"=? AND "userId"=? AND "planId"=?)
+       ON CONFLICT("id") DO NOTHING`
+    ).bind(`vip-activated:${p.paymentId}`,p.userId,now.toISOString(),p.paymentId,p.userId,p.targetPlanId);
+    const done = db.prepare(
       `UPDATE "PaymentOutboxEvent" SET "status"='PROCESSED',"processedAt"=?,"lockedAt"=NULL,"lastError"=NULL,"updatedAt"=?
        WHERE "id"=? AND "status"='PROCESSING' AND "lockedAt"=? AND "idempotencyKey"=?`
-    ).bind(now.toISOString(),now.toISOString(),event.id,event.lockedAt,event.idempotencyKey).run();
-    if ((done.meta?.changes ?? 0)!==1) throw new Error("OUTBOX_LEASE_LOST");
+    ).bind(now.toISOString(),now.toISOString(),event.id,event.lockedAt,event.idempotencyKey);
+    await db.batch([notification,done]);
     return;
   }
 
+  // The payment event carries the immutable duration accepted at initiation.
+  // Current plan edits must not retroactively alter a paid entitlement.
   const plan = await db.prepare(
-    `SELECT "durationDays" FROM "VipPlan" WHERE "id"=? AND "active"=1 AND "financialUnitStatus"='VERIFIED_IRR'`
-  ).bind(p.targetPlanId).first<{durationDays:number}>();
-  if (!plan || !Number.isSafeInteger(plan.durationDays) || plan.durationDays<=0) throw new Error("VIP_PLAN_NOT_ACTIVE_OR_VERIFIED");
+    `SELECT "id" FROM "VipPlan" WHERE "id"=?`
+  ).bind(p.targetPlanId).first<{id:string}>();
+  if (!plan) throw new Error("VIP_PLAN_NOT_FOUND_FOR_PAID_ENTITLEMENT");
   const started = now.toISOString();
-  const expires = new Date(now.getTime()+plan.durationDays*86400000).toISOString();
+  const expires = new Date(now.getTime()+p.durationDays*86400000).toISOString();
   const subscriptionId = crypto.randomUUID();
 
   // The current payment is explicitly excluded from retirement. The API may
@@ -108,6 +117,13 @@ async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
        AND NOT EXISTS (SELECT 1 FROM "UserVipSubscription" s WHERE s."paymentId"=p."id")`
   ).bind(subscriptionId,p.targetPlanId,started,expires,started,started,p.targetPlanId,p.paymentId,p.userId,p.amount,p.gatewayLogId,p.targetPlanId);
 
+  const notification = db.prepare(
+    `INSERT INTO "Notification" ("id","userId","type","title","body","category","link","read","createdAt")
+     SELECT ?,?,'vip_activated','اشتراک VIP فعال شد','اشتراک VIP شما فعال است.','system','customer/settings',0,?
+     WHERE EXISTS (SELECT 1 FROM "UserVipSubscription" WHERE "paymentId"=? AND "userId"=? AND "planId"=?)
+     ON CONFLICT("id") DO NOTHING`
+  ).bind(`vip-activated:${p.paymentId}`,p.userId,now.toISOString(),p.paymentId,p.userId,p.targetPlanId);
+
   const markProcessed = db.prepare(
     `UPDATE "PaymentOutboxEvent" SET "status"='PROCESSED',"processedAt"=?,"lockedAt"=NULL,"lastError"=NULL,"updatedAt"=?
      WHERE "id"=? AND "status"='PROCESSING' AND "lockedAt"=? AND "idempotencyKey"=?
@@ -122,7 +138,7 @@ async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
      ) THEN 1 ELSE json_extract('not-json','$') END`
   ).bind(p.paymentId,event.id,now.toISOString(),p.userId,p.targetPlanId);
 
-  await db.batch([cancelPrevious,insertSubscription,markProcessed,assertion]);
+  await db.batch([cancelPrevious,insertSubscription,notification,markProcessed,assertion]);
 }
 
 async function processBatch(db:D1Database,now:Date) {
