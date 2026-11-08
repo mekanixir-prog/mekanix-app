@@ -122,7 +122,7 @@ async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
 
   const notification = db.prepare(
     `INSERT INTO "Notification" ("id","userId","type","title","body","category","link","read","createdAt")
-     SELECT ?,?,'vip_activated','اشتراک VIP فعال شد','اشتراک VIP شما فعال است.','system','customer/settings',0,?
+     SELECT ?,?,'vip_activated','اشتراک VIP فعال شد','اشتراک VIP شما ثبت و فعال‌سازی شد.','system','customer/settings',0,?
      WHERE EXISTS (SELECT 1 FROM "UserVipSubscription" WHERE "paymentId"=? AND "userId"=? AND "planId"=?)
      ON CONFLICT("id") DO NOTHING`
   ).bind(`vip-activated:${p.paymentId}`,p.userId,now.toISOString(),p.paymentId,p.userId,p.targetPlanId);
@@ -222,7 +222,7 @@ export default worker;
 
   const notification = db.prepare(
     `INSERT INTO "Notification" ("id","userId","type","title","body","category","link","read","createdAt")
-     SELECT ?,?,'vip_activated','اشتراک VIP فعال شد','اشتراک VIP شما فعال است.','system','customer/settings',0,?
+     SELECT ?,?,'vip_activated','اشتراک VIP فعال شد','اشتراک VIP شما ثبت و فعال‌سازی شد.','system','customer/settings',0,?
      WHERE EXISTS (SELECT 1 FROM "UserVipSubscription" WHERE "paymentId"=? AND "userId"=? AND "planId"=?)
      ON CONFLICT("id") DO NOTHING`
   ).bind(`vip-activated:${p.paymentId}`,p.userId,now.toISOString(),p.paymentId,p.userId,p.targetPlanId);
