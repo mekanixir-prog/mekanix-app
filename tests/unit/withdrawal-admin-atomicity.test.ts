@@ -43,6 +43,21 @@ describe("admin withdrawal transitions", () => {
     });
   });
 
+  it("does not approve a withdrawal without its matching debit ledger proof", async () => {
+    const tx = {
+      withdrawalRequest: {
+        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "REQUESTED", financialUnitStatus: "VERIFIED_IRR", idempotencyKey: "wd-key-1" }),
+        updateMany: vi.fn(),
+      },
+      walletLedger: { findUnique: vi.fn().mockResolvedValue(null) },
+      wallet: { findUnique: vi.fn() },
+    };
+    const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
+    await expect(updateWithdrawalWithPrisma(db, { ...input, action: "APPROVED" })).resolves.toBe(false);
+    expect(tx.withdrawalRequest.updateMany).not.toHaveBeenCalled();
+    expect(tx.wallet.findUnique).not.toHaveBeenCalled();
+  });
+
   it("refunds a rejected withdrawal and records the refund ledger in one transaction", async () => {
     const tx = {
       withdrawalRequest: {
