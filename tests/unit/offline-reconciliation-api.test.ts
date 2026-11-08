@@ -48,7 +48,7 @@ beforeEach(() => {
   mocks.auth.mockResolvedValue(technicianSession);
   mocks.technician.mockResolvedValue({ id: "tech-1" });
   mocks.participant.mockResolvedValue(null);
-  mocks.wallet.mockResolvedValue({ id: "wallet-1" });
+  mocks.wallet.mockResolvedValue({ id: "wallet-1", financialUnitStatus: "VERIFIED_IRR" });
   mocks.withdrawal.mockResolvedValue(null);
   mocks.withdrawalLedger.mockResolvedValue(null);
   mocks.job.mockResolvedValue({
@@ -75,6 +75,43 @@ describe("read-only offline reconciliation endpoints", () => {
     expect(mocks.withdrawal).toHaveBeenCalledWith(expect.objectContaining({
       where: { idempotencyKey: "idem_12345678" },
     }));
+  });
+
+  it("requires IRR attestations on the wallet, withdrawal, and debit ledger before COMMITTED", async () => {
+    mocks.withdrawal.mockResolvedValue({
+      id: "wd-1", walletId: "wallet-1", code: "WD-1001", amount: 500,
+      financialUnitStatus: "UNVERIFIED", status: "REQUESTED", requestedAt: new Date(), processedAt: null,
+    });
+    mocks.withdrawalLedger.mockResolvedValue({ id: "ledger-1", referenceId: "wd-1", amount: -500, financialUnitStatus: "VERIFIED_IRR" });
+    const unverifiedRequest = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    expect(unverifiedRequest.status).toBe(409);
+    await expect(unverifiedRequest.json()).resolves.toMatchObject({ state: "RECONCILIATION_REQUIRED" });
+
+    mocks.withdrawal.mockResolvedValue({
+      id: "wd-1", walletId: "wallet-1", code: "WD-1001", amount: 500,
+      financialUnitStatus: "VERIFIED_IRR", status: "REQUESTED", requestedAt: new Date(), processedAt: null,
+    });
+    mocks.withdrawalLedger.mockResolvedValue({ id: "ledger-1", referenceId: "wd-1", amount: -500, financialUnitStatus: "UNVERIFIED" });
+    const unverifiedLedger = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    expect(unverifiedLedger.status).toBe(409);
+    await expect(unverifiedLedger.json()).resolves.toMatchObject({ state: "RECONCILIATION_REQUIRED" });
+
+    mocks.wallet.mockResolvedValue({ id: "wallet-1", financialUnitStatus: "UNVERIFIED" });
+    mocks.withdrawalLedger.mockResolvedValue({ id: "ledger-1", referenceId: "wd-1", amount: -500, financialUnitStatus: "VERIFIED_IRR" });
+    const unverifiedWallet = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    expect(unverifiedWallet.status).toBe(409);
+    await expect(unverifiedWallet.json()).resolves.toMatchObject({ state: "RECONCILIATION_REQUIRED" });
+  });
+
+  it("rejects fractional or unsafe withdrawal and ledger amounts as committed evidence", async () => {
+    mocks.withdrawal.mockResolvedValue({
+      id: "wd-1", walletId: "wallet-1", code: "WD-1001", amount: 500.5,
+      financialUnitStatus: "VERIFIED_IRR", status: "REQUESTED", requestedAt: new Date(), processedAt: null,
+    });
+    mocks.withdrawalLedger.mockResolvedValue({ id: "ledger-1", referenceId: "wd-1", amount: -500.5, financialUnitStatus: "VERIFIED_IRR" });
+    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ state: "RECONCILIATION_REQUIRED" });
   });
 
   it("does not report a withdrawal committed when its debit ledger row is missing", async () => {
