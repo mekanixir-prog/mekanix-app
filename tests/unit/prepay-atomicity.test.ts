@@ -102,6 +102,30 @@ describe("atomic prepay recording", () => {
     expect(tx.walletLedger.create).not.toHaveBeenCalled();
   });
 
+  it("refuses to prepay against a verified wallet with a negative aggregate", async () => {
+    const tx = {
+      job: { updateMany: vi.fn() },
+      wallet: {
+        upsert: vi.fn().mockResolvedValue({
+          id: "wallet-1", balance: 0, pendingBalance: -1,
+          totalEarned: 0, totalCommission: 0, totalWithdrawn: 0,
+          financialUnitStatus: "VERIFIED_IRR",
+        }),
+        updateMany: vi.fn(),
+      },
+      walletTransaction: { create: vi.fn() },
+      walletLedger: { create: vi.fn() },
+    };
+    const db = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)),
+    } as any;
+
+    await expect(recordPrepayWithPrisma(db, input)).resolves.toBe(false);
+    expect(tx.job.updateMany).not.toHaveBeenCalled();
+    expect(tx.walletTransaction.create).not.toHaveBeenCalled();
+    expect(tx.walletLedger.create).not.toHaveBeenCalled();
+  });
+
   it("refuses to mutate an existing wallet without verified IRR provenance", async () => {
     const tx = {
       job: { updateMany: vi.fn() },
@@ -167,6 +191,7 @@ describe("atomic prepay recording", () => {
     expect(statements[5].sql).toContain('"idempotencyKey"');
     expect(statements[3].sql).toContain('NOT EXISTS (SELECT 1 FROM "WalletLedger"');
     expect(statements[4].sql).toContain("financialUnitStatus");
+    expect(statements[4].sql).toContain('"pendingBalance" >= 0');
     expect(statements[9].sql).toContain("'HOLD'");
     expect(statements[11].sql).toContain("financialUnitStatus");
   });
