@@ -57,10 +57,13 @@ async function recordFailure(db:D1Database,event:OutboxRow,now:Date,error:unknow
 
 async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
   const existing = await db.prepare(
-    `SELECT "id","userId","planId","expiresAt" FROM "UserVipSubscription" WHERE "paymentId"=?`
-  ).bind(p.paymentId).first<{id:string;userId:string;planId:string;expiresAt:string|null}>();
+    `SELECT "id","userId","planId","startedAt","expiresAt" FROM "UserVipSubscription" WHERE "paymentId"=?`
+  ).bind(p.paymentId).first<{id:string;userId:string;planId:string;startedAt:string|null;expiresAt:string|null}>();
   if (existing) {
     if (existing.userId!==p.userId || existing.planId!==p.targetPlanId) throw new Error("PAYMENT_ALREADY_BOUND_TO_DIFFERENT_SUBSCRIPTION");
+    if (!existing.startedAt || !existing.expiresAt || Date.parse(existing.expiresAt)-Date.parse(existing.startedAt)!==p.durationDays*86400000) {
+      throw new Error("EXISTING_SUBSCRIPTION_DURATION_SNAPSHOT_MISMATCH");
+    }
     const notification = db.prepare(
       `INSERT INTO "Notification" ("id","userId","type","title","body","category","link","read","createdAt")
        SELECT ?,?,'vip_activated','اشتراک VIP فعال شد','اشتراک VIP شما ثبت و فعال‌سازی شد.','system','customer/settings',0,?
