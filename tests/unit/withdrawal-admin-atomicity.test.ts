@@ -119,6 +119,7 @@ describe("admin withdrawal transitions", () => {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       walletTransaction: { create: vi.fn().mockResolvedValue({}) },
+      walletLedger: { findUnique: vi.fn().mockResolvedValue(debitLedger) },
       wallet: { findUnique: vi.fn().mockResolvedValue({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: 0 }), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     };
     const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
