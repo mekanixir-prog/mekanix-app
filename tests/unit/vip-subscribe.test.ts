@@ -243,6 +243,54 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     expect(body.subscription.id).toBe("sub-1");
   });
 
+  it("returns the existing subscription for an exact payment replay", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockUserVipSubscriptionFindFirst.mockResolvedValue({
+      id: "sub-existing", userId: "user-1", planId: "plan-1", status: "ACTIVE",
+      plan: { id: "plan-1", name: "Gold", priceIrr: 100_000 },
+    });
+
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.alreadyProcessed).toBe(true);
+    expect(body.subscription.id).toBe("sub-existing");
+    expect(mockCreateVipSubscriptionAtomically).not.toHaveBeenCalled();
+    expect(mockNotificationCreate).not.toHaveBeenCalled();
+  });
+
+  it("recovers a concurrent payment-consumption race as an idempotent success", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockUserVipSubscriptionFindFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: "sub-raced", userId: "user-1", planId: "plan-1", status: "ACTIVE",
+        plan: { id: "plan-1", name: "Gold", priceIrr: 100_000 },
+      });
+    mockCreateVipSubscriptionAtomically.mockRejectedValue(new Error("UNIQUE constraint failed"));
+
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.alreadyProcessed).toBe(true);
+    expect(body.subscription.id).toBe("sub-raced");
+    expect(mockNotificationCreate).not.toHaveBeenCalled();
+  });
+
+  it("does not treat a payment consumed by another plan as an idempotent replay", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockUserVipSubscriptionFindFirst.mockResolvedValue({
+      id: "sub-other-plan", userId: "user-1", planId: "different-plan", status: "ACTIVE",
+      plan: { id: "different-plan", name: "Silver" },
+    });
+
+    const res = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(409);
+    expect(mockCreateVipSubscriptionAtomically).not.toHaveBeenCalled();
+  });
+
   it("returns a conflict when the atomic replacement loses a uniqueness race", async () => {
     vi.stubEnv("NODE_ENV", "test");
     mockCreateVipSubscriptionAtomically.mockRejectedValue(new Error("UNIQUE constraint failed"));
