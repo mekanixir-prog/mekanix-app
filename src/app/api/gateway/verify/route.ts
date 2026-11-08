@@ -78,6 +78,7 @@ export async function POST(req: Request) {
       amount: Number(log.amount),
       targetPlanId: log.targetPlanId,
       durationDays: log.targetPlanDurationDays!,
+      durationDays: log.targetPlanDurationDays!,
       verifiedAt: log.verifiedAt ?? new Date(),
     });
     return NextResponse.json({ ok: true, paymentId, amount: Number(existingPayment.amount), purpose: log.purpose, alreadyVerified: true });
@@ -106,6 +107,7 @@ export async function POST(req: Request) {
       legacyPaymentId: legacyPayment.id,
       amount: Number(log.amount),
       targetPlanId: log.targetPlanId,
+      durationDays: log.targetPlanDurationDays!,
       verifiedAt: log.verifiedAt ?? new Date(),
     });
     return NextResponse.json({
@@ -126,6 +128,7 @@ export async function POST(req: Request) {
       paymentCode: `PAY-${log.code}`,
       amount: Number(log.amount),
       targetPlanId: log.targetPlanId,
+      durationDays: log.targetPlanDurationDays!,
       verifiedAt: log.verifiedAt ?? new Date(),
     });
   } catch (error: any) {
@@ -141,6 +144,7 @@ export async function POST(req: Request) {
       paymentCode: racedPayment.code,
       amount: Number(log.amount),
       targetPlanId: log.targetPlanId,
+      durationDays: log.targetPlanDurationDays!,
       verifiedAt: log.verifiedAt ?? new Date(),
     });
   }
