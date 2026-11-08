@@ -76,18 +76,21 @@ async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
   const expires = new Date(now.getTime()+plan.durationDays*86400000).toISOString();
   const subscriptionId = crypto.randomUUID();
 
-  // All fulfillment writes, including retiring the previous active VIP,
-  // subscription insertion and outbox completion, share one D1 transaction.
+  // The current payment is explicitly excluded from retirement. The API may
+  // fulfill the same payment after the initial read but before this batch.
+  // In that race, the guarded insert is skipped and the existing subscription
+  // remains ACTIVE while the outbox event is completed idempotently.
   const cancelPrevious = db.prepare(
     `UPDATE "UserVipSubscription" SET "status"='CANCELLED',"updatedAt"=?
      WHERE "userId"=? AND "status"='ACTIVE'
+       AND ("paymentId" IS NULL OR "paymentId"<>?)
        AND EXISTS (SELECT 1 FROM "Payment" p JOIN "PaymentGatewayLog" g ON g."id"=p."gatewayLogId"
          WHERE p."id"=? AND p."userId"=? AND p."amount"=? AND p."currency"='IRR'
            AND p."status"='SUCCEEDED' AND p."financialUnitStatus"='VERIFIED_IRR'
            AND p."gatewayLogId"=? AND g."paymentId"=p."id" AND g."status"='VERIFIED'
            AND g."purpose"='vip' AND g."targetPlanId"=? AND g."amount"=p."amount"
            AND g."currency"='IRR' AND g."financialUnitStatus"='VERIFIED_IRR')`
-  ).bind(now.toISOString(),p.userId,p.paymentId,p.userId,p.amount,p.gatewayLogId,p.targetPlanId);
+  ).bind(now.toISOString(),p.userId,p.paymentId,p.paymentId,p.userId,p.amount,p.gatewayLogId,p.targetPlanId);
 
   const insertSubscription = db.prepare(
     `INSERT INTO "UserVipSubscription"
