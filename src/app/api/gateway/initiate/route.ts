@@ -45,6 +45,9 @@ export async function POST(req: Request) {
   if (!plan || !plan.active) {
     return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
   }
+  if (!Number.isSafeInteger(plan.durationDays) || plan.durationDays <= 0 || plan.durationDays > 36500) {
+    return NextResponse.json({ error: "مدت طرح VIP معتبر نیست", code: "VIP_PLAN_DURATION_INVALID" }, { status: 409 });
+  }
   if (plan.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(plan.priceIrr)) {
     return NextResponse.json({
       error: "قیمت طرح VIP از نظر منشأ و واحد ریال تأیید نشده است",
