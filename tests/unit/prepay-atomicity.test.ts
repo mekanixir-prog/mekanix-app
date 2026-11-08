@@ -42,7 +42,15 @@ describe("atomic prepay recording", () => {
       }),
     });
     expect(tx.wallet.updateMany).toHaveBeenCalledWith({
-      where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR", pendingBalance: 50 },
+      where: {
+        id: "wallet-1",
+        financialUnitStatus: "VERIFIED_IRR",
+        balance: 0,
+        pendingBalance: 50,
+        totalEarned: 0,
+        totalCommission: 0,
+        totalWithdrawn: 0,
+      },
       data: {
         pendingBalance: { increment: 900 },
         totalEarned: { increment: 1000 },
@@ -92,6 +100,44 @@ describe("atomic prepay recording", () => {
     expect(tx.walletLedger.create).not.toHaveBeenCalled();
   });
 
+  it("promotes only a pristine zero-balance UNVERIFIED wallet before the first prepay", async () => {
+    const tx = {
+      job: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      wallet: {
+        upsert: vi.fn().mockResolvedValue({
+          id: "wallet-1", balance: 0, pendingBalance: 0,
+          totalEarned: 0, totalCommission: 0, totalWithdrawn: 0,
+          financialUnitStatus: "UNVERIFIED",
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      walletTransaction: { create: vi.fn().mockResolvedValue({}) },
+      walletLedger: { create: vi.fn().mockResolvedValue({}) },
+    };
+    const db = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)),
+    } as any;
+
+    await expect(recordPrepayWithPrisma(db, input)).resolves.toBe(true);
+    expect(tx.wallet.updateMany).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      where: expect.objectContaining({
+        financialUnitStatus: "UNVERIFIED",
+        balance: 0,
+        pendingBalance: 0,
+        totalEarned: 0,
+        totalCommission: 0,
+        totalWithdrawn: 0,
+        transactions: { none: {} },
+        ledger: { none: {} },
+        withdrawals: { none: {} },
+      }),
+      data: { financialUnitStatus: "VERIFIED_IRR" },
+    }));
+    expect(tx.wallet.updateMany).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      where: expect.objectContaining({ financialUnitStatus: "VERIFIED_IRR", totalWithdrawn: 0 }),
+    }));
+  });
+
   it("refuses to mutate an existing wallet without verified IRR provenance", async () => {
     const tx = {
       job: { updateMany: vi.fn() },
@@ -110,6 +156,7 @@ describe("atomic prepay recording", () => {
     } as any;
 
     await expect(recordPrepayWithPrisma(db, input)).resolves.toBe(false);
+    expect(tx.wallet.updateMany).not.toHaveBeenCalled();
     expect(tx.job.updateMany).not.toHaveBeenCalled();
     expect(tx.walletTransaction.create).not.toHaveBeenCalled();
     expect(tx.walletLedger.create).not.toHaveBeenCalled();
@@ -183,9 +230,9 @@ describe("atomic prepay recording", () => {
     await expect(recordPrepayWithD1(d1 as any, input)).resolves.toBe(true);
     expect(d1.batch).toHaveBeenCalledTimes(1);
     expect(d1.batch.mock.calls[0][0]).toHaveLength(16);
-    expect(statements[5].sql).toContain("changes() = 1");
-    expect(statements[4].sql).toContain('"idempotencyKey"');
-    expect(statements[8].sql).toContain("'HOLD'");
+    expect(statements[6].sql).toContain("changes() = 1");
+    expect(statements[5].sql).toContain('"idempotencyKey"');
+    expect(statements[9].sql).toContain("'HOLD'");
     expect(statements.some((statement) => statement.sql.includes("totalWithdrawn") && statement.sql.includes(">= 0"))).toBe(true);
   });
 
