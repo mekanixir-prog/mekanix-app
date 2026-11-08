@@ -5,7 +5,7 @@ describe("job-part integer IRR validation", () => {
   it("accepts a positive safe-integer quantity and a non-negative integer IRR price", () => {
     expect(getJobPartAmountError(1, 0)).toBeNull();
     expect(getJobPartAmountError(3, 125_000)).toBeNull();
-    expect(getJobPartAmountError(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER)).toBeNull();
+    expect(getJobPartAmountError(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER)).toBe("PART_LINE_TOTAL_EXCEEDS_SAFE_INTEGER_IRR");
   });
 
   it("rejects line totals above Number.MAX_SAFE_INTEGER without overflowing", () => {
