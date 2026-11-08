@@ -216,7 +216,6 @@ export default worker;
        AND p."gatewayLogId"=? AND g."paymentId"=p."id" AND g."status"='VERIFIED'
        AND g."purpose"='vip' AND g."targetPlanId"=? AND g."amount"=p."amount"
        AND g."currency"='IRR' AND g."financialUnitStatus"='VERIFIED_IRR'
-       AND v."active"=1 AND v."financialUnitStatus"='VERIFIED_IRR'
        AND NOT EXISTS (SELECT 1 FROM "UserVipSubscription" s WHERE s."paymentId"=p."id")`
   ).bind(subscriptionId,p.targetPlanId,started,expires,started,started,p.targetPlanId,p.paymentId,p.userId,p.amount,p.gatewayLogId,p.targetPlanId);
 
