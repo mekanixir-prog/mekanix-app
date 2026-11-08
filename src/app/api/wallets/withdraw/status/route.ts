@@ -78,14 +78,18 @@ export async function GET(req: Request) {
   const financiallyVerified =
     wallet.financialUnitStatus === "VERIFIED_IRR" &&
     request!.financialUnitStatus === "VERIFIED_IRR" &&
+    requestAmount !== null && requestAmount !== undefined &&
     isSafeStoredIrrAmount(requestAmount) &&
     Number(requestAmount) > 0 &&
     ledger?.financialUnitStatus === "VERIFIED_IRR" &&
     ledger.walletId === wallet.id &&
     ledger.type === "WITHDRAWAL" &&
     ledger.referenceType === "Withdrawal" &&
+    ledgerAmount !== null && ledgerAmount !== undefined &&
     isSafeStoredIrrAmount(ledgerAmount) &&
     Number(ledgerAmount) === -Number(requestAmount) &&
+    ledger.balanceBefore !== null && ledger.balanceBefore !== undefined &&
+    ledger.balanceAfter !== null && ledger.balanceAfter !== undefined &&
     isSafeStoredIrrAmount(ledger.balanceBefore) &&
     isSafeStoredIrrAmount(ledger.balanceAfter) &&
     Number(ledger.balanceBefore) >= Number(requestAmount) &&
