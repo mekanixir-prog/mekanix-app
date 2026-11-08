@@ -95,7 +95,7 @@ describe("VIP gateway simulator verification", () => {
       userId: "customer-1",
       amount: 100_000,
       targetPlanId: "plan-1",
-      targetPlanDurationDays: 30,
+      durationDays: 30,
     }));
   });
 
