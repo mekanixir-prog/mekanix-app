@@ -42,7 +42,7 @@ export async function GET(req: Request) {
   });
   if (!wallet) {
     wallet = await db.wallet.create({
-      data: { technicianId, financialUnitStatus: "VERIFIED_IRR" },
+      data: { technicianId, financialUnitStatus: "UNVERIFIED" },
       include: {
         transactions: { orderBy: { createdAt: "desc" }, take: 50 },
         withdrawals: { orderBy: { requestedAt: "desc" }, take: 20 },

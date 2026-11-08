@@ -36,6 +36,7 @@ function wallet(transactions: any[] = []) {
   return {
     id: "wallet-1",
     technicianId: "tech-1",
+    financialUnitStatus: "UNVERIFIED",
     balance: 5000,
     pendingBalance: 1000,
     transactions,
@@ -95,5 +96,29 @@ describe("GET /api/wallets — atomic escrow release orchestration", () => {
     mockReleaseWalletTransaction.mockRejectedValueOnce(new Error("atomic batch failed"));
 
     await expect(GET(makeRequest())).rejects.toThrow("atomic batch failed");
+  });
+});
+
+
+describe("GET /api/wallets — financial provenance defaults", () => {
+  it("never certifies a newly created wallet from a read request", async () => {
+    const created = wallet();
+    mockWalletFindUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(created);
+    mockWalletCreate.mockResolvedValue(created);
+
+    const response = await GET(makeRequest());
+    expect(response.status).toBe(200);
+    expect(mockWalletCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: {
+        technicianId: "tech-1",
+        financialUnitStatus: "UNVERIFIED",
+      },
+    }));
+    const payload = await response.json();
+    expect(payload.financialUnitStatus).toBe("UNVERIFIED");
+    expect(payload.balance).toBeNull();
+    expect(payload.pendingBalance).toBeNull();
   });
 });
