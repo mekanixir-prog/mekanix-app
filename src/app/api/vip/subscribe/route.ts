@@ -83,6 +83,7 @@ export async function POST(req: Request) {
     gatewayLog.purpose !== "vip" ||
     gatewayLog.targetPlanId !== planId ||
     gatewayLog.paymentId !== payment.id ||
+    !Number.isSafeInteger(gatewayLog.targetPlanDurationDays) || Number(gatewayLog.targetPlanDurationDays) <= 0 ||
     gatewayLog.currency !== payment.currency ||
     Number(gatewayLog.amount) !== Number(payment.amount)
   ) {
@@ -110,8 +111,11 @@ export async function POST(req: Request) {
     });
   }
 
+  // Entitlement duration is immutable: use the value captured at payment initiation,
+  // never the mutable VipPlan.durationDays field.
+  const durationDays = gatewayLog.targetPlanDurationDays!;
   const startedAt = new Date();
-  const expiresAt = new Date(startedAt.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(startedAt.getTime() + durationDays * 24 * 60 * 60 * 1000);
 
   // Replace the previous active subscription and consume this payment in one
   // database transaction (Prisma) or one transactional D1 batch. If creation
@@ -160,10 +164,11 @@ export async function POST(req: Request) {
   try {
     await db.notification.create({
       data: {
+        id: `vip-activated:${paymentId}`,
         userId,
         type: "vip_activated",
-        title: "VIP activated",
-        body: `Your ${plan.name} plan is active until ${expiresAt.toLocaleDateString()}`,
+        title: "اشتراک VIP فعال شد",
+        body: `اشتراک ${plan.name} تا ${expiresAt.toLocaleDateString("fa-IR")} فعال است.`,
         category: "system",
         link: "customer/settings",
       },
