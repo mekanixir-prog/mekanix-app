@@ -35,6 +35,13 @@
 7. Seed synthetic staging-only payment, gateway, plan, and outbox rows; verify one ACTIVE subscription, prior ACTIVE subscription cancellation, one PROCESSED event, and no duplicate subscription after replay.
 8. Remove all synthetic rows and retain test evidence.
 
+## Read-only admin monitoring
+- Admin operators can inspect the queue through `GET /api/admin/payment-outbox`.
+- Optional query parameters: `status=PENDING|PROCESSING|PROCESSED|DEAD`, `page` (default 1), and `limit` (default 20, maximum 100).
+- The response includes status counts, bounded event metadata, pagination, and a sanitized/truncated last error. It deliberately omits the event payload and customer data.
+- The endpoint requires an authenticated admin session, sends `Cache-Control: no-store`, and is read-only. It does not claim, retry, replay, edit, or delete events.
+- A `DEAD` event must be investigated against its payment, gateway log, subscription, and audit trail before any future replay control is authorized. Do not manually change status or payload in production.
+
 ## Purchase snapshot and legacy handling
 - New gateway attempts persist `targetPlanDurationDays` at initiation. Verification copies it into the durable event payload; both the synchronous API and scheduled Worker use that exact value.
 - The migration leaves this field nullable for historical rows. Do not backfill from the current plan duration: that would fabricate historical purchase terms. Historical attempts with a missing snapshot must be reconciled manually before entitlement activation.
