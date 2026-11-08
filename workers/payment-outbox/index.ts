@@ -79,6 +79,8 @@ async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
          SELECT 1 FROM "PaymentOutboxEvent" o JOIN "UserVipSubscription" s ON s."paymentId"=?
          WHERE o."id"=? AND o."status"='PROCESSED' AND o."processedAt"=?
            AND s."userId"=? AND s."planId"=?
+           AND s."startedAt" IS NOT NULL AND s."expiresAt" IS NOT NULL
+           AND (strftime('%s',s."expiresAt")-strftime('%s',s."startedAt"))=?*86400
        ) THEN 1 ELSE json_extract('not-json','
   }
 
@@ -133,16 +135,20 @@ async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
   const markProcessed = db.prepare(
     `UPDATE "PaymentOutboxEvent" SET "status"='PROCESSED',"processedAt"=?,"lockedAt"=NULL,"lastError"=NULL,"updatedAt"=?
      WHERE "id"=? AND "status"='PROCESSING' AND "lockedAt"=? AND "idempotencyKey"=?
-       AND EXISTS (SELECT 1 FROM "UserVipSubscription" s WHERE s."paymentId"=? AND s."userId"=? AND s."planId"=?)`
-  ).bind(now.toISOString(),now.toISOString(),event.id,event.lockedAt,event.idempotencyKey,p.paymentId,p.userId,p.targetPlanId);
+       AND EXISTS (SELECT 1 FROM "UserVipSubscription" s WHERE s."paymentId"=? AND s."userId"=? AND s."planId"=?
+         AND s."startedAt" IS NOT NULL AND s."expiresAt" IS NOT NULL
+         AND (strftime('%s',s."expiresAt")-strftime('%s',s."startedAt"))=?*86400)`
+  ).bind(now.toISOString(),now.toISOString(),event.id,event.lockedAt,event.idempotencyKey,p.paymentId,p.userId,p.targetPlanId,p.durationDays);
 
   const assertion = db.prepare(
     `SELECT CASE WHEN EXISTS (
        SELECT 1 FROM "PaymentOutboxEvent" o JOIN "UserVipSubscription" s ON s."paymentId"=?
        WHERE o."id"=? AND o."status"='PROCESSED' AND o."processedAt"=?
          AND s."userId"=? AND s."planId"=?
+         AND s."startedAt" IS NOT NULL AND s."expiresAt" IS NOT NULL
+         AND (strftime('%s',s."expiresAt")-strftime('%s',s."startedAt"))=?*86400
      ) THEN 1 ELSE json_extract('not-json','$') END`
-  ).bind(p.paymentId,event.id,now.toISOString(),p.userId,p.targetPlanId);
+  ).bind(p.paymentId,event.id,now.toISOString(),p.userId,p.targetPlanId,p.durationDays);
 
   await db.batch([cancelPrevious,insertSubscription,notification,markProcessed,assertion]);
 }
