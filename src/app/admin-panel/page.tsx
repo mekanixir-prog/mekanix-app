@@ -158,6 +158,7 @@ function AdminDashboard({ onLogout }: { onLogout: () => void | Promise<void> }) 
               {item.label}
             </button>
           ))}
+          <a href="/admin-panel/pricing" className="mt-2 block w-full rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground">مدیریت تعرفه‌ها</a>
         </nav>
       </aside>
 
