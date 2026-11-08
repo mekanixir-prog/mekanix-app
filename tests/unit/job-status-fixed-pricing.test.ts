@@ -32,10 +32,13 @@ vi.mock("@/lib/job-invoice-pricing", () => ({
   serviceCodeFromCategory: mocks.serviceCode,
   estimateTravelDistanceKm: mocks.travelDistance,
 }));
-vi.mock("@/lib/job-status-atomic", () => ({
-  JobStatusConflictError: class JobStatusConflictError extends Error {},
-  transitionJobStatusAtomically: mocks.transition,
-}));
+vi.mock("@/lib/job-status-atomic", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/job-status-atomic")>();
+  return {
+    ...actual,
+    transitionJobStatusAtomically: mocks.transition,
+  };
+});
 
 import { PATCH } from "@/app/api/jobs/[id]/status/route";
 
