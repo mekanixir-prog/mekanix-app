@@ -146,7 +146,8 @@ export function isValidStoredRateCard(value: unknown): value is RateCardIrr {
       value.vip.visitsPerYear !== 4 || value.vip.saleEnabled !== false ||
       !Number.isSafeInteger(value.emergencyLaborSurchargePercent) ||
       Number(value.emergencyLaborSurchargePercent) < 0 || Number(value.emergencyLaborSurchargePercent) > 100) return false;
-    rateCardIrrToTomanInput(value as unknown as RateCardIrr);
+    const tomanInput = rateCardIrrToTomanInput(value as unknown as RateCardIrr);
+    parseRateCardTomanInput(tomanInput);
     return true;
   } catch { return false; }
 }
