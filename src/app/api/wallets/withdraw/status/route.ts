@@ -80,6 +80,8 @@ export async function GET(req: Request) {
     Number(ledgerAmount) === -Number(requestAmount) &&
     isSafeStoredIrrAmount(ledger.balanceBefore) &&
     isSafeStoredIrrAmount(ledger.balanceAfter) &&
+    Number(ledger.balanceBefore) >= Number(requestAmount) &&
+    Number(ledger.balanceAfter) >= 0 &&
     Number.isSafeInteger(Number(ledger.balanceBefore) + Number(ledgerAmount)) &&
     Number(ledger.balanceAfter) === Number(ledger.balanceBefore) + Number(ledgerAmount);
   if (!ledger || !financiallyVerified || ledger.referenceId !== request!.id) {
