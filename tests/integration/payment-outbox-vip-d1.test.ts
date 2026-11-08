@@ -104,7 +104,7 @@ describe("VIP payment outbox dispatcher D1 integration",()=>{
 
   it("uses the purchase-time duration snapshot after the VIP plan is edited and emits one notice",async()=>{
     const {sqlite,d1}=makeD1(); dbs.push(sqlite); seed(sqlite);
-    sqlite.prepare(`UPDATE "VipPlan" SET "durationDays"=365 WHERE "id"='plan-1'`).run();
+    sqlite.prepare(`UPDATE "VipPlan" SET "durationDays"=365,"active"=0 WHERE "id"='plan-1'`).run();
     await runWorker(d1);
     const expectedExpiry=new Date(now.getTime()+30*86400000).toISOString();
     expect(sqlite.prepare(`SELECT "expiresAt" FROM "UserVipSubscription" WHERE "paymentId"='payment-1'`).get()).toEqual({expiresAt:expectedExpiry});
@@ -132,6 +132,7 @@ describe("VIP payment outbox dispatcher D1 integration",()=>{
     expect(sqlite.prepare(`SELECT "status" FROM "UserVipSubscription" WHERE "id"='old-sub'`).get()).toEqual({status:"CANCELLED"});
     expect(sqlite.prepare(`SELECT "status" FROM "PaymentOutboxEvent"`).get()).toEqual({status:"PROCESSED"});
     expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "UserVipSubscription" WHERE "paymentId"='payment-1'`).get()).toEqual({count:1});
+    expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "Notification" WHERE "id"='vip-activated:payment-1'`).get()).toEqual({count:1});
   });
   it("reclaims an abandoned PROCESSING event after its lease expires",async()=>{
     const {sqlite,d1}=makeD1(); dbs.push(sqlite); seed(sqlite);
