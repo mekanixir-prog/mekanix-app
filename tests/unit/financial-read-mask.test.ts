@@ -7,6 +7,7 @@ import {
   maskInvoiceFinancialData,
   maskJobFinancialData,
   maskWalletFinancialData,
+  sumSafeStoredIrrAmounts,
 } from "@/lib/money/financial-read-mask";
 
 describe("financial read masking", () => {
@@ -30,6 +31,14 @@ describe("financial read masking", () => {
       { bio: "Updated profile" },
       TECHNICIAN_FEE_FIELDS,
     )).toEqual({ bio: "Updated profile" });
+  });
+
+  it("sums verified integer IRR amounts without exceeding safe integer precision", () => {
+    expect(sumSafeStoredIrrAmounts(["100", 250, null])).toBe(350);
+    expect(sumSafeStoredIrrAmounts([Number.MAX_SAFE_INTEGER, 1])).toBeNull();
+    expect(sumSafeStoredIrrAmounts(["10", "0.5"])).toBeNull();
+    expect(sumSafeStoredIrrAmounts(["9007199254740992"])).toBeNull();
+    expect(sumSafeStoredIrrAmounts([])).toBe(0);
   });
 
   it("masks all monetary fields when provenance is absent or unverified", () => {
