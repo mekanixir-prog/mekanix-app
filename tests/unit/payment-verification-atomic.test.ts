@@ -71,6 +71,7 @@ describe("atomic verified gateway payment persistence", () => {
         aggregateType: "Payment",
         aggregateId: "payment-1",
         idempotencyKey: "payment.succeeded:gateway-1",
+        payload: expect.stringContaining('"durationDays":30'),
       }),
       update: {},
     }));
@@ -114,7 +115,7 @@ describe("atomic verified gateway payment persistence", () => {
 
   it("rejects a gateway attempt whose server-owned amount no longer matches", async () => {
     mockLogFindUnique.mockResolvedValue({
-      id: "gateway-1", userId: "customer-1", purpose: "vip", targetPlanId: "plan-1",
+      id: "gateway-1", userId: "customer-1", purpose: "vip", targetPlanId: "plan-1", targetPlanDurationDays: 30,
       amount: 90_000, currency: "IRR", financialUnitStatus: "VERIFIED_IRR", status: "REDIRECTED",
     });
     await expect(recordVerifiedGatewayPaymentAtomically(makeDb(), input)).rejects.toThrow(
