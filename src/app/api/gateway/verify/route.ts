@@ -76,7 +76,6 @@ export async function POST(req: Request) {
       amount: Number(log.amount),
       targetPlanId: log.targetPlanId,
       durationDays: log.targetPlanDurationDays!,
-      durationDays: log.targetPlanDurationDays!,
       verifiedAt: log.verifiedAt ?? new Date(),
     });
     return NextResponse.json({ ok: true, paymentId, amount: Number(existingPayment.amount), purpose: log.purpose, alreadyVerified: true });
