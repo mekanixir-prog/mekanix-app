@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   isSafeStoredIrrAmount,
   maskFinancialFields,
+  markFinancialRecordUnverifiedWhenFieldsChanged,
+  TECHNICIAN_FEE_FIELDS,
   maskInvoiceFinancialData,
   maskJobFinancialData,
   maskWalletFinancialData,
@@ -16,6 +18,18 @@ describe("financial read masking", () => {
     expect(isSafeStoredIrrAmount("9007199254740992")).toBe(false);
     expect(isSafeStoredIrrAmount("not-a-number")).toBe(false);
     expect(isSafeStoredIrrAmount(null)).toBe(true);
+  });
+
+  it("invalidates technician fee attestation whenever any fee field changes", () => {
+    expect(markFinancialRecordUnverifiedWhenFieldsChanged(
+      { hourlyRate: 2500 },
+      TECHNICIAN_FEE_FIELDS,
+    )).toEqual({ hourlyRate: 2500, financialUnitStatus: "UNVERIFIED" });
+
+    expect(markFinancialRecordUnverifiedWhenFieldsChanged(
+      { bio: "Updated profile" },
+      TECHNICIAN_FEE_FIELDS,
+    )).toEqual({ bio: "Updated profile" });
   });
 
   it("masks all monetary fields when provenance is absent or unverified", () => {
