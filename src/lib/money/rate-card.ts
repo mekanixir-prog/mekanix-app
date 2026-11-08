@@ -81,6 +81,12 @@ export function parseRateCardTomanInput(value: unknown): RateCardIrr {
   if (!object(value) || !object(value.passenger) || !object(value.heavy) || !object(value.vip)) throw new TypeError("Invalid rate card payload");
   const asset = (raw: Record<string, unknown>, name: string) => {
     if (!object(raw.laborToman)) throw new TypeError(name + ".laborToman is required");
+    const requiredCategories: LaborCategory[] = name === "passenger"
+      ? ["diagnostics", "electrical", "cooling", "brakesSuspension", "periodic", "minorEngine", "majorEngine", "transmission"]
+      : [...LABOR_CATEGORIES];
+    for (const category of requiredCategories) {
+      if (raw.laborToman[category] === undefined) throw new TypeError(name + ".laborToman." + category + " is required");
+    }
     const laborIrr: Partial<Record<LaborCategory, number>> = {};
     for (const [key, amount] of Object.entries(raw.laborToman)) {
       if (!LABOR_CATEGORIES.includes(key as LaborCategory)) throw new TypeError("Unsupported labor category: " + key);
