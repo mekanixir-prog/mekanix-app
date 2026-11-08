@@ -96,6 +96,17 @@ describe("prepay record-set reconciliation", () => {
     });
   });
 
+  it("rejects negative hold-ledger balance evidence", () => {
+    expect(validatePrepayRecordSet({
+      ...valid,
+      holdLedger: { ...valid.holdLedger!, balanceBefore: -1, balanceAfter: 899 },
+    })).toMatchObject({ ok: false, reason: "HOLD_LEDGER_MISMATCH" });
+    expect(validatePrepayRecordSet({
+      ...valid,
+      holdLedger: { ...valid.holdLedger!, balanceAfter: -1 },
+    })).toMatchObject({ ok: false, reason: "HOLD_LEDGER_MISMATCH" });
+  });
+
   it("rejects unverified financial provenance even when all four rows exist", () => {
     const changed = {
       ...valid,
