@@ -132,7 +132,7 @@ export async function POST(req: Request) {
   const existing = await db.payment.findUnique({ where: { invoiceId } });
   if (existing) {
     // Historical payment rows are not upgraded from currency labels alone.
-    if (existing.financialUnitStatus !== "VERIFIED_IRR" || existing.currency !== "IRR" || !isSafeStoredIrrAmount(existing.amount) || !isSafeStoredIrrAmount(inv.total) || !new Decimal(existing.amount.toString()).equals(new Decimal(inv.total.toString()))) {
+    if (existing.financialUnitStatus !== "VERIFIED_IRR" || existing.currency !== "IRR" || existing.amount === null || existing.amount === undefined || !isSafeStoredIrrAmount(existing.amount) || !isSafeStoredIrrAmount(inv.total) || !new Decimal(existing.amount.toString()).equals(new Decimal(inv.total.toString()))) {
       return NextResponse.json({ error: "سوابق پرداخت موجود نیازمند تطبیق مالی است", code: "PAYMENT_FINANCIAL_PROVENANCE_UNVERIFIED" }, { status: 409 });
     }
     // Update existing payment record
