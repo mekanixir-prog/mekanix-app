@@ -124,4 +124,30 @@ describe("financial read masking", () => {
     expect(job.invoice.total).toBeNull();
     expect(job.parts[0].unitPrice).toBe("75");
   });
+  it("masks a wallet nested under the technician relation in a job response", () => {
+    const job = maskJobFinancialData({
+      id: "job-wallet",
+      financialUnitStatus: "VERIFIED_IRR",
+      inspectionFee: 100,
+      technician: {
+        id: "tech-wallet",
+        financialUnitStatus: "VERIFIED_IRR",
+        hourlyRate: 10,
+        wallet: {
+          id: "wallet-nested",
+          financialUnitStatus: "UNVERIFIED",
+          balance: "5000",
+          pendingBalance: "2000",
+          totalEarned: "7000",
+          totalCommission: "700",
+          totalWithdrawn: "0",
+        },
+      },
+    });
+    expect(job.technician.hourlyRate).toBe(10);
+    expect(job.technician.wallet.balance).toBeNull();
+    expect(job.technician.wallet.pendingBalance).toBeNull();
+    expect(job.technician.wallet.financialUnitStatus).toBe("UNVERIFIED");
+  });
+
 });
