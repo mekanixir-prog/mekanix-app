@@ -123,6 +123,18 @@ describe("atomic escrow release D1 SQLite integration", () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletReleaseGuard"').get()).toEqual({ count: 0 });
   });
 
+  it("does not release escrow into a negative available wallet balance", async () => {
+    const { sqlite, d1 } = makeD1(); databases.push(sqlite);
+    sqlite.prepare(`INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "pendingBalance") VALUES (?, 'VERIFIED_IRR', ?, ?)`).run("wallet-1", -100, 1000);
+    sqlite.prepare(`INSERT INTO "WalletTransaction" ("id", "walletId", "financialUnitStatus", "netAmount", "status", "holdUntil") VALUES (?, ?, 'VERIFIED_IRR', ?, ?, ?)`).run(
+      "txn-negative-wallet", "wallet-1", 1000, "PENDING", "2026-10-30T09:00:00.000Z"
+    );
+    await expect(releaseWalletTransactionWithD1(d1 as never, "wallet-1", "txn-negative-wallet", new Date("2026-10-30T10:00:00.000Z"))).rejects.toThrow();
+    expect(sqlite.prepare('SELECT "balance", "pendingBalance" FROM "Wallet" WHERE "id" = ?').get("wallet-1")).toEqual({ balance: -100, pendingBalance: 1000 });
+    expect(sqlite.prepare('SELECT "status" FROM "WalletTransaction" WHERE "id" = ?').get("txn-negative-wallet")).toEqual({ status: "PENDING" });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
+  });
+
   it("does not release a negative net amount", async () => {
     const { sqlite, d1 } = makeD1(); databases.push(sqlite);
     sqlite.prepare(`INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "pendingBalance") VALUES (?, 'VERIFIED_IRR', ?, ?)`).run("wallet-1", 2000, 1000);
