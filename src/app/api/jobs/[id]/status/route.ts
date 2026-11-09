@@ -239,7 +239,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     const travelBillingNote = pricing.breakdown.extraDistanceBillingEnabled
       ? `مسافت تقریبی حرکت تکنسین ${travelDistanceKm} کیلومتر است و هزینه رفت‌وآمد بر اساس نرخ‌نامه محاسبه شده است.`
-      : `مسافت تقریبی حرکت تکنسین ${travelDistanceKm} کیلومتر است؛ فقط هزینه پایه رفت‌وآمد محاسبه شده و هزینه کیلومتر اضافی تا تأیید روش مسافت‌یابی فعال نیست.`;
+      : `مسافت تقریبی حرکت تکنسین ${travelDistanceKm} کیلومتر است؛ هزینه رفت‌وآمد پایه محاسبه شده و هزینه کیلومتر اضافی تا تأیید روش مسافت‌یابی فعال نیست.`;
 
     invoiceInput = {
       id: crypto.randomUUID(),
