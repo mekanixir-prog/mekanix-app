@@ -104,6 +104,8 @@ Save actual status codes, sanitized logs, timestamps and evidence URLs. Do not r
 
 ## 5. Production approval gate
 
+**Independent distance-pricing gate:** Keep `MEKANIX_EXTRA_DISTANCE_IRR_APPROVED` unset or false unless the product owner explicitly approves the Haversine × 1.3 estimation policy or a verified routing-provider measurement has been deployed and validated. The application must charge only base dispatch while this flag is false. Do not enable extra-kilometre billing merely by setting `MEKANIX_PRICING_IRR_APPROVED`.
+
 Production deployment requires all of the following:
 - [ ] PR approved and merged according to repository policy.
 - [ ] All required CI checks green for the approved SHA.
