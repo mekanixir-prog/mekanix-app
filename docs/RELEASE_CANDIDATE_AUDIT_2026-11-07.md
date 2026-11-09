@@ -207,3 +207,34 @@ The overall release decision remains **NO-GO for public production**. This secti
 7. Complete the independent full-diff review and final security/authorization/IDOR review against one exact Release Candidate SHA.
 
 Any code or documentation edit requires fresh workflow evidence on the exact final PR head. Keep the candidate Draft and do not merge or deploy solely because prior workflows passed.
+
+
+### Additional atomic-ownership and selector hardening — 2026-11-09
+
+- CARE booking now rechecks the current vehicle owner and supported asset class inside the Prisma transaction and the D1 `INSERT ... SELECT`. D1 integration tests simulate a vehicle changing to `OTHER` and a different owner between route preflight and write.
+- Service-request creation now rechecks the vehicle's current customer relation and supported asset class at the Prisma and D1 write boundary. Customer actors must still own the selected customer profile; ADMIN may act for a selected customer only through the explicit ADMIN branch. The D1 query joins `Customer` and `Vehicle`; PostgreSQL, Prisma unit and SQLite/D1 tests cover customer reassignment, scope changes, and the admin exception.
+- Generic `OTHER` is removed from the customer heavy-machine selector, while the legacy enum remains readable for existing rows. Registration/update, CARE, service request and pricing all fail closed for unsupported values.
+- Unknown currency codes now render an explicit localized “Unknown currency” label. The formatter uses an own-property currency lookup and never falls back to USD or inherited object properties.
+- The initial fixed-fee baseline remains owner-approved under Issue #99; this does not approve the unverified Haversine × 1.3 distance method or activate production pricing.
+
+### Exact code-head validation snapshot
+
+The source-code head `d0841db5a3eadec57dcdfbe5ba70eca24a893c8e` passed all seven required candidate workflows:
+
+| Workflow | Run ID | Result |
+|---|---:|---|
+| CI | 42625407502 | success |
+| Production readiness | 42625407699 | success |
+| PostgreSQL CI | 42625407394 | success |
+| Docker E2E | 42625407393 | success |
+| Cloudflare Build | 42625407414 | success |
+| CodeQL Security Analysis | 42625407537 | success |
+| Secret Scan | 42625407731 | success |
+
+This is the validated source-code snapshot before this documentation-only refresh. The documentation commit creates a new PR head and must receive a fresh exact-head workflow run before it is called fully green.
+
+### Superseded branch cleanup and candidate size
+
+- PRs #136, #138, #147 and #150 were closed with explicit supersession comments after their useful changes were ported to the current PR #137 candidate. PR #151 is also closed after its follow-up commits were fast-forwarded into #137.
+- PRs #139–#146 remain a dependent payment/outbox draft stack on the old #138 branch. Keep them separate and rebase/review them against the current candidate before integration; do not treat their earlier green checks as validation of the current candidate.
+- PR #137 is still Draft, mergeable, and zero commits behind `main`; its current review surface is 154 files and 480 commits. Require an independent full-diff review and use a deliberate squash strategy if/when it is approved. Do not merge or deploy while the NO-GO gates above remain open.
