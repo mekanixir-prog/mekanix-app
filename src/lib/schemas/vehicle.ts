@@ -52,7 +52,13 @@ export const vehicleCreateSchema = z.object({
   image: z.string().url("آدرس تصویر نامعتبر است").max(2048).optional(),
   notes: z.string().max(1000).optional(),
 }).superRefine((data, ctx) => {
-  if (!isVehicleInSupportedScope(data.type, data.make)) {
+  if (data.type === "OTHER") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["type"],
+      message: "نوع عمومی OTHER نرخ‌نامه تأییدشده ندارد؛ نوع دقیق ماشین‌آلات را انتخاب کنید",
+    });
+  } else if (!isVehicleInSupportedScope(data.type, data.make)) {
     ctx.addIssue({
       code: "custom",
       path: ["make"],
@@ -92,7 +98,13 @@ export const vehicleUpdateSchema = z
     message: "حداقل یک فیلد برای به‌روزرسانی الزامی است",
   })
   .superRefine((data, ctx) => {
-    if (data.type === "CAR" && data.make && !isVehicleInSupportedScope(data.type, data.make)) {
+    if (data.type === "OTHER") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["type"],
+        message: "نوع عمومی OTHER نرخ‌نامه تأییدشده ندارد؛ نوع دقیق ماشین‌آلات را انتخاب کنید",
+      });
+    } else if (data.type === "CAR" && data.make && !isVehicleInSupportedScope(data.type, data.make)) {
       ctx.addIssue({
         code: "custom",
         path: ["make"],
