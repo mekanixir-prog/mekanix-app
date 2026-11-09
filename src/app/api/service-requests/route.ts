@@ -144,6 +144,7 @@ export async function POST(req: Request) {
   try {
     const result = await createServiceRequestAtomically(db, {
       ...normalized,
+      actorRole: session.role as "CUSTOMER" | "ADMIN",
       idempotencyKey,
       requestFingerprint: fingerprint,
       code: `SR-${crypto.randomUUID().toUpperCase()}`,
