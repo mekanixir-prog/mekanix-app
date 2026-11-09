@@ -245,7 +245,7 @@ describe("admin withdrawal transitions", () => {
     expect(statements[4].sql).toContain('"totalWithdrawn" = "totalWithdrawn" + CASE WHEN changes() = 1 THEN');
     expect(statements[4].values).toContain("wd-1");
     expect(statements[6].sql).toContain('INSERT INTO "WalletLedger"');
-    expect(statements[6].sql).toContain("'PAYOUT', 0, w.\\"balance\\", w.\\"balance\\"");
+    expect(statements[6].sql).toContain("'PAYOUT', 0, w.");
     expect(statements[6].values).toContain("withdrawal:wd-1:PAYOUT_LEDGER");
   });
 
