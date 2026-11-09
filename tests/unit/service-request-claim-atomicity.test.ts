@@ -28,6 +28,7 @@ const serviceInput = {
   code: "SR-550E8400-E29B-41D4-A716-446655440000",
   customerId: "customer-1",
   actorUserId: "user-1",
+  actorRole: "CUSTOMER" as const,
   vehicleId: "vehicle-1",
   category: "engine",
   urgency: "URGENT" as const,
@@ -60,7 +61,7 @@ describe("service request atomic writer", () => {
         findUnique: vi.fn().mockResolvedValue(null),
         create: vi.fn().mockResolvedValue({ id: "request-1" }),
       },
-      vehicle: { findUnique: vi.fn().mockResolvedValue({ id: "vehicle-1", customerId: "customer-1", type: "EXCAVATOR", make: "CAT" }) },
+      vehicle: { findUnique: vi.fn().mockResolvedValue({ id: "vehicle-1", customerId: "customer-1", type: "EXCAVATOR", make: "CAT", customer: { userId: "user-1" } }) },
     };
     const db = {
       serviceRequest: { findUnique: vi.fn().mockResolvedValue(null) },
@@ -115,7 +116,7 @@ describe("service request atomic writer", () => {
       },
       vehicle: {
         findUnique: vi.fn(async () => ({
-          id: "vehicle-1", customerId: "customer-1", type: "EXCAVATOR", make: "Caterpillar",
+          id: "vehicle-1", customerId: "customer-1", type: "EXCAVATOR", make: "Caterpillar", customer: { userId: "user-1" },
         })),
       },
     };
@@ -156,7 +157,7 @@ describe("service request atomic writer", () => {
     const db = {
       vehicle: {
         findUnique: vi.fn().mockResolvedValue({
-          id: "vehicle-1", customerId: "customer-1", type: "EXCAVATOR", make: "CAT",
+          id: "vehicle-1", customerId: "customer-1", type: "EXCAVATOR", make: "CAT", customer: { userId: "user-1" },
         }),
       },
       serviceRequest: {
