@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { calculatePrice, isProductionPricingApproved, type PricingInput } from "@/lib/pricing";
+import { DEFAULT_PRICING_RATE_CARD } from "@/lib/pricing-rate-card";
 
 const { dbMock } = vi.hoisted(() => ({
   dbMock: {
@@ -41,6 +42,29 @@ describe("fixed-fee pricing engine", () => {
     expect(result.travel).toBe(20_000_000);
     expect(result.breakdown.assetClass).toBe("heavy");
   });
+
+  it.each([
+    ["false", 5_000_000, false, 0],
+    ["true", 5_300_000, true, 3],
+  ] as const)(
+    "applies production extra-distance charges only when separately approved (%s)",
+    async (distanceApproval, expectedTravel, enabled, billableKm) => {
+      vi.stubEnv("NODE_ENV", "production");
+      vi.stubEnv("MEKANIX_PRICING_IRR_APPROVED", "true");
+      vi.stubEnv("MEKANIX_EXTRA_DISTANCE_IRR_APPROVED", distanceApproval);
+      dbMock.platformSetting.findUnique.mockResolvedValueOnce({
+        value: JSON.stringify({ current: { ...DEFAULT_PRICING_RATE_CARD, version: 2 } }),
+      });
+      try {
+        const result = await calculatePrice({ ...base, travelDistanceKm: 13 });
+        expect(result.travel).toBe(expectedTravel);
+        expect(result.breakdown.extraDistanceBillingEnabled).toBe(enabled);
+        expect(result.breakdown.billableExtraKm).toBe(billableKm);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
 
   it("charges distance only beyond the included ten kilometres", async () => {
     const result = await calculatePrice({ ...base, travelDistanceKm: 13 });
