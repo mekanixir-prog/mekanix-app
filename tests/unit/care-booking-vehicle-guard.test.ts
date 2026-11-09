@@ -63,4 +63,23 @@ describe("CARE booking vehicle scope", () => {
     expect(mocks.calculatePrice).not.toHaveBeenCalled();
     expect(mocks.createBooking).not.toHaveBeenCalled();
   });
+
+  it("rejects OTHER machinery before pricing or booking writes", async () => {
+    mocks.vehicleFind.mockResolvedValueOnce({
+      id: "vehicle-1",
+      customerId: "customer-1",
+      type: "OTHER",
+      make: "Caterpillar",
+      model: "Unknown",
+    });
+    const response = await POST(new Request("https://mekanix.test/api/care/bookings", {
+      method: "POST",
+      headers: { "Idempotency-Key": "care-booking-key-02", "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ code: "VEHICLE_OUT_OF_SCOPE" });
+    expect(mocks.calculatePrice).not.toHaveBeenCalled();
+    expect(mocks.createBooking).not.toHaveBeenCalled();
+  });
 });
