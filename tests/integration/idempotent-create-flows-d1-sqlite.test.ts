@@ -24,6 +24,7 @@ const serviceInput = {
   code: "SR-INTEGRATION-001",
   customerId: "customer-1",
   actorUserId: "user-1",
+  actorRole: "CUSTOMER" as const,
   vehicleId: "vehicle-1",
   category: "engine",
   urgency: "URGENT" as const,
@@ -49,6 +50,10 @@ function makeD1() {
   const sqlite = new DatabaseSync(":memory:");
   sqlite.exec(`
     PRAGMA foreign_keys = ON;
+    CREATE TABLE "Customer" (
+      "id" TEXT PRIMARY KEY,
+      "userId" TEXT NOT NULL UNIQUE
+    );
     CREATE TABLE "Vehicle" (
       "id" TEXT PRIMARY KEY,
       "customerId" TEXT NOT NULL,
@@ -130,6 +135,7 @@ function makeD1() {
 }
 
 function seedServiceVehicle(sqlite: DatabaseSync) {
+  sqlite.prepare('INSERT INTO "Customer" ("id", "userId") VALUES (?, ?)').run("customer-1", "user-1");
   sqlite.prepare(`INSERT INTO "Vehicle" ("id", "customerId", "type", "make", "model", "year", "createdAt")
     VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
     "vehicle-1", "customer-1", "EXCAVATOR", "CAT", "320", 2024, now
@@ -139,8 +145,14 @@ function seedServiceVehicle(sqlite: DatabaseSync) {
 function makeDb(sqlite: DatabaseSync) {
   return {
     vehicle: {
-      findUnique: async ({ where }: any) =>
-        sqlite.prepare('SELECT "id", "customerId", "type", "make" FROM "Vehicle" WHERE "id" = ?').get(where.id) ?? null,
+      findUnique: async ({ where }: any) => {
+        const row = sqlite.prepare(`
+          SELECT v."id", v."customerId", v."type", v."make", c."userId" AS "customerUserId"
+          FROM "Vehicle" v JOIN "Customer" c ON c."id" = v."customerId"
+          WHERE v."id" = ?
+        `).get(where.id) as any;
+        return row ? { ...row, customer: { userId: row.customerUserId } } : null;
+      },
     },
     serviceRequest: {
       findUnique: async ({ where }: any) =>
@@ -223,6 +235,7 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
       customerId: "customer-1",
       type: "EXCAVATOR",
       make: "Caterpillar",
+      customer: { userId: "user-1" },
     });
     mocks.getD1Binding.mockResolvedValue(d1);
 
