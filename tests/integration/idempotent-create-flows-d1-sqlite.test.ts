@@ -246,6 +246,30 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceRequest"').get()).toEqual({ count: 0 });
   });
 
+  it("rechecks customer ownership in the D1 insert if the profile changes after preflight", async () => {
+    const { sqlite, d1 } = makeD1();
+    databases.push(sqlite);
+    seedServiceVehicle(sqlite);
+    sqlite.prepare('UPDATE "Customer" SET "userId" = ? WHERE "id" = ?')
+      .run("another-user", "customer-1");
+
+    // The preflight still sees the prior owner; the D1 INSERT must verify
+    // the live Customer.userId under the same write transaction.
+    const db = makeDb(sqlite);
+    db.vehicle.findUnique = async () => ({
+      id: "vehicle-1",
+      customerId: "customer-1",
+      type: "EXCAVATOR",
+      make: "CAT",
+      customer: { userId: "user-1" },
+    });
+    mocks.getD1Binding.mockResolvedValue(d1);
+
+    await expect(createServiceRequestAtomically(db, serviceInput))
+      .rejects.toBeInstanceOf(ServiceRequestVehicleError);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceRequest"').get()).toEqual({ count: 0 });
+  });
+
   it("rechecks OTHER asset rejection in the D1 insert if the vehicle changes after preflight", async () => {
     const { sqlite, d1 } = makeD1();
     databases.push(sqlite);
