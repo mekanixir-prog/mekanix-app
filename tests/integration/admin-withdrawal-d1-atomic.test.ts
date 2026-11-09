@@ -147,6 +147,36 @@ describe("admin withdrawal D1 transaction integration", () => {
     expect(sqlite.prepare('SELECT "totalWithdrawn" FROM "Wallet" WHERE "id" = ?').get("wallet-1"))
       .toEqual({ totalWithdrawn: 500 });
     expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletTransaction"').get()).toEqual({ n: 1 });
+    expect(sqlite.prepare('SELECT "type", "amount", "balanceBefore", "balanceAfter", "financialUnitStatus", "idempotencyKey", "createdBy" FROM "WalletLedger" WHERE "type" = ?').get("PAYOUT"))
+      .toEqual({
+        type: "PAYOUT",
+        amount: 0,
+        balanceBefore: 1000,
+        balanceAfter: 1000,
+        financialUnitStatus: "VERIFIED_IRR",
+        idempotencyKey: "withdrawal:wd-1:PAYOUT_LEDGER",
+        createdBy: "admin-1",
+      });
+    expect(sqlite.prepare('SELECT "description" FROM "WalletLedger" WHERE "type" = ?').get("PAYOUT").description)
+      .toContain("BANK-TRX-2026-0001");
+  });
+
+  it("rolls back PAID state and payout transaction when the payout audit ledger insert is suppressed", async () => {
+    sqlite.prepare('UPDATE "WithdrawalRequest" SET "status" = ? WHERE "id" = ?').run("APPROVED", "wd-1");
+    sqlite.exec(`CREATE TRIGGER "skip_payout_ledger" BEFORE INSERT ON "WalletLedger"
+      WHEN NEW."type" = 'PAYOUT'
+      BEGIN SELECT RAISE(IGNORE); END;`);
+    await expect(updateWithdrawalWithD1(d1 as any, {
+      withdrawalId: "wd-1", action: "PAID", adminId: "admin-1",
+      adminNotes: null, payoutReference: "BANK-TRX-2026-0004",
+      at: new Date("2026-10-30T10:00:00.000Z"),
+    })).resolves.toBe(false);
+    expect(sqlite.prepare('SELECT "status" FROM "WithdrawalRequest" WHERE "id" = ?').get("wd-1"))
+      .toEqual({ status: "APPROVED" });
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletTransaction"').get()).toEqual({ n: 0 });
+    expect(sqlite.prepare('SELECT "totalWithdrawn" FROM "Wallet" WHERE "id" = ?').get("wallet-1"))
+      .toEqual({ totalWithdrawn: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM "WalletLedger"').get()).toEqual({ n: 1 });
   });
 
   it("rolls back rejection when the wallet refund update changes zero rows", async () => {
