@@ -275,3 +275,20 @@ PR #136 remains open and Draft, but it is stale/diverged from `main` (160 commit
 - [ ] Controlled provider sandbox/real-domain smoke tests, followed by explicit production activation approval.
 
 No production service, real credential, or public deployment is activated by this checklist update.
+
+
+### Additional controls verified on source-code head `d0841db5a3eadec57dcdfbe5ba70eca24a893c8e`
+
+- [x] CARE booking rechecks current vehicle ownership and supported type inside the Prisma transaction and D1 INSERT; SQLite/D1 tests cover owner and OTHER scope changes between preflight and write.
+- [x] Service-request writes recheck customer ownership and vehicle scope at Prisma/D1 boundaries; customer actors must still own the customer profile, while ADMIN uses an explicit role-gated exception. PostgreSQL, unit and D1 tests cover both paths.
+- [x] Generic OTHER is no longer offered in the customer heavy-machine selector; legacy OTHER rows remain readable but cannot be registered, updated into scope, booked, or priced.
+- [x] Unknown currency codes display an explicit localized unknown-currency label; no USD fallback or prototype-inherited currency lookup.
+- [x] All seven required workflows passed on the exact source-code head above: CI 42625407502; Production readiness 42625407699; PostgreSQL CI 42625407394; Docker E2E 42625407393; Cloudflare Build 42625407414; CodeQL 42625407537; Secret Scan 42625407731.
+
+This is the source-code validation snapshot before the documentation-only refresh. The new documentation commit must be revalidated on its own exact PR head.
+
+### Branch/PR housekeeping
+
+- [x] PRs #136, #138, #147 and #150 closed as superseded by the current PR #137 candidate; PR #151 closed after its commits were fast-forwarded into #137.
+- [ ] PRs #139–#146 remain a dependent draft payment/outbox stack on the old #138 branch; rebase and review against the current candidate before integration.
+- [ ] PR #137 remains Draft. It is 0 commits behind main and mergeable, but currently spans 154 files / 480 commits. Complete independent full-diff review and decide on a deliberate squash merge only after all NO-GO gates are closed.
