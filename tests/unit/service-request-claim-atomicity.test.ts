@@ -114,7 +114,9 @@ describe("service request atomic writer", () => {
         }),
       },
       vehicle: {
-        findUnique: vi.fn(async () => ({ id: "vehicle-1", customerId: "customer-1" })),
+        findUnique: vi.fn(async () => ({
+          id: "vehicle-1", customerId: "customer-1", type: "EXCAVATOR", make: "Caterpillar",
+        })),
       },
     };
     const db = {
