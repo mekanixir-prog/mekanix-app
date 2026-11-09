@@ -94,8 +94,10 @@ async function createWithD1(
   // the race if the vehicle is edited between the lookup and the D1 write.
   const normalizedMakeSql = `lower(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(v."make", ' ', ''), '-', ''), '_', ''), '.', ''), '(', ''), ')', ''), '‌', ''), '‏', ''), 'ي', 'ی'), 'ك', 'ک'))`;
   const inScopeSql = `(
-    v."type" <> 'CAR' OR (
-      ${normalizedMakeSql} NOT IN (
+    v."type" IN ('TRUCK', 'BUS', 'EXCAVATOR', 'LOADER', 'BULLDOZER', 'GRADER', 'AGRI', 'INDUSTRIAL')
+    OR (
+      v."type" = 'CAR'
+      AND ${normalizedMakeSql} NOT IN (
         'ایرانخودرو', 'گروهایرانخودرو', 'irankhodro', 'irankhodroikco', 'ikco',
         'سایپا', 'گروهسایپا', 'saipa', 'پارسخودرو', 'parskhodro', 'گروهسایپاپارسخودرو'
       )
