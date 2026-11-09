@@ -168,3 +168,42 @@ PR #136 is Draft and diverged from `main` (160 ahead, 2 behind). All 76 of its c
 
 The candidate must be revalidated on the exact final head after any subsequent edit. The ruleset for `main` remains disabled and has no required status checks. Production credentials and external services remain intentionally inactive.
 
+
+
+## Follow-up audit — 2026-11-09 (supersedes earlier proposal and scope findings)
+
+The overall release decision remains **NO-GO for public production**. This section is the current follow-up to the historical 2026-11-07 snapshot above; exact-head CI evidence must always be read from PR #137, not copied from an older audit section.
+
+### Confirmed product-owner decision
+
+- Issue #99 records the product owner's approval on 2026-11-04 of the initial editable fixed-fee baseline listed in `docs/PRICING_RATE_CARD.md`.
+- The earlier statement that the entire initial rate card still awaits owner approval is superseded.
+- Heavy-equipment figures remain internal initial estimates pending regional technician/supplier sampling. This is a calibration task, not a reason to infer different rates.
+- Tax, platform commission/settlement, VIP sales/refunds, technician escrow/release, and withdrawal policy remain separate approval and implementation gates.
+- The Haversine × 1.3 extra-distance method has **not** been approved. Production extra-kilometre billing is now fail-closed behind `MEKANIX_EXTRA_DISTANCE_IRR_APPROVED=true`; absent that separate approval, only base dispatch is billed.
+
+### Current candidate hardening
+
+- Ambiguous `OTHER` and unknown asset types now fail closed at the pricing, vehicle registration/update, CARE booking, and service-request boundaries. The Prisma helper and D1 INSERT predicate use the same supported allowlist; a D1 preflight/write-race integration test covers an asset changing to `OTHER`.
+- Successful bank payout settlement now writes a zero-delta `PAYOUT` WalletLedger audit event in the same Prisma transaction or D1 batch as the paid-state transition, payout transaction, and wallet aggregate update. It does not debit the spendable balance a second time. Tests cover the event and rollback when the audit write fails.
+- Production pricing separately gates extra-distance charges; the invoice estimate text distinguishes base dispatch from extra-kilometre charges when that policy is disabled.
+- The current candidate branch includes the shared role-transition matrix at the atomic database boundary. Do not merge the older PR #138 branch wholesale; it was based on a stale predecessor. Its remaining useful changes were selectively ported to the current PR #137 branch.
+
+### Payment work remains limited
+
+- PRs #139–#146 are a dependent draft stack built on the older PR #138 branch. Their exact-head CI runs passed for the reviewed snapshots, but they have not been rebased onto the current PR #137 candidate.
+- The outbox worker in PR #143 is scoped to the **VIP simulator** event only. It is not a live Zarinpal integration and does not complete invoice/prepay payment, signed provider callbacks, refunds, commission, technician earnings, escrow release, or payout reconciliation.
+- PR #148 adds Zarinpal sandbox adapter contract tests only. It does not activate a real merchant account or production payment route.
+- No real provider credential, SMS credential, live payment, or production deployment is enabled. The owner has scheduled real Zarinpal/SMS credentials for approximately T-1 before public launch; engineering contracts, mock tests, and runbooks should be ready beforehand.
+
+### Remaining NO-GO gates
+
+1. Reconcile legacy money provenance record by record under integer IRR storage and Toman-only display. Quarantine unknown historical values; no bulk conversion or unit inference.
+2. Complete the authoritative persisted payment-attempt lifecycle for invoice, VIP, and prepay, including server-derived amount/currency/owner binding, provider verification, signed callback/replay protection, purpose-specific exactly-once fulfillment, retryable outbox/recovery, refund and reconciliation.
+3. Complete invoice settlement → commission policy → technician pending earnings → escrow hold/release → withdrawal → bank payout reconciliation. The new payout audit event is only one accounting control, not end-to-end settlement.
+4. Approve tax treatment, commission base/rate, technician net/gross and escrow timing, VIP renewal/refund terms, and withdrawal limits/fees.
+5. Complete isolated remote staging: remote D1 migrations/binding, Cron execution, backup/restore, rollback, monitoring/alerts, business E2E, and controlled SMS/payment sandbox smoke tests.
+6. Enable the existing `main` repository ruleset and required checks. Enforcement was disabled in the latest repository audit; do not rely on CI gating until the owner enables governance.
+7. Complete the independent full-diff review and final security/authorization/IDOR review against one exact Release Candidate SHA.
+
+Any code or documentation edit requires fresh workflow evidence on the exact final PR head. Keep the candidate Draft and do not merge or deploy solely because prior workflows passed.
