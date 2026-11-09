@@ -209,6 +209,28 @@ describe("D1 SQLite atomic service request and insurance claim creation", () => 
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceRequest"').get()).toEqual({ count: 0 });
   });
 
+  it("rechecks OTHER asset rejection in the D1 insert if the vehicle changes after preflight", async () => {
+    const { sqlite, d1 } = makeD1();
+    databases.push(sqlite);
+    seedServiceVehicle(sqlite);
+    sqlite.prepare('UPDATE "Vehicle" SET "type" = ? WHERE "id" = ?').run("OTHER", "vehicle-1");
+
+    // Simulate a supported preflight read followed by an unpriced OTHER asset
+    // at the atomic SQL write boundary.
+    const db = makeDb(sqlite);
+    db.vehicle.findUnique = async () => ({
+      id: "vehicle-1",
+      customerId: "customer-1",
+      type: "EXCAVATOR",
+      make: "Caterpillar",
+    });
+    mocks.getD1Binding.mockResolvedValue(d1);
+
+    await expect(createServiceRequestAtomically(db, serviceInput))
+      .rejects.toBeInstanceOf(ServiceRequestVehicleError);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceRequest"').get()).toEqual({ count: 0 });
+  });
+
   it("does not create a request when the registered vehicle request insert fails", async () => {
     const { sqlite, d1 } = makeD1();
     databases.push(sqlite);
