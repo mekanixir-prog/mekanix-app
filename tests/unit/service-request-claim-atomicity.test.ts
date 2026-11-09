@@ -19,7 +19,7 @@ vi.mock("@/lib/idempotency", () => {
 });
 
 import { IdempotencyConflictError } from "@/lib/idempotency";
-import { createServiceRequestAtomically } from "@/lib/service-request-atomic";
+import { createServiceRequestAtomically, ServiceRequestVehicleError } from "@/lib/service-request-atomic";
 import { createInsuranceClaimAtomically } from "@/lib/insurance-claim-atomic";
 
 const serviceInput = {
@@ -73,7 +73,10 @@ describe("service request atomic writer", () => {
     expect(db.$transaction).toHaveBeenCalledTimes(1);
     expect(tx.vehicle.findUnique).toHaveBeenCalledWith({
       where: { id: "vehicle-1" },
-      select: { id: true, customerId: true, type: true, make: true },
+      select: {
+        id: true, customerId: true, type: true, make: true,
+        customer: { select: { userId: true } },
+      },
     });
     expect(tx.serviceRequest.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
@@ -82,6 +85,58 @@ describe("service request atomic writer", () => {
         requestFingerprint: serviceInput.requestFingerprint,
       }),
     }));
+  });
+
+  it("rejects a customer profile that no longer belongs to the authenticated actor", async () => {
+    const tx = {
+      serviceRequest: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn(),
+      },
+      vehicle: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "vehicle-1",
+          customerId: "customer-1",
+          type: "EXCAVATOR",
+          make: "CAT",
+          customer: { userId: "another-user" },
+        }),
+      },
+    };
+    const db = {
+      serviceRequest: { findUnique: vi.fn().mockResolvedValue(null) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
+    } as any;
+
+    await expect(createServiceRequestAtomically(db, serviceInput))
+      .rejects.toBeInstanceOf(ServiceRequestVehicleError);
+    expect(tx.serviceRequest.create).not.toHaveBeenCalled();
+  });
+
+  it("allows an authenticated admin to create a request for the selected customer", async () => {
+    const tx = {
+      serviceRequest: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({ id: "admin-request-1" }),
+      },
+      vehicle: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "vehicle-1",
+          customerId: "customer-1",
+          type: "EXCAVATOR",
+          make: "CAT",
+          customer: { userId: "another-user" },
+        }),
+      },
+    };
+    const db = {
+      serviceRequest: { findUnique: vi.fn().mockResolvedValue(null) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
+    } as any;
+
+    await expect(createServiceRequestAtomically(db, {
+      ...serviceInput, actorRole: "ADMIN",
+    })).resolves.toEqual({ id: "admin-request-1", created: true });
   });
 
   it("replays the same request and rejects key reuse with a different payload", async () => {
