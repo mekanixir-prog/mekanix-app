@@ -28,11 +28,19 @@ describe("MEKANIX vehicle service scope", () => {
     expect(vehicleUpdateSchema.safeParse({ type: "CAR", make: "Iran Khodro (IKCO)" }).success).toBe(false);
   });
 
-  it("keeps supported assemblers and all heavy machinery types eligible", () => {
+  it("keeps supported assemblers and explicitly priced heavy machinery eligible", () => {
     expect(vehicleCreateSchema.safeParse({
       type: "CAR", make: "کرمان موتور", model: "KMC J7", year: 2024,
     }).success).toBe(true);
     expect(isVehicleInSupportedScope("TRUCK", "سایپا")).toBe(true);
     expect(isVehicleInSupportedScope("EXCAVATOR", "Iran Khodro")).toBe(true);
+  });
+
+  it("rejects OTHER and unknown asset types before registration or service", () => {
+    const other = { type: "OTHER", make: "Caterpillar", model: "Unknown", year: 2024 };
+    expect(vehicleCreateSchema.safeParse(other).success).toBe(false);
+    expect(vehicleUpdateSchema.safeParse({ type: "OTHER" }).success).toBe(false);
+    expect(isVehicleInSupportedScope("OTHER", "Caterpillar")).toBe(false);
+    expect(isVehicleInSupportedScope("MOTORCYCLE", "Generic")).toBe(false);
   });
 });
