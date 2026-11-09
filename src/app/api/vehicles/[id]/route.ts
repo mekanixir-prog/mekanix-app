@@ -45,7 +45,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const nextType = safe.type ?? current.type;
   const nextMake = safe.make ?? current.make;
   if (!isVehicleInSupportedScope(nextType, nextMake)) {
-    return NextResponse.json({ error: "خودروهای ایران‌خودرو، سایپا و پارس‌خودرو در محدوده خدمات سواری MEKANIX نیستند", code: "VEHICLE_OUT_OF_SCOPE" }, { status: 400 });
+    return NextResponse.json({ error: "این وسیله یا برند در محدوده خدمات و نرخ‌نامه تأییدشده MEKANIX نیست", code: "VEHICLE_OUT_OF_SCOPE" }, { status: 400 });
   }
   const vehicle = await db.vehicle.update({ where: { id }, data: safe as any });
   return NextResponse.json(vehicle);
