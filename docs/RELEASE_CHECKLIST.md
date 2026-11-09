@@ -239,3 +239,39 @@ PR #136 remains open and Draft, but it is stale/diverged from `main` (160 commit
 - [ ] Complete the remaining end-to-end customer, technician, admin, CARE, warranty, recovery, and notification scenarios.
 - [ ] Obtain a final independent review and record a Go/No-Go decision against one exact Release Candidate SHA.
 
+
+
+## Current follow-up — 2026-11-09 (supersedes older issue-status notes above)
+
+### Implemented in current PR #137 candidate
+
+- [x] Initial editable fixed-fee baseline approved by the product owner in Issue #99 on 2026-11-04; heavy-equipment values still need regional calibration.
+- [x] Fixed-fee engine is wired into CARE and repair-invoice paths; production pricing still requires a persisted rate card and `MEKANIX_PRICING_IRR_APPROVED=true`.
+- [x] Integer IRR storage and Toman-only input/display are the canonical contract; no FX multiplication is used for IRR display.
+- [x] Invoice and wallet read projections apply fail-closed financial provenance masking, including nested relations, with regression coverage.
+- [x] Ambiguous `OTHER` and unknown asset types are rejected at registration, update, CARE, and service-request boundaries; Prisma and D1 write paths share the explicit supported-type allowlist.
+- [x] Job status role transitions are enforced at the atomic Prisma/D1 write boundary; customer approval cannot be used to jump job states.
+- [x] Admin payout settlement records a zero-delta `PAYOUT` WalletLedger audit event atomically with the payout state and wallet aggregate update; rollback tests cover ledger-write failure.
+- [x] Production extra-kilometre billing is disabled by default behind `MEKANIX_EXTRA_DISTANCE_IRR_APPROVED=true`. The Haversine × 1.3 estimate remains unapproved; only base dispatch is charged until approval or a verified routing-provider measurement is available.
+
+### Still blocked before merge/release
+
+- [ ] Reconcile historical financial provenance record by record; quarantine ambiguous legacy wallet, invoice, payment, package, job-part, fee, and withdrawal values. Do not infer currency units or mass-convert.
+- [ ] Complete persisted payment attempts and real provider lifecycle for invoice, VIP, and prepay; server-derived amount/currency/owner binding, signed callback verification, replay protection, exactly-once fulfillment, outbox recovery, refund and reconciliation remain open.
+- [ ] Complete invoice settlement, commission policy, technician pending earnings, escrow release, withdrawal, and payout reconciliation. The payout audit event alone does not complete settlement.
+- [ ] Approve tax, commission base/rate, technician payout/escrow terms, VIP renewal/refund terms, and withdrawal limits/fees.
+- [ ] Obtain regional heavy-equipment rate calibration before public commercial rollout.
+- [ ] Approve the extra-distance measurement method or deploy a verified routing provider before enabling `MEKANIX_EXTRA_DISTANCE_IRR_APPROVED=true`.
+- [ ] Enable the existing `main` branch ruleset; it was observed disabled with no required checks enforced.
+- [ ] Complete isolated remote staging: D1 migrations/binding, Cron, backup/restore, rollback, monitoring/alerts, business E2E, controlled SMS and payment sandbox smoke tests.
+- [ ] Re-run all required workflows on the exact final PR #137 head after every code or documentation change; review the complete diff and both SQLite/D1 and PostgreSQL migration tracks.
+- [ ] Obtain explicit Go/No-Go approval against one exact Release Candidate SHA.
+
+### External services intentionally deferred to T-1
+
+- [ ] Real Zarinpal merchant credentials and final callback registration.
+- [ ] Real SMS provider credentials, sender/line and template activation.
+- [ ] Production domain, DNS/TLS, hosting/Worker, production database/Redis, monitoring and secrets.
+- [ ] Controlled provider sandbox/real-domain smoke tests, followed by explicit production activation approval.
+
+No production service, real credential, or public deployment is activated by this checklist update.
