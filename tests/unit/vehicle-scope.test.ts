@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getMakesForMode } from "@/lib/vehicle-db";
 import { vehicleCreateSchema, vehicleUpdateSchema } from "@/lib/schemas/vehicle";
 import { isVehicleInSupportedScope } from "@/lib/vehicle-scope";
+import { typesForMode } from "@/lib/constants";
 
 describe("MEKANIX vehicle service scope", () => {
   it("keeps Kerman, Modiran, Farda and foreign passenger makes in the catalog", () => {
@@ -34,6 +35,13 @@ describe("MEKANIX vehicle service scope", () => {
     }).success).toBe(true);
     expect(isVehicleInSupportedScope("TRUCK", "سایپا")).toBe(true);
     expect(isVehicleInSupportedScope("EXCAVATOR", "Iran Khodro")).toBe(true);
+  });
+
+  it("does not offer unpriced OTHER in the heavy-machine selector", () => {
+    expect(typesForMode("heavy")).not.toContain("OTHER");
+    expect(typesForMode("heavy")).toEqual(expect.arrayContaining([
+      "TRUCK", "BUS", "EXCAVATOR", "LOADER", "BULLDOZER", "GRADER", "AGRI", "INDUSTRIAL",
+    ]));
   });
 
   it("rejects OTHER and unknown asset types before registration or service", () => {
