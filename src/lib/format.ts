@@ -16,8 +16,10 @@ function toPersianDigits(s: string | number): string {
  * provenance masking guarantees that only verified IRR reaches this formatter.
  */
 export function fmtMoney(amount: unknown, currency = "IRR", lang: "en" | "fa" = "en"): string {
+  if (!Object.prototype.hasOwnProperty.call(CURRENCIES, currency)) {
+    return lang === "fa" ? "واحد نامشخص" : "Unknown currency";
+  }
   const c = CURRENCIES[currency];
-  if (!c) return "—";
   let numericAmount: number;
   if (currency === "IRR") {
     // Validate string inputs exactly before converting to Number. Number("1.00000000000000001")
