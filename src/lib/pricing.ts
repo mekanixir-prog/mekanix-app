@@ -46,6 +46,18 @@ export function isProductionPricingApproved(
   return nodeEnv !== "production" || approved === "true";
 }
 
+/**
+ * Extra-kilometre billing uses an estimated route distance today. Production
+ * charges beyond the included distance only after the owner approves that
+ * measurement method or a verified routing-provider integration is deployed.
+ */
+export function isExtraDistanceBillingApproved(
+  nodeEnv = process.env.NODE_ENV,
+  approved = process.env.MEKANIX_EXTRA_DISTANCE_IRR_APPROVED,
+): boolean {
+  return nodeEnv !== "production" || approved === "true";
+}
+
 
 export interface PricingInput {
   packageId?: string;
@@ -83,6 +95,8 @@ export interface PricingBreakdown {
     includedDistanceKm: number;
     travelRate: number;
     travelDistanceKm: number;
+    extraDistanceBillingEnabled: boolean;
+    billableExtraKm: number;
     emergencyMultiplier: number;
     vipDiscountPercent: number;
   };
@@ -139,7 +153,10 @@ export async function calculatePrice(input: PricingInput): Promise<PricingBreakd
   const inspection = new Decimal(card.fees[assetClass].inspectionIrr);
   const distance = new Decimal(input.travelDistanceKm);
   const includedKm = new Decimal(card.fees[assetClass].includedKm);
-  const extraKm = Decimal.max(0, distance.sub(includedKm));
+  const extraDistanceBillingEnabled = isExtraDistanceBillingApproved();
+  const extraKm = extraDistanceBillingEnabled
+    ? Decimal.max(0, distance.sub(includedKm))
+    : new Decimal(0);
   const travel = new Decimal(card.fees[assetClass].visitBaseIrr)
     .add(new Decimal(card.fees[assetClass].perKmIrr).mul(extraKm));
   const parts = new Decimal(input.partsCost);
@@ -177,6 +194,8 @@ export async function calculatePrice(input: PricingInput): Promise<PricingBreakd
       includedDistanceKm: card.fees[assetClass].includedKm,
       travelRate: card.fees[assetClass].perKmIrr,
       travelDistanceKm: input.travelDistanceKm,
+      extraDistanceBillingEnabled,
+      billableExtraKm: extraKm.toNumber(),
       emergencyMultiplier: 1 + card.emergencySurchargeBps / 10_000,
       vipDiscountPercent: 0,
     },
