@@ -91,6 +91,19 @@ describe("service request vehicle gate", () => {
     expect(mocks.create).not.toHaveBeenCalled();
   });
 
+  it("rejects a registered OTHER asset before creating a service request", async () => {
+    mocks.vehicleFind.mockResolvedValueOnce({
+      customerId: customer.id,
+      type: "OTHER",
+      make: "Caterpillar",
+      model: "Unknown",
+    });
+    const response = await POST(makeRequest({ ...baseBody, vehicleId: "vehicle-1" }));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ code: "VEHICLE_OUT_OF_SCOPE" });
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
   it("uses the registered vehicle data instead of client-supplied type or make", async () => {
     const response = await POST(makeRequest({
       ...baseBody,
