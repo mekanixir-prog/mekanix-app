@@ -1,6 +1,6 @@
 # MEKANIX Editable IRR Rate Card
 
-Initial editable proposal — pending explicit owner approval: 2026-11-04. Canonical storage is integer IRR; admin input/display is integer Toman (10 IRR = 1 Toman). Each save creates a new version and retains the previous 20 versions.
+Initial editable baseline approved by the product owner in Issue #99 on 2026-11-04. This approves the listed initial values for implementation; it does not authorize production activation. Canonical storage is integer IRR; admin input/display is integer Toman (10 IRR = 1 Toman). Each save creates a new version and retains the previous 20 versions.
 
 ## Dispatch and inspection (Toman)
 | Item | Foreign passenger | Heavy machinery |
@@ -35,9 +35,9 @@ Emergency surcharge is 30% of fixed labor only. Parts are separately quoted and 
 - Manual discount cap: 10%, subject to admin authorization and audit.
 - No ambiguous legacy seed values are reused or re-labelled. Existing historical financial records remain unverified.
 - A new rate version applies only to new price calculations; existing orders retain their frozen PricingSnapshot.
-- This baseline is a proposal, not an approved production tariff. Production remains disabled until the owner reviews the actual rates and deliberately enables the approval gate.
+- The initial values are owner-approved as the implementation baseline. Heavy-equipment values remain internal estimates pending regional technician/supplier sampling. Production remains disabled until a persisted rate card exists and `MEKANIX_PRICING_IRR_APPROVED=true` is deliberately set.
 - Customer CARE quote is served by authenticated POST /api/care/bookings/quote, checks vehicle ownership, and uses the same rate-card engine as booking. The booking request carries the quoted rate-card version; if it changes before submission, booking returns 409 and requires a refreshed quote.
-- Extra-distance billing uses the earliest job-scoped tracking point. The current road-distance estimate is Haversine straight-line distance multiplied by 1.3 and rounded up; it is not a routing-provider measurement. This estimation method needs explicit business approval or replacement with a verified routing provider before extra-kilometre charges are enabled in production. If no job tracking point exists, only the base dispatch fee is charged.
+- Extra-distance estimation uses the earliest job-scoped tracking point and currently computes Haversine straight-line distance × 1.3, rounded up; this is not a routing-provider measurement. Production extra-kilometre charges are disabled by default and require the separate `MEKANIX_EXTRA_DISTANCE_IRR_APPROVED=true` gate after explicit owner approval of this method or deployment of a verified routing provider. Until then, only the base dispatch fee is charged, even when a tracking estimate exists. If no job tracking point exists, only the base dispatch fee is charged in all environments.
 - Admin editor: /admin-panel/pricing. API: GET/PUT /api/admin-panel/pricing. Storage: PlatformSetting key mekanix.pricing.rate-card.v1. Each rate-change attempt is written to AuditLog before the setting is saved; if the audit write fails, the save is blocked with HTTP 503.
 - Production calculation remains fail-closed until MEKANIX_PRICING_IRR_APPROVED=true and a persisted rate-card record exists; production never falls back to the illustrative in-code defaults. Live payment, commission settlement, tax, and VIP activation remain separate release gates.
 
