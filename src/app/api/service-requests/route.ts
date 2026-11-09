@@ -120,7 +120,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "وسیله متعلق به این مشتری نیست" }, { status: 403 });
   }
   if (!isVehicleInSupportedScope(vehicle.type, vehicle.make)) {
-    return NextResponse.json({ error: "این خودروی سواری در محدوده خدمات MEKANIX نیست", code: "VEHICLE_OUT_OF_SCOPE" }, { status: 400 });
+    return NextResponse.json({ error: "این وسیله یا برند در محدوده خدمات و نرخ‌نامه تأییدشده MEKANIX نیست", code: "VEHICLE_OUT_OF_SCOPE" }, { status: 400 });
   }
 
   const normalized = {
