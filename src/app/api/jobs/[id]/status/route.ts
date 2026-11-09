@@ -261,7 +261,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       pricingVersion: pricing.pricingVersion,
       financialUnitStatus: "VERIFIED_IRR",
       status: "SENT" as const,
-      notes: `پیش‌فاکتور بر اساس نرخ‌نامه ثابت نسخه ${pricing.pricingVersion} و کد خدمت ${serviceCode} صادر شده است. مسافت تقریبی حرکت تکنسین ${travelDistanceKm} کیلومتر است و هزینه رفت‌وآمد در همین برآورد محاسبه شده؛ انجام تعمیر و دریافت وجه منوط به تأیید این پیش‌فاکتور توسط مشتری است. شرایط ضمانت تابع توافق‌نامه جداگانه و تأییدشده خدمت است.`,
+      notes: `پیش‌فاکتور بر اساس نرخ‌نامه ثابت نسخه ${pricing.pricingVersion} و کد خدمت ${serviceCode} صادر شده است. ${travelBillingNote} انجام تعمیر و دریافت وجه منوط به تأیید این پیش‌فاکتور توسط مشتری است. شرایط ضمانت تابع توافق‌نامه جداگانه و تأییدشده خدمت است.`,
     };
   }
   const holdUntil = status === "COMPLETED"
