@@ -8,6 +8,7 @@ export type ServiceRequestCreateInput = {
   code: string;
   customerId: string;
   actorUserId: string;
+  actorRole: "CUSTOMER" | "ADMIN";
   vehicleId: string;
   category: string;
   urgency: "NORMAL" | "URGENT" | "EMERGENCY";
@@ -46,9 +47,20 @@ async function createWithPrisma(db: PrismaClient, input: ServiceRequestCreateInp
 
     const vehicle = await tx.vehicle.findUnique({
       where: { id: input.vehicleId },
-      select: { id: true, customerId: true, type: true, make: true },
+      select: {
+        id: true,
+        customerId: true,
+        type: true,
+        make: true,
+        customer: { select: { userId: true } },
+      },
     });
-    if (!vehicle || vehicle.customerId !== input.customerId || !isVehicleInSupportedScope(vehicle.type, vehicle.make)) throw new ServiceRequestVehicleError();
+    if (
+      !vehicle ||
+      vehicle.customerId !== input.customerId ||
+      (input.actorRole !== "ADMIN" && vehicle.customer?.userId !== input.actorUserId) ||
+      !isVehicleInSupportedScope(vehicle.type, vehicle.make)
+    ) throw new ServiceRequestVehicleError();
 
     const request = await tx.serviceRequest.create({
       data: {
@@ -81,9 +93,20 @@ async function createWithD1(
 ): Promise<CreateResult> {
   const vehicle = await db.vehicle.findUnique({
     where: { id: input.vehicleId },
-    select: { id: true, customerId: true, type: true, make: true },
+    select: {
+      id: true,
+      customerId: true,
+      type: true,
+      make: true,
+      customer: { select: { userId: true } },
+    },
   });
-  if (!vehicle || vehicle.customerId !== input.customerId || !isVehicleInSupportedScope(vehicle.type, vehicle.make)) {
+  if (
+    !vehicle ||
+    vehicle.customerId !== input.customerId ||
+    (input.actorRole !== "ADMIN" && vehicle.customer?.userId !== input.actorUserId) ||
+    !isVehicleInSupportedScope(vehicle.type, vehicle.make)
+  ) {
     throw new ServiceRequestVehicleError();
   }
 
@@ -119,7 +142,9 @@ async function createWithD1(
        "idempotencyKey", "requestFingerprint", "createdAt", "updatedAt")
     SELECT ?, ?, ?, v."id", ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?
     FROM "Vehicle" v
+    JOIN "Customer" c ON c."id" = v."customerId"
     WHERE v."id" = ? AND v."customerId" = ?
+      AND (? = 'ADMIN' OR c."userId" = ?)
       AND ${inScopeSql}
       AND NOT EXISTS (SELECT 1 FROM "ServiceRequest" WHERE "idempotencyKey" = ?)
     ON CONFLICT("idempotencyKey") DO NOTHING
@@ -127,7 +152,7 @@ async function createWithD1(
     requestId, input.code, input.customerId, input.category, input.urgency,
     input.title, input.description, input.mediaUrls, input.voiceNote, input.address,
     input.lat, input.lng, input.idempotencyKey, input.requestFingerprint, now, now,
-    input.vehicleId, input.customerId, input.idempotencyKey
+    input.vehicleId, input.customerId, input.actorRole, input.actorUserId, input.idempotencyKey
   );
 
   const results = await d1.batch([statement]);
