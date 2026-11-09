@@ -58,9 +58,8 @@ describe("fixed-fee pricing engine", () => {
     await expect(calculatePrice({ ...base, vipDiscountPercent: 10 })).rejects.toThrow("VIP does not discount repairs or parts");
   });
 
-  it("uses the heavy-equipment rate for the registered OTHER machinery type", async () => {
-    const result = await calculatePrice({ ...base, vehicleType: "OTHER" });
-    expect(result.breakdown.assetClass).toBe("heavy");
+  it("rejects ambiguous OTHER asset types instead of applying heavy-equipment rates", async () => {
+    await expect(calculatePrice({ ...base, vehicleType: "OTHER" })).rejects.toThrow("نوع وسیله");
   });
 
   it("rejects truly unknown vehicle types instead of guessing an asset class", async () => {
