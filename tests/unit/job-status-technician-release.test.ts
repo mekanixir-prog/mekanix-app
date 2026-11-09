@@ -84,6 +84,7 @@ beforeEach(() => {
     labor: 8_000_000, parts: 2_000_000, travel: 5_000_000, inspection: 600_000,
     emergency: 0, discount: 0, subtotal: 15_600_000, taxRate: 0, taxTotal: 0,
     total: 15_600_000, currency: "IRR", pricingVersion: "rate-card-7",
+    breakdown: { extraDistanceBillingEnabled: false, billableExtraKm: 0 },
   });
   mocks.partsVerified.mockReturnValue(true);
   mocks.serviceCode.mockReturnValue("diagnostic");
