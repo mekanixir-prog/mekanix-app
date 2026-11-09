@@ -14,7 +14,8 @@ describe("fmtMoney", () => {
   });
 
   it("does not guess a currency for unknown currency codes", () => {
-    expect(fmtMoney(125000, "UNKNOWN", "en")).toBe("—");
+    expect(fmtMoney(125000, "UNKNOWN", "en")).toBe("Unknown currency");
+    expect(fmtMoney(125000, "UNKNOWN", "fa")).toBe("واحد نامشخص");
   });
 
   it("preserves the declared USD currency for Persian and English users", () => {
