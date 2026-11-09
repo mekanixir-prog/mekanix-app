@@ -1,9 +1,8 @@
 /**
- * Passenger-vehicle scope agreed for MEKANIX:
- * exclude Iran Khodro, Saipa and Pars Khodro; keep other importers/assemblers
- * such as Kerman Motor, Modiran Khodro and Farda Motor.
- *
- * Heavy equipment is not affected by this passenger-only restriction.
+ * MEKANIX supports foreign passenger vehicles and the explicitly priced
+ * heavy-equipment classes only. Iran Khodro, Saipa and Pars Khodro passenger
+ * vehicles are excluded. Generic OTHER/unknown types fail closed because
+ * they have no approved rate-card class.
  */
 function normalizeMakeKey(value: string): string {
   return value
@@ -37,7 +36,11 @@ export function isExcludedPassengerMake(value: unknown): boolean {
     key.startsWith("irankhodro") || key.startsWith("saipa") || key.startsWith("parskhodro");
 }
 
+const SUPPORTED_HEAVY_TYPES = new Set([
+  "TRUCK", "BUS", "EXCAVATOR", "LOADER", "BULLDOZER", "GRADER", "AGRI", "INDUSTRIAL",
+]);
+
 export function isVehicleInSupportedScope(type: unknown, make: unknown): boolean {
-  if (type !== "CAR") return true;
-  return !isExcludedPassengerMake(make);
+  if (type === "CAR") return !isExcludedPassengerMake(make);
+  return typeof type === "string" && SUPPORTED_HEAVY_TYPES.has(type);
 }
