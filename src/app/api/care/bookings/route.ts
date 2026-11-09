@@ -10,6 +10,7 @@ import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 import { isVehicleInSupportedScope } from "@/lib/vehicle-scope";
 import {
   CareBookingIdempotencyConflict,
+  CareBookingVehicleError,
   createCareBookingAtomically,
 } from "@/lib/care-booking-atomic";
 
@@ -117,6 +118,12 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "این کلید قبلاً برای اطلاعات متفاوتی استفاده شده است" },
         { status: 409 }
+      );
+    }
+    if (error instanceof CareBookingVehicleError) {
+      return NextResponse.json(
+        { error: "مالکیت یا محدوده مجاز وسیله هنگام ثبت رزرو تغییر کرده است؛ اطلاعات وسیله را بررسی کنید", code: "VEHICLE_SCOPE_CHANGED" },
+        { status: 409 },
       );
     }
     throw error;
