@@ -687,6 +687,8 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
     // Clear one-time mock queues left by the gateway-verification cases above.
     mockPaymentFindUnique.mockReset();
     mockPaymentGatewayLogFindUnique.mockReset();
+    mockUserVipSubscriptionFindFirst.mockReset();
+    mockCreateVipSubscriptionAtomically.mockReset();
     mockRequireAuth.mockResolvedValue({
       userId: "user-1",
       role: "CUSTOMER",
