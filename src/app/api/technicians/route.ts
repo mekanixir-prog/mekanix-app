@@ -17,16 +17,9 @@ const techInclude = {
 // not leak technician phone numbers. Customers contact technicians through the
 // platform (chat / job dispatch), never via direct phone.
 const PUBLIC_USER_FIELDS = {
-  id: true,
   name: true,
   avatar: true,
-  role: true,
-  status: true,
-  country: true,
-  currency: true,
-  language: true,
-  createdAt: true,
-} as const;
+} as const;;
 
 // GET /api/technicians — public listing (no auth required).
 // Selects only safe fields (no password, no sensitive data).
@@ -88,7 +81,7 @@ export async function GET(req: Request) {
       return a.distanceKm - b.distanceKm;
     })
     .map(({ tech, distanceKm }) => {
-      const { lat: _lat, lng: _lng, serviceAreas, ...safeTech } = tech;
+      const { lat: _lat, lng: _lng, userId: _userId, serviceAreas, ...safeTech } = tech;
       return maskFinancialFields({
         ...safeTech,
         lat: null,
