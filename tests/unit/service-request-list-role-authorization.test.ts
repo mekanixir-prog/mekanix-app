@@ -33,6 +33,7 @@ beforeEach(() => {
   mocks.db.mockResolvedValue({ serviceRequest: { findMany: mocks.findMany } });
 });
 
+// Regression coverage for the fail-closed role guard in the collection endpoint.
 describe("GET /api/service-requests role scoping", () => {
   it.each(["PARTNER", "FLEET_MANAGER"] as const)(
     "fails closed for %s because no request-list scope is defined",
