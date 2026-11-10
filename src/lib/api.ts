@@ -10,6 +10,12 @@ export type Customer = Prisma.CustomerGetPayload<{ include: { user: true } }>;
 export type Technician = Prisma.TechnicianGetPayload<{
   include: { user: true; specialties: true; certifications: true; serviceAreas: true; };
 }>;
+export type PublicTechnician = Omit<Technician, "serviceAreas"> & {
+  lat: null;
+  lng: null;
+  serviceAreas: Array<Pick<Technician["serviceAreas"][number], "name" | "radiusKm">>;
+  distanceKm?: number | null;
+};
 export type Vehicle = VehicleModel;
 export type ServiceRequest = Prisma.ServiceRequestGetPayload<{
   include: {
@@ -84,9 +90,9 @@ export const api = {
     if (params?.lat != null) q.set("lat", String(params.lat));
     if (params?.lng != null) q.set("lng", String(params.lng));
     if (params?.category) q.set("category", params.category);
-    return req<Technician[]>(`/api/technicians?${q.toString()}`);
+    return req<PublicTechnician[]>(`/api/technicians?${q.toString()}`);
   },
-  getTechnician: (id: string) => req<Technician>(`/api/technicians/${id}`),
+  getTechnician: (id: string) => req<PublicTechnician>(`/api/technicians/${id}`),
   listVehicles: (customerId: string) => req<Vehicle[]>(`/api/vehicles?customerId=${customerId}`).catch(() => []),
   createVehicle: (data: Partial<Vehicle> & { customerId: string }) =>
     req<Vehicle>(`/api/vehicles`, { method: "POST", body: JSON.stringify(data) }),
@@ -102,6 +108,11 @@ export const api = {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(data),
+    }),
+  assignServiceRequest: (requestId: string, technicianId: string) =>
+    req<Job>(`/api/service-requests/${requestId}/assign`, {
+      method: "POST",
+      body: JSON.stringify({ technicianId }),
     }),
   listJobs: (params?: { technicianId?: string; customerId?: string; status?: string }) => {
     const q = new URLSearchParams();
