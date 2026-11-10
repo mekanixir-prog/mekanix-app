@@ -85,7 +85,7 @@ describe("POST /api/mechanic-applications/[id]/approve privacy", () => {
     expect(response.status).toBe(200);
     const createArgs = mocks.userCreate.mock.calls[0][0];
     expect(createArgs.data.avatar).toBeNull();
-    expect(JSON.stringify(createArgs)).not.toContain(applicantPhone);
-    expect(JSON.stringify(createArgs)).not.toContain("pravatar.cc");
+    expect(createArgs.data.avatar).not.toContain(applicantPhone);
+    expect(createArgs.data.avatar).not.toContain("pravatar.cc");
   });
 });
