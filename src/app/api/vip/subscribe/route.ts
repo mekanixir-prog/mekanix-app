@@ -41,12 +41,11 @@ export async function POST(req: Request) {
 
   const db = await getDbForLib();
 
+  // The payment attempt is the authoritative purchase snapshot. A plan may be
+  // deactivated or edited after payment; that must not invalidate an already-paid entitlement.
   const plan = await db.vipPlan.findUnique({ where: { id: planId } });
-  if (!plan || !plan.active) {
-    return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
-  }
-  if (plan.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(plan.priceIrr)) {
-    return NextResponse.json({ error: "قیمت طرح VIP هنوز از نظر منشأ مالی تأیید نشده است", code: "VIP_PLAN_PRICE_UNVERIFIED" }, { status: 409 });
+  if (!plan) {
+    return NextResponse.json({ error: "Plan not found" }, { status: 404 });
   }
 
   // 3. Validate paymentId — must be a real SUCCEEDED payment by this user
@@ -89,6 +88,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Payment is not a verified VIP payment" }, { status: 400 });
   }
 
+  // Entitlement duration is immutable: use the value captured at payment initiation,
+  // never the mutable VipPlan.durationDays field.
+  const durationSnapshot = gatewayLog.targetPlanDurationDays;
+  if (typeof durationSnapshot !== "number" || !Number.isSafeInteger(durationSnapshot) || durationSnapshot <= 0 || durationSnapshot > 36500) {
+    return NextResponse.json({ error: "مدت ثبت‌شده برای این پرداخت معتبر نیست و نیاز به بررسی دارد", code: "VIP_DURATION_SNAPSHOT_MISSING" }, { status: 409 });
+  }
+  const durationDays = durationSnapshot;
+
   // The paymentId unique constraint is the final replay guard. Return the
   // already-created subscription for a retry instead of reporting a false
   // failure or attempting to consume the same payment again.
@@ -99,6 +106,11 @@ export async function POST(req: Request) {
   if (existingSub) {
     if (existingSub.userId !== userId || existingSub.planId !== planId) {
       return NextResponse.json({ error: "پرداخت قبلاً به اشتراک دیگری متصل شده است" }, { status: 409 });
+    }
+    const existingStart = existingSub.startedAt instanceof Date ? existingSub.startedAt.getTime() : Date.parse(String(existingSub.startedAt ?? ""));
+    const existingExpiry = existingSub.expiresAt instanceof Date ? existingSub.expiresAt.getTime() : Date.parse(String(existingSub.expiresAt ?? ""));
+    if (!Number.isFinite(existingStart) || !Number.isFinite(existingExpiry) || existingExpiry - existingStart !== durationDays * 24 * 60 * 60 * 1000) {
+      return NextResponse.json({ error: "مدت اشتراک ثبت‌شده با مدت خرید تطبیق ندارد و نیاز به بررسی دارد", code: "VIP_EXISTING_DURATION_MISMATCH" }, { status: 409 });
     }
     return NextResponse.json({
       ok: true,
@@ -111,7 +123,7 @@ export async function POST(req: Request) {
   }
 
   const startedAt = new Date();
-  const expiresAt = new Date(startedAt.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(startedAt.getTime() + durationDays * 24 * 60 * 60 * 1000);
 
   // Replace the previous active subscription and consume this payment in one
   // database transaction (Prisma) or one transactional D1 batch. If creation
@@ -160,10 +172,11 @@ export async function POST(req: Request) {
   try {
     await db.notification.create({
       data: {
+        id: `vip-activated:${paymentId}`,
         userId,
         type: "vip_activated",
-        title: "VIP activated",
-        body: `Your ${plan.name} plan is active until ${expiresAt.toLocaleDateString()}`,
+        title: "اشتراک VIP فعال شد",
+        body: "اشتراک VIP شما ثبت و فعال‌سازی شد.",
         category: "system",
         link: "customer/settings",
       },
