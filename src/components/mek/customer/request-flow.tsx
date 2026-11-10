@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import type { DemoUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
-import { api, type Vehicle, type Technician, type ServiceRequest } from "@/lib/api";
+import { api, type Vehicle, type Technician, type PublicTechnician, type ServiceRequest } from "@/lib/api";
 import { MACHINE_TYPES, SERVICE_CATEGORIES, URGENCY, typesForMode } from "@/lib/constants";
 import { MekIcon, iconForMachineType, iconForCategory } from "@/components/mek/shared/icons";
 import { VehicleCard } from "@/components/mek/shared/vehicle-card";
@@ -16,7 +16,7 @@ import { TechnicianCard } from "@/components/mek/shared/technician-card";
 import { StarRating, EmptyState, SectionHeader } from "@/components/mek/shared/primitives";
 import { UrgencyBadge } from "@/components/mek/shared/status-badge";
 import { VoiceRecorder } from "@/components/mek/shared/voice-recorder";
-import { fmtDuration, haversine, toPersianDigits } from "@/lib/format";
+import { fmtDuration, toPersianDigits } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -482,33 +482,59 @@ export function Matching({ customer }: { customer: DemoUser }) {
   const { go, params } = useApp();
   const { t, isFa, money } = useT();
   const lang = isFa ? "fa" : "en";
-  const [techs, setTechs] = useState<Technician[] | null>(null);
+  const [techs, setTechs] = useState<PublicTechnician[] | null>(null);
   const [phase, setPhase] = useState<"searching" | "results">("searching");
   const [selected, setSelected] = useState<string | null>(null);
   const [showOtherRegions, setShowOtherRegions] = useState(false);
 
   useEffect(() => {
-    const lat = 35.6892, lng = 51.3890; // Tehran center
-    api.listTechnicians({ lat, lng }).then((tList) => {
-      // simulate searching delay
-      setTimeout(() => {
-        setTechs(tList);
-        setPhase("results");
-      }, 1900);
-    });
-  }, []);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const loadMatches = async () => {
+      try {
+        const requests = await api.listRequests();
+        const currentRequest = requests.find((item) => item.id === params.requestId);
+        const hasLocation = currentRequest &&
+          Number.isFinite(currentRequest.lat) &&
+          Number.isFinite(currentRequest.lng);
+        const tList = await api.listTechnicians(
+          hasLocation ? { lat: currentRequest.lat, lng: currentRequest.lng } : undefined
+        );
+        if (cancelled) return;
+        timer = setTimeout(() => {
+          if (!cancelled) {
+            setTechs(tList);
+            setPhase("results");
+          }
+        }, 1900);
+      } catch {
+        if (!cancelled) {
+          setTechs([]);
+          setPhase("results");
+        }
+      }
+    };
+
+    void loadMatches();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [params.requestId]);
 
   const allRanked = (techs ?? []).map((tk) => {
-    const km = tk.lat && tk.lng ? haversine({ lat: 35.6892, lng: 51.3890 }, { lat: tk.lat, lng: tk.lng }) : 99;
-    const eta = Math.max(5, Math.round((km / 35) * 60) + tk.responseMins);
+    const distanceKnown = tk.distanceKm != null;
+    const km = tk.distanceKm ?? 99;
+    const eta = distanceKnown ? Math.max(5, Math.round((km / 35) * 60) + tk.responseMins) : undefined;
     // Score: weighted combination of rating, distance, verified, completed jobs.
     const rating = Number(tk.rating ?? 0);
     const hourlyRate = Number(tk.hourlyRate ?? 0);
-    const proximityScore = rating * 20 - km * 0.4 + (tk.verified ? 5 : 0) + tk.completedJobs * 0.02;
+    const proximityScore = rating * 20 - (distanceKnown ? km * 0.4 : 40) + (tk.verified ? 5 : 0) + tk.completedJobs * 0.02;
     // Value score: rating/cost ratio — higher rating + lower total cost = better value.
     const inspectionFee = tk.inspectionFee != null ? Number(tk.inspectionFee) : hourlyRate * 0.5;
     const inspectionFeeHeavy = tk.inspectionFeeHeavy != null ? Number(tk.inspectionFeeHeavy) : hourlyRate * 1.5;
-    const travelFee = (tk.travelFeeBase != null ? Number(tk.travelFeeBase) : 0) + km * 0.5;
+    const travelFee = (tk.travelFeeBase != null ? Number(tk.travelFeeBase) : 0) + (distanceKnown ? km * 0.5 : 0);
     const totalCost = inspectionFee + travelFee;
     const valueScore = (rating * 30) / Math.max(1, totalCost / 10) + tk.completedJobs * 0.05 + (tk.verified ? 8 : 0);
     return { tech: tk, km, eta, score: proximityScore, valueScore, inspectionFee, inspectionFeeHeavy, travelFee };
@@ -587,7 +613,7 @@ export function Matching({ customer }: { customer: DemoUser }) {
                       <TechnicianCard
                         key={r.tech.id}
                         tech={r.tech}
-                        distanceKm={r.km}
+                        distanceKm={r.distanceKnown ? r.km : undefined}
                         etaMins={r.eta}
                         rank={i + 1}
                         inspectionFee={r.inspectionFee}
@@ -664,7 +690,7 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
   const { go, params, back } = useApp();
   const { t, isFa, money, cat } = useT();
   const lang = isFa ? "fa" : "en";
-  const [tech, setTech] = useState<Technician | null>(null);
+  const [tech, setTech] = useState<PublicTechnician | null>(null);
   const [requesting, setRequesting] = useState(false);
 
   useEffect(() => {
@@ -675,14 +701,10 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
     setRequesting(true);
     try {
       // assign the technician to the request + create a job in REQUESTED state
-      const sr = await fetch(`/api/service-requests`).then((r) => r.json()).then((list: ServiceRequest[]) => list.find((x) => x.id === params.requestId));
+      const requests = await api.listRequests();
+      const sr = requests.find((item) => item.id === params.requestId);
       if (!sr) throw new Error(t("req.techProfile.requestNotFound"));
-      const jobRes = await fetch(`/api/service-requests/${sr.id}/assign`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ technicianId: params.technicianId }),
-      });
-      const job = await jobRes.json();
+      const job = await api.assignServiceRequest(sr.id, String(params.technicianId ?? ""));
       if (!job?.id) throw new Error(t("req.techProfile.assignFailed"));
       toast.success(t("req.techProfile.notified").replace("{name}", tech?.user.name ?? ""));
       go("track", { jobId: job.id });
