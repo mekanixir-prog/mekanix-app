@@ -183,10 +183,16 @@ export async function GET() {
     process.env.NODE_ENV === "production" && errors.length > 0
       ? ["One or more readiness checks failed"]
       : errors;
+  // Expose only database reachability. Provider readiness, admin bootstrap,
+  // and shared rate-limit state are operational diagnostics, not public API data.
+  const publicChecks = typeof checks.database === "boolean"
+    ? { database: checks.database }
+    : {};
+
   return NextResponse.json(
     {
       ok,
-      checks,
+      checks: publicChecks,
       errors: publicErrors,
       timestamp: new Date().toISOString(),
     },
