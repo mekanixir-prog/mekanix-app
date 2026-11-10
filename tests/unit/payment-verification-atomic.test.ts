@@ -10,8 +10,10 @@ const mockLogUpdateMany = vi.fn();
 const mockOutboxUpsert = vi.fn();
 const mockTransaction = vi.fn();
 
+const mockGetD1Binding = vi.hoisted(() => vi.fn(async (): Promise<any> => null));
+
 vi.mock("@/lib/idempotency", () => ({
-  getD1Binding: vi.fn(async () => null),
+  getD1Binding: mockGetD1Binding,
 }));
 
 function makeDb() {
@@ -36,6 +38,7 @@ const input = {
 describe("atomic verified gateway payment persistence", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetD1Binding.mockResolvedValue(null);
     mockLogFindUnique.mockResolvedValue({
       id: "gateway-1", userId: "customer-1", purpose: "vip", targetPlanId: "plan-1",
       amount: 100_000, currency: "IRR", financialUnitStatus: "VERIFIED_IRR",
@@ -109,6 +112,34 @@ describe("atomic verified gateway payment persistence", () => {
     expect(mockOutboxUpsert).toHaveBeenCalledWith(expect.objectContaining({
       create: expect.objectContaining({ aggregateId: "payment-legacy" }),
     }));
+  });
+
+  it("builds a valid D1 outbox JSON projection with closed SQL identifiers", async () => {
+    const prepared: Array<{ sql: string; values: unknown[] }> = [];
+    const d1 = {
+      prepare(sql: string) {
+        return {
+          bind(...values: unknown[]) {
+            prepared.push({ sql, values });
+            return { first: async () => ({ id: "payment-1" }) };
+          },
+        };
+      },
+      batch: vi.fn(async () => []),
+    };
+    mockGetD1Binding.mockResolvedValue(d1);
+
+    const result = await recordVerifiedGatewayPaymentAtomically(makeDb(), input);
+    expect(result).toBe("payment-1");
+    expect(d1.batch).toHaveBeenCalledTimes(1);
+
+    const outboxSql = prepared.find(({ sql }) => sql.includes('INSERT INTO "PaymentOutboxEvent"'))?.sql;
+    expect(outboxSql).toBeDefined();
+    expect(outboxSql).toContain("'paymentId', p." + '"id"' + ", 'gatewayLogId'");
+    expect(outboxSql).toContain("'userId', p." + '"userId"' + ", 'amount', p." + '"amount"' + ", 'currency'");
+    expect(outboxSql).not.toContain('p."id\',');
+    expect(outboxSql).not.toContain('p."userId\',');
+    expect(outboxSql).not.toContain('p."amount\',');
   });
 
   it("rejects a gateway attempt whose server-owned amount no longer matches", async () => {
