@@ -28,8 +28,9 @@ export async function POST(req: Request) {
   if (typeof code !== "string" || !code.trim()) {
     return NextResponse.json({ error: "code is required" }, { status: 400 });
   }
-  if (typeof otp !== "string" || otp.length < 4) {
-    return NextResponse.json({ error: "Invalid OTP" }, { status: 400 });
+  // The local simulator has one documented test code; this is not a real OTP.
+  if (otp !== "1234") {
+    return NextResponse.json({ error: "کد آزمایشی نامعتبر است", code: "SIMULATOR_OTP_INVALID" }, { status: 400 });
   }
 
   const db = await getDbForLib();
