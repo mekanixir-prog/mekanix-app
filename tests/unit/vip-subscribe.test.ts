@@ -248,6 +248,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     vi.stubEnv("NODE_ENV", "test");
     mockUserVipSubscriptionFindFirst.mockResolvedValue({
       id: "sub-existing", userId: "user-1", planId: "plan-1", status: "ACTIVE",
+      startedAt: new Date("2026-11-01T00:00:00.000Z"), expiresAt: new Date("2026-12-01T00:00:00.000Z"),
       plan: { id: "plan-1", name: "Gold", priceIrr: 100_000 },
     });
 
@@ -267,6 +268,7 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({
         id: "sub-raced", userId: "user-1", planId: "plan-1", status: "ACTIVE",
+        startedAt: new Date("2026-11-01T00:00:00.000Z"), expiresAt: new Date("2026-12-01T00:00:00.000Z"),
         plan: { id: "plan-1", name: "Gold", priceIrr: 100_000 },
       });
     mockCreateVipSubscriptionAtomically.mockRejectedValue(new Error("UNIQUE constraint failed"));
