@@ -33,13 +33,7 @@ export function AdminApplications() {
   const approve = async (app: Application) => {
     setActing(app.id);
     try {
-      const response = await fetch(`/api/mechanic-applications/${app.id}/approve`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || "Approval failed");
+      await api.approveMechanicApplication(app.id, notes);
       toast.success(t("admin.applications.approved").replace("{name}", app.fullName));
       setSelected(null);
       setNotes("");
@@ -54,13 +48,7 @@ export function AdminApplications() {
   const reject = async (app: Application) => {
     setActing(app.id);
     try {
-      const response = await fetch(`/api/mechanic-applications/${app.id}/reject`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || "Rejection failed");
+      await api.rejectMechanicApplication(app.id, notes);
       toast.success(t("admin.applications.rejected").replace("{name}", app.fullName));
       setSelected(null);
       setNotes("");
