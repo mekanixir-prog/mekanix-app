@@ -66,6 +66,12 @@ jobs:
         env:
           DATABASE_URL: postgresql://mekanix:mekanix_test@localhost:5432/mekanix_test
       
+      - name: Verify VIP purchase-time duration snapshot migration
+        run: |
+          COLUMN_COUNT=$(PGPASSWORD=mekanix_test psql -h localhost -U mekanix -d mekanix_test -Atqc "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='PaymentGatewayLog' AND column_name='targetPlanDurationDays'")
+          test "$COLUMN_COUNT" = "1"
+          echo "VIP duration snapshot column is present in PostgreSQL."
+
       - name: Backup and restore rehearsal on isolated test database
         run: |
           # Ubuntu 24.04 ships PostgreSQL 16 client packages in its native
