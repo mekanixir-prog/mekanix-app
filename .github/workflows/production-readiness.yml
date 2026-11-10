@@ -2,7 +2,7 @@ name: Production readiness
 
 on:
   pull_request:
-    branches: [main, "fix/**", "feat/**"]
+    branches: [main, "fix/**", "feat/**", "docs/**", "test/**"]
   push:
     branches: [main, "hardening/**"]
 
