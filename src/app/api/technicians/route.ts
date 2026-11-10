@@ -19,7 +19,7 @@ const techInclude = {
 const PUBLIC_USER_FIELDS = {
   name: true,
   avatar: true,
-} as const;;
+} as const;
 
 // GET /api/technicians — public listing (no auth required).
 // Selects only safe fields (no password, no sensitive data).
