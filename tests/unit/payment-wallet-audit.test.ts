@@ -797,6 +797,8 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
       planId: "plan-1",
       paymentId: "pay-1",
       status: "ACTIVE",
+      startedAt: new Date("2026-11-01T00:00:00.000Z"),
+      expiresAt: new Date("2026-12-01T00:00:00.000Z"),
       plan: { id: "plan-1", name: "Gold" },
     });
     const req2 = makePostRequest("http://localhost/api/vip/subscribe", {
@@ -820,7 +822,7 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
       mockUserVipSubscriptionFindFirst
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({ id: "sub-1", userId: "user-1", planId: "plan-1", paymentId: "pay-1", status: "ACTIVE", plan: { id: "plan-1", name: "Gold" } });
+        .mockResolvedValueOnce({ id: "sub-1", userId: "user-1", planId: "plan-1", paymentId: "pay-1", status: "ACTIVE", startedAt: new Date("2026-11-01T00:00:00.000Z"), expiresAt: new Date("2026-12-01T00:00:00.000Z"), plan: { id: "plan-1", name: "Gold" } });
       mockCreateVipSubscriptionAtomically
         .mockResolvedValueOnce("sub-1")
         .mockRejectedValueOnce({ code: "P2002", message: "Unique constraint failed on the fields: (paymentId)" });
