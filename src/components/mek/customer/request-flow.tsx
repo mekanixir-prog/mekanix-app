@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import type { DemoUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
-import { api, type Vehicle, type Technician, type PublicTechnician, type ServiceRequest } from "@/lib/api";
+import { api, type Vehicle, type PublicTechnician } from "@/lib/api";
 import { MACHINE_TYPES, SERVICE_CATEGORIES, URGENCY, typesForMode } from "@/lib/constants";
 import { MekIcon, iconForMachineType, iconForCategory } from "@/components/mek/shared/icons";
 import { VehicleCard } from "@/components/mek/shared/vehicle-card";
@@ -495,12 +495,12 @@ export function Matching({ customer }: { customer: DemoUser }) {
       try {
         const requests = await api.listRequests();
         const currentRequest = requests.find((item) => item.id === params.requestId);
-        const hasLocation = currentRequest &&
+        const requestLocation = currentRequest &&
           Number.isFinite(currentRequest.lat) &&
-          Number.isFinite(currentRequest.lng);
-        const tList = await api.listTechnicians(
-          hasLocation ? { lat: currentRequest.lat, lng: currentRequest.lng } : undefined
-        );
+          Number.isFinite(currentRequest.lng)
+          ? { lat: currentRequest.lat, lng: currentRequest.lng }
+          : undefined;
+        const tList = await api.listTechnicians(requestLocation);
         if (cancelled) return;
         timer = setTimeout(() => {
           if (!cancelled) {
