@@ -1490,7 +1490,9 @@ const DICT: Record<Lang, Record<string, string>> = {
     "admin.applications.col.status": "Status",
     "admin.applications.col.submitted": "Submitted",
     "admin.applications.approve": "Approve & Create Account",
+    "admin.applications.resumeApprove": "Resume approval",
     "admin.applications.reject": "Reject",
+    "admin.applications.resumeReject": "Resume rejection",
     "admin.applications.approved": "{name} approved — technician account created",
     "admin.applications.rejected": "{name} rejected",
     "admin.applications.hasVehicle": "Has own service vehicle",
@@ -1604,6 +1606,8 @@ const DICT: Record<Lang, Record<string, string>> = {
 
     // ── Application statuses ──
     "appst.PENDING": "Pending",
+    "appst.APPROVING": "Approval in progress",
+    "appst.REJECTING": "Rejection in progress",
     "appst.APPROVED": "Approved",
     "appst.REJECTED": "Rejected",
 
@@ -3226,6 +3230,8 @@ const DICT: Record<Lang, Record<string, string>> = {
 
     // ── Application statuses ──
     "appst.PENDING": "در انتظار",
+    "appst.APPROVING": "در حال تأیید",
+    "appst.REJECTING": "در حال رد",
     "appst.APPROVED": "تأیید شده",
     "appst.REJECTED": "رد شده",
 
