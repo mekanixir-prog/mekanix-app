@@ -75,24 +75,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         userId: user.id,
         bio: app.bio || "MEKANIX-verified mobile technician.",
         experienceYears: app.experienceYears,
-        hourlyRate: 60,
-        travelFeeBase: 18,
-        status: "ONLINE",
-        availableNow: true,
+        // Approval does not imply the technician is currently available or
+        // physically located in Tehran. Keep the profile offline and without
+        // coordinates/service areas until the technician supplies real location
+        // and coverage during onboarding.
+        status: "OFFLINE",
+        availableNow: false,
         verified: true,
-        level: "SILVER",
-        rating: 5,
-        reviewCount: 0,
-        completedJobs: 0,
-        responseMins: 15,
-        lat: 35.6892,
-        lng: 51.3890,
+        lat: null,
+        lng: null,
         specialties: { create: specialties.map((cat: string) => ({ category: cat, label: cat.replace("-", " ") })) },
         certifications: {
           create: certs.map((c: any) => ({ name: c.name || c, issuer: c.issuer || "Self-reported", year: c.year || new Date().getFullYear(), verified: false })),
-        },
-        serviceAreas: {
-          create: app.city ? [{ name: app.city, lat: 35.6892, lng: 51.3890, radiusKm: 25 }] : [{ name: "Tehran", lat: 35.6892, lng: 51.3890, radiusKm: 25 }],
         },
       },
       include: { user: { select: ADMIN_USER_SELECT }, specialties: true },
