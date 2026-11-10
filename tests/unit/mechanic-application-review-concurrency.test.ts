@@ -192,4 +192,23 @@ describe("mechanic application review state machine", () => {
     expect(response.status).toBe(200);
     expect(mocks.applicationUpdateMany).not.toHaveBeenCalled();
   });
+
+  it("repairs an already approved application after an interrupted account promotion", async () => {
+    application.status = "APPROVED";
+    application.userId = "user-1";
+    currentUser = {
+      id: "user-1",
+      phone: application.phone,
+      role: "CUSTOMER",
+      status: "ACTIVE",
+      phoneVerified: false,
+    };
+
+    const response = await approve(makeRequest("approve"), context);
+    expect(response.status).toBe(200);
+    expect(application.status).toBe("APPROVED");
+    expect(currentUser?.role).toBe("TECHNICIAN");
+    expect(currentTechnician?.status).toBe("OFFLINE");
+    expect(mocks.applicationUpdateMany).not.toHaveBeenCalled();
+  });
 });
