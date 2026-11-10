@@ -72,4 +72,29 @@ describe("GET /api/wallets financial provenance", () => {
     });
     expect(mocks.release).not.toHaveBeenCalled();
   });
+
+  it("never marks a wallet as financially verified merely because a GET created it", async () => {
+    const created = {
+      id: "wallet-new",
+      financialUnitStatus: "UNVERIFIED",
+      balance: "0",
+      pendingBalance: "0",
+      totalEarned: "0",
+      totalCommission: "0",
+      totalWithdrawn: "0",
+      transactions: [],
+      withdrawals: [],
+    };
+    mocks.walletFindUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(created);
+    mocks.walletCreate.mockResolvedValue(created);
+
+    const response = await GET(new Request("https://mekanix.test/api/wallets"));
+    expect(response.status).toBe(200);
+    expect(mocks.walletCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: { technicianId: "tech-1", financialUnitStatus: "UNVERIFIED" },
+    }));
+    const payload = await response.json();
+    expect(payload.financialUnitStatus).toBe("UNVERIFIED");
+    expect(payload.balance).toBeNull();
+  });
 });
