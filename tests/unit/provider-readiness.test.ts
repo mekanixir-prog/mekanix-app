@@ -181,7 +181,8 @@ describe("production readiness gates", () => {
     const body = await response.json();
 
     expect(response.status).toBe(503);
-    expect(body.checks.sharedRateLimitStore).toBe(false);
+    expect(body.checks.database).toBe(true);
+    expect(body.checks).not.toHaveProperty("sharedRateLimitStore");
     expect(body.errors).toEqual(["One or more readiness checks failed"]);
   });
 
@@ -193,7 +194,8 @@ describe("production readiness gates", () => {
     const body = await response.json();
 
     expect(response.status).toBe(503);
-    expect(body.checks.adminProvisioning).toBe(false);
+    expect(body.checks.database).toBe(true);
+    expect(body.checks).not.toHaveProperty("adminProvisioning");
     expect(body.errors).toEqual(["One or more readiness checks failed"]);
   });
 
@@ -204,7 +206,7 @@ describe("production readiness gates", () => {
     const response = await readyGET();
     const body = await response.json();
 
-    expect(body.checks.adminProvisioning).toBe(true);
+    expect(body.checks).not.toHaveProperty("adminProvisioning");
     expect(body.errors).not.toContain(
       "No valid admin exists and ADMIN_BOOTSTRAP_PASSWORD is missing or shorter than 16 characters"
     );
