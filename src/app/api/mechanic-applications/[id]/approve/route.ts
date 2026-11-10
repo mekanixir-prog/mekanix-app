@@ -50,7 +50,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         email: app.email || `mechanic+${app.phone}@mekanix.io`,
         role: "TECHNICIAN",
         phoneVerified: true,
-        avatar: `https://i.pravatar.cc/150?u=${app.phone}`,
+        // Do not send the applicant phone number to a third-party avatar service.
+        // The UI can render its local initials fallback when no avatar is set.
+        avatar: null,
       },
       select: AUTH_USER_SELECT,
     });
