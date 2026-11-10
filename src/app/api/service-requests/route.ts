@@ -40,6 +40,10 @@ export async function GET(req: Request) {
     const tech = await getTechnicianFromSession(session);
     if (!tech) return NextResponse.json({ error: "پروفایل مکانیک یافت نشد" }, { status: 403 });
     where.matchedTechId = tech.id;
+  } else if (session.role !== "ADMIN") {
+    // Fail closed: roles without an explicit request-list scope must never
+    // inherit the unfiltered ADMIN query.
+    return NextResponse.json({ error: "دسترسی به فهرست درخواست‌ها مجاز نیست" }, { status: 403 });
   }
 
   const db = await getDbForLib();
