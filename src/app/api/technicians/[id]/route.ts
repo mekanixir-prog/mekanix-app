@@ -6,16 +6,9 @@ import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 // Public-facing technician fields — never expose sensitive data.
 const PUBLIC_USER_FIELDS = {
-  id: true,
   name: true,
   avatar: true,
-  role: true,
-  status: true,
-  country: true,
-  currency: true,
-  language: true,
-  createdAt: true,
-} as const;
+} as const;;
 
 // GET /api/technicians/[id] — public profile (no auth required).
 // Selects only safe fields.
@@ -42,7 +35,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   // Public profile data must not disclose exact technician coordinates,
   // service-area coordinate pins, or private customer/job/vehicle records.
-  const { lat: _lat, lng: _lng, serviceAreas, ...safeTech } = tech;
+  const { lat: _lat, lng: _lng, userId: _userId, serviceAreas, ...safeTech } = tech;
   return NextResponse.json(maskFinancialFields({
     ...safeTech,
     lat: null,
