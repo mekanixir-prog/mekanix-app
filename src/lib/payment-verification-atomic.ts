@@ -88,7 +88,7 @@ export async function recordVerifiedGatewayPaymentAtomically(
 
     const outboxInsert = d1.prepare(
       'INSERT INTO "PaymentOutboxEvent" ("id", "eventType", "aggregateType", "aggregateId", "payload", "idempotencyKey", "status", "attempts", "availableAt", "createdAt", "updatedAt") ' +
-      'SELECT ?, \'PAYMENT_SUCCEEDED\', \'Payment\', p."id", json_object(\'eventType\', \'PAYMENT_SUCCEEDED\', \'paymentId\', p."id", \'gatewayLogId\', ?, \'userId\', p."userId", \'amount\', p."amount", \'currency\', \'IRR\', \'purpose\', \'vip\', \'targetPlanId\', ?, \'durationDays\', ?), ?, \'PENDING\', 0, ?, ?, ? ' +
+      'SELECT ?, \'PAYMENT_SUCCEEDED\', \'Payment\', p."id", json_object(\'eventType\', \'PAYMENT_SUCCEEDED\', \'paymentId\', p."id\', \'gatewayLogId\', ?, \'userId\', p."userId\', \'amount\', p."amount\', \'currency\', \'IRR\', \'purpose\', \'vip\', \'targetPlanId\', ?, \'durationDays\', ?), ?, \'PENDING\', 0, ?, ?, ? ' +
       'FROM "Payment" p JOIN "PaymentGatewayLog" g ON g."id" = p."gatewayLogId" ' +
       'WHERE p."gatewayLogId" = ? AND p."userId" = ? AND p."amount" = ? AND p."currency" = \'IRR\' AND p."status" = \'SUCCEEDED\' ' +
       'AND g."status" = \'VERIFIED\' AND g."paymentId" = p."id" ' +
