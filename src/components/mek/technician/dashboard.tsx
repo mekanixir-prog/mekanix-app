@@ -40,17 +40,26 @@ export function TechnicianDashboard({ user }: { user: DemoUser }) {
 
   const toggleOnline = async () => {
     const next = !online;
-    setOnline(next);
     try {
-      await fetch(`/api/technicians/${user.technician!.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: next ? "ONLINE" : "OFFLINE", availableNow: next }),
-      });
+      let location: { lat: number; lng: number } | undefined;
+      if (next) {
+        if (!navigator.geolocation) throw new Error(t("tech.dashboard.locationRequired"));
+        location = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(
+            (position) => resolve({
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+            }),
+            () => reject(new Error(t("tech.dashboard.locationRequired"))),
+            { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
+          );
+        });
+      }
+      await api.updateTechnicianAvailability(user.technician!.id, next, location);
+      setOnline(next);
       toast.success(next ? t("tech.dashboard.onlineNow") : t("tech.dashboard.offlineNow"));
-    } catch {
-      setOnline(!next);
-      toast.error(t("tech.dashboard.statusUpdateFail"));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("tech.dashboard.statusUpdateFail"));
     }
   };
 
@@ -77,7 +86,7 @@ export function TechnicianDashboard({ user }: { user: DemoUser }) {
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">{online ? t("common.online") : t("common.offline")}</span>
-            <Switch checked={online} onCheckedChange={toggleOnline} />
+            <Switch checked={online} onCheckedChange={toggleOnline} disabled={user.technician?.status === "ON_JOB"} />
           </div>
         </div>
       </div>
