@@ -151,6 +151,28 @@ describe("VIP payment outbox dispatcher D1 integration",()=>{
     expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "Notification"`).get()).toEqual({count:0});
   });
 
+  it("rolls back replay completion if payment provenance changes after preflight",async()=>{
+    let tampered=false;
+    const {sqlite,d1}=makeD1((db)=>{
+      if(tampered) return;
+      tampered=true;
+      db.prepare(`UPDATE "PaymentGatewayLog" SET "financialUnitStatus"='UNVERIFIED' WHERE "id"='gateway-1'`).run();
+    });
+    dbs.push(sqlite); seed(sqlite);
+    sqlite.prepare(`INSERT INTO "UserVipSubscription" VALUES (?,?,?,?,?,?,?,?,?)`).run(
+      "existing-sub","user-1","plan-1","ACTIVE",now.toISOString(),
+      new Date(now.getTime()+30*86400000).toISOString(),"payment-1",now.toISOString(),now.toISOString()
+    );
+
+    await runWorker(d1);
+
+    expect(sqlite.prepare(`SELECT "status","attempts" FROM "PaymentOutboxEvent"`).get()).toEqual({
+      status:"PENDING",attempts:1
+    });
+    expect(sqlite.prepare(`SELECT "status" FROM "UserVipSubscription" WHERE "id"='existing-sub'`).get()).toEqual({status:"ACTIVE"});
+    expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "Notification"`).get()).toEqual({count:0});
+  });
+
   it("refuses to complete against an existing subscription with a different duration",async()=>{
     const {sqlite,d1}=makeD1(); dbs.push(sqlite); seed(sqlite);
     sqlite.prepare(`INSERT INTO "UserVipSubscription" VALUES (?,?,?,?,?,?,?,?,?)`).run(
