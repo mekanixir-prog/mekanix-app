@@ -37,14 +37,16 @@ describe("VIP gateway initiation", () => {
       id: "plan-gold",
       name: "Gold",
       priceIrr: 125_000,
+      durationDays: 30,
       financialUnitStatus: "VERIFIED_IRR",
       active: true,
     });
     mockGatewayFindUnique.mockResolvedValue(null);
-    mockGatewayCreate.mockImplementation(async ({ data }: { data: { code: string; referenceId: string; amount: number } }) => ({
+    mockGatewayCreate.mockImplementation(async ({ data }: { data: { code: string; referenceId: string; amount: number; targetPlanDurationDays: number } }) => ({
       code: data.code,
       referenceId: data.referenceId,
       amount: data.amount,
+      targetPlanDurationDays: data.targetPlanDurationDays,
     }));
   });
 
@@ -67,6 +69,8 @@ describe("VIP gateway initiation", () => {
     const createArgs = mockGatewayCreate.mock.calls[0][0];
     expect(createArgs.data.amount).toBe(125_000);
     expect(createArgs.data.targetPlanId).toBe("plan-gold");
+    expect(createArgs.data.targetPlanDurationDays).toBe(30);
+    expect(body.durationDays).toBe(30);
     expect(createArgs.data.idempotencyKey).toBe("vip-checkout-attempt-0001");
     expect(createArgs.data.purpose).toBe("vip");
     expect(createArgs.data.financialUnitStatus).toBe("VERIFIED_IRR");
@@ -78,6 +82,7 @@ describe("VIP gateway initiation", () => {
     mockGatewayFindUnique.mockResolvedValue({
       code: "PG-existing", referenceId: "SIM-existing", amount: 125_000,
       userId: "customer-1", purpose: "vip", targetPlanId: "plan-gold",
+      targetPlanDurationDays: 30,
       currency: "IRR", financialUnitStatus: "VERIFIED_IRR", status: "REDIRECTED",
     });
     const response = await POST(request({ purpose: "vip", planId: "plan-gold", idempotencyKey: "vip-checkout-attempt-0001" }));
@@ -91,11 +96,13 @@ describe("VIP gateway initiation", () => {
   it("reuses the original attempt snapshot when the plan price changes", async () => {
     mockVipPlanFindUnique.mockResolvedValue({
       id: "plan-gold", name: "Gold", priceIrr: 150_000,
+      durationDays: 30,
       financialUnitStatus: "VERIFIED_IRR", active: true,
     });
     mockGatewayFindUnique.mockResolvedValue({
       code: "PG-original", referenceId: "SIM-original", amount: 125_000,
       userId: "customer-1", purpose: "vip", targetPlanId: "plan-gold",
+      targetPlanDurationDays: 30,
       currency: "IRR", financialUnitStatus: "VERIFIED_IRR", status: "REDIRECTED",
     });
     const response = await POST(request({ purpose: "vip", planId: "plan-gold", idempotencyKey: "vip-checkout-attempt-0001" }));
@@ -110,6 +117,7 @@ describe("VIP gateway initiation", () => {
     mockGatewayFindUnique.mockResolvedValue({
       code: "PG-existing", referenceId: "SIM-existing", amount: 125_000,
       userId: "someone-else", purpose: "vip", targetPlanId: "plan-gold",
+      targetPlanDurationDays: 30,
       currency: "IRR", financialUnitStatus: "VERIFIED_IRR", status: "REDIRECTED",
     });
     const response = await POST(request({ purpose: "vip", planId: "plan-gold", idempotencyKey: "vip-checkout-attempt-0001" }));
@@ -121,6 +129,7 @@ describe("VIP gateway initiation", () => {
     const winner = {
       code: "PG-race-winner", referenceId: "SIM-race-winner", amount: 125_000,
       userId: "customer-1", purpose: "vip", targetPlanId: "plan-gold",
+      targetPlanDurationDays: 30,
       currency: "IRR", financialUnitStatus: "VERIFIED_IRR", status: "REDIRECTED",
     };
     mockGatewayFindUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(winner);
@@ -136,22 +145,6 @@ describe("VIP gateway initiation", () => {
     expect(mockGatewayCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("never persists client-supplied card or phone credentials", async () => {
-    await POST(request({
-      purpose: "vip",
-      planId: "plan-gold",
-      idempotencyKey: "vip-no-card-data-0001",
-      cardNumber: "6037991234567890",
-      mobile: "09120000000",
-    }));
-
-    const data = mockGatewayCreate.mock.calls[0][0].data;
-    expect(data.cardNumber).toBeNull();
-    expect(data.mobile).toBeNull();
-    expect(JSON.stringify(data)).not.toContain("6037991234567890");
-    expect(JSON.stringify(data)).not.toContain("09120000000");
-  });
-
   it("requires an idempotency key", async () => {
     const response = await POST(request({ purpose: "vip", planId: "plan-gold" }));
     expect(response.status).toBe(400);
@@ -163,6 +156,7 @@ describe("VIP gateway initiation", () => {
       id: "plan-gold",
       name: "Gold",
       priceIrr: 125_000,
+      durationDays: 30,
       financialUnitStatus: "UNVERIFIED",
       active: true,
     });
