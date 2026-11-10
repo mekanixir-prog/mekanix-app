@@ -47,7 +47,7 @@ describe("POST /api/mechanic-applications/[id]/reject", () => {
     expect(response.status).toBe(200);
     expect(mocks.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: "app-1", status: "PENDING" },
-      data: expect.objectContaining({ status: "REJECTED", reviewerId: undefined }),
+      data: expect.objectContaining({ status: "REJECTED", adminNotes: "Not eligible" }),
     }));
     expect(mocks.findUnique).toHaveBeenCalledWith({ where: { id: "app-1" } });
   });
