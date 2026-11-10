@@ -201,6 +201,7 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
     }
   });
 
+  // Exercise the Prisma/PostgreSQL transaction path; no D1 binding is available in this Node test runtime.
   it("assigns one real PostgreSQL service request exactly once under 40 concurrent technician-claim races", async () => {
     const suffix = crypto.randomUUID().replace(/-/g, "");
     const requestKey = `service-request:assignment-pg-test:${suffix}`;
