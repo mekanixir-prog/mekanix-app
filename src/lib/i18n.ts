@@ -960,6 +960,8 @@ const DICT: Record<Lang, Record<string, string>> = {
     "tech.dashboard.offlineNow": "You're offline",
     "tech.dashboard.statusUpdateFail": "Could not update status",
     "tech.dashboard.locationRequired": "Allow location access to go online",
+    "tech.dashboard.onJob": "On an active job",
+    "tech.dashboard.finishCurrentJob": "Availability is locked until the active job is finished",
     "tech.dashboard.today": "Today",
     "tech.dashboard.thisWeek": "This Week",
     "tech.dashboard.rating": "Rating",
