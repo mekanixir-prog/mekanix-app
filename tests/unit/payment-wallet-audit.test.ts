@@ -750,6 +750,35 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
     expect(mockCreateVipSubscriptionAtomically).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects an existing-subscription replay when the gateway duration snapshot is missing", async () => {
+    mockPaymentGatewayLogFindUnique.mockResolvedValueOnce({
+      id: "gateway-pay-1", userId: "user-1", status: "VERIFIED", financialUnitStatus: "VERIFIED_IRR",
+      purpose: "vip", targetPlanId: "plan-1", targetPlanDurationDays: null,
+      paymentId: "pay-1", amount: 100_000, currency: "IRR",
+    });
+    mockUserVipSubscriptionFindFirst.mockResolvedValueOnce({
+      id: "sub-1", userId: "user-1", planId: "plan-1", paymentId: "pay-1", status: "ACTIVE",
+      startedAt: new Date("2026-11-01T00:00:00.000Z"), expiresAt: new Date("2026-12-01T00:00:00.000Z"),
+      plan: { id: "plan-1", name: "Gold" },
+    });
+    const res = await vipSubscribePOST(makePostRequest("http://localhost/api/vip/subscribe", { planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe("VIP_DURATION_SNAPSHOT_MISSING");
+    expect(mockUserVipSubscriptionFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("rejects an existing subscription whose duration differs from the immutable purchase snapshot", async () => {
+    mockUserVipSubscriptionFindFirst.mockResolvedValueOnce({
+      id: "sub-1", userId: "user-1", planId: "plan-1", paymentId: "pay-1", status: "ACTIVE",
+      startedAt: new Date("2026-11-01T00:00:00.000Z"), expiresAt: new Date("2026-12-02T00:00:00.000Z"),
+      plan: { id: "plan-1", name: "Gold" },
+    });
+    const res = await vipSubscribePOST(makePostRequest("http://localhost/api/vip/subscribe", { planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe("VIP_EXISTING_DURATION_MISMATCH");
+    expect(mockCreateVipSubscriptionAtomically).not.toHaveBeenCalled();
+  });
+
   // Exact replay returns the same subscription rather than rejecting a paid payment.
   it("second subscribe AFTER first committed returns the existing subscription (sequential replay)", async () => {
     // First call: no existing sub → create
