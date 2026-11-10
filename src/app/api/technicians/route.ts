@@ -76,6 +76,7 @@ export async function GET(req: Request) {
   const safeTechs = techs
     .map((tech) => ({ tech, distanceKm: calculateDistance(tech) }))
     .sort((a, b) => {
+      if (a.distanceKm === null && b.distanceKm === null) return 0;
       if (a.distanceKm === null) return 1;
       if (b.distanceKm === null) return -1;
       return a.distanceKm - b.distanceKm;
