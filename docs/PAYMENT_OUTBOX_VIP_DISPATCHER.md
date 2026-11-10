@@ -52,3 +52,9 @@
 - It does not send email/SMS/push notifications or make external financial transfers.
 - No production Worker, production D1 binding, provider credentials, real settlement, refund, or payout is configured or deployed.
 - Operational alerting, operator-driven dead-letter replay UI, and reconciliation dashboards remain future work.
+
+
+## Dead-letter replay safety specification
+- The admin outbox page remains read-only. A proposed future replay operation is specified in [PAYMENT_OUTBOX_DEAD_LETTER_REPLAY.md](./PAYMENT_OUTBOX_DEAD_LETTER_REPLAY.md).
+- That document is a design gate only: no replay API or UI mutation is enabled. Replay must be restricted to a verified `DEAD` VIP event, require `SUPER_ADMIN`, preserve the immutable payment payload, use compare-and-swap, and atomically audit the state transition.
+- Do not enable replay until both SQLite/D1 and PostgreSQL atomicity, eligibility, concurrency, and worker idempotency tests pass.
