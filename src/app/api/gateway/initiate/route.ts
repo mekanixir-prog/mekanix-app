@@ -33,13 +33,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "A valid idempotencyKey is required", code: "IDEMPOTENCY_KEY_REQUIRED" }, { status: 400 });
   }
   const idempotencyKey = input.idempotencyKey.trim();
-  if (input.mobile != null && (typeof input.mobile !== "string" || input.mobile.length > 20)) {
-    return NextResponse.json({ error: "Invalid mobile value" }, { status: 400 });
-  }
-  if (input.cardNumber != null && (typeof input.cardNumber !== "string" || input.cardNumber.length > 32)) {
-    return NextResponse.json({ error: "Invalid card value" }, { status: 400 });
-  }
-
   const db = await getDbForLib();
   const plan = await db.vipPlan.findUnique({ where: { id: input.planId.trim() } });
   if (!plan || !plan.active) {
@@ -94,8 +87,9 @@ export async function POST(req: Request) {
       targetPlanId: plan.id,
       idempotencyKey,
       referenceId,
-      cardNumber: input.cardNumber ? maskCard(input.cardNumber) : null,
-      mobile: typeof input.mobile === "string" ? input.mobile : null,
+      // Simulator attempts must never persist card or phone credentials.
+      cardNumber: null,
+      mobile: null,
       description: `VIP plan: ${plan.name}`,
     },
     });
@@ -135,10 +129,4 @@ function initiationResponse(log: { code: string; referenceId: string | null; amo
     planId,
     reused: true,
   });
-}
-
-function maskCard(card: string): string {
-  const digits = card.replace(/\D/g, "");
-  if (digits.length < 4) return "****";
-  return `**** **** **** ${digits.slice(-4)}`;
 }
