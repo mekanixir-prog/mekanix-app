@@ -36,11 +36,14 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
   // Mass-assignment protection
   const safe: Record<string, any> = {};
-  for (const k of ALLOWED_APPLICATION_FIELDS) {
-    if (k in body) safe[k] = body[k];
+  for (const key of ALLOWED_APPLICATION_FIELDS) {
+    if (key in body) safe[key] = body[key];
   }
 
   const { fullName, phone, email, city, experienceYears, specialties, certifications, bio, vehicleOwned } = safe;
@@ -49,51 +52,75 @@ export async function POST(req: Request) {
   }
 
   const normalizedPhone = phone.trim();
-  const code = `APP-${Math.floor(1000 + Math.random() * 9000)}`;
-
+  const code = `APP-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`;
   const db = await getDbForLib();
 
-  // Check if user with this phone already exists
   const existingUser = await db.user.findUnique({ where: { phone: normalizedPhone } });
-
-  // If user exists and already has a technician profile, reject duplicate
   if (existingUser) {
+    if (existingUser.status === "SUSPENDED" ||
+        (existingUser.role !== "CUSTOMER" && existingUser.role !== "TECHNICIAN")) {
+      return NextResponse.json({ error: "این حساب امکان ثبت درخواست همکاری ندارد" }, { status: 409 });
+    }
     const existingTech = await db.technician.findUnique({ where: { userId: existingUser.id } });
     if (existingTech) {
       return NextResponse.json({ error: "شما قبلاً به عنوان مکانیک ثبت‌شده‌اید" }, { status: 409 });
     }
   }
 
-  // Create or update application — status is PENDING, NOT APPROVED
-  const app = await db.mechanicApplication.upsert({
-    where: existingUser ? { userId: existingUser.id } : { code },
-    create: {
+  // Find an existing application by its account link first, then by phone for
+  // anonymous submissions. Never reset an in-progress or approved review back
+  // to PENDING; that would invalidate the admin's atomic review claim.
+  const existingApplication = existingUser
+    ? await db.mechanicApplication.findUnique({ where: { userId: existingUser.id } })
+      ?? await db.mechanicApplication.findFirst({ where: { phone: normalizedPhone }, orderBy: { createdAt: "desc" } })
+    : await db.mechanicApplication.findFirst({ where: { phone: normalizedPhone }, orderBy: { createdAt: "desc" } });
+
+  const applicationData = {
+    fullName: fullName.slice(0, 200).trim(),
+    phone: normalizedPhone,
+    email: typeof email === "string" ? email.slice(0, 200).trim() : null,
+    city: typeof city === "string" ? city.slice(0, 100).trim() : null,
+    experienceYears: typeof experienceYears === "number" ? Math.max(0, Math.floor(experienceYears)) : 0,
+    specialties: JSON.stringify(Array.isArray(specialties) ? specialties.slice(0, 20) : []),
+    certifications: certifications ? JSON.stringify(certifications).slice(0, 5000) : null,
+    bio: typeof bio === "string" ? bio.slice(0, 1000).trim() : null,
+    vehicleOwned: Boolean(vehicleOwned),
+  };
+
+  if (existingApplication) {
+    if (existingApplication.status !== "REJECTED" && existingApplication.status !== "ON_HOLD") {
+      return NextResponse.json(
+        { error: "درخواست شما در حال بررسی است یا قبلاً تعیین تکلیف شده است", status: existingApplication.status },
+        { status: 409 }
+      );
+    }
+
+    const reopened = await db.mechanicApplication.updateMany({
+      where: { id: existingApplication.id, status: existingApplication.status },
+      data: {
+        ...applicationData,
+        status: "PENDING",
+        adminNotes: null,
+        reviewerId: null,
+        reviewedAt: null,
+      },
+    });
+    if (reopened.count !== 1) {
+      return NextResponse.json({ error: "وضعیت درخواست هم‌زمان تغییر کرده است؛ دوباره تلاش کنید" }, { status: 409 });
+    }
+    const updated = await db.mechanicApplication.findUnique({ where: { id: existingApplication.id } });
+    return NextResponse.json({ ...updated, pendingReview: true });
+  }
+
+  const created = await db.mechanicApplication.create({
+    data: {
       code,
-      fullName: fullName.slice(0, 200).trim(),
-      phone: normalizedPhone,
-      email: typeof email === "string" ? email.slice(0, 200).trim() : null,
-      city: typeof city === "string" ? city.slice(0, 100).trim() : null,
-      experienceYears: typeof experienceYears === "number" ? Math.max(0, Math.floor(experienceYears)) : 0,
-      specialties: JSON.stringify(Array.isArray(specialties) ? specialties.slice(0, 20) : []),
-      certifications: certifications ? JSON.stringify(certifications).slice(0, 5000) : null,
-      bio: typeof bio === "string" ? bio.slice(0, 1000).trim() : null,
-      vehicleOwned: Boolean(vehicleOwned),
-      status: "PENDING", // NOT auto-approved — admin must review
-      userId: existingUser?.id || null,
-    },
-    update: {
-      fullName: fullName.slice(0, 200).trim(),
-      phone: normalizedPhone,
-      email: typeof email === "string" ? email.slice(0, 200).trim() : null,
-      city: typeof city === "string" ? city.slice(0, 100).trim() : null,
-      experienceYears: typeof experienceYears === "number" ? Math.max(0, Math.floor(experienceYears)) : 0,
-      specialties: JSON.stringify(Array.isArray(specialties) ? specialties.slice(0, 20) : []),
-      bio: typeof bio === "string" ? bio.slice(0, 1000).trim() : null,
-      vehicleOwned: Boolean(vehicleOwned),
-      status: "PENDING", // Reset to PENDING if re-applied
+      ...applicationData,
+      status: "PENDING",
+      userId: existingUser?.id ?? null,
     },
   });
 
-  // Do NOT create Technician or User with TECHNICIAN role — admin must approve first
-  return NextResponse.json({ ...app, pendingReview: true });
+  // A technician account/profile is never created by public submission.
+  return NextResponse.json({ ...created, pendingReview: true });
 }
