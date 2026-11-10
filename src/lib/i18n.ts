@@ -554,6 +554,7 @@ const DICT: Record<Lang, Record<string, string>> = {
 
     // ── Fees (inline display on technician cards / booking summary) ──
     "fees.inspectionFee": "Inspection fee",
+    "fees.quoteRequired": "Price to be confirmed",
     "fees.travelFee": "Travel fee",
     "fees.totalEstimate": "Total estimate",
     "fees.inspectionFeeHeavy": "Heavy inspection fee",
@@ -2176,6 +2177,7 @@ const DICT: Record<Lang, Record<string, string>> = {
 
     // ── Fees (inline display on technician cards / booking summary) ──
     "fees.inspectionFee": "هزینه عیب‌یابی",
+    "fees.quoteRequired": "استعلام قیمت پس از بررسی",
     "fees.travelFee": "هزینه سفر",
     "fees.totalEstimate": "مجموع تخمینی",
     "fees.inspectionFeeHeavy": "هزینه عیب‌یابی ماشین سنگین",
