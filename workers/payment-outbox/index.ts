@@ -104,8 +104,16 @@ async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
            AND s."userId"=? AND s."planId"=?
            AND s."startedAt" IS NOT NULL AND s."expiresAt" IS NOT NULL
            AND (strftime('%s',s."expiresAt")-strftime('%s',s."startedAt"))=?*86400
+       AND EXISTS (SELECT 1 FROM "Payment" pay JOIN "PaymentGatewayLog" gw ON gw."id"=pay."gatewayLogId"
+           WHERE pay."id"=? AND pay."gatewayLogId"=? AND pay."userId"=? AND pay."amount"=?
+             AND pay."currency"='IRR' AND pay."status"='SUCCEEDED' AND pay."financialUnitStatus"='VERIFIED_IRR'
+             AND gw."id"=? AND gw."userId"=pay."userId" AND gw."paymentId"=pay."id"
+             AND gw."amount"=pay."amount" AND gw."currency"='IRR' AND gw."status"='VERIFIED'
+             AND gw."financialUnitStatus"='VERIFIED_IRR' AND gw."purpose"='vip'
+             AND gw."targetPlanId"=? AND gw."targetPlanDurationDays"=?)
        ) THEN 1 ELSE json_extract('not-json','$') END`
-    ).bind(p.paymentId,event.id,now.toISOString(),p.userId,p.targetPlanId,p.durationDays);
+    ).bind(p.paymentId,event.id,now.toISOString(),p.userId,p.targetPlanId,p.durationDays,
+      p.paymentId,p.gatewayLogId,p.userId,p.amount,p.gatewayLogId,p.targetPlanId,p.durationDays);
 
     await db.batch([notification,done,assertion]);
     return;
@@ -174,8 +182,16 @@ async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
          AND s."userId"=? AND s."planId"=?
          AND s."startedAt" IS NOT NULL AND s."expiresAt" IS NOT NULL
          AND (strftime('%s',s."expiresAt")-strftime('%s',s."startedAt"))=?*86400
-     ) THEN 1 ELSE json_extract('not-json','$') END`
-  ).bind(p.paymentId,event.id,now.toISOString(),p.userId,p.targetPlanId,p.durationDays);
+     AND EXISTS (SELECT 1 FROM "Payment" pay JOIN "PaymentGatewayLog" gw ON gw."id"=pay."gatewayLogId"
+           WHERE pay."id"=? AND pay."gatewayLogId"=? AND pay."userId"=? AND pay."amount"=?
+             AND pay."currency"='IRR' AND pay."status"='SUCCEEDED' AND pay."financialUnitStatus"='VERIFIED_IRR'
+             AND gw."id"=? AND gw."userId"=pay."userId" AND gw."paymentId"=pay."id"
+             AND gw."amount"=pay."amount" AND gw."currency"='IRR' AND gw."status"='VERIFIED'
+             AND gw."financialUnitStatus"='VERIFIED_IRR' AND gw."purpose"='vip'
+             AND gw."targetPlanId"=? AND gw."targetPlanDurationDays"=?)
+       ) THEN 1 ELSE json_extract('not-json','$') END`
+  ).bind(p.paymentId,event.id,now.toISOString(),p.userId,p.targetPlanId,p.durationDays,
+      p.paymentId,p.gatewayLogId,p.userId,p.amount,p.gatewayLogId,p.targetPlanId,p.durationDays);
 
   await db.batch([cancelPrevious,insertSubscription,notification,markProcessed,assertion]);
 }
