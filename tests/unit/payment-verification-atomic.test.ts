@@ -136,9 +136,9 @@ describe("atomic verified gateway payment persistence", () => {
     const outboxSql = prepared.find((sql) => sql.includes('INSERT INTO "PaymentOutboxEvent"'));
     expect(outboxSql).toContain("'paymentId', p." + '"id"' + ", 'gatewayLogId'");
     expect(outboxSql).toContain("'userId', p." + '"userId"' + ", 'amount', p." + '"amount"' + ", 'currency'");
-    expect(outboxSql).not.toContain('p."id\\',');
-    expect(outboxSql).not.toContain('p."userId\\',');
-    expect(outboxSql).not.toContain('p."amount\\',');
+    expect(outboxSql).not.toContain("p.\"id\\',");
+    expect(outboxSql).not.toContain("p.\"userId\\',");
+    expect(outboxSql).not.toContain("p.\"amount\\',");
   });
 
   it("rejects a gateway attempt whose server-owned amount no longer matches", async () => {
