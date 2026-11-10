@@ -70,5 +70,9 @@ describe("GET /api/ready production diagnostic boundary", () => {
     const response = await GET();
     const payload = await response.json();
     expect(payload.checks.database).toBe(true);
+    expect(payload.checks).toEqual({ database: true });
+    expect(JSON.stringify(payload)).not.toContain("adminProvisioning");
+    expect(JSON.stringify(payload)).not.toContain("sharedRateLimitStore");
+    expect(JSON.stringify(payload)).not.toContain("productionGates");
   });
 });
