@@ -61,6 +61,7 @@ describe("public technician discovery privacy", () => {
     const [payload] = await response.json();
 
     expect(mocks.technicianFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({ user: { select: { name: true, avatar: true } } }),
       where: expect.objectContaining({
         availableNow: true,
         verified: true,
@@ -95,6 +96,7 @@ describe("public technician discovery privacy", () => {
     const payload = await response.json();
 
     expect(mocks.technicianFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({ user: { select: { name: true, avatar: true } } }),
       where: expect.objectContaining({
         id: "technician-1",
         status: "ONLINE",
