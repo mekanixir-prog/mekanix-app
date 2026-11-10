@@ -529,15 +529,27 @@ export function Matching({ customer }: { customer: DemoUser }) {
     const eta = distanceKnown ? Math.max(5, Math.round((km / 35) * 60) + tk.responseMins) : undefined;
     // Score: weighted combination of rating, distance, verified, completed jobs.
     const rating = Number(tk.rating ?? 0);
-    const hourlyRate = Number(tk.hourlyRate ?? 0);
+    const priceKnown =
+      tk.financialUnitStatus === "VERIFIED_IRR" &&
+      tk.hourlyRate != null &&
+      tk.travelFeeBase != null;
+    const hourlyRate = priceKnown ? Number(tk.hourlyRate) : 0;
     const proximityScore = rating * 20 - (distanceKnown ? km * 0.4 : 40) + (tk.verified ? 5 : 0) + tk.completedJobs * 0.02;
-    // Value score: rating/cost ratio — higher rating + lower total cost = better value.
-    const inspectionFee = tk.inspectionFee != null ? Number(tk.inspectionFee) : hourlyRate * 0.5;
-    const inspectionFeeHeavy = tk.inspectionFeeHeavy != null ? Number(tk.inspectionFeeHeavy) : hourlyRate * 1.5;
-    const travelFee = (tk.travelFeeBase != null ? Number(tk.travelFeeBase) : 0) + (distanceKnown ? km * 0.5 : 0);
-    const totalCost = inspectionFee + travelFee;
-    const valueScore = (rating * 30) / Math.max(1, totalCost / 10) + tk.completedJobs * 0.05 + (tk.verified ? 8 : 0);
-    return { tech: tk, km, eta, score: proximityScore, valueScore, inspectionFee, inspectionFeeHeavy, travelFee };
+    // Unknown/unverified prices must never be interpreted as zero or "free".
+    const inspectionFee = priceKnown
+      ? (tk.inspectionFee != null ? Number(tk.inspectionFee) : hourlyRate * 0.5)
+      : undefined;
+    const inspectionFeeHeavy = priceKnown
+      ? (tk.inspectionFeeHeavy != null ? Number(tk.inspectionFeeHeavy) : hourlyRate * 1.5)
+      : undefined;
+    const travelFee = priceKnown
+      ? Number(tk.travelFeeBase) + (distanceKnown ? km * 0.5 : 0)
+      : undefined;
+    const totalCost = priceKnown ? (inspectionFee ?? 0) + (travelFee ?? 0) : Infinity;
+    const valueScore = priceKnown
+      ? (rating * 30) / Math.max(1, totalCost / 10) + tk.completedJobs * 0.05 + (tk.verified ? 8 : 0)
+      : rating * 0.1 + tk.completedJobs * 0.05 + (tk.verified ? 8 : 0);
+    return { tech: tk, km, distanceKnown, eta, score: proximityScore, valueScore, priceKnown, inspectionFee, inspectionFeeHeavy, travelFee };
   });
 
   // Nearest & fastest: top 3 by proximity score (closest + fastest).
@@ -662,7 +674,7 @@ export function Matching({ customer }: { customer: DemoUser }) {
                             <TechnicianCard
                               key={r.tech.id}
                               tech={r.tech}
-                              distanceKm={r.km}
+                              distanceKm={r.distanceKnown ? r.km : undefined}
                               etaMins={r.eta}
                               rank={undefined}
                               inspectionFee={r.inspectionFee}
@@ -746,7 +758,7 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
             <p className="mt-1 text-sm text-muted-foreground">{tech.bio}</p>
           </div>
           <div className="flex flex-col items-end gap-1">
-            <div className="font-display text-2xl font-bold text-amber">{money(Number(tech.hourlyRate))}<span className="text-xs text-muted-foreground">/{t("common.hr")}</span></div>
+            <div className="font-display text-2xl font-bold text-amber">{tech.financialUnitStatus === "VERIFIED_IRR" && tech.hourlyRate != null ? <>{money(Number(tech.hourlyRate))}<span className="text-xs text-muted-foreground">/{t("common.hr")}</span></> : <span className="text-base">{t("fees.quoteRequired")}</span>}</div>
             <div className="text-[11px] text-muted-foreground">{fmtDuration(tech.responseMins, lang)} · {t("req.techProfile.estArrival")}</div>
           </div>
         </div>
@@ -813,12 +825,12 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
           <div className="sticky top-20 rounded-xl border border-border bg-card p-4">
             <h3 className="font-display text-sm font-semibold">{t("req.techProfile.request")}</h3>
             <div className="mt-3 space-y-2 text-sm">
-              <Row label={t("req.techProfile.hourlyRate")} value={`${money(Number(tech.hourlyRate))}/${t("common.hr")}`} />
-              <Row label={t("req.techProfile.travelFee")} value={money(Number(tech.travelFeeBase))} />
+              <Row label={t("req.techProfile.hourlyRate")} value={tech.financialUnitStatus === "VERIFIED_IRR" && tech.hourlyRate != null ? `${money(Number(tech.hourlyRate))}/${t("common.hr")}` : t("fees.quoteRequired")} />
+              <Row label={t("req.techProfile.travelFee")} value={tech.financialUnitStatus === "VERIFIED_IRR" && tech.travelFeeBase != null ? money(Number(tech.travelFeeBase)) : t("fees.quoteRequired")} />
               <Row label={t("req.techProfile.estArrival")} value={fmtDuration(tech.responseMins, lang)} />
               <Row label={t("req.techProfile.experience")} value={`${isFa ? toPersianDigits(tech.experienceYears) : tech.experienceYears} ${t("common.yrs")}`} />
               <Row label={t("req.techProfile.level")} value={tech.level} />
-              <Row label={t("fees.totalEstimate")} value={money(Number(tech.hourlyRate) * 0.5 + Number(tech.travelFeeBase))} />
+              <Row label={t("fees.totalEstimate")} value={tech.financialUnitStatus === "VERIFIED_IRR" && tech.hourlyRate != null && tech.travelFeeBase != null ? money(Number(tech.hourlyRate) * 0.5 + Number(tech.travelFeeBase)) : t("fees.quoteRequired")} />
             </div>
             <div className="mt-3 rounded-lg border border-amber/30 bg-amber/5 p-3 text-[11px] text-muted-foreground">
               <ShieldCheck className="mr-1 inline size-3.5 text-amber" />
