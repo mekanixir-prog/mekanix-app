@@ -210,6 +210,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
   }
 
+  if (!user || user.role !== "TECHNICIAN" || user.status === "SUSPENDED") {
+    return NextResponse.json(
+      { error: "Application approved but technician account is not ready", code: "ACCOUNT_PROMOTION_CONFLICT" },
+      { status: 409 }
+    );
+  }
+
   if (finalizedByThisRequest) {
     try {
       await db.notification.create({
