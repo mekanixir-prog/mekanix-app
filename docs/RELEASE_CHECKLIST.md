@@ -265,3 +265,59 @@ PR #136 remains open and Draft, but it is stale/diverged from `main` (160 commit
 - [ ] Re-run all applicable checks on the final exact Release Candidate SHA after any code or documentation edit.
 
 **Safety:** PR #138 has not been merged. PR #137 has not been merged. No production host, domain, SMS provider, payment credentials, production secrets, or public deployment has been activated.
+
+
+## 8. Current exact-head update — 2026-11-10 (supersedes earlier snapshots)
+
+**Release decision: NO-GO.** This snapshot is based on live GitHub state checked on 2026-11-10. It does not authorize merge, deployment, or money movement.
+
+### Active implementation stack
+
+The following PRs remain open and Draft. Each exact head has all five standard workflows completed successfully: CI, Production readiness, Cloudflare Build, PostgreSQL CI, and Docker E2E.
+
+| PR | Exact head SHA | Status |
+|---|---|---|
+| #139 | `bd3356a3d5d4c45f54943a3d201b2504de1dbc8f` | 5/5 success |
+| #140 | `c3cbfaa1fe998a3cced8f31a94b7fd9835f7bc17` | 5/5 success |
+| #152 | `8779af25d2f49c509b16e46f48e349512ec5282d` | 5/5 success |
+| #153 | `393eee8c8ba28b51dce39ff935131804c2e4b6d3` | 5/5 success |
+| #154 | `91a6aabc8853228272ca946182b36a51ad5d985d` | 5/5 success |
+| #161 | `71f5a9f7663bb274b83332a73460efebdba1f3f6` | 5/5 success |
+| #162 | `0b2a6db1bc0eb51f4efe7a03949e2e0f9cf1d443` | 5/5 success |
+| #163 | `6c3ad237034f4c4dbf95cc20fc8e74827695229e` | 5/5 success |
+
+No PR in this stack has been merged as part of this update.
+
+### Security workflow coverage correction
+
+- PR #164 updates CodeQL and Gitleaks triggers to cover PRs and pushes on `main`, `fix/**`, `feat/**`, `chore/**`, and `docs/**`.
+- PR #164 remains open and Draft at head `0ec5df3ed3062c18d4783a1e578c61a526938fb6`.
+- CodeQL Security Analysis completed successfully (run 42761318822).
+- Secret Scan completed successfully (run 42761318964).
+- A successful scan workflow is not a claim that the repository has zero findings; review the CodeQL/Gitleaks output and any alerts before release.
+- Until PR #164 is merged through normal review, the trigger correction is not part of the default branch.
+
+### Updated code-level evidence
+
+- The D1 migration history on the current stacked branch contains follow-up migrations for `RateLimit`, `IdempotencyKey`, `PaymentOutboxEvent`, `WalletReleaseWorkerState`, and `WalletReleaseGuard`. The older QA note that compared the schema only with the initial migration is stale; it must not be used as proof that these tables are missing from the full migration history.
+- The current OTP verify route uses bounded indexed `findUnique` lookups over normalized phone variants rather than the previously reported unbounded `User.findMany` scan.
+- The business-flow and failure-scenario Vitest suites are valuable logical integration tests, but they mock database/Redis boundaries. They are not a substitute for real HTTP + database + Worker-runtime E2E.
+- The current Playwright browser suite covers basic public pages, login/navigation, and health endpoints; it does not yet demonstrate the complete customer → technician → admin → warranty business lifecycle against a persistent test database.
+
+### Remaining work before a Release Candidate
+
+- [ ] Complete the real HTTP + persistent-database business E2E suite for customer registration, asset ownership, service request, technician dispatch/claim, status transitions, inspection/findings, customer approval, completion, invoice, warranty, notifications, admin controls, and recovery paths.
+- [ ] Add runtime failure tests for database unavailable, Redis unavailable/fail-closed rate limiting, SMS timeout, ETA provider failure, payment callback replay/out-of-order events, and partial multi-write failure. Distinguish development fallback behavior from production fail-closed behavior.
+- [ ] Complete route-by-route BOLA/IDOR and role-boundary coverage for customer, technician, fleet manager, partner, and admin write operations.
+- [ ] Run repeatable load/performance tests for OTP, service-request creation, dispatch, outbox processing, and admin monitoring; record p50/p95/p99, error rate, and resource limits on the exact candidate SHA.
+- [ ] Run a local Worker/Miniflare integration rehearsal against the full D1 migration history, including rate-limit and idempotency persistence. Remote D1 staging and Cron observation remain a near-launch gate, not a reason to buy production hosting now.
+- [ ] Rehearse backup/restore and application rollback against isolated disposable data; record integrity checks and recovery time.
+- [ ] Resolve financial release gates: #24 (authoritative payment lifecycle), #81 (record-level historical provenance), #99 (owner-approved tariffs/tax/commission/VIP/withdrawal policy), and #149 (referral reward ledger settlement). For #130, the current stacked candidate already contains FX-free IRR formatting, wallet/invoice financial-read masking, and safe-integer invoice/parts guards; independently review its acceptance tests and full diff, then update/close the issue only after the containing PRs are merged. This does not resolve historical provenance in #81. Do not invent commercial values or credit wallets without the approved contract.
+- [ ] Re-read and enable the repository `main` ruleset. The live GitHub read on 2026-11-10 still reports `enforcement=disabled`; required checks are therefore not enforced. This repository setting requires an owner/admin action.
+- [ ] Produce one reviewed Release Candidate SHA only after the above code-level gates pass; run all required workflows, CodeQL, Secret Scan, and dependency audit on that exact SHA.
+
+### Explicitly deferred until near launch
+
+Production VPS/Worker configuration, domain/DNS/TLS, real SMS credentials, payment-provider sandbox/live credentials, production monitoring integrations, and public deployment remain deferred. Their interfaces, environment contracts, migration plans, and rollback instructions must be ready beforehand, but no production service should be activated just to complete code-level development.
+
+**Safety confirmation:** No production deployment, remote D1 migration, real SMS activation, payment-provider activation, wallet credit, refund, withdrawal, or payout was performed for this update.
