@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   requireRole: vi.fn(),
   applicationFindUnique: vi.fn(),
   applicationUpdate: vi.fn(),
+  applicationUpdateMany: vi.fn(),
   userFindUnique: vi.fn(),
   userCreate: vi.fn(),
   userUpdate: vi.fn(),
@@ -20,7 +21,7 @@ vi.mock("@/lib/auth", () => ({
 }));
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: vi.fn(async () => ({
-    mechanicApplication: { findUnique: mocks.applicationFindUnique, update: mocks.applicationUpdate },
+    mechanicApplication: { findUnique: mocks.applicationFindUnique, update: mocks.applicationUpdate, updateMany: mocks.applicationUpdateMany },
     user: { findUnique: mocks.userFindUnique, create: mocks.userCreate, update: mocks.userUpdate },
     technician: { findUnique: mocks.technicianFindUnique, create: mocks.technicianCreate },
     notification: { create: mocks.notificationCreate },
@@ -36,7 +37,7 @@ beforeEach(() => {
 });
 
 describe("POST /api/mechanic-applications/[id]/approve state guard", () => {
-  it.each(["APPROVED", "REJECTED", "ON_HOLD"])(
+  it.each(["REJECTING", "REJECTED", "ON_HOLD"])(
     "refuses to provision an application already in %s state",
     async (status) => {
       mocks.applicationFindUnique.mockResolvedValue({
@@ -60,6 +61,8 @@ describe("POST /api/mechanic-applications/[id]/approve state guard", () => {
       expect(mocks.userUpdate).not.toHaveBeenCalled();
       expect(mocks.technicianCreate).not.toHaveBeenCalled();
       expect(mocks.applicationUpdate).not.toHaveBeenCalled();
+      expect(mocks.applicationUpdateMany).not.toHaveBeenCalled();
+      expect(mocks.applicationUpdateMany).not.toHaveBeenCalled();
     }
   );
 });
