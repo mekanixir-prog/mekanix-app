@@ -335,6 +335,8 @@ export async function requireVehicleOwner(session: Session, vehicleId: string): 
 export async function requireJobParticipant(session: Session, jobId: string): Promise<NextResponse | null> {
   if (session.role === "ADMIN") return null;
 
+  // Fleet managers have no fleet/asset ownership relation yet. Keep them
+  // fail-closed here until organization membership and asset scoping exist.
   if (session.role !== "CUSTOMER" && session.role !== "TECHNICIAN") {
     return NextResponse.json({ error: "دسترسی به این کار مجاز نیست" }, { status: 403 });
   }
