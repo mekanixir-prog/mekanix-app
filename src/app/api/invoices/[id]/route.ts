@@ -62,12 +62,30 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
   }
 
-  if (typeof input.customerApproved === "boolean" && session.role === "CUSTOMER") {
-    if (input.customerApproved === true) {
-      await db.job.updateMany({
-        where: { id: inv.jobId, customerApproved: false },
-        data: { customerApproved: true },
-      });
+  if (input.customerApproved === true) {
+    if (session.role !== "CUSTOMER") {
+      return NextResponse.json(
+        { error: "فقط مشتری مالک درخواست می‌تواند پیش‌فاکتور را تأیید کند", code: "CUSTOMER_APPROVAL_FORBIDDEN" },
+        { status: 403 },
+      );
+    }
+    if (inv.status !== "SENT" || inv.currency !== "IRR" ||
+        inv.financialUnitStatus !== "VERIFIED_IRR" ||
+        !Number.isSafeInteger(Number(inv.total)) || Number(inv.total) <= 0) {
+      return NextResponse.json(
+        { error: "فقط پیش‌فاکتور صادرشده و دارای مبلغ ریالی تأییدشده قابل تأیید است", code: "REPAIR_ESTIMATE_NOT_PAYABLE" },
+        { status: 409 },
+      );
+    }
+    const approved = await db.job.updateMany({
+      where: { id: inv.jobId, status: "WAITING_APPROVAL", customerApproved: false },
+      data: { customerApproved: true },
+    });
+    if (approved.count !== 1) {
+      return NextResponse.json(
+        { error: "وضعیت کار برای تأیید پیش‌فاکتور معتبر نیست یا قبلاً تغییر کرده است", code: "JOB_APPROVAL_STATE_CONFLICT" },
+        { status: 409 },
+      );
     }
   }
 
