@@ -10,7 +10,8 @@ export type Customer = Prisma.CustomerGetPayload<{ include: { user: true } }>;
 export type Technician = Prisma.TechnicianGetPayload<{
   include: { user: true; specialties: true; certifications: true; serviceAreas: true; };
 }>;
-export type PublicTechnician = Omit<Technician, "serviceAreas"> & {
+export type PublicTechnician = Omit<Technician, "userId" | "user" | "serviceAreas"> & {
+  user: Pick<Technician["user"], "name" | "avatar">;
   lat: null;
   lng: null;
   serviceAreas: Array<Pick<Technician["serviceAreas"][number], "name" | "radiusKm">>;
