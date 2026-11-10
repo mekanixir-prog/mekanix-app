@@ -38,7 +38,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const app = await db.mechanicApplication.findUnique({ where: { id } });
   if (!app) return NextResponse.json({ error: "Application not found" }, { status: 404 });
-  if (app.status === "APPROVED") return NextResponse.json({ error: "Already approved" }, { status: 400 });
+  // Approval is valid only from the initial pending state. In particular,
+  // a rejected or on-hold application must never be provisioned by replaying
+  // this endpoint.
+  if (app.status !== "PENDING") {
+    return NextResponse.json(
+      { error: "Application is not pending", status: app.status },
+      { status: 409 }
+    );
+  }
 
   // Create or link the user
   let user = await db.user.findUnique({ where: { phone: app.phone }, select: AUTH_USER_SELECT });
