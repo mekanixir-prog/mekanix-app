@@ -21,6 +21,7 @@ export function TechnicianDashboard({ user }: { user: DemoUser }) {
   const { t, isFa, money } = useT();
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [online, setOnline] = useState(user.technician?.status === "ONLINE");
+  const busy = user.technician?.status === "ON_JOB";
   const [todayEarnings, setTodayEarnings] = useState(0);
   const [weekEarnings, setWeekEarnings] = useState(0);
 
@@ -74,18 +75,18 @@ export function TechnicianDashboard({ user }: { user: DemoUser }) {
         <div className="relative flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="relative">
-              <div className={`grid size-11 place-items-center rounded-xl border ${online ? "border-emerald-glow/40 bg-emerald-glow/10" : "border-border bg-muted"}`}>
-                <CircleDot className={`size-5 ${online ? "text-emerald-glow" : "text-muted-foreground"}`} />
+              <div className={`grid size-11 place-items-center rounded-xl border ${online ? "border-emerald-glow/40 bg-emerald-glow/10" : busy ? "border-amber/40 bg-amber/10" : "border-border bg-muted"}`}>
+                <CircleDot className={`size-5 ${online ? "text-emerald-glow" : busy ? "text-amber" : "text-muted-foreground"}`} />
               </div>
               {online && <span className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-card bg-emerald-glow mk-status-pulse" />}
             </div>
             <div>
-              <p className="font-display text-sm font-semibold">{online ? t("tech.dashboard.youOnline") : t("tech.dashboard.youOffline")}</p>
-              <p className="text-[11px] text-muted-foreground">{online ? t("tech.dashboard.receivingJobs") : t("tech.dashboard.toggleOn")}</p>
+              <p className="font-display text-sm font-semibold">{busy ? t("tech.dashboard.onJob") : online ? t("tech.dashboard.youOnline") : t("tech.dashboard.youOffline")}</p>
+              <p className="text-[11px] text-muted-foreground">{busy ? t("tech.dashboard.finishCurrentJob") : online ? t("tech.dashboard.receivingJobs") : t("tech.dashboard.toggleOn")}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">{online ? t("common.online") : t("common.offline")}</span>
+            <span className="text-xs text-muted-foreground">{busy ? t("tech.dashboard.onJob") : online ? t("common.online") : t("common.offline")}</span>
             <Switch checked={online} onCheckedChange={toggleOnline} disabled={user.technician?.status === "ON_JOB"} />
           </div>
         </div>
