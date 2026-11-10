@@ -62,7 +62,7 @@ function makeSqliteD1() {
     async batch(statements: Array<{ run: () => Promise<{ meta: { changes: number } }> }>) {
       sqlite.exec("BEGIN");
       try {
-        const results = [];
+        const results: Array<{ meta: { changes: number } }> = [];
         for (const statement of statements) results.push(await statement.run());
         sqlite.exec("COMMIT");
         return results;
