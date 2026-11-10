@@ -2,7 +2,7 @@
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { Star, MapPin, Clock, BadgeCheck, ChevronRight } from "lucide-react";
-import type { Technician } from "@/lib/api";
+import type { Technician, PublicTechnician } from "@/lib/api";
 import { StarRating } from "./primitives";
 import { TECH_LEVELS } from "@/lib/constants";
 import { fmtDistance, fmtDuration, haversine, toPersianDigits } from "@/lib/format";
@@ -19,7 +19,7 @@ export function TechnicianCard({
   travelFee,
   className,
 }: {
-  tech: Technician;
+  tech: PublicTechnician;
   distanceKm?: number;
   etaMins?: number;
   onSelect?: () => void;
