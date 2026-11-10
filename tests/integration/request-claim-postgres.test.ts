@@ -204,27 +204,32 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
   it("assigns one real PostgreSQL service request exactly once under 40 concurrent technician-claim races", async () => {
     const suffix = crypto.randomUUID().replace(/-/g, "");
     const requestKey = `service-request:assignment-pg-test:${suffix}`;
-    const technicianUser = await db!.user.create({
-      data: {
-        name: "Assignment PostgreSQL Technician",
-        phone: `+9893${suffix.slice(0, 9)}`,
-        role: "TECHNICIAN",
-      },
-    });
-    const technician = await db!.technician.create({
-      data: {
-        userId: technicianUser.id,
-        status: "ONLINE",
-        verified: true,
-        availableNow: true,
-      },
-    });
-    await db!.technicianSpecialty.create({
-      data: { technicianId: technician.id, category: "hydraulic", label: "Hydraulic systems" },
-    });
-
+    let technicianUserId: string | undefined;
+    let technicianId: string | undefined;
     let requestId: string | undefined;
+
     try {
+      const technicianUser = await db!.user.create({
+        data: {
+          name: "Assignment PostgreSQL Technician",
+          phone: `+9893${suffix.slice(0, 8)}`,
+          role: "TECHNICIAN",
+        },
+      });
+      technicianUserId = technicianUser.id;
+      const technician = await db!.technician.create({
+        data: {
+          userId: technicianUser.id,
+          status: "ONLINE",
+          verified: true,
+          availableNow: true,
+        },
+      });
+      technicianId = technician.id;
+      await db!.technicianSpecialty.create({
+        data: { technicianId: technician.id, category: "hydraulic", label: "Hydraulic systems" },
+      });
+
       const created = await createServiceRequestAtomically(db!, {
         idempotencyKey: requestKey,
         requestFingerprint: JSON.stringify({ userId, vehicleId, suffix }),
@@ -280,38 +285,46 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
         await db!.job.deleteMany({ where: { requestId } });
         await db!.serviceRequest.deleteMany({ where: { id: requestId } });
       }
-      await db!.technicianSpecialty.deleteMany({ where: { technicianId: technician.id } });
-      await db!.technician.delete({ where: { id: technician.id } });
-      await db!.user.delete({ where: { id: technicianUser.id } });
+      if (technicianId) {
+        await db!.technicianSpecialty.deleteMany({ where: { technicianId } });
+        await db!.technician.deleteMany({ where: { id: technicianId } });
+      }
+      if (technicianUserId) {
+        await db!.user.deleteMany({ where: { id: technicianUserId } });
+      }
     }
   });
-
   it("rolls back the request claim when PostgreSQL rejects the technician state update", async () => {
     const suffix = crypto.randomUUID().replace(/-/g, "");
     const requestKey = `service-request:assignment-rollback-pg-test:${suffix}`;
     const functionName = `test_fail_tech_claim_${suffix}`;
     const triggerName = `test_fail_tech_claim_trigger_${suffix}`;
-    const technicianUser = await db!.user.create({
-      data: {
-        name: "Assignment Rollback Technician",
-        phone: `+9894${suffix.slice(0, 9)}`,
-        role: "TECHNICIAN",
-      },
-    });
-    const technician = await db!.technician.create({
-      data: {
-        userId: technicianUser.id,
-        status: "ONLINE",
-        verified: true,
-        availableNow: true,
-      },
-    });
-    await db!.technicianSpecialty.create({
-      data: { technicianId: technician.id, category: "hydraulic", label: "Hydraulic systems" },
-    });
-
+    let technicianUserId: string | undefined;
+    let technicianId: string | undefined;
     let requestId: string | undefined;
+
     try {
+      const technicianUser = await db!.user.create({
+        data: {
+          name: "Assignment Rollback Technician",
+          phone: `+9894${suffix.slice(0, 8)}`,
+          role: "TECHNICIAN",
+        },
+      });
+      technicianUserId = technicianUser.id;
+      const technician = await db!.technician.create({
+        data: {
+          userId: technicianUser.id,
+          status: "ONLINE",
+          verified: true,
+          availableNow: true,
+        },
+      });
+      technicianId = technician.id;
+      await db!.technicianSpecialty.create({
+        data: { technicianId: technician.id, category: "hydraulic", label: "Hydraulic systems" },
+      });
+
       const created = await createServiceRequestAtomically(db!, {
         idempotencyKey: requestKey,
         requestFingerprint: JSON.stringify({ userId, vehicleId, suffix }),
@@ -363,10 +376,15 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
         await db!.job.deleteMany({ where: { requestId } });
         await db!.serviceRequest.deleteMany({ where: { id: requestId } });
       }
-      await db!.technicianSpecialty.deleteMany({ where: { technicianId: technician.id } });
-      await db!.technician.delete({ where: { id: technician.id } });
-      await db!.user.delete({ where: { id: technicianUser.id } });
+      if (technicianId) {
+        await db!.technicianSpecialty.deleteMany({ where: { technicianId } });
+        await db!.technician.deleteMany({ where: { id: technicianId } });
+      }
+      if (technicianUserId) {
+        await db!.user.deleteMany({ where: { id: technicianUserId } });
+      }
     }
   });
+
 
 });
