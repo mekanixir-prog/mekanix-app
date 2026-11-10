@@ -3,12 +3,11 @@ import { authFetch } from "@/lib/fetch-with-auth";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ShieldCheck, CreditCard, Loader2, CheckCircle2, Lock, ChevronRight, ChevronLeft,
+  ShieldCheck, Loader2, CheckCircle2, Lock, ChevronRight, ChevronLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useT } from "@/lib/use-t";
 import { toast } from "sonner";
@@ -37,12 +36,6 @@ export function PaymentGatewayDialog({
 }) {
   const { t, isFa, money } = useT();
   const [stage, setStage] = useState<Stage>("form");
-  const [bank, setBank] = useState("mellat");
-  const [card, setCard] = useState("");
-  const [cardHolder, setCardHolder] = useState("");
-  const [expiry, setExpiry] = useState("");
-  const [cvv, setCvv] = useState("");
-  const [mobile, setMobile] = useState("");
   const [otp, setOtp] = useState("");
   const [code, setCode] = useState<string | null>(null);
   const [ref, setRef] = useState<string | null>(null);
@@ -52,24 +45,13 @@ export function PaymentGatewayDialog({
 
   const reset = () => {
     setStage("form");
-    setCard(""); setCardHolder(""); setExpiry(""); setCvv(""); setMobile(""); setOtp("");
+    setOtp("");
     setCode(null); setRef(null); setPaymentId(null); setServerAmount(null); setIdempotencyKey("");
   };
 
   const close = () => {
     onOpenChange(false);
     setTimeout(reset, 250);
-  };
-
-  const formatCard = (v: string) => {
-    const digits = v.replace(/\D/g, "").slice(0, 16);
-    return digits.replace(/(\d{4})(?=\d)/g, "$1 ").trim();
-  };
-
-  const formatExpiry = (v: string) => {
-    const digits = v.replace(/\D/g, "").slice(0, 4);
-    if (digits.length <= 2) return digits;
-    return `${digits.slice(0, 2)}/${digits.slice(2)}`;
   };
 
   const initiate = async () => {
@@ -85,14 +67,6 @@ export function PaymentGatewayDialog({
       setStage("failed");
       return;
     }
-    if (card.replace(/\D/g, "").length < 16) {
-      toast.error(t("pay.gateway.cardNumber"));
-      return;
-    }
-    if (cvv.length < 3) {
-      toast.error(t("pay.gateway.cvv"));
-      return;
-    }
     setStage("processing");
     const requestKey = idempotencyKey || crypto.randomUUID();
     if (!idempotencyKey) setIdempotencyKey(requestKey);
@@ -104,8 +78,6 @@ export function PaymentGatewayDialog({
           purpose: "vip",
           planId,
           idempotencyKey: requestKey,
-          mobile,
-          cardNumber: card,
         }),
       });
       const data = await res.json();
@@ -114,7 +86,7 @@ export function PaymentGatewayDialog({
       setRef(data.referenceId);
       setServerAmount(Number(data.amount));
       setStage("otp");
-      toast.success(t("pay.gateway.otpSent").replace("{mobile}", mobile || "•••"));
+      toast.success(isFa ? "کد آزمایشی شبیه‌ساز آماده است." : "Simulator test code is ready.");
     } catch (e: any) {
       toast.error(e.message ?? t("pay.gateway.failed"));
       setStage("failed");
@@ -186,56 +158,10 @@ export function PaymentGatewayDialog({
           {stage === "form" && (
             <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3">
               {purpose === "vip" && (
-                <>
-                  <div>
-                  <Label className="text-xs">{t("pay.gateway.bank")}</Label>
-                  <Select value={bank} onValueChange={setBank}>
-                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="mellat">{t("pay.gateway.bank.mellat")}</SelectItem>
-                      <SelectItem value="melli">{t("pay.gateway.bank.melli")}</SelectItem>
-                      <SelectItem value="saderat">{t("pay.gateway.bank.saderat")}</SelectItem>
-                      <SelectItem value="tejarat">{t("pay.gateway.bank.tejarat")}</SelectItem>
-                      <SelectItem value="sepah">{t("pay.gateway.bank.sepah")}</SelectItem>
-                      <SelectItem value="other">{t("pay.gateway.bank.other")}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-xs">{t("pay.gateway.cardNumber")}</Label>
-                  <div className="mt-1 relative">
-                    <Input
-                      value={card}
-                      onChange={(e) => setCard(formatCard(e.target.value))}
-                      placeholder="1234 5678 9012 3456"
-                      inputMode="numeric"
-                      className="pl-9 font-mono"
-                      maxLength={19}
-                    />
-                    <CreditCard className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  </div>
-                </div>
-                <div>
-                  <Label className="text-xs">{t("pay.gateway.cardHolder")}</Label>
-                  <Input value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} placeholder="ALI REZAEI" className="mt-1 uppercase" />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <Label className="text-xs">{t("pay.gateway.expiry")}</Label>
-                    <Input value={expiry} onChange={(e) => setExpiry(formatExpiry(e.target.value))} placeholder="12/26" inputMode="numeric" className="mt-1 font-mono" maxLength={5} />
-                  </div>
-                  <div>
-                    <Label className="text-xs">{t("pay.gateway.cvv")}</Label>
-                    <Input value={cvv} onChange={(e) => setCvv(e.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="123" inputMode="numeric" type="password" className="mt-1 font-mono" maxLength={4} />
-                  </div>
-                </div>
-  
-                </>
-              )}
-              {purpose === "vip" && (
-                <div>
-                  <Label className="text-xs">{t("pay.gateway.mobile")}</Label>
-                  <Input value={mobile} onChange={(e) => setMobile(e.target.value.replace(/\D/g, "").slice(0, 11))} placeholder="09123456789" inputMode="numeric" className="mt-1 font-mono" />
+                <div className="rounded-lg border border-amber/30 bg-amber/5 p-3 text-sm">
+                  {isFa
+                    ? "این فقط شبیه‌ساز محلی است؛ اطلاعات کارت بانکی، CVV یا رمز واقعی وارد نکنید."
+                    : "Local simulator only. Do not enter real card numbers, CVV, or banking credentials."}
                 </div>
               )}
               <p className="text-[10px] text-muted-foreground">{t("pay.gateway.demoNote")}</p>
@@ -248,7 +174,9 @@ export function PaymentGatewayDialog({
           {stage === "otp" && (
             <motion.div key="otp" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3">
               <div className="rounded-lg border border-amber/30 bg-amber/5 p-3 text-center">
-                <p className="text-xs text-muted-foreground">{t("pay.gateway.otpSent").replace("{mobile}", mobile || "•••")}</p>
+                <p className="text-xs text-muted-foreground">
+                  {isFa ? "کد ثابت محیط آزمایشی: ۱۲۳۴" : "Fixed simulator test code: 1234"}
+                </p>
                 {ref && <p className="mt-1 font-mono text-[10px] text-muted-foreground">{ref}</p>}
               </div>
               <div>
@@ -256,7 +184,7 @@ export function PaymentGatewayDialog({
                 <Input
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  placeholder="000000"
+                  placeholder="1234"
                   inputMode="numeric"
                   className="mt-1 text-center font-mono text-lg tracking-widest"
                   autoFocus
