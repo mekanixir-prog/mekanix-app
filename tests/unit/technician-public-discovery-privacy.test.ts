@@ -75,6 +75,8 @@ describe("public technician discovery privacy", () => {
         user: { is: { status: "ACTIVE", role: "TECHNICIAN" } },
       }),
     }));
+    expect(payload).not.toHaveProperty("userId");
+    expect(payload.user).toEqual({ name: "Technician", avatar: null });
     expect(payload.lat).toBeNull();
     expect(payload.lng).toBeNull();
     expect(payload.distanceKm).toBeCloseTo(111.2, 1);
@@ -109,6 +111,8 @@ describe("public technician discovery privacy", () => {
       }),
     }));
     expect(payload).not.toHaveProperty("jobsAssigned");
+    expect(payload).not.toHaveProperty("userId");
+    expect(payload.user).toEqual({ name: "Technician", avatar: null });
     expect(payload.lat).toBeNull();
     expect(payload.lng).toBeNull();
     expect(payload.serviceAreas).toEqual([{ name: "Tabriz", radiusKm: 25 }]);
