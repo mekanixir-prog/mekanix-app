@@ -159,6 +159,7 @@ function AdminDashboard({ onLogout }: { onLogout: () => void | Promise<void> }) 
             </button>
           ))}
           <a href="/admin-panel/pricing" className="block w-full rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground">نرخ‌نامه و تعرفه</a>
+          <a href="/admin-panel/payment-outbox" className="block w-full rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground">پایش صف پرداخت</a>
         </nav>
       </aside>
 
