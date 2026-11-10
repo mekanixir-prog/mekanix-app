@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
-import { requireRole, sanitizeInput, FORBIDDEN_FIELDS } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 
 // GET: list mechanic applications — ADMIN only
 export async function GET(req: Request) {
