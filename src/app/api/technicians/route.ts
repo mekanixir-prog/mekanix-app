@@ -44,14 +44,6 @@ export async function GET(req: Request) {
   };
   if (category) where.specialties = { some: { category } };
 
-  const techs = await (await getDbForLib()).technician.findMany({
-    where,
-    include: {
-      user: { select: PUBLIC_USER_FIELDS },
-      ...techInclude,
-    },
-  });
-
   // Validate request coordinates and calculate distance server-side. Exact
   // technician coordinates and service-area pins are never sent to the client.
   let customerPoint: { lat: number; lng: number } | null = null;
@@ -66,6 +58,14 @@ export async function GET(req: Request) {
     }
     customerPoint = { lat: parsedLat, lng: parsedLng };
   }
+
+  const techs = await (await getDbForLib()).technician.findMany({
+    where,
+    include: {
+      user: { select: PUBLIC_USER_FIELDS },
+      ...techInclude,
+    },
+  });
 
   const calculateDistance = (tech: { lat: number | null; lng: number | null }): number | null => {
     if (!customerPoint || tech.lat === null || tech.lng === null) return null;
