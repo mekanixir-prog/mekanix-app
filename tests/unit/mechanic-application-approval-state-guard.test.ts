@@ -62,7 +62,6 @@ describe("POST /api/mechanic-applications/[id]/approve state guard", () => {
       expect(mocks.technicianCreate).not.toHaveBeenCalled();
       expect(mocks.applicationUpdate).not.toHaveBeenCalled();
       expect(mocks.applicationUpdateMany).not.toHaveBeenCalled();
-      expect(mocks.applicationUpdateMany).not.toHaveBeenCalled();
     }
   );
 });
@@ -96,6 +95,7 @@ describe("POST /api/mechanic-applications/[id]/approve existing account protecti
       expect(mocks.userUpdate).not.toHaveBeenCalled();
       expect(mocks.technicianCreate).not.toHaveBeenCalled();
       expect(mocks.applicationUpdate).not.toHaveBeenCalled();
+      expect(mocks.applicationUpdateMany).not.toHaveBeenCalled();
     }
   );
 
@@ -124,5 +124,6 @@ describe("POST /api/mechanic-applications/[id]/approve existing account protecti
     expect(mocks.userUpdate).not.toHaveBeenCalled();
     expect(mocks.technicianCreate).not.toHaveBeenCalled();
     expect(mocks.applicationUpdate).not.toHaveBeenCalled();
+    expect(mocks.applicationUpdateMany).not.toHaveBeenCalled();
   });
 });
