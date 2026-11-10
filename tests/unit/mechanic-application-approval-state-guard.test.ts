@@ -63,3 +63,63 @@ describe("POST /api/mechanic-applications/[id]/approve state guard", () => {
     }
   );
 });
+
+
+describe("POST /api/mechanic-applications/[id]/approve existing account protection", () => {
+  it.each(["ADMIN", "FLEET_MANAGER", "PARTNER"])(
+    "does not downgrade an existing %s account",
+    async (role) => {
+      mocks.applicationFindUnique.mockResolvedValue({
+        id: "application-1",
+        status: "PENDING",
+        phone: "+989121234567",
+      });
+      mocks.userFindUnique.mockResolvedValue({
+        id: "user-1",
+        role,
+        status: "ACTIVE",
+      });
+
+      const request = new Request("https://mekanix.test/api/mechanic-applications/application-1/approve", {
+        method: "POST",
+        headers: { authorization: "Bearer valid-token", "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const response = await POST(request, { params: Promise.resolve({ id: "application-1" }) });
+      const payload = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(payload.code).toBe("ACCOUNT_ROLE_CONFLICT");
+      expect(mocks.userUpdate).not.toHaveBeenCalled();
+      expect(mocks.technicianCreate).not.toHaveBeenCalled();
+      expect(mocks.applicationUpdate).not.toHaveBeenCalled();
+    }
+  );
+
+  it("does not promote a suspended customer account", async () => {
+    mocks.applicationFindUnique.mockResolvedValue({
+      id: "application-1",
+      status: "PENDING",
+      phone: "+989121234567",
+    });
+    mocks.userFindUnique.mockResolvedValue({
+      id: "user-1",
+      role: "CUSTOMER",
+      status: "SUSPENDED",
+    });
+
+    const request = new Request("https://mekanix.test/api/mechanic-applications/application-1/approve", {
+      method: "POST",
+      headers: { authorization: "Bearer valid-token", "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const response = await POST(request, { params: Promise.resolve({ id: "application-1" }) });
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.code).toBe("ACCOUNT_ROLE_CONFLICT");
+    expect(mocks.userUpdate).not.toHaveBeenCalled();
+    expect(mocks.technicianCreate).not.toHaveBeenCalled();
+    expect(mocks.applicationUpdate).not.toHaveBeenCalled();
+  });
+});

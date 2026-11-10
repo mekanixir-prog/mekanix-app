@@ -48,8 +48,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     );
   }
 
-  // Create or link the user
+  // Create or link the user. Never downgrade privileged or unrelated accounts
+  // (ADMIN, FLEET_MANAGER, PARTNER), and never reactivate a suspended account
+  // through the public mechanic-application workflow.
   let user = await db.user.findUnique({ where: { phone: app.phone }, select: AUTH_USER_SELECT });
+  if (user && (user.role !== "CUSTOMER" && user.role !== "TECHNICIAN" || user.status === "SUSPENDED")) {
+    return NextResponse.json(
+      { error: "Existing account cannot be converted to a technician", code: "ACCOUNT_ROLE_CONFLICT" },
+      { status: 409 }
+    );
+  }
   if (!user) {
     user = await db.user.create({
       data: {
