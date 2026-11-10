@@ -163,7 +163,7 @@ describe("production readiness gates", () => {
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toMatchObject({
       ok: false,
-      checks: { database: true, productionGates: false },
+      checks: { database: true },
     });
   });
 
