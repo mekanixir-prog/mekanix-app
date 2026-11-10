@@ -9,6 +9,14 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/db-access", () => ({ getDbForLib: mocks.db }));
+vi.mock("@/lib/auth", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/auth")>();
+  return {
+    ...actual,
+    getCustomerFromSession: mocks.customer,
+    getTechnicianFromSession: mocks.technician,
+  };
+});
 
 import { requireJobParticipant } from "@/lib/auth";
 
