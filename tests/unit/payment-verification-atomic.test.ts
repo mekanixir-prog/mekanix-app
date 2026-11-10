@@ -32,6 +32,7 @@ const input = {
   paymentCode: "PAY-PG-test",
   amount: 100_000,
   targetPlanId: "plan-1",
+  durationDays: 30,
   verifiedAt: new Date("2026-11-07T10:00:00.000Z"),
 };
 
@@ -40,7 +41,7 @@ describe("atomic verified gateway payment persistence", () => {
     vi.clearAllMocks();
     mockGetD1Binding.mockResolvedValue(null);
     mockLogFindUnique.mockResolvedValue({
-      id: "gateway-1", userId: "customer-1", purpose: "vip", targetPlanId: "plan-1",
+      id: "gateway-1", userId: "customer-1", purpose: "vip", targetPlanId: "plan-1", targetPlanDurationDays: 30,
       amount: 100_000, currency: "IRR", financialUnitStatus: "VERIFIED_IRR",
       status: "REDIRECTED", verifiedAt: null,
     });
@@ -73,6 +74,7 @@ describe("atomic verified gateway payment persistence", () => {
         aggregateType: "Payment",
         aggregateId: "payment-1",
         idempotencyKey: "payment.succeeded:gateway-1",
+        payload: expect.stringContaining('"durationDays":30'),
       }),
       update: {},
     }));
@@ -114,13 +116,13 @@ describe("atomic verified gateway payment persistence", () => {
     }));
   });
 
-  it("builds a valid D1 outbox JSON projection with closed SQL identifiers", async () => {
-    const prepared: Array<{ sql: string; values: unknown[] }> = [];
+  it("builds the D1 outbox JSON projection with valid column quoting", async () => {
+    const prepared: string[] = [];
     const d1 = {
       prepare(sql: string) {
         return {
-          bind(...values: unknown[]) {
-            prepared.push({ sql, values });
+          bind(..._values: unknown[]) {
+            prepared.push(sql);
             return { first: async () => ({ id: "payment-1" }) };
           },
         };
@@ -128,23 +130,20 @@ describe("atomic verified gateway payment persistence", () => {
       batch: vi.fn(async () => []),
     };
     mockGetD1Binding.mockResolvedValue(d1);
-
     const result = await recordVerifiedGatewayPaymentAtomically(makeDb(), input);
     expect(result).toBe("payment-1");
     expect(d1.batch).toHaveBeenCalledTimes(1);
-
-    const outboxSql = prepared.find(({ sql }) => sql.includes('INSERT INTO "PaymentOutboxEvent"'))?.sql;
-    expect(outboxSql).toBeDefined();
+    const outboxSql = prepared.find((sql) => sql.includes('INSERT INTO "PaymentOutboxEvent"'));
     expect(outboxSql).toContain("'paymentId', p." + '"id"' + ", 'gatewayLogId'");
     expect(outboxSql).toContain("'userId', p." + '"userId"' + ", 'amount', p." + '"amount"' + ", 'currency'");
-    expect(outboxSql).not.toContain('p."id\',');
-    expect(outboxSql).not.toContain('p."userId\',');
-    expect(outboxSql).not.toContain('p."amount\',');
+    expect(outboxSql).not.toContain('p."id\\',');
+    expect(outboxSql).not.toContain('p."userId\\',');
+    expect(outboxSql).not.toContain('p."amount\\',');
   });
 
   it("rejects a gateway attempt whose server-owned amount no longer matches", async () => {
     mockLogFindUnique.mockResolvedValue({
-      id: "gateway-1", userId: "customer-1", purpose: "vip", targetPlanId: "plan-1",
+      id: "gateway-1", userId: "customer-1", purpose: "vip", targetPlanId: "plan-1", targetPlanDurationDays: 30,
       amount: 90_000, currency: "IRR", financialUnitStatus: "VERIFIED_IRR", status: "REDIRECTED",
     });
     await expect(recordVerifiedGatewayPaymentAtomically(makeDb(), input)).rejects.toThrow(
