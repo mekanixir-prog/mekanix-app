@@ -36,6 +36,10 @@ export async function GET(req: Request) {
     const technician = await getTechnicianFromSession(session);
     if (!technician) return NextResponse.json({ error: "پروفایل مکانیک یافت نشد" }, { status: 403 });
     where.technicianId = technician.id;
+  } else if (session.role !== "ADMIN") {
+    // Fail closed: roles without an explicit job-list scope must not inherit
+    // the unfiltered ADMIN query.
+    return NextResponse.json({ error: "دسترسی به فهرست کارها مجاز نیست" }, { status: 403 });
   }
   // ADMIN: no filter — sees all jobs
 

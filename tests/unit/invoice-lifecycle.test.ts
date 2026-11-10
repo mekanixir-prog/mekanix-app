@@ -266,6 +266,60 @@ describe("PATCH /api/invoices/[id] status transitions", () => {
     expect(mocks.invoiceUpdateMany).toHaveBeenCalledTimes(1);
     expect(await response.json()).toMatchObject({ status: "SENT" });
   });
+  it.each([
+    ["DRAFT", "VERIFIED_IRR", "IRR"],
+    ["SENT", "UNVERIFIED", "IRR"],
+    ["SENT", "VERIFIED_IRR", "USD"],
+  ])("rejects customer approval for invoice status/provenance %s/%s/%s", async (status, provenance, currency) => {
+    mocks.auth.mockResolvedValue({ userId: "customer-user", role: "CUSTOMER" });
+    mocks.invoiceFindUnique.mockResolvedValueOnce({
+      ...existingInvoice,
+      status,
+      financialUnitStatus: provenance,
+      currency,
+    });
+
+    const response = await patchInvoice(patchRequest({ customerApproved: true }), {
+      params: Promise.resolve({ id: "inv-1" }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "REPAIR_ESTIMATE_NOT_PAYABLE" });
+    expect(mocks.jobUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("requires WAITING_APPROVAL and compare-and-set before recording customer approval", async () => {
+    mocks.auth.mockResolvedValue({ userId: "customer-user", role: "CUSTOMER" });
+    mocks.invoiceFindUnique.mockResolvedValueOnce(existingInvoice);
+    mocks.jobUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+    const response = await patchInvoice(patchRequest({ customerApproved: true }), {
+      params: Promise.resolve({ id: "inv-1" }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "JOB_APPROVAL_STATE_CONFLICT" });
+    expect(mocks.jobUpdateMany).toHaveBeenCalledWith({
+      where: { id: "job-1", status: "WAITING_APPROVAL", customerApproved: false },
+      data: { customerApproved: true },
+    });
+  });
+
+  it("records approval only for a sent, verified IRR estimate while the job awaits approval", async () => {
+    mocks.auth.mockResolvedValue({ userId: "customer-user", role: "CUSTOMER" });
+    mocks.invoiceFindUnique.mockResolvedValueOnce(existingInvoice);
+    mocks.jobUpdateMany.mockResolvedValueOnce({ count: 1 });
+
+    const response = await patchInvoice(patchRequest({ customerApproved: true }), {
+      params: Promise.resolve({ id: "inv-1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.jobUpdateMany).toHaveBeenCalledWith({
+      where: { id: "job-1", status: "WAITING_APPROVAL", customerApproved: false },
+      data: { customerApproved: true },
+    });
+  });
 });
 
 

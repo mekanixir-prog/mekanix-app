@@ -60,10 +60,9 @@ function isAllowedTransition(
 ): boolean {
   if (role === "ADMIN") return true;
 
-  // FLEET_MANAGER behaves like a customer for the job-status state machine
-  // (can cancel pre-service and approve repair estimates for fleet vehicles).
-  // PARTNER is read-only and cannot transition anything.
-  const actsAsCustomer = role === "CUSTOMER" || role === "FLEET_MANAGER";
+  // Fleet-manager transitions remain disabled until fleet ownership and
+  // asset-level authorization are implemented. PARTNER is read-only.
+  const actsAsCustomer = role === "CUSTOMER";
   if (role === "PARTNER") return false;
 
   // Special: customer setting customerApproved=true (approve repair)
@@ -128,7 +127,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       parts: { select: { unitPrice: true, quantity: true } },
       request: { select: { category: true, urgency: true, lat: true, lng: true, vehicle: { select: { type: true } } } },
       tracking: { orderBy: { ts: "asc" }, take: 1, select: { lat: true, lng: true } },
-      invoice: { select: { id: true, currency: true, financialUnitStatus: true } },
+      invoice: { select: { id: true, status: true, currency: true, financialUnitStatus: true } },
     },
   });
   if (!existing) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
@@ -136,9 +135,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // For technicians, ensure they are the ASSIGNED technician (requireJobParticipant already checked)
   // For customers, ensure they own the request (requireJobParticipant already checked)
 
-  if (hasCustomerApproval && session.role !== "CUSTOMER" && session.role !== "FLEET_MANAGER") {
+  if (hasCustomerApproval && session.role !== "CUSTOMER") {
     return NextResponse.json(
-      { error: "فقط مشتری یا مدیر ناوگان می‌تواند برآورد تعمیر را تأیید کند", code: "CUSTOMER_APPROVAL_FORBIDDEN" },
+      { error: "فقط مشتری مالک درخواست می‌تواند برآورد تعمیر را تأیید کند", code: "CUSTOMER_APPROVAL_FORBIDDEN" },
       { status: 403 },
     );
   }
@@ -161,7 +160,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       { status: 409 },
     );
   }
-  const hasVerifiedEstimate = existing.invoice?.currency === "IRR" &&
+  const hasVerifiedEstimate = existing.invoice?.status === "SENT" &&
+    existing.invoice.currency === "IRR" &&
     existing.invoice.financialUnitStatus === "VERIFIED_IRR";
 
   if (targetStatus === "REPAIRING" && existing.status === "WAITING_APPROVAL" && !hasVerifiedEstimate) {
