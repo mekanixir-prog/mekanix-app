@@ -1,0 +1,15 @@
+name = "mekanix-payment-outbox-staging"
+main = "workers/payment-outbox/index.ts"
+compatibility_date = "2026-10-30"
+
+[[d1_databases]]
+binding = "DB"
+# STAGING ONLY: isolated D1 database; replace both placeholders before deployment.
+database_name = "mekanix-payment-outbox-staging"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[observability]
+enabled = true
