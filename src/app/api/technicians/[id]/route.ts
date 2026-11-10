@@ -8,7 +8,7 @@ import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 const PUBLIC_USER_FIELDS = {
   name: true,
   avatar: true,
-} as const;;
+} as const;
 
 // GET /api/technicians/[id] — public profile (no auth required).
 // Selects only safe fields.
