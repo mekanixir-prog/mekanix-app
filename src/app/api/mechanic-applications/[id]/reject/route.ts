@@ -27,6 +27,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   let app = await db.mechanicApplication.findUnique({ where: { id } });
   if (!app) return NextResponse.json({ error: "Application not found" }, { status: 404 });
 
+  if (app.status === "REJECTED") {
+    // A retry after the original response was lost is an idempotent success.
+    return NextResponse.json(app);
+  }
+
   if (app.status === "PENDING") {
     const claim = await db.mechanicApplication.updateMany({
       where: { id, status: "PENDING" },
