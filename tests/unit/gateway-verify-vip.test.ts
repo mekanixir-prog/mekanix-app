@@ -72,6 +72,13 @@ describe("VIP gateway simulator verification", () => {
     mockGatewayUpdate.mockResolvedValue({});
   });
 
+  it("rejects any OTP other than the documented simulator test code", async () => {
+    const response = await POST(request({ code: "PG-test", otp: "0000" }));
+    expect(response.status).toBe(400);
+    expect(mockGatewayFindUnique).not.toHaveBeenCalled();
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
+  });
+
   it("creates a payment from the persisted server-owned attempt amount", async () => {
     const response = await POST(request({ code: "PG-test", otp: "1234", amount: 1, userId: "attacker" }));
     expect(response.status).toBe(200);
