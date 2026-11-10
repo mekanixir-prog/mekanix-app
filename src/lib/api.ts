@@ -94,6 +94,11 @@ export const api = {
     return req<PublicTechnician[]>(`/api/technicians?${q.toString()}`);
   },
   getTechnician: (id: string) => req<PublicTechnician>(`/api/technicians/${id}`),
+  updateTechnicianAvailability: (id: string, availableNow: boolean, location?: { lat: number; lng: number }) =>
+    req<{ ok: boolean; status: "ONLINE" | "OFFLINE"; availableNow: boolean }>(
+      `/api/technicians/${id}/availability`,
+      { method: "PATCH", body: JSON.stringify({ availableNow, ...location }) }
+    ),
   listVehicles: (customerId: string) => req<Vehicle[]>(`/api/vehicles?customerId=${customerId}`).catch(() => []),
   createVehicle: (data: Partial<Vehicle> & { customerId: string }) =>
     req<Vehicle>(`/api/vehicles`, { method: "POST", body: JSON.stringify(data) }),
