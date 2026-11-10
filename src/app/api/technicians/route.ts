@@ -82,9 +82,10 @@ export async function GET(req: Request) {
       return a.distanceKm - b.distanceKm;
     })
     .map(({ tech, distanceKm }) => {
-      const { lat: _lat, lng: _lng, userId: _userId, serviceAreas, ...safeTech } = tech;
+      const { lat: _lat, lng: _lng, userId: _userId, serviceAreas, user, ...safeTech } = tech;
       return maskFinancialFields({
         ...safeTech,
+        user: { name: user.name, avatar: user.avatar },
         lat: null,
         lng: null,
         serviceAreas: serviceAreas.map(({ name, radiusKm }) => ({ name, radiusKm })),
