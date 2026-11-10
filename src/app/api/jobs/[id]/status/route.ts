@@ -60,10 +60,9 @@ function isAllowedTransition(
 ): boolean {
   if (role === "ADMIN") return true;
 
-  // FLEET_MANAGER behaves like a customer for the job-status state machine
-  // (can cancel pre-service and approve repair estimates for fleet vehicles).
-  // PARTNER is read-only and cannot transition anything.
-  const actsAsCustomer = role === "CUSTOMER" || role === "FLEET_MANAGER";
+  // Fleet-manager transitions remain disabled until fleet ownership and
+  // asset-level authorization are implemented. PARTNER is read-only.
+  const actsAsCustomer = role === "CUSTOMER";
   if (role === "PARTNER") return false;
 
   // Special: customer setting customerApproved=true (approve repair)
@@ -136,9 +135,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // For technicians, ensure they are the ASSIGNED technician (requireJobParticipant already checked)
   // For customers, ensure they own the request (requireJobParticipant already checked)
 
-  if (hasCustomerApproval && session.role !== "CUSTOMER" && session.role !== "FLEET_MANAGER") {
+  if (hasCustomerApproval && session.role !== "CUSTOMER") {
     return NextResponse.json(
-      { error: "فقط مشتری یا مدیر ناوگان می‌تواند برآورد تعمیر را تأیید کند", code: "CUSTOMER_APPROVAL_FORBIDDEN" },
+      { error: "فقط مشتری مالک درخواست می‌تواند برآورد تعمیر را تأیید کند", code: "CUSTOMER_APPROVAL_FORBIDDEN" },
       { status: 403 },
     );
   }
