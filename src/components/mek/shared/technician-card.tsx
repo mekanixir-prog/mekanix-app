@@ -33,6 +33,7 @@ export function TechnicianCard({
   const lang = isFa ? "fa" : "en";
   const level = TECH_LEVELS.find((l) => l.slug === tech.level) ?? TECH_LEVELS[0];
   const hasFees = inspectionFee != null || travelFee != null;
+  const priceKnown = tech.financialUnitStatus === "VERIFIED_IRR" && tech.hourlyRate != null;
   return (
     <motion.button
       type="button"
@@ -122,7 +123,7 @@ export function TechnicianCard({
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="font-display text-sm font-semibold">{money(Number(tech.hourlyRate))}<span className="text-[10px] text-muted-foreground">/{t("common.hr")}</span></span>
+          <span className="font-display text-sm font-semibold">{priceKnown ? <>{money(Number(tech.hourlyRate))}<span className="text-[10px] text-muted-foreground">/{t("common.hr")}</span></> : <span className="text-xs text-muted-foreground">{t("fees.quoteRequired")}</span>}</span>
           <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
         </div>
       </div>
