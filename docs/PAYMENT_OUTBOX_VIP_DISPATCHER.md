@@ -6,6 +6,7 @@
 - Reclaims abandoned `PROCESSING` rows after a five-minute lease expires.
 - Currently accepts only `PAYMENT_SUCCEEDED` events for the `Payment` aggregate whose server-authored payload purpose is `vip`. Other event types/purposes fail closed and eventually become `DEAD`.
 - Verifies the persisted Payment, gateway attempt, IRR provenance, amount, user, target VIP plan, and immutable purchase-time duration snapshot before fulfillment.
+- Revalidates that same Payment + gateway-log source-of-truth tuple before both first fulfillment and idempotent replay completion; an existing subscription alone cannot make a corrupted or unverified payment event complete.
 - Creates one VIP subscription and cancels the user's previous active VIP subscription in the same D1 batch that marks the outbox event `PROCESSED`.
 - Uses `UserVipSubscription.paymentId` as the unique fulfillment key. A retry that finds the exact same user/plan/payment subscription only marks the event processed; conflicting bindings are rejected.
 - Uses `PaymentGatewayLog.targetPlanDurationDays`, captured at payment initiation and copied into the outbox payload, to calculate expiry. Later edits or deactivation of `VipPlan` cannot change an already-paid entitlement. The Worker checks the event duration against the gateway-log snapshot and verifies that an existing subscription spans exactly that duration before completing a replay. Legacy gateway attempts without this snapshot are rejected for automatic activation and require reconciliation.
