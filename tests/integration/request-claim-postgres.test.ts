@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { getDbForLib } from "@/lib/db-access";
 import { createServiceRequestAtomically } from "@/lib/service-request-atomic";
 import { createInsuranceClaimAtomically } from "@/lib/insurance-claim-atomic";
+import { assignServiceRequestAtomically, ServiceRequestAssignmentConflictError } from "@/lib/service-request-assignment";
 
 const postgresConfigured = process.env.DATABASE_URL?.startsWith("postgresql://") ?? false;
 
@@ -199,4 +200,192 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
       await db!.$executeRawUnsafe(`DROP FUNCTION IF EXISTS "${functionName}"()`);
     }
   });
+
+  // Exercise the Prisma/PostgreSQL transaction path; no D1 binding is available in this Node test runtime.
+  it("assigns one real PostgreSQL service request exactly once under 40 concurrent technician-claim races", async () => {
+    const suffix = crypto.randomUUID().replace(/-/g, "");
+    const requestKey = `service-request:assignment-pg-test:${suffix}`;
+    let technicianUserId: string | undefined;
+    let technicianId: string | undefined;
+    let requestId: string | undefined;
+
+    try {
+      const technicianUser = await db!.user.create({
+        data: {
+          name: "Assignment PostgreSQL Technician",
+          phone: `+9893${suffix.slice(0, 8)}`,
+          role: "TECHNICIAN",
+        },
+      });
+      technicianUserId = technicianUser.id;
+      const technician = await db!.technician.create({
+        data: {
+          userId: technicianUser.id,
+          status: "ONLINE",
+          verified: true,
+          availableNow: true,
+        },
+      });
+      technicianId = technician.id;
+      await db!.technicianSpecialty.create({
+        data: { technicianId: technician.id, category: "hydraulic", label: "Hydraulic systems" },
+      });
+
+      const created = await createServiceRequestAtomically(db!, {
+        idempotencyKey: requestKey,
+        requestFingerprint: JSON.stringify({ userId, vehicleId, suffix }),
+        code: `SR-ASSIGN-PG-${suffix}`,
+        customerId,
+        actorUserId: userId,
+        vehicleId,
+        category: "hydraulic",
+        urgency: "NORMAL",
+        title: "Hydraulic system inspection",
+        description: "PostgreSQL assignment race test",
+        mediaUrls: "[]",
+        voiceNote: null,
+        address: "Tehran",
+        lat: 35.7,
+        lng: 51.4,
+      });
+      requestId = created.id;
+
+      const attempts = await Promise.allSettled(
+        Array.from({ length: 40 }, () =>
+          assignServiceRequestAtomically(db!, {
+            requestId: created.id,
+            technicianId: technician.id,
+            category: "hydraulic",
+            etaMins: 18,
+            existingRejectedJobId: null,
+          })
+        )
+      );
+
+      const fulfilled = attempts.filter((item) => item.status === "fulfilled");
+      const rejected = attempts.filter((item) => item.status === "rejected");
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(39);
+      for (const item of rejected) {
+        if (item.status === "rejected") {
+          expect(item.reason).toBeInstanceOf(ServiceRequestAssignmentConflictError);
+        }
+      }
+
+      const request = await db!.serviceRequest.findUnique({ where: { id: created.id } });
+      const claimedTechnician = await db!.technician.findUnique({ where: { id: technician.id } });
+      const jobs = await db!.job.findMany({ where: { requestId: created.id } });
+      expect(request?.status).toBe("ASSIGNED");
+      expect(request?.matchedTechId).toBe(technician.id);
+      expect(claimedTechnician?.status).toBe("ON_JOB");
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0].technicianId).toBe(technician.id);
+      expect(jobs[0].status).toBe("REQUESTED");
+    } finally {
+      if (requestId) {
+        await db!.job.deleteMany({ where: { requestId } });
+        await db!.serviceRequest.deleteMany({ where: { id: requestId } });
+      }
+      if (technicianId) {
+        await db!.technicianSpecialty.deleteMany({ where: { technicianId } });
+        await db!.technician.deleteMany({ where: { id: technicianId } });
+      }
+      if (technicianUserId) {
+        await db!.user.deleteMany({ where: { id: technicianUserId } });
+      }
+    }
+  });
+  it("rolls back the request claim when PostgreSQL rejects the technician state update", async () => {
+    const suffix = crypto.randomUUID().replace(/-/g, "");
+    const requestKey = `service-request:assignment-rollback-pg-test:${suffix}`;
+    const functionName = `test_fail_tech_claim_${suffix}`;
+    const triggerName = `test_fail_tech_claim_trigger_${suffix}`;
+    let technicianUserId: string | undefined;
+    let technicianId: string | undefined;
+    let requestId: string | undefined;
+
+    try {
+      const technicianUser = await db!.user.create({
+        data: {
+          name: "Assignment Rollback Technician",
+          phone: `+9894${suffix.slice(0, 8)}`,
+          role: "TECHNICIAN",
+        },
+      });
+      technicianUserId = technicianUser.id;
+      const technician = await db!.technician.create({
+        data: {
+          userId: technicianUser.id,
+          status: "ONLINE",
+          verified: true,
+          availableNow: true,
+        },
+      });
+      technicianId = technician.id;
+      await db!.technicianSpecialty.create({
+        data: { technicianId: technician.id, category: "hydraulic", label: "Hydraulic systems" },
+      });
+
+      const created = await createServiceRequestAtomically(db!, {
+        idempotencyKey: requestKey,
+        requestFingerprint: JSON.stringify({ userId, vehicleId, suffix }),
+        code: `SR-ASSIGN-ROLLBACK-PG-${suffix}`,
+        customerId,
+        actorUserId: userId,
+        vehicleId,
+        category: "hydraulic",
+        urgency: "NORMAL",
+        title: "Hydraulic rollback test",
+        description: "Injected technician update failure",
+        mediaUrls: "[]",
+        voiceNote: null,
+        address: "Tehran",
+        lat: 35.7,
+        lng: 51.4,
+      });
+      requestId = created.id;
+
+      await db!.$executeRawUnsafe(`
+        CREATE FUNCTION "${functionName}"() RETURNS trigger AS $$
+        BEGIN RAISE EXCEPTION 'injected technician claim failure'; END;
+        $$ LANGUAGE plpgsql;
+      `);
+      await db!.$executeRawUnsafe(`
+        CREATE TRIGGER "${triggerName}" BEFORE UPDATE ON "Technician"
+        FOR EACH ROW WHEN (NEW."id" = '${technician.id}' AND NEW."status" = 'ON_JOB')
+        EXECUTE FUNCTION "${functionName}"();
+      `);
+
+      await expect(assignServiceRequestAtomically(db!, {
+        requestId: created.id,
+        technicianId: technician.id,
+        category: "hydraulic",
+        etaMins: 18,
+        existingRejectedJobId: null,
+      })).rejects.toThrow("injected technician claim failure");
+
+      const request = await db!.serviceRequest.findUnique({ where: { id: created.id } });
+      const currentTechnician = await db!.technician.findUnique({ where: { id: technician.id } });
+      expect(request?.status).toBe("OPEN");
+      expect(request?.matchedTechId).toBeNull();
+      expect(currentTechnician?.status).toBe("ONLINE");
+      expect(await db!.job.count({ where: { requestId: created.id } })).toBe(0);
+    } finally {
+      await db!.$executeRawUnsafe(`DROP TRIGGER IF EXISTS "${triggerName}" ON "Technician"`).catch(() => undefined);
+      await db!.$executeRawUnsafe(`DROP FUNCTION IF EXISTS "${functionName}"()`).catch(() => undefined);
+      if (requestId) {
+        await db!.job.deleteMany({ where: { requestId } });
+        await db!.serviceRequest.deleteMany({ where: { id: requestId } });
+      }
+      if (technicianId) {
+        await db!.technicianSpecialty.deleteMany({ where: { technicianId } });
+        await db!.technician.deleteMany({ where: { id: technicianId } });
+      }
+      if (technicianUserId) {
+        await db!.user.deleteMany({ where: { id: technicianUserId } });
+      }
+    }
+  });
+
+
 });
