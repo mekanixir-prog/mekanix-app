@@ -70,8 +70,8 @@ describe("VIP gateway initiation", () => {
     expect(createArgs.data.idempotencyKey).toBe("vip-checkout-attempt-0001");
     expect(createArgs.data.purpose).toBe("vip");
     expect(createArgs.data.financialUnitStatus).toBe("VERIFIED_IRR");
-    expect(createArgs.data.cardNumber).toBe("**** **** **** 7890");
-    expect(createArgs.data.cardNumber).not.toContain("603799");
+    expect(createArgs.data.cardNumber).toBeNull();
+    expect(createArgs.data.mobile).toBeNull();
   });
 
   it("replays the existing attempt when the same user retries with the same key", async () => {
@@ -134,6 +134,22 @@ describe("VIP gateway initiation", () => {
     expect(body.code).toBe("PG-race-winner");
     expect(body.reused).toBe(true);
     expect(mockGatewayCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("never persists client-supplied card or phone credentials", async () => {
+    await POST(request({
+      purpose: "vip",
+      planId: "plan-gold",
+      idempotencyKey: "vip-no-card-data-0001",
+      cardNumber: "6037991234567890",
+      mobile: "09120000000",
+    }));
+
+    const data = mockGatewayCreate.mock.calls[0][0].data;
+    expect(data.cardNumber).toBeNull();
+    expect(data.mobile).toBeNull();
+    expect(JSON.stringify(data)).not.toContain("6037991234567890");
+    expect(JSON.stringify(data)).not.toContain("09120000000");
   });
 
   it("requires an idempotency key", async () => {
