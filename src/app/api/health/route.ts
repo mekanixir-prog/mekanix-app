@@ -26,6 +26,8 @@ export async function GET() {
   const ok = dbStatus === "healthy";
   const sms = getSmsProviderStatus();
   const payment = getPaymentProviderStatus();
+  // Public health checks should reveal service state, not provider names,
+  // credential/configuration state, or internal integration warnings.
   return NextResponse.json(
     {
       ok,
@@ -33,16 +35,8 @@ export async function GET() {
       services: {
         database: dbStatus,
         redis: "not-configured",
-        sms: sms.provider,
-        smsConfigured: sms.configured,
-        smsLiveReady: sms.liveReady,
-        payment: {
-          provider: payment.provider,
-          configured: payment.configured,
-          integrationWired: payment.integrationWired,
-          liveReady: payment.liveReady,
-          warnings: payment.warnings,
-        },
+        sms: sms.liveReady ? "ready" : "not-ready",
+        payment: payment.liveReady ? "ready" : "not-ready",
         eta: "simulator",
       },
       timestamp: new Date().toISOString(),
