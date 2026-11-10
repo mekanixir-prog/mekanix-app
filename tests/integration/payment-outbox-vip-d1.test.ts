@@ -134,6 +134,23 @@ describe("VIP payment outbox dispatcher D1 integration",()=>{
     expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "UserVipSubscription" WHERE "paymentId"='payment-1'`).get()).toEqual({count:1});
     expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "Notification" WHERE "id"='vip-activated:payment-1'`).get()).toEqual({count:1});
   });
+  it("does not complete an existing subscription when payment provenance no longer verifies",async()=>{
+    const {sqlite,d1}=makeD1(); dbs.push(sqlite); seed(sqlite);
+    sqlite.prepare(`INSERT INTO "UserVipSubscription" VALUES (?,?,?,?,?,?,?,?,?)`).run(
+      "existing-sub","user-1","plan-1","ACTIVE",now.toISOString(),
+      new Date(now.getTime()+30*86400000).toISOString(),"payment-1",now.toISOString(),now.toISOString()
+    );
+    sqlite.prepare(`UPDATE "PaymentGatewayLog" SET "financialUnitStatus"='UNVERIFIED' WHERE "id"='gateway-1'`).run();
+
+    await runWorker(d1);
+
+    expect(sqlite.prepare(`SELECT "status","attempts","lastError" FROM "PaymentOutboxEvent"`).get()).toMatchObject({
+      status:"PENDING",attempts:1,lastError:"PAYMENT_SOURCE_OF_TRUTH_MISMATCH"
+    });
+    expect(sqlite.prepare(`SELECT "status" FROM "UserVipSubscription" WHERE "id"='existing-sub'`).get()).toEqual({status:"ACTIVE"});
+    expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "Notification"`).get()).toEqual({count:0});
+  });
+
   it("refuses to complete against an existing subscription with a different duration",async()=>{
     const {sqlite,d1}=makeD1(); dbs.push(sqlite); seed(sqlite);
     sqlite.prepare(`INSERT INTO "UserVipSubscription" VALUES (?,?,?,?,?,?,?,?,?)`).run(
