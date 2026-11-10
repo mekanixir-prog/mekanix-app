@@ -88,6 +88,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Payment is not a verified VIP payment" }, { status: 400 });
   }
 
+  // Entitlement duration is immutable: use the value captured at payment initiation,
+  // never the mutable VipPlan.durationDays field.
+  const durationSnapshot = gatewayLog.targetPlanDurationDays;
+  if (typeof durationSnapshot !== "number" || !Number.isSafeInteger(durationSnapshot) || durationSnapshot <= 0 || durationSnapshot > 36500) {
+    return NextResponse.json({ error: "مدت ثبت‌شده برای این پرداخت معتبر نیست و نیاز به بررسی دارد", code: "VIP_DURATION_SNAPSHOT_MISSING" }, { status: 409 });
+  }
+  const durationDays = durationSnapshot;
+
   // The paymentId unique constraint is the final replay guard. Return the
   // already-created subscription for a retry instead of reporting a false
   // failure or attempting to consume the same payment again.
@@ -99,6 +107,11 @@ export async function POST(req: Request) {
     if (existingSub.userId !== userId || existingSub.planId !== planId) {
       return NextResponse.json({ error: "پرداخت قبلاً به اشتراک دیگری متصل شده است" }, { status: 409 });
     }
+    const existingStart = existingSub.startedAt instanceof Date ? existingSub.startedAt.getTime() : Date.parse(String(existingSub.startedAt ?? ""));
+    const existingExpiry = existingSub.expiresAt instanceof Date ? existingSub.expiresAt.getTime() : Date.parse(String(existingSub.expiresAt ?? ""));
+    if (!Number.isFinite(existingStart) || !Number.isFinite(existingExpiry) || existingExpiry - existingStart !== durationDays * 24 * 60 * 60 * 1000) {
+      return NextResponse.json({ error: "مدت اشتراک ثبت‌شده با مدت خرید تطبیق ندارد و نیاز به بررسی دارد", code: "VIP_EXISTING_DURATION_MISMATCH" }, { status: 409 });
+    }
     return NextResponse.json({
       ok: true,
       alreadyProcessed: true,
@@ -108,14 +121,6 @@ export async function POST(req: Request) {
       },
     });
   }
-
-  // Entitlement duration is immutable: use the value captured at payment initiation,
-  // never the mutable VipPlan.durationDays field.
-  const durationSnapshot = gatewayLog.targetPlanDurationDays;
-  if (typeof durationSnapshot !== "number" || !Number.isSafeInteger(durationSnapshot) || durationSnapshot <= 0 || durationSnapshot > 36500) {
-    return NextResponse.json({ error: "مدت ثبت‌شده برای این پرداخت معتبر نیست و نیاز به بررسی دارد", code: "VIP_DURATION_SNAPSHOT_MISSING" }, { status: 409 });
-  }
-  const durationDays = durationSnapshot;
 
   const startedAt = new Date();
   const expiresAt = new Date(startedAt.getTime() + durationDays * 24 * 60 * 60 * 1000);
