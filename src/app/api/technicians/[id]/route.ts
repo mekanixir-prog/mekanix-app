@@ -22,24 +22,33 @@ const PUBLIC_USER_FIELDS = {
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const db = await getDbForLib();
-  const tech = await db.technician.findUnique({
-    where: { id },
+  const tech = await db.technician.findFirst({
+    where: {
+      id,
+      status: "ONLINE",
+      availableNow: true,
+      verified: true,
+      user: { is: { status: "ACTIVE", role: "TECHNICIAN" } },
+    },
     include: {
       user: { select: PUBLIC_USER_FIELDS },
       specialties: true,
       certifications: true,
       serviceAreas: true,
       reviews: { include: { fromUser: { select: PUBLIC_USER_FIELDS } }, orderBy: { createdAt: "desc" }, take: 20 },
-      jobsAssigned: {
-        where: { status: "COMPLETED" },
-        take: 8,
-        orderBy: { completedAt: "desc" },
-        include: { request: { include: { vehicle: true } } },
-      },
     },
   });
   if (!tech) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(maskFinancialFields(tech, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]));
+
+  // Public profile data must not disclose exact technician coordinates,
+  // service-area coordinate pins, or private customer/job/vehicle records.
+  const { lat: _lat, lng: _lng, serviceAreas, ...safeTech } = tech;
+  return NextResponse.json(maskFinancialFields({
+    ...safeTech,
+    lat: null,
+    lng: null,
+    serviceAreas: serviceAreas.map(({ name, radiusKm }) => ({ name, radiusKm })),
+  }, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]));
 }
 
 // PATCH /api/technicians/[id]
