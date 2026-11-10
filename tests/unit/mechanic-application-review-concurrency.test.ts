@@ -185,4 +185,11 @@ describe("mechanic application review state machine", () => {
     expect(application.status).toBe("REJECTING");
     expect(mocks.userCreate).not.toHaveBeenCalled();
   });
+
+  it("treats a retry of an already completed rejection as idempotent success", async () => {
+    application.status = "REJECTED";
+    const response = await reject(makeRequest("reject"), context);
+    expect(response.status).toBe(200);
+    expect(mocks.applicationUpdateMany).not.toHaveBeenCalled();
+  });
 });
