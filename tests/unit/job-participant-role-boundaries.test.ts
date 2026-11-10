@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   customer: vi.fn(),
   technician: vi.fn(),
   jobFindUnique: vi.fn(),
+  customerFindUnique: vi.fn(),
+  technicianFindUnique: vi.fn(),
 }));
 
 vi.mock("@/lib/db-access", () => ({ getDbForLib: mocks.db }));
@@ -29,14 +31,18 @@ const session = (role: "CUSTOMER" | "TECHNICIAN" | "ADMIN" | "FLEET_MANAGER" | "
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.customer.mockResolvedValue({ id: "customer-1" });
-  mocks.technician.mockResolvedValue({ id: "technician-1" });
+  mocks.customerFindUnique.mockResolvedValue({ id: "customer-1" });
+  mocks.technicianFindUnique.mockResolvedValue({ id: "technician-1" });
   mocks.jobFindUnique.mockResolvedValue({
     id: "job-1",
     request: { customerId: "customer-1" },
     technicianId: "technician-1",
   });
-  mocks.db.mockResolvedValue({ job: { findUnique: mocks.jobFindUnique } });
+  mocks.db.mockResolvedValue({
+    job: { findUnique: mocks.jobFindUnique },
+    customer: { findUnique: mocks.customerFindUnique },
+    technician: { findUnique: mocks.technicianFindUnique },
+  });
 });
 
 describe("requireJobParticipant role boundaries", () => {
