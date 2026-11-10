@@ -34,4 +34,30 @@ describe("authenticated service-request assignment client", () => {
       })
     );
   });
+
+  it("attaches the active technician bearer token to availability changes", async () => {
+    localStorage.setItem("mekanix-token", "technician-session-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true, status: "ONLINE", availableNow: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.updateTechnicianAvailability("technician-1", true, { lat: 35.7, lng: 51.4 });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/technicians/technician-1/availability",
+      expect.objectContaining({
+        method: "PATCH",
+        credentials: "include",
+        headers: expect.objectContaining({
+          Authorization: "Bearer technician-session-token",
+          "Content-Type": "application/json",
+        }),
+        body: JSON.stringify({ availableNow: true, lat: 35.7, lng: 51.4 }),
+      })
+    );
+  });
 });
