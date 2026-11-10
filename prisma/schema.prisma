@@ -561,6 +561,8 @@ model MechanicApplication {
 
 enum ApplicationStatus {
   PENDING
+  APPROVING
+  REJECTING
   APPROVED
   REJECTED
   ON_HOLD

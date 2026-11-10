@@ -1490,8 +1490,10 @@ const DICT: Record<Lang, Record<string, string>> = {
     "admin.applications.col.status": "Status",
     "admin.applications.col.submitted": "Submitted",
     "admin.applications.approve": "Approve & Create Account",
+    "admin.applications.resumeApprove": "Resume approval",
     "admin.applications.reject": "Reject",
-    "admin.applications.approved": "{name} approved — technician account created",
+    "admin.applications.resumeReject": "Resume rejection",
+    "admin.applications.approved": "{name} approved — onboarding is required before dispatch",
     "admin.applications.rejected": "{name} rejected",
     "admin.applications.hasVehicle": "Has own service vehicle",
     "admin.applications.techAccount": "Technician account created",
@@ -1604,6 +1606,8 @@ const DICT: Record<Lang, Record<string, string>> = {
 
     // ── Application statuses ──
     "appst.PENDING": "Pending",
+    "appst.APPROVING": "Approval in progress",
+    "appst.REJECTING": "Rejection in progress",
     "appst.APPROVED": "Approved",
     "appst.REJECTED": "Rejected",
 
@@ -3113,7 +3117,9 @@ const DICT: Record<Lang, Record<string, string>> = {
     "admin.applications.col.submitted": "تاریخ ارسال",
     "admin.applications.approve": "تأیید و ایجاد حساب",
     "admin.applications.reject": "رد",
-    "admin.applications.approved": "{name} تأیید شد — حساب مکانیک ایجاد شد",
+    "admin.applications.resumeApprove": "ادامه فرایند تأیید",
+    "admin.applications.resumeReject": "ادامه فرایند رد",
+    "admin.applications.approved": "{name} تأیید شد — تکمیل پروفایل پیش از دریافت سفارش الزامی است",
     "admin.applications.rejected": "{name} رد شد",
     "admin.applications.hasVehicle": "خودروی خدمت دارد",
     "admin.applications.techAccount": "حساب مکانیک ایجاد شد",
@@ -3226,6 +3232,8 @@ const DICT: Record<Lang, Record<string, string>> = {
 
     // ── Application statuses ──
     "appst.PENDING": "در انتظار",
+    "appst.APPROVING": "در حال تأیید",
+    "appst.REJECTING": "در حال رد",
     "appst.APPROVED": "تأیید شده",
     "appst.REJECTED": "رد شده",
 
