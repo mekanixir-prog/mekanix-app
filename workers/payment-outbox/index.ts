@@ -56,6 +56,24 @@ async function recordFailure(db:D1Database,event:OutboxRow,now:Date,error:unknow
 }
 
 async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
+  // Validate the immutable financial source of truth before either the new
+  // fulfillment path or the already-fulfilled replay path. An existing
+  // subscription is not a substitute for a verified Payment + gateway link.
+  const verifiedSource = await db.prepare(
+    `SELECT p."id"
+     FROM "Payment" p
+     JOIN "PaymentGatewayLog" g ON g."id"=p."gatewayLogId"
+     WHERE p."id"=? AND p."gatewayLogId"=? AND p."userId"=? AND p."amount"=?
+       AND p."currency"='IRR' AND p."status"='SUCCEEDED'
+       AND p."financialUnitStatus"='VERIFIED_IRR'
+       AND g."id"=? AND g."userId"=p."userId" AND g."paymentId"=p."id"
+       AND g."amount"=p."amount" AND g."currency"='IRR' AND g."status"='VERIFIED'
+       AND g."financialUnitStatus"='VERIFIED_IRR' AND g."purpose"='vip'
+       AND g."targetPlanId"=? AND g."targetPlanDurationDays"=?`
+  ).bind(p.paymentId,p.gatewayLogId,p.userId,p.amount,p.gatewayLogId,p.targetPlanId,p.durationDays)
+    .first<{id:string}>();
+  if (!verifiedSource) throw new Error("PAYMENT_SOURCE_OF_TRUTH_MISMATCH");
+
   const existing = await db.prepare(
     `SELECT "id","userId","planId","startedAt","expiresAt" FROM "UserVipSubscription" WHERE "paymentId"=?`
   ).bind(p.paymentId).first<{id:string;userId:string;planId:string;startedAt:string|null;expiresAt:string|null}>();
