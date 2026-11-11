@@ -1,5 +1,13 @@
 import type { PrismaClient } from "@prisma/client";
 import { getD1Binding } from "@/lib/idempotency";
+import { getJobPartAmountError, type JobPartAmountError } from "@/lib/money/job-part-amount";
+
+export class JobPartAmountValidationError extends Error {
+  constructor(readonly code: JobPartAmountError) {
+    super(code);
+    this.name = "JobPartAmountValidationError";
+  }
+}
 
 export class JobPartMutationConflictError extends Error {
   constructor() {
@@ -46,6 +54,8 @@ function isD1Conflict(error: unknown): boolean {
  * after the fixed-fee estimate has been issued.
  */
 export async function addJobPartBeforeInvoice(db: PrismaClient, input: NewJobPart) {
+  const amountError = getJobPartAmountError(input.quantity, input.unitPrice);
+  if (amountError) throw new JobPartAmountValidationError(amountError);
   const id = crypto.randomUUID();
   const d1 = await getD1Binding();
 
