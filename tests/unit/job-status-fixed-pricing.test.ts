@@ -49,7 +49,7 @@ const beforeJob = {
   technicianId: "tech-1",
   requestId: "request-1",
   code: "JOB-1",
-  parts: [{ unitPrice: 1_000_000, quantity: 1 }],
+  parts: [{ financialUnitStatus: "VERIFIED_IRR", unitPrice: 1_000_000, quantity: 1 }],
   request: {
     category: "diagnostic",
     urgency: "NORMAL",
@@ -110,6 +110,20 @@ beforeEach(() => {
 });
 
 describe("job status approval estimate uses the fixed rate card", () => {
+  it("passes each part row to the provenance gate and blocks an unverified part", async () => {
+    mocks.partsVerified.mockReturnValueOnce(false);
+
+    const response = await PATCH(request({ status: "WAITING_APPROVAL" }), {
+      params: Promise.resolve({ id: "job-1" }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "JOB_PART_CURRENCY_UNVERIFIED" });
+    expect(mocks.partsVerified).toHaveBeenCalledWith(beforeJob.parts);
+    expect(mocks.calculatePrice).not.toHaveBeenCalled();
+    expect(mocks.transition).not.toHaveBeenCalled();
+  });
+
   it("ignores legacy hourly inputs and atomically snapshots fixed IRR components", async () => {
     const response = await PATCH(request({
       status: "WAITING_APPROVAL",
