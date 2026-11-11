@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   technicianFindMany: vi.fn(),
   technicianFindUnique: vi.fn(),
   verifySession: vi.fn(),
+  rateLimitAsync: vi.fn(),
+  getClientId: vi.fn(),
 }));
 
 vi.mock("@/lib/db-access", () => ({
@@ -16,6 +18,11 @@ vi.mock("@/lib/db-access", () => ({
   })),
 }));
 vi.mock("@/lib/api-helpers", () => ({ requireAuth: vi.fn() }));
+vi.mock("@/lib/rate-limit", () => ({
+  rateLimitAsync: mocks.rateLimitAsync,
+  getClientId: mocks.getClientId,
+  RATE_LIMITS: { API_DEFAULT: { max: 60, windowMs: 60_000 } },
+}));
 vi.mock("@/lib/auth", () => ({ requireRole: vi.fn(), verifySession: mocks.verifySession }));
 
 import { GET as listTechnicians } from "@/app/api/technicians/route";
@@ -56,6 +63,8 @@ const publicTechnicianFixture = () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.verifySession.mockResolvedValue(null);
+  mocks.getClientId.mockReturnValue("203.0.113.10");
+  mocks.rateLimitAsync.mockResolvedValue({ success: true, resetMs: 60_000 });
 });
 
 describe("public technician discovery privacy", () => {
@@ -152,5 +161,24 @@ describe("public technician discovery privacy", () => {
     );
 
     expect(response.status).toBe(404);
+  });
+
+  it("rate-limits public technician discovery before querying the database", async () => {
+    mocks.rateLimitAsync.mockResolvedValue({ success: false, resetMs: 12_000 });
+
+    const response = await listTechnicians(new Request("https://mekanix.test/api/technicians"));
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("12");
+    expect(mocks.technicianFindMany).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the public discovery rate-limit store is unavailable", async () => {
+    mocks.rateLimitAsync.mockResolvedValue({ success: false, resetMs: 30_000, unavailable: true });
+
+    const response = await listTechnicians(new Request("https://mekanix.test/api/technicians"));
+
+    expect(response.status).toBe(503);
+    expect(mocks.technicianFindMany).not.toHaveBeenCalled();
   });
 });
