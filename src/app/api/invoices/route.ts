@@ -239,7 +239,7 @@ export async function POST(req: Request) {
           jobId: refreshed.id,
           fromUserId: tech?.id ?? cust.id,
           kind: "system",
-          body: `Invoice ${invoice.code} issued — total ${Number(invoice.total)} ${invoice.currency}.`,
+          body: `Invoice ${invoice.code} issued. Review the invoice for its amount and payment details.`,
         },
       });
     } catch (error) {
