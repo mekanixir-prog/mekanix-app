@@ -83,4 +83,42 @@ describe("financial API read provenance masking", () => {
     expect(result.total).toBeNull();
     expect((result.payment as any).amount).toBeNull();
   });
+
+  it("quarantines claimed verified rows when a stored amount is fractional or unsafe", () => {
+    const wallet = maskWalletMoney({
+      financialUnitStatus: "VERIFIED_IRR",
+      balance: 100.5,
+      pendingBalance: 0,
+      transactions: [
+        { financialUnitStatus: "VERIFIED_IRR", grossAmount: 100, commissionAmount: 10, netAmount: -10 },
+        { financialUnitStatus: "VERIFIED_IRR", grossAmount: 100, commissionAmount: 10, netAmount: 90.25 },
+      ],
+    });
+    expect(wallet.financialUnitStatus).toBe("QUARANTINED");
+    expect(wallet.balance).toBeNull();
+    expect((wallet.transactions as any[])[0].netAmount).toBe(-10);
+    expect((wallet.transactions as any[])[1]).toMatchObject({
+      financialUnitStatus: "QUARANTINED",
+      grossAmount: null,
+      commissionAmount: null,
+      netAmount: null,
+    });
+
+    const invoice = maskInvoiceMoney({
+      financialUnitStatus: "VERIFIED_IRR",
+      currency: "IRR",
+      total: Number.MAX_SAFE_INTEGER + 1,
+      payment: {
+        financialUnitStatus: "VERIFIED_IRR",
+        currency: "IRR",
+        amount: 100.5,
+      },
+    });
+    expect(invoice.financialUnitStatus).toBe("QUARANTINED");
+    expect(invoice.total).toBeNull();
+    expect((invoice.payment as any)).toMatchObject({
+      financialUnitStatus: "QUARANTINED",
+      amount: null,
+    });
+  });
 });
