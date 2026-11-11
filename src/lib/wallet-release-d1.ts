@@ -28,7 +28,7 @@ export async function releaseWalletTransactionWithD1(
   const eligible = `
     wt."id" = ? AND wt."walletId" = ? AND wt."status" = 'PENDING'
     AND wt."financialUnitStatus" = 'VERIFIED_IRR'
-    AND wt."netAmount" >= 0
+    AND wt."netAmount" > 0
     AND wt."netAmount" = CAST(wt."netAmount" AS INTEGER)
     AND abs(wt."netAmount") <= ${maxSafeIrr}
     AND wt."holdUntil" IS NOT NULL AND wt."holdUntil" <= ?
@@ -88,7 +88,7 @@ export async function releaseWalletTransactionWithD1(
          AND ledger."idempotencyKey" = ?
         WHERE wt."id" = ? AND wt."walletId" = w."id"
           AND wt."status" = 'PENDING' AND wt."financialUnitStatus" = 'VERIFIED_IRR'
-          AND wt."netAmount" >= 0
+          AND wt."netAmount" > 0
           AND wt."netAmount" = CAST(wt."netAmount" AS INTEGER)
           AND abs(wt."netAmount") <= ${maxSafeIrr}
           AND wt."holdUntil" IS NOT NULL AND wt."holdUntil" <= ?
