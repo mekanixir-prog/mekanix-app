@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireRole } from "@/lib/auth";
+import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 
 // GET: list mechanic applications — ADMIN only
 export async function GET(req: Request) {
@@ -35,6 +36,25 @@ const ALLOWED_APPLICATION_FIELDS = [
 ] as const;
 
 export async function POST(req: Request) {
+  const clientId = getClientId(req);
+  const rateLimit = await rateLimitAsync(
+    `mechanic-application:${clientId}`,
+    RATE_LIMITS.MECHANIC_APPLICATION.max,
+    RATE_LIMITS.MECHANIC_APPLICATION.windowMs,
+  );
+  if (rateLimit.unavailable) {
+    return NextResponse.json(
+      { error: "سرویس ثبت درخواست موقتاً در دسترس نیست" },
+      { status: 503, headers: { "Retry-After": "60" } },
+    );
+  }
+  if (!rateLimit.success) {
+    return NextResponse.json(
+      { error: "تعداد درخواست‌های همکاری بیش از حد مجاز است؛ بعداً دوباره تلاش کنید" },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rateLimit.resetMs / 1000)) } },
+    );
+  }
+
   let body: Record<string, any>;
   try {
     body = await req.json();
