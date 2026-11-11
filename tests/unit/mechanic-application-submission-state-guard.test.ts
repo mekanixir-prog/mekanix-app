@@ -38,7 +38,7 @@ vi.mock("@/lib/auth", () => ({
 
 import { POST } from "@/app/api/mechanic-applications/route";
 
-const request = () => new Request("https://mekanix.test/api/mechanic-applications", {
+const request = (overrides: Record<string, unknown> = {}) => new Request("https://mekanix.test/api/mechanic-applications", {
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify({
@@ -46,6 +46,7 @@ const request = () => new Request("https://mekanix.test/api/mechanic-application
     phone: "+989121234567",
     city: "Tabriz",
     specialties: ["hydraulics"],
+    ...overrides,
   }),
 });
 
@@ -163,6 +164,24 @@ describe("public mechanic application resubmission state guard", () => {
 
     expect(response.status).toBe(429);
     expect(response.headers.get("Retry-After")).toBe("45");
+    expect(mocks.userFindUnique).not.toHaveBeenCalled();
+    expect(mocks.applicationCreate).not.toHaveBeenCalled();
+  });
+
+  it("normalizes applicant phones exactly like OTP authentication", async () => {
+    const response = await POST(request({ phone: "+98 912-123-4567" }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.userFindUnique).toHaveBeenCalledWith({ where: { phone: "+989121234567" } });
+    expect(mocks.applicationCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ phone: "+989121234567" }),
+    }));
+  });
+
+  it("rejects malformed phone numbers before touching application storage", async () => {
+    const response = await POST(request({ phone: "not-a-phone" }));
+
+    expect(response.status).toBe(400);
     expect(mocks.userFindUnique).not.toHaveBeenCalled();
     expect(mocks.applicationCreate).not.toHaveBeenCalled();
   });
