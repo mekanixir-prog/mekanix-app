@@ -52,7 +52,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     );
   }
 
-  let data: { status: "ONLINE" | "OFFLINE"; availableNow: boolean; lat?: number; lng?: number };
+  let data: { status: "ONLINE" | "OFFLINE"; availableNow: boolean; lat?: number | null; lng?: number | null; heading?: number | null };
   if (input.availableNow) {
     if (!tech.verified || tech.user.status !== "ACTIVE" || tech.user.role !== "TECHNICIAN") {
       return NextResponse.json(
@@ -71,9 +71,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         { status: 400 }
       );
     }
-    data = { status: "ONLINE", availableNow: true, lat, lng };
+    data = { status: "ONLINE", availableNow: true, lat, lng, heading: null };
   } else {
-    data = { status: "OFFLINE", availableNow: false };
+    data = { status: "OFFLINE", availableNow: false, lat: null, lng: null, heading: null };
   }
 
   const updated = await db.technician.updateMany({
