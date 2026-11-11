@@ -12,14 +12,22 @@ export function areInvoicePriceSourcesVerified(
   );
 }
 
+import { isSafeStoredIrrAmount } from "@/lib/money/financial-read-mask";
+
 /**
- * JobPart predates the IRR-only writer and has no trustworthy currency field.
- * Only require its provenance attestation when an invoice contains parts.
+ * Every persisted part must independently attest its IRR unit. A deployment
+ * flag cannot upgrade legacy rows or substitute for the row's own evidence.
  */
-export function areJobPartPriceSourcesVerified(
-  hasParts: boolean,
-  env: Record<string, string | undefined> = process.env,
-): boolean {
-  return !hasParts || env.NODE_ENV !== "production" ||
-    env.MEKANIX_JOB_PART_IRR_PROVENANCE_VERIFIED === "true";
+export function areJobPartPriceSourcesVerified(parts: readonly unknown[]): boolean {
+  return parts.every((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const part = value as Record<string, unknown>;
+    if (part.financialUnitStatus !== "VERIFIED_IRR" ||
+        !isSafeStoredIrrAmount(part.unitPrice)) return false;
+    const unitPrice = Number(part.unitPrice);
+    const quantity = part.quantity;
+    if (!Number.isSafeInteger(unitPrice) || unitPrice < 0 ||
+        typeof quantity !== "number" || !Number.isSafeInteger(quantity) || quantity <= 0) return false;
+    return BigInt(unitPrice) * BigInt(quantity) <= BigInt(Number.MAX_SAFE_INTEGER);
+  });
 }
