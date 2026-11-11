@@ -26,6 +26,8 @@ on:
       - 'src/lib/db-access.ts'
       - 'workers/wallet-release/**'
       - 'wrangler.wallet-release.toml'
+      - 'wrangler.wallet-release.production.toml'
+      - 'scripts/deploy-wallet-release-production.sh'
       - 'docs/WALLET_ESCROW_SCHEDULED_WORKER.md'
       - '.dockerignore'
       - 'tests/unit/wallet-escrow-scheduled-worker.test.ts'
@@ -73,6 +75,26 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Validate guarded production escrow Worker config (dry run only)
+        run: |
+          bash -n scripts/deploy-wallet-release-production.sh
+          if bash scripts/deploy-wallet-release-production.sh; then
+            echo "Production deploy guard unexpectedly allowed an unapproved invocation"
+            exit 1
+          fi
+          if ALLOW_WALLET_RELEASE_PRODUCTION_DEPLOY=YES bash scripts/deploy-wallet-release-production.sh; then
+            echo "Production deploy guard unexpectedly passed without explicit D1/account confirmations"
+            exit 1
+          fi
+          if ALLOW_WALLET_RELEASE_PRODUCTION_DEPLOY=YES \
+            WALLET_RELEASE_PRODUCTION_DATABASE_ID=00000000-0000-0000-0000-000000000001 \
+            WALLET_RELEASE_PRODUCTION_ACCOUNT_ID=00000000000000000000000000000000 \
+            bash scripts/deploy-wallet-release-production.sh; then
+            echo "Production deploy guard unexpectedly accepted a D1 ID that differs from the app binding"
+            exit 1
+          fi
+          bunx wrangler deploy --dry-run --config wrangler.wallet-release.production.toml
 
       - name: Exercise scheduled escrow release against isolated local D1
         run: |

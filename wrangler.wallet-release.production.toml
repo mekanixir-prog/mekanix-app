@@ -1,0 +1,17 @@
+name = "mekanix-wallet-escrow-release-prod"
+main = "workers/wallet-release/index.ts"
+compatibility_date = "2026-10-30"
+workers_dev = false
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mekanix"
+# Matches the production application D1 binding in wrangler.toml.
+# Deployment script requires independent operator confirmation of this ID.
+database_id = "f8dbaaf3-4c6b-40d5-9dce-ecaa839780e2"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[observability]
+enabled = true
