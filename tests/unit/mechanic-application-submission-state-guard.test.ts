@@ -122,4 +122,18 @@ describe("public mechanic application resubmission state guard", () => {
     expect(mocks.applicationFindFirst).not.toHaveBeenCalled();
     expect(mocks.applicationCreate).not.toHaveBeenCalled();
   });
+
+  it("returns a conflict when a concurrent submission wins the unique phone constraint", async () => {
+    mocks.applicationFindFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "application-winner", status: "PENDING" });
+    mocks.applicationCreate.mockRejectedValueOnce({ code: "P2002" });
+
+    const response = await POST(request());
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.status).toBe("PENDING");
+    expect(mocks.applicationCreate).toHaveBeenCalledTimes(1);
+  });
 });
