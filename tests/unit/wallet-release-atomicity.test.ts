@@ -40,7 +40,7 @@ describe("wallet escrow release atomicity", () => {
       where: expect.objectContaining({ netAmount: { gte: 0 }, financialUnitStatus: "VERIFIED_IRR" }),
     }));
     expect(tx.walletTransaction.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ netAmount: { gte: 0 }, financialUnitStatus: "VERIFIED_IRR" }),
+      where: expect.objectContaining({ netAmount, financialUnitStatus: "VERIFIED_IRR" }),
     }));
     expect(tx.walletTransaction.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.wallet.updateMany).toHaveBeenCalledWith({
