@@ -22,9 +22,10 @@ export async function GET(req: Request) {
       { status: 400, headers: { "Cache-Control": "no-store" } },
     );
   }
+  const statusFilter = status as (typeof APPLICATION_STATUSES)[number] | null;
   const db = await getDbForLib();
   const list = await db.mechanicApplication.findMany({
-    where: status ? { status } : undefined,
+    where: statusFilter ? { status: statusFilter } : undefined,
     orderBy: { createdAt: "desc" },
     include: { user: { select: { id: true, name: true, phone: true, email: true } } },
   });
