@@ -75,7 +75,7 @@ describe("read-only offline reconciliation endpoints", () => {
       withdrawal: { id: "wd-1", code: "WD-1001", amount: "500", status: "REQUESTED" },
     });
     expect(mocks.withdrawal).toHaveBeenCalledWith(expect.objectContaining({
-      where: { idempotencyKey: "idem_12345678" },
+      where: { idempotencyKey: "00000000" },
     }));
   });
 
