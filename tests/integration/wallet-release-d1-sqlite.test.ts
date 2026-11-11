@@ -159,6 +159,10 @@ describe("atomic escrow release D1 SQLite integration", () => {
         sql: 'UPDATE "WalletTransaction" SET "netAmount" = 9007199254740992 WHERE "id" = ?',
       },
       {
+        name: "zero net amount",
+        sql: 'UPDATE "WalletTransaction" SET "netAmount" = 0 WHERE "id" = ?',
+      },
+      {
         name: "fractional wallet balance",
         sql: 'UPDATE "Wallet" SET "balance" = 2000.5 WHERE "id" = ?',
       },
