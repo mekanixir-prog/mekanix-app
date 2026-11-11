@@ -35,6 +35,65 @@ beforeEach(() => {
 });
 
 describe("GET /api/wallets financial provenance", () => {
+  it("quarantines a claimed verified wallet with fractional or negative aggregates", async () => {
+    for (const balance of ["120000.5", "-1"]) {
+      const wallet = {
+        id: "wallet-invalid",
+        financialUnitStatus: "VERIFIED_IRR",
+        balance,
+        pendingBalance: "30000",
+        totalEarned: "150000",
+        totalCommission: "15000",
+        totalWithdrawn: "5000",
+        transactions: [],
+        withdrawals: [],
+      };
+      mocks.walletFindUnique.mockResolvedValue(wallet);
+
+      const response = await GET(new Request("https://mekanix.test/api/wallets"));
+      expect(response.status).toBe(200);
+      const payload = await response.json();
+      expect(payload.financialUnitStatus).toBe("QUARANTINED");
+      expect(payload.balance).toBeNull();
+      expect(payload.pendingBalance).toBeNull();
+    }
+  });
+
+  it("preserves verified aggregates but masks unverified child rows independently", async () => {
+    const wallet = {
+      id: "wallet-verified",
+      financialUnitStatus: "VERIFIED_IRR",
+      balance: "120000",
+      pendingBalance: "30000",
+      totalEarned: "150000",
+      totalCommission: "15000",
+      totalWithdrawn: "5000",
+      transactions: [{
+        id: "txn-legacy",
+        financialUnitStatus: "UNVERIFIED",
+        grossAmount: "100000",
+        commissionAmount: "10000",
+        netAmount: "90000",
+      }],
+      withdrawals: [{
+        id: "wd-legacy",
+        financialUnitStatus: "UNVERIFIED",
+        amount: "5000",
+      }],
+    };
+    mocks.walletFindUnique.mockResolvedValue(wallet);
+
+    const response = await GET(new Request("https://mekanix.test/api/wallets"));
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload).toMatchObject({
+      financialUnitStatus: "VERIFIED_IRR",
+      balance: 120000,
+      transactions: [{ financialUnitStatus: "UNVERIFIED", grossAmount: null, netAmount: null }],
+      withdrawals: [{ financialUnitStatus: "UNVERIFIED", amount: null }],
+    });
+  });
+
   it("masks unverified wallet aggregates, transactions, and withdrawals", async () => {
     const wallet = {
       id: "wallet-1",
