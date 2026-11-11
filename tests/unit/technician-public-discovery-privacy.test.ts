@@ -29,6 +29,7 @@ const publicTechnicianFixture = () => ({
   verified: true,
   lat: 0,
   lng: 1,
+  heading: 90,
   hourlyRate: "100",
   travelFeeBase: "10",
   financialUnitStatus: "UNVERIFIED",
@@ -78,6 +79,7 @@ describe("public technician discovery privacy", () => {
     expect(payload.user).toEqual({ name: "Technician", avatar: null });
     expect(payload.lat).toBeNull();
     expect(payload.lng).toBeNull();
+    expect(payload).not.toHaveProperty("heading");
     expect(payload.distanceKm).toBeCloseTo(111.2, 1);
     expect(payload.serviceAreas).toEqual([{ name: "Tabriz", radiusKm: 25 }]);
     expect(JSON.stringify(payload)).not.toContain("38.08");
