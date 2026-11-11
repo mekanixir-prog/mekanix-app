@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockWalletFindUnique = vi.fn();
-const mockWalletCreate = vi.fn();
+const mockWalletUpsert = vi.fn();
 const mockReleaseWalletTransaction = vi.fn();
 const mockRequireAuth = vi.fn();
 const mockGetTechnicianFromSession = vi.fn();
@@ -11,7 +11,7 @@ vi.mock("@/lib/db-access", () => ({
   getDbForLib: vi.fn(async () => ({
     wallet: {
       findUnique: (...args: any[]) => mockWalletFindUnique(...args),
-      create: (...args: any[]) => mockWalletCreate(...args),
+      upsert: (...args: any[]) => mockWalletUpsert(...args),
     },
   })),
 }));
@@ -50,23 +50,28 @@ beforeEach(() => {
   });
   mockGetTechnicianFromSession.mockResolvedValue({ id: "tech-1", userId: "user-1" });
   mockWalletFindUnique.mockResolvedValue(wallet());
-  mockWalletCreate.mockResolvedValue(wallet());
+  mockWalletUpsert.mockResolvedValue(wallet());
   mockReleaseWalletTransaction.mockResolvedValue(true);
 });
 
 describe("GET /api/wallets — atomic escrow release orchestration", () => {
   it("delegates each matured pending transaction to the atomic release service", async () => {
     const due = new Date(Date.now() - 60_000);
-    mockWalletFindUnique
-      .mockResolvedValueOnce(wallet([
-        { id: "txn-due", status: "PENDING", netAmount: 1000, holdUntil: due },
-      ]))
-      .mockResolvedValueOnce(wallet([
-        { id: "txn-due", status: "AVAILABLE", netAmount: 1000, holdUntil: due },
-      ]));
+    mockWalletUpsert.mockResolvedValueOnce(wallet([
+      { id: "txn-due", status: "PENDING", netAmount: 1000, holdUntil: due },
+    ]));
+    mockWalletFindUnique.mockResolvedValueOnce(wallet([
+      { id: "txn-due", status: "AVAILABLE", netAmount: 1000, holdUntil: due },
+    ]));
 
     const response = await GET(makeRequest());
     expect(response.status).toBe(200);
+    expect(mockWalletUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { technicianId: "tech-1" },
+      create: { technicianId: "tech-1" },
+      update: {},
+    }));
+    expect(mockWalletUpsert).toHaveBeenCalledTimes(1);
     expect(mockReleaseWalletTransaction).toHaveBeenCalledTimes(1);
     const [db, walletId, transactionId, now] = mockReleaseWalletTransaction.mock.calls[0];
     expect(walletId).toBe("wallet-1");
@@ -76,12 +81,11 @@ describe("GET /api/wallets — atomic escrow release orchestration", () => {
   });
 
   it("does not attempt release for future holds or non-pending transactions", async () => {
-    mockWalletFindUnique
-      .mockResolvedValueOnce(wallet([
-        { id: "txn-future", status: "PENDING", netAmount: 1000, holdUntil: new Date(Date.now() + 60_000) },
-        { id: "txn-done", status: "AVAILABLE", netAmount: 500, holdUntil: new Date(Date.now() - 60_000) },
-      ]))
-      .mockResolvedValueOnce(wallet());
+    mockWalletUpsert.mockResolvedValueOnce(wallet([
+      { id: "txn-future", status: "PENDING", netAmount: 1000, holdUntil: new Date(Date.now() + 60_000) },
+      { id: "txn-done", status: "AVAILABLE", netAmount: 500, holdUntil: new Date(Date.now() - 60_000) },
+    ]));
+    mockWalletFindUnique.mockResolvedValueOnce(wallet());
 
     const response = await GET(makeRequest());
     expect(response.status).toBe(200);
@@ -89,7 +93,7 @@ describe("GET /api/wallets — atomic escrow release orchestration", () => {
   });
 
   it("propagates a failed atomic release rather than returning stale success", async () => {
-    mockWalletFindUnique.mockResolvedValueOnce(wallet([
+    mockWalletUpsert.mockResolvedValueOnce(wallet([
       { id: "txn-due", status: "PENDING", netAmount: 1000, holdUntil: new Date(Date.now() - 60_000) },
     ]));
     mockReleaseWalletTransaction.mockRejectedValueOnce(new Error("atomic batch failed"));
