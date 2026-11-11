@@ -175,13 +175,17 @@ describe("public mechanic application resubmission state guard", () => {
     expect(mocks.applicationCreate).not.toHaveBeenCalled();
   });
 
-  it("normalizes applicant phones exactly like OTP authentication", async () => {
-    const response = await POST(request({ phone: "+98 912-123-4567" }));
+  it.each([
+    ["+98 912-123-4567", "+989121234567"],
+    ["09121234567", "+989121234567"],
+    ["989121234567", "+989121234567"],
+  ])("canonicalizes Iranian phone format %s to %s", async (phone, expectedPhone) => {
+    const response = await POST(request({ phone }));
 
     expect(response.status).toBe(200);
-    expect(mocks.userFindUnique).toHaveBeenCalledWith({ where: { phone: "+989121234567" } });
+    expect(mocks.userFindUnique).toHaveBeenCalledWith({ where: { phone: expectedPhone } });
     expect(mocks.applicationCreate).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ phone: "+989121234567" }),
+      data: expect.objectContaining({ phone: expectedPhone }),
     }));
   });
 
