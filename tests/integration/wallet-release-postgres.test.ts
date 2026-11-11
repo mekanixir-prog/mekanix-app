@@ -52,12 +52,13 @@ describe.skipIf(!postgresConfigured)("wallet escrow release PostgreSQL transacti
     const technician = await db!.technician.create({ data: { userId: user.id } });
     technicianIds.push(technician.id);
     const wallet = await db!.wallet.create({
-      data: { technicianId: technician.id, balance: 2000, pendingBalance },
+      data: { technicianId: technician.id, financialUnitStatus: "VERIFIED_IRR", balance: 2000, pendingBalance },
     });
     walletIds.push(wallet.id);
     const transaction = await db!.walletTransaction.create({
       data: {
         walletId: wallet.id,
+        financialUnitStatus: "VERIFIED_IRR",
         kind: "PREPAY",
         status: "PENDING",
         grossAmount: netAmount,
@@ -121,6 +122,7 @@ describe.skipIf(!postgresConfigured)("wallet escrow release PostgreSQL transacti
     const ledger = await db!.walletLedger.findUnique({ where: { idempotencyKey: fixture.ledgerKey } });
     expect(ledger).toMatchObject({
       walletId: fixture.walletId,
+      financialUnitStatus: "VERIFIED_IRR",
       type: "RELEASE",
       referenceType: "WalletTransaction",
       referenceId: fixture.transactionId,
