@@ -2,9 +2,19 @@ import { describe, expect, it } from "vitest";
 import {
   areInvoicePriceSourcesVerified,
   areJobPartPriceSourcesVerified,
+  isInvoicePricingPolicyApproved,
 } from "@/lib/money/provenance";
 
 describe("invoice money source provenance", () => {
+  it("keeps commercial pricing approval separate from record-level provenance", () => {
+    expect(isInvoicePricingPolicyApproved({ NODE_ENV: "test" })).toBe(true);
+    expect(isInvoicePricingPolicyApproved({ NODE_ENV: "production" })).toBe(false);
+    expect(isInvoicePricingPolicyApproved({
+      NODE_ENV: "production",
+      MEKANIX_PRICING_IRR_APPROVED: "true",
+    })).toBe(true);
+  });
+
   it("requires the technician row to attest verified IRR fees", () => {
     expect(areInvoicePriceSourcesVerified({
       financialUnitStatus: "VERIFIED_IRR",
