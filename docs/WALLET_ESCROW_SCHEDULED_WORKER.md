@@ -51,6 +51,47 @@ This is an intentional fail-closed financial safety posture. Do not re-enable GE
 8. Production rollout is a separate, currently incomplete release task. It requires a production-specific Worker config bound to the exact production D1 database, independent Cloudflare account/database verification, a backup and restore plan, an approved migration review, a controlled rollout, and monitoring evidence. Do not copy a staging ID into production or reuse the committed staging config.
 9. The application currently has no production GET fallback to keep enabled or disable: the policy always returns false in production. `WALLET_RELEASE_SCHEDULED` does not change that production behavior. Do not change this policy or enable GET-triggered financial writes as a substitute for the scheduled Worker.
 
+
+## Guarded production Worker deployment
+
+A production-specific configuration and guarded deployment script are now included:
+
+- Config: `wrangler.wallet-release.production.toml`
+- Command: `bun run deploy:wallet-release:production`
+- Worker name: `mekanix-wallet-escrow-release-prod`
+- D1 binding: `mekanix`, using the same database ID currently declared by the production application in `wrangler.toml`
+- Cron: every 15 minutes
+- Public `workers.dev` endpoint: disabled
+- D1 migration runner: intentionally not configured. The deploy command must not apply migrations.
+
+Before a production deployment, an operator must independently verify the production D1 database ID and Cloudflare account ID in the Cloudflare dashboard. The script requires all of the following and aborts if any check fails:
+
+```bash
+export WALLET_RELEASE_PRODUCTION_DATABASE_ID="<independently verified production D1 database ID>"
+export WALLET_RELEASE_PRODUCTION_ACCOUNT_ID="<32-character Cloudflare account ID>"
+export ALLOW_WALLET_RELEASE_PRODUCTION_DEPLOY=YES
+bun run deploy:wallet-release:production
+```
+
+The script checks that the configured database name and Worker name are the expected production values, that the configured D1 ID exactly matches the operator-supplied confirmation, and that `wrangler whoami` reports the expected Cloudflare account ID. Only then does it run `wrangler deploy`. It does not run migrations, execute SQL, seed fixtures, or change application environment variables.
+
+**Pre-deployment gates (must be completed manually before setting the opt-in variable):**
+
+1. Confirm `bunx wrangler whoami` reports the intended Cloudflare account.
+2. Confirm the production D1 database ID in the Cloudflare dashboard matches both `wrangler.toml` and `wrangler.wallet-release.production.toml`.
+3. Take and verify a recoverable production D1 backup using the approved Cloudflare backup procedure.
+4. Run a read-only schema check against the production database and confirm both `WalletReleaseWorkerState` and the wallet hold-scan index exist. For example:
+
+   ```bash
+   bunx wrangler d1 execute mekanix --remote --command "SELECT type, name FROM sqlite_master WHERE (type='table' AND name='WalletReleaseWorkerState') OR (type='index' AND name='WalletTransaction_status_holdUntil_idx');"
+   ```
+
+   Confirm the exact index name against the applied migration history before deployment; do not create or alter schema as part of this Worker rollout.
+5. Review the pending matured escrow population and establish an operational reconciliation baseline before the first Cron run.
+6. Deploy only after explicit release approval. Observe at least two 15-minute Cron cycles, inspect Worker logs and verify that matured `PENDING` rows move to `AVAILABLE` with exactly one RELEASE ledger entry each. Investigate any `failed` count before considering the rollout healthy.
+
+This PR only adds configuration, a guarded deployment command, and documentation. It does **not** execute the command or deploy the Worker. Production activation remains an operator-approved action after all gates above are satisfied.
+
 ## Processing behavior
 
 - Each scheduled run scans matured PENDING transactions in keyset-paginated pages of 100, up to 1,000 per run. Ordering is by `holdUntil` and `id`. The last cursor is persisted in `WalletReleaseWorkerState`, so a permanently failing early row cannot pin every later Cron run to the first 1,000 rows. When the end of the current keyset cycle is reached, the cursor is reset so still-pending failures and newly matured rows are revisited on the next run.
