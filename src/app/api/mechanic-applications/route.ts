@@ -114,20 +114,25 @@ export async function POST(req: Request) {
         .filter(Boolean)
         .slice(0, 20)
     : [];
-  const safeCertifications = Array.isArray(certifications)
-    ? certifications.slice(0, 20).flatMap((value) => {
-        if (typeof value === "string") return [value.trim().slice(0, 200)].filter(Boolean);
-        if (!value || typeof value !== "object" || Array.isArray(value)) return [];
-        const item = value as Record<string, unknown>;
-        const name = typeof item.name === "string" ? item.name.trim().slice(0, 150) : "";
-        if (!name) return [];
-        const issuer = typeof item.issuer === "string" ? item.issuer.trim().slice(0, 150) : "Self-reported";
-        const year = typeof item.year === "number" && Number.isInteger(item.year)
-          ? Math.min(new Date().getFullYear() + 1, Math.max(1900, item.year))
-          : new Date().getFullYear();
-        return [{ name, issuer, year }];
-      })
-    : [];
+  const safeCertifications: Array<string | { name: string; issuer: string; year: number }> = [];
+  if (Array.isArray(certifications)) {
+    for (const value of certifications.slice(0, 20)) {
+      if (typeof value === "string") {
+        const name = value.trim().slice(0, 200);
+        if (name) safeCertifications.push(name);
+        continue;
+      }
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      const item = value as Record<string, unknown>;
+      const name = typeof item.name === "string" ? item.name.trim().slice(0, 150) : "";
+      if (!name) continue;
+      const issuer = typeof item.issuer === "string" ? item.issuer.trim().slice(0, 150) : "Self-reported";
+      const year = typeof item.year === "number" && Number.isInteger(item.year)
+        ? Math.min(new Date().getFullYear() + 1, Math.max(1900, item.year))
+        : new Date().getFullYear();
+      safeCertifications.push({ name, issuer, year });
+    }
+  }
   const applicationData = {
     fullName: fullName.slice(0, 200).trim(),
     phone: normalizedPhone,
