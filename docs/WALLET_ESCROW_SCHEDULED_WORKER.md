@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The dedicated Worker is intended to release matured wallet escrow every 15 minutes. The production application currently **does not release escrow from wallet GET requests**: `shouldUseLegacyWalletReleaseFallback` always returns false when `NODE_ENV=production`, regardless of `WALLET_RELEASE_SCHEDULED`. The committed Worker configuration is staging-only and contains a placeholder D1 ID. Therefore, until a separately configured production Worker is deployed and verified, matured production escrow transactions can remain `PENDING`.
+The dedicated Worker is intended to release matured wallet escrow every 15 minutes. The production application currently **does not release escrow from wallet GET requests**: `shouldUseLegacyWalletReleaseFallback` always returns false when `NODE_ENV=production`, regardless of `WALLET_RELEASE_SCHEDULED`. The staging Worker configuration remains isolated and contains a placeholder D1 ID. A separate production config now exists, but it has not been deployed or verified in the target Cloudflare account. Therefore, until a separately configured production Worker is deployed and verified, matured production escrow transactions can remain `PENDING`.
 
 This is an intentional fail-closed financial safety posture. Do not re-enable GET-triggered financial writes as a workaround. Wallet reads must remain read-only with respect to escrow release.
 
