@@ -2,6 +2,7 @@ import { ADMIN_USER_SELECT, AUTH_USER_SELECT } from "@/lib/user-select";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { verifySession, requireRole } from "@/lib/auth";
+import { getPhoneLookupVariants } from "@/lib/phone-normalization";
 
 function isUniqueConflict(error: unknown): boolean {
   const value = error as { code?: string; message?: string } | null;
@@ -55,7 +56,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // roles or promote suspended accounts through this public application flow.
   let user = app.userId
     ? await db.user.findUnique({ where: { id: app.userId }, select: AUTH_USER_SELECT })
-    : await db.user.findUnique({ where: { phone: app.phone }, select: AUTH_USER_SELECT });
+    : null;
+  if (!user) {
+    for (const phoneVariant of getPhoneLookupVariants(app.phone)) {
+      user = await db.user.findUnique({ where: { phone: phoneVariant }, select: AUTH_USER_SELECT });
+      if (user) break;
+    }
+  }
 
   if (user && (
     (user.role !== "CUSTOMER" && user.role !== "TECHNICIAN") ||
