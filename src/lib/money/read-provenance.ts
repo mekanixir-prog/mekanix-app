@@ -81,7 +81,7 @@ export function maskWalletMoney<T extends MoneyRecord>(wallet: T): T {
 export function maskInvoiceMoney<T extends MoneyRecord>(invoice: T): T {
   const safe = maskFields(
     invoice,
-    ["laborRate", "laborTotal", "partsTotal", "travelFee", "subtotal", "taxTotal", "discount", "total"],
+    ["laborRate", "laborTotal", "partsTotal", "travelFee", "inspectionFee", "emergencyFee", "subtotal", "taxTotal", "discount", "total"],
     isVerifiedIrrRecord(invoice.financialUnitStatus, invoice.currency),
   ) as MoneyRecord;
 
