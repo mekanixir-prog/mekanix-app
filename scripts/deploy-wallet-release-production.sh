@@ -34,6 +34,19 @@ CONFIG_NAME="$(awk -F '"' '/^[[:space:]]*database_name[[:space:]]*=/ { print $2;
 CONFIG_ID="$(awk -F '"' '/^[[:space:]]*database_id[[:space:]]*=/ { print $2; exit }' "$CONFIG")"
 WORKER_NAME="$(awk -F '"' '/^[[:space:]]*name[[:space:]]*=/ { print $2; exit }' "$CONFIG")"
 
+APP_CONFIG="$REPO_DIR/wrangler.toml"
+APP_CONFIG_ID="$(awk -F '"' '/^[[:space:]]*database_id[[:space:]]*=/ { print $2; exit }' "$APP_CONFIG")"
+
+if [[ -z "$APP_CONFIG_ID" || "$CONFIG_ID" != "$APP_CONFIG_ID" ]]; then
+  echo "Refusing deployment: escrow Worker D1 ID does not match the application production D1 binding."
+  exit 1
+fi
+
+if grep -Eq '^[[:space:]]*(migrations_dir|migrations_pattern)[[:space:]]*=' "$CONFIG"; then
+  echo "Refusing deployment: production Worker config must not apply D1 migrations."
+  exit 1
+fi
+
 if [[ "$CONFIG_NAME" != "$EXPECTED_NAME" || "$WORKER_NAME" != "$EXPECTED_WORKER" ]]; then
   echo "Refusing deployment: unexpected D1 database or Worker name in production config."
   exit 1
