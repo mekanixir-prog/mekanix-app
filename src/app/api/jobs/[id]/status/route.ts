@@ -71,7 +71,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       technicianId: true,
       requestId: true,
       code: true,
-      parts: { select: { unitPrice: true, quantity: true } },
+      parts: { select: { unitPrice: true, quantity: true, financialUnitStatus: true } },
       request: { select: { category: true, urgency: true, lat: true, lng: true, vehicle: { select: { type: true } } } },
       tracking: { orderBy: { ts: "asc" }, take: 1, select: { lat: true, lng: true } },
       invoice: { select: { id: true, currency: true, financialUnitStatus: true } },
@@ -187,7 +187,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (!existing.request?.vehicle?.type) {
       return NextResponse.json({ error: "نوع وسیله برای محاسبه تعرفه مشخص نیست", code: "VEHICLE_RATE_CLASS_REQUIRED" }, { status: 409 });
     }
-    if (!areJobPartPriceSourcesVerified(existing.parts.length > 0)) {
+    if (!areJobPartPriceSourcesVerified(existing.parts)) {
       return NextResponse.json(
         { error: "واحد قیمت قطعات هنوز به ریال تطبیق داده نشده است؛ صدور پیش‌فاکتور پس از تأیید سوابق قطعات فعال می‌شود", code: "JOB_PART_CURRENCY_UNVERIFIED" },
         { status: 409 },
@@ -197,7 +197,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       const unitPrice = Number(part.unitPrice);
       const quantity = Number(part.quantity);
       if (!Number.isSafeInteger(unitPrice) || unitPrice < 0 ||
-          !Number.isSafeInteger(quantity) || quantity < 0) return Number.NaN;
+          !Number.isSafeInteger(quantity) || quantity <= 0) return Number.NaN;
       const next = sum + unitPrice * quantity;
       return Number.isSafeInteger(next) ? next : Number.NaN;
     }, 0);
