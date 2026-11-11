@@ -37,7 +37,7 @@ describe("wallet escrow release atomicity", () => {
     await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-1", new Date())).resolves.toBe(true);
     expect(db.$transaction).toHaveBeenCalledTimes(1);
     expect(tx.walletTransaction.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ netAmount: { gte: 0 }, financialUnitStatus: "VERIFIED_IRR" }),
+      where: expect.objectContaining({ netAmount: { gt: 0 }, financialUnitStatus: "VERIFIED_IRR" }),
     }));
     expect(tx.walletTransaction.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ netAmount, financialUnitStatus: "VERIFIED_IRR" }),
