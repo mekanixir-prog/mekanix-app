@@ -1,4 +1,4 @@
--- New submissions are stored with one canonical Iranian mobile identity.
+-- New submissions use canonical Iranian and +1 phone identities.
 -- Refuse rollout if legacy formatted variants already identify the same phone;
 -- records must be reconciled manually rather than silently deleting history.
 WITH compacted AS (
@@ -14,6 +14,9 @@ canonical AS (
     WHEN length(replace(compact, '+', '')) = 11
       AND substr(replace(compact, '+', ''), 1, 1) = '0'
       THEN '+98' || substr(replace(compact, '+', ''), 2)
+    WHEN length(replace(compact, '+', '')) = 11
+      AND substr(replace(compact, '+', ''), 1, 1) = '1'
+      THEN '+' || replace(compact, '+', '')
     WHEN substr(compact, 1, 1) = '+'
       THEN '+' || replace(compact, '+', '')
     ELSE compact
