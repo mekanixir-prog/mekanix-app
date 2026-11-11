@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import { isSafeStoredIrrAmount } from "@/lib/money/financial-read-mask";
+import { isSafeNonNegativeStoredIrrAmount } from "@/lib/money/financial-read-mask";
 
 type WithdrawalInput = {
   walletId: string;
@@ -33,7 +33,7 @@ export async function createWithdrawalWithPrisma(
     });
     if (existing) return false;
     const walletBefore = await tx.wallet.findUnique({ where: { id: input.walletId }, select: { balance: true, financialUnitStatus: true } });
-    if (!walletBefore || walletBefore.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(walletBefore.balance)) return false;
+    if (!walletBefore || walletBefore.financialUnitStatus !== "VERIFIED_IRR" || !isSafeNonNegativeStoredIrrAmount(walletBefore.balance)) return false;
 
     const debit = await tx.wallet.updateMany({
       where: { id: input.walletId, financialUnitStatus: "VERIFIED_IRR", balance: { gte: input.amount } },
@@ -45,7 +45,7 @@ export async function createWithdrawalWithPrisma(
       where: { id: input.walletId },
       select: { balance: true, financialUnitStatus: true },
     });
-    if (!wallet || wallet.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(wallet.balance)) throw new Error("Wallet financial provenance is not verified");
+    if (!wallet || wallet.financialUnitStatus !== "VERIFIED_IRR" || !isSafeNonNegativeStoredIrrAmount(wallet.balance)) throw new Error("Wallet financial provenance is not verified");
 
     const balanceAfter = Number(wallet.balance);
     const balanceBefore = balanceAfter + input.amount;
