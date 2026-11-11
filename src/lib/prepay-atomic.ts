@@ -32,7 +32,7 @@ export async function recordPrepayWithPrisma(
 ): Promise<boolean> {
   return db.$transaction(async (tx) => {
     const jobUpdate = await tx.job.updateMany({
-      where: { id: input.jobId, prepayPaid: false },
+      where: { id: input.jobId, technicianId: input.technicianId, prepayPaid: false },
       data: {
         prepayPaid: true,
         prepayPaidAt: input.paidAt,
@@ -147,8 +147,8 @@ export async function recordPrepayWithD1(
       SET "prepayPaid" = 1, "prepayPaidAt" = ?, "inspectionFee" = ?,
           "travelFee" = ?, "platformCommission" = ?, "netEarnings" = ?,
           "holdUntil" = NULL, "updatedAt" = ?
-      WHERE "id" = ? AND "prepayPaid" = 0
-    `).bind(at, input.inspectionFee, input.travelFee, input.commission, input.net, at, input.jobId),
+      WHERE "id" = ? AND "technicianId" = ? AND "prepayPaid" = 0
+    `).bind(at, input.inspectionFee, input.travelFee, input.commission, input.net, at, input.jobId, input.technicianId),
 
     d1.prepare(`
       INSERT INTO "Wallet" ("id", "technicianId", "createdAt", "updatedAt")
