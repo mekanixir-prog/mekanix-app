@@ -119,7 +119,7 @@ export function assertAtomicInvoiceInput(invoice: AtomicInvoiceInput, jobId: str
       invoice.currency !== "IRR" ||
       invoice.financialUnitStatus !== "VERIFIED_IRR" ||
       invoice.status !== "SENT" ||
-      !/^rate-card-\\d+$/.test(invoice.pricingVersion) ||
+      !/^rate-card-\d+$/.test(invoice.pricingVersion) ||
       typeof invoice.notes !== "string" ||
       !Number.isSafeInteger(invoice.laborHours) ||
       invoice.laborHours <= 0 ||
