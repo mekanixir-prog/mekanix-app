@@ -83,7 +83,7 @@ export async function POST(req: Request) {
 
   // Keep the application phone identical to the OTP identity key. This avoids
   // creating a technician account with a formatted phone that login cannot match.
-  const normalizedPhone = phoneValidation.data.phone.replace(/[\\s\\-()]/g, "");
+  const normalizedPhone = phoneValidation.data.phone.replace(/[\s\-()]/g, "");
   const code = `APP-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`;
   const db = await getDbForLib();
 
