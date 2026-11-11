@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
-import { areInvoicePriceSourcesVerified, areJobPartPriceSourcesVerified } from "@/lib/money/provenance";
+import { areInvoicePriceSourcesVerified, areJobPartPriceSourcesVerified, isInvoicePricingPolicyApproved } from "@/lib/money/provenance";
 import { maskInvoiceMoney } from "@/lib/money/read-provenance";
 
 const FULL_INCLUDE = {
@@ -60,6 +60,12 @@ export async function POST(req: Request) {
   if (access) return access;
 
   const db = await getDbForLib();
+  if (!isInvoicePricingPolicyApproved()) {
+    return NextResponse.json(
+      { error: "سیاست نرخ‌گذاری ریالی هنوز تأیید نشده است؛ صدور فاکتور مسدود است", code: "INVOICE_PRICING_POLICY_UNAPPROVED" },
+      { status: 409 },
+    );
+  }
   if (session.role === "TECHNICIAN") {
     const tech = await getTechnicianFromSession(session);
     const job = await db.job.findUnique({ where: { id: jobId }, select: { technicianId: true } });
