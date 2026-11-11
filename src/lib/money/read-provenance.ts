@@ -7,9 +7,10 @@ function maskFields<T extends MoneyRecord>(
   fields: readonly string[],
   verified: boolean,
 ): T {
-  if (verified) return record;
   const masked: MoneyRecord = { ...record };
-  for (const field of fields) masked[field] = null;
+  if (!verified) {
+    for (const field of fields) masked[field] = null;
+  }
   return masked as T;
 }
 
