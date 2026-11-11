@@ -123,6 +123,23 @@ describe("atomic escrow release D1 SQLite integration", () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletReleaseGuard"').get()).toEqual({ count: 0 });
   });
 
+  it("does not release against a negative wallet balance", async () => {
+    const { sqlite, d1 } = makeD1();
+    databases.push(sqlite);
+    seed(sqlite);
+    sqlite.prepare('UPDATE "Wallet" SET "balance" = -1 WHERE "id" = ?').run("wallet-1");
+
+    await expect(
+      releaseWalletTransactionWithD1(d1 as never, "wallet-1", "txn-1", new Date("2026-10-30T10:00:00.000Z"))
+    ).rejects.toThrow();
+
+    expect(sqlite.prepare('SELECT "balance", "pendingBalance" FROM "Wallet" WHERE "id" = ?').get("wallet-1"))
+      .toEqual({ balance: -1, pendingBalance: 1000 });
+    expect(sqlite.prepare('SELECT "status" FROM "WalletTransaction" WHERE "id" = ?').get("txn-1"))
+      .toEqual({ status: "PENDING" });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
+  });
+
   it("does not release a negative net amount", async () => {
     const { sqlite, d1 } = makeD1(); databases.push(sqlite);
     sqlite.prepare(`INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "pendingBalance") VALUES (?, 'VERIFIED_IRR', ?, ?)`).run("wallet-1", 2000, 1000);
