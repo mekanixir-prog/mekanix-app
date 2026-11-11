@@ -55,7 +55,8 @@ export async function releaseWalletTransactionWithPrisma(
       select: { balance: true, pendingBalance: true, financialUnitStatus: true },
     });
     if (!updatedWallet || updatedWallet.financialUnitStatus !== "VERIFIED_IRR" ||
-        !isSafeStoredIrrAmount(updatedWallet.balance) || !isSafeStoredIrrAmount(updatedWallet.pendingBalance)) {
+        !isSafeStoredIrrAmount(updatedWallet.balance) || Number(updatedWallet.balance) < 0 ||
+        !isSafeStoredIrrAmount(updatedWallet.pendingBalance) || Number(updatedWallet.pendingBalance) < 0) {
       throw new Error("Wallet financial provenance or integer IRR aggregates are invalid");
     }
 
