@@ -4,7 +4,7 @@ import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
 import { getJobPartAmountError } from "@/lib/money/job-part-amount";
 import { maskFinancialFields } from "@/lib/money/financial-read-mask";
-import { addJobPartBeforeInvoice, removeJobPartBeforeInvoice, JobPartMutationConflictError, JobPartNotFoundError } from "@/lib/job-parts-atomic";
+import { addJobPartBeforeInvoice, removeJobPartBeforeInvoice, JobPartAmountValidationError, JobPartMutationConflictError, JobPartNotFoundError } from "@/lib/job-parts-atomic";
 
 async function ensureAssignedTechOrAdmin(session: any, jobId: string) {
   if (session.role === "ADMIN") return null;
@@ -72,6 +72,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     });
     return NextResponse.json(maskFinancialFields(part, ["unitPrice"]));
   } catch (error) {
+    if (error instanceof JobPartAmountValidationError) {
+      return NextResponse.json(
+        { error: "مبلغ یا تعداد قطعه باید عدد صحیح امن ریال باشد", code: error.code },
+        { status: 400 },
+      );
+    }
     if (error instanceof JobPartMutationConflictError) {
       return NextResponse.json(
         { error: "ثبت یا تغییر قطعه فقط در مرحله آماده‌سازی برآورد و پیش از صدور پیش‌فاکتور مجاز است؛ تغییرات بعدی نیازمند برآورد و تأیید جداگانه است", code: "PARTS_LOCKED_AFTER_ESTIMATE" },
