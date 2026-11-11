@@ -704,9 +704,20 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
   const lang = isFa ? "fa" : "en";
   const [tech, setTech] = useState<PublicTechnician | null>(null);
   const [requesting, setRequesting] = useState(false);
+  const [profileUnavailable, setProfileUnavailable] = useState(false);
 
   useEffect(() => {
-    if (params.technicianId) api.getTechnician(params.technicianId).then(setTech);
+    let active = true;
+    setTech(null);
+    setProfileUnavailable(false);
+    if (!params.technicianId) {
+      setProfileUnavailable(true);
+      return () => { active = false; };
+    }
+    api.getTechnician(params.technicianId)
+      .then((profile) => { if (active) setTech(profile); })
+      .catch(() => { if (active) setProfileUnavailable(true); });
+    return () => { active = false; };
   }, [params.technicianId]);
 
   const request = async () => {
@@ -727,6 +738,19 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
     }
   };
 
+  if (profileUnavailable) {
+    return (
+      <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
+        <button onClick={back} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="size-4" /> {t("req.backToResults")}
+        </button>
+        <div className="rounded-xl border border-border bg-card p-6 text-center">
+          <p className="font-semibold">{t("req.techProfile.unavailable")}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{t("req.techProfile.unavailableDesc")}</p>
+        </div>
+      </div>
+    );
+  }
   if (!tech) return <div className="h-64 rounded-xl bg-muted/60 mk-shimmer" />;
 
   return (
