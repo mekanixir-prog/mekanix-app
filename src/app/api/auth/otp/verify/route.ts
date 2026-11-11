@@ -130,7 +130,7 @@ export async function POST(req: Request) {
     phone,
     ...getPhoneLookupVariants(body.data.phone).filter((variant) => variant !== phone),
   ];
-  let user = null;
+  let user: Awaited<ReturnType<typeof db.user.findUnique>> = null;
   for (const variant of phoneVariants) {
     const match = await db.user.findUnique({
       where: { phone: variant },
