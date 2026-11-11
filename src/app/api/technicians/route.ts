@@ -3,6 +3,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireRole } from "@/lib/auth";
 import { maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 
 const techInclude = {
   specialties: true,
@@ -24,6 +25,25 @@ const PUBLIC_USER_FIELDS = {
 // GET /api/technicians — public listing (no auth required).
 // Selects only safe fields (no password, no sensitive data).
 export async function GET(req: Request) {
+  const clientId = getClientId(req);
+  const limited = await rateLimitAsync(
+    `technician-discovery:${clientId}`,
+    RATE_LIMITS.API_DEFAULT.max,
+    RATE_LIMITS.API_DEFAULT.windowMs,
+  );
+  if (limited.unavailable) {
+    return NextResponse.json(
+      { error: "سرویس جست‌وجوی تعمیرکاران موقتاً در دسترس نیست" },
+      { status: 503, headers: { "Retry-After": "30" } },
+    );
+  }
+  if (!limited.success) {
+    return NextResponse.json(
+      { error: "تعداد درخواست‌های جست‌وجو بیش از حد مجاز است" },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(limited.resetMs / 1000)) } },
+    );
+  }
+
   const url = new URL(req.url);
   const lat = url.searchParams.get("lat");
   const lng = url.searchParams.get("lng");
