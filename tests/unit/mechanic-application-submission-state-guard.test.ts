@@ -228,4 +228,22 @@ describe("public mechanic application resubmission state guard", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(mocks.applicationFindMany).not.toHaveBeenCalled();
   });
+
+  it("links an existing Iranian customer account when the applicant uses the other phone format", async () => {
+    mocks.userFindUnique.mockImplementation(async ({ where }) =>
+      where.phone === "09121234567"
+        ? { id: "legacy-user", role: "CUSTOMER", status: "ACTIVE" }
+        : null
+    );
+
+    const response = await POST(request({ phone: "+98 912-123-4567" }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.applicationCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        phone: "+989121234567",
+        userId: "legacy-user",
+      }),
+    }));
+  });
 });
