@@ -273,6 +273,7 @@ describe("PAY-01 — /api/payments production guard", () => {
       status: "SENT",
       total: 100,
       currency: "IRR",
+      financialUnitStatus: "VERIFIED_IRR",
       jobId: "job-1",
       code: "INV-1",
       job: {
@@ -309,6 +310,7 @@ describe("/api/payments — BOLA (payment for another user's invoice)", () => {
       status: "SENT",
       total: 100,
       currency: "IRR",
+      financialUnitStatus: "VERIFIED_IRR",
       jobId: "job-1",
       code: "INV-1",
       job: {
@@ -339,6 +341,7 @@ describe("/api/payments — BOLA (payment for another user's invoice)", () => {
       status: "SENT",
       total: 100,
       currency: "IRR",
+      financialUnitStatus: "VERIFIED_IRR",
       jobId: "job-1",
       code: "INV-1",
       job: {
@@ -360,6 +363,64 @@ describe("/api/payments — BOLA (payment for another user's invoice)", () => {
 
     expect(res.status).toBe(200);
     expect(mockPaymentCreate).toHaveBeenCalledTimes(1);
+    expect(mockPaymentCreate.mock.calls[0][0].data).toMatchObject({
+      amount: 100,
+      currency: "IRR",
+      financialUnitStatus: "VERIFIED_IRR",
+    });
+  });
+
+  it("blocks payment when the invoice row has no verified IRR attestation", async () => {
+    mockInvoiceFindUnique.mockResolvedValue({
+      id: "inv-unverified",
+      status: "SENT",
+      total: 100,
+      currency: "IRR",
+      financialUnitStatus: "UNVERIFIED",
+      jobId: "job-1",
+      code: "INV-UNVERIFIED",
+      job: { request: { customer: { userId: "user-1" } } },
+    });
+
+    const res = await paymentsPOST(makePostRequest("http://localhost/api/payments", {
+      invoiceId: "inv-unverified",
+      method: "card",
+    }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: "INVOICE_FINANCIAL_PROVENANCE_UNVERIFIED" });
+    expect(mockPaymentFindUnique).not.toHaveBeenCalled();
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
+    expect(mockInvoiceUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not reuse a legacy payment row without matching verified IRR provenance", async () => {
+    mockInvoiceFindUnique.mockResolvedValue({
+      id: "inv-1",
+      status: "SENT",
+      total: 100,
+      currency: "IRR",
+      financialUnitStatus: "VERIFIED_IRR",
+      jobId: "job-1",
+      code: "INV-1",
+      job: { request: { customer: { userId: "user-1" } } },
+    });
+    mockPaymentFindUnique.mockResolvedValue({
+      id: "pay-legacy",
+      amount: 100,
+      currency: "IRR",
+      financialUnitStatus: "UNVERIFIED",
+    });
+
+    const res = await paymentsPOST(makePostRequest("http://localhost/api/payments", {
+      invoiceId: "inv-1",
+      method: "card",
+    }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: "PAYMENT_FINANCIAL_PROVENANCE_UNVERIFIED" });
+    expect(mockPaymentUpdate).not.toHaveBeenCalled();
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
   });
 });
 
@@ -375,6 +436,7 @@ describe("/api/payments — duplicate POST idempotency (sequential)", () => {
       status: "PAID", // already paid
       total: 100,
       currency: "IRR",
+      financialUnitStatus: "VERIFIED_IRR",
       jobId: "job-1",
       code: "INV-1",
       job: {
