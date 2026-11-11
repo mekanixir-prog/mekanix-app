@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { User } from "@prisma/client";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireRole } from "@/lib/auth";
@@ -98,7 +99,7 @@ export async function POST(req: Request) {
   const code = `APP-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`;
   const db = await getDbForLib();
 
-  let existingUser = null;
+  let existingUser: User | null = null;
   for (const phoneVariant of phoneVariants) {
     existingUser = await db.user.findUnique({ where: { phone: phoneVariant } });
     if (existingUser) break;
