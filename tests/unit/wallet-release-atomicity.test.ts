@@ -34,7 +34,7 @@ describe("wallet escrow release atomicity", () => {
     }));
     expect(tx.walletTransaction.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.wallet.updateMany).toHaveBeenCalledWith({
-      where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR", pendingBalance: { gte: netAmount } },
+      where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR", balance: { gte: 0 }, pendingBalance: { gte: netAmount } },
       data: {
         pendingBalance: { decrement: netAmount },
         balance: { increment: netAmount },
