@@ -83,7 +83,7 @@ The script checks that the configured database name and Worker name are the expe
 4. Run a read-only schema check against the production database and confirm both `WalletReleaseWorkerState` and the wallet hold-scan index exist. For example:
 
    ```bash
-   bunx wrangler d1 execute mekanix --remote --command "SELECT type, name FROM sqlite_master WHERE (type='table' AND name='WalletReleaseWorkerState') OR (type='index' AND name='WalletTransaction_status_holdUntil_idx');"
+   bunx wrangler d1 execute mekanix --remote --command "SELECT type, name FROM sqlite_master WHERE (type='table' AND name='WalletReleaseWorkerState') OR (type='index' AND name='WalletTransaction_status_holdUntil_id_idx');"
    ```
 
    Confirm the exact index name against the applied migration history before deployment; do not create or alter schema as part of this Worker rollout.
