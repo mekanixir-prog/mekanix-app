@@ -160,7 +160,7 @@ describe.skipIf(!postgresConfigured)("wallet escrow release PostgreSQL transacti
     const fixture = await makeDueTransaction("insufficient", 1000, 100);
     await expect(releaseWalletTransactionWithPrisma(
       db!, fixture.walletId, fixture.transactionId, releaseAt
-    )).rejects.toThrow("escrow release rolled back");
+    )).resolves.toBe(false);
     const walletAfterEdgeCase = await db!.wallet.findUnique({
       where: { id: fixture.walletId },
       select: { balance: true, pendingBalance: true },
