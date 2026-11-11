@@ -1,3 +1,5 @@
+import { isSafeStoredIrrAmount } from "@/lib/money/financial-read-mask";
+
 /**
  * Production invoice creation must not infer the unit of legacy price sources.
  * Development/test data remains usable; production requires explicit evidence
@@ -11,8 +13,6 @@ export function areInvoicePriceSourcesVerified(
     env.MEKANIX_TECHNICIAN_FEES_IRR_VERIFIED === "true"
   );
 }
-
-import { isSafeStoredIrrAmount } from "@/lib/money/financial-read-mask";
 
 /**
  * Every persisted part must independently attest its IRR unit. A deployment
