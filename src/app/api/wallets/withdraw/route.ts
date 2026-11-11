@@ -6,7 +6,7 @@ import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { createWithdrawalAtomically } from "@/lib/withdrawal-atomic";
 import { isValidIranianSheba } from "@/lib/iranian-iban";
 import { getApprovedIrrWithdrawalPolicy, isValidIrrWithdrawalAmount } from "@/lib/money/withdrawal-policy";
-import { isSafeStoredIrrAmount, maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { isSafeNonNegativeStoredIrrAmount, maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 export async function POST(req: Request) {
   const session = await requireAuth(req);
@@ -89,7 +89,7 @@ export async function POST(req: Request) {
   if (!wallet) {
     return NextResponse.json({ error: "کیف پول یافت نشد" }, { status: 404 });
   }
-  if (wallet.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(wallet.balance)) {
+  if (wallet.financialUnitStatus !== "VERIFIED_IRR" || !isSafeNonNegativeStoredIrrAmount(wallet.balance)) {
     return NextResponse.json({ error: "منشأ مالی موجودی کیف پول تأیید نشده است؛ برداشت تا زمان تطبیق سوابق مسدود است", code: "WALLET_FINANCIAL_PROVENANCE_UNVERIFIED" }, { status: 503 });
   }
 
@@ -148,7 +148,7 @@ export async function POST(req: Request) {
       const currentWallet = await db.wallet.findUnique({ where: { id: wallet.id }, select: { balance: true, financialUnitStatus: true } });
       return NextResponse.json({
         withdrawal: maskFinancialFields(withdrawal, ["amount"]),
-        newBalance: currentWallet?.financialUnitStatus === "VERIFIED_IRR" && isSafeStoredIrrAmount(currentWallet.balance) ? Number(currentWallet.balance) : null,
+        newBalance: currentWallet?.financialUnitStatus === "VERIFIED_IRR" && isSafeNonNegativeStoredIrrAmount(currentWallet.balance) ? Number(currentWallet.balance) : null,
         idempotent: true,
       });
     }
@@ -157,7 +157,7 @@ export async function POST(req: Request) {
     }
 
     const updatedWallet = await db.wallet.findUnique({ where: { id: wallet.id }, select: { balance: true, financialUnitStatus: true } });
-    const newBalance = updatedWallet?.financialUnitStatus === "VERIFIED_IRR" && isSafeStoredIrrAmount(updatedWallet.balance)
+    const newBalance = updatedWallet?.financialUnitStatus === "VERIFIED_IRR" && isSafeNonNegativeStoredIrrAmount(updatedWallet.balance)
       ? Number(updatedWallet.balance)
       : null;
 
@@ -187,7 +187,7 @@ export async function POST(req: Request) {
       const currentWallet = await db.wallet.findUnique({ where: { id: wallet.id }, select: { balance: true, financialUnitStatus: true } });
       return NextResponse.json({
         withdrawal: maskFinancialFields(raced, ["amount"]),
-        newBalance: currentWallet?.financialUnitStatus === "VERIFIED_IRR" && isSafeStoredIrrAmount(currentWallet.balance) ? Number(currentWallet.balance) : null,
+        newBalance: currentWallet?.financialUnitStatus === "VERIFIED_IRR" && isSafeNonNegativeStoredIrrAmount(currentWallet.balance) ? Number(currentWallet.balance) : null,
         idempotent: true,
       });
     }
