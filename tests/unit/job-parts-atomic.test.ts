@@ -16,6 +16,7 @@ vi.mock("@/lib/idempotency", () => ({ getD1Binding: mocks.getD1Binding }));
 import {
   addJobPartBeforeInvoice,
   removeJobPartBeforeInvoice,
+  JobPartAmountValidationError,
   JobPartMutationConflictError,
   JobPartNotFoundError,
 } from "@/lib/job-parts-atomic";
