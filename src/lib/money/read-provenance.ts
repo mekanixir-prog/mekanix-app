@@ -35,7 +35,7 @@ export function maskWalletMoney<T extends MoneyRecord>(wallet: T): T {
     wallet,
     ["balance", "pendingBalance", "totalEarned", "totalCommission", "totalWithdrawn"],
     isVerifiedIrrRecord(wallet.financialUnitStatus),
-  ) as T & MoneyRecord;
+  ) as MoneyRecord;
 
   if (Array.isArray(safe.transactions)) {
     safe.transactions = safe.transactions.map((transaction) =>
@@ -52,7 +52,7 @@ export function maskWalletMoney<T extends MoneyRecord>(wallet: T): T {
       maskNestedRecord(entry, ["amount", "balanceBefore", "balanceAfter"]),
     );
   }
-  return safe;
+  return safe as T;
 }
 
 /**
@@ -64,7 +64,7 @@ export function maskInvoiceMoney<T extends MoneyRecord>(invoice: T): T {
     invoice,
     ["laborRate", "laborTotal", "partsTotal", "travelFee", "subtotal", "taxTotal", "discount", "total"],
     isVerifiedIrrRecord(invoice.financialUnitStatus, invoice.currency),
-  ) as T & MoneyRecord;
+  ) as MoneyRecord;
 
   safe.payment = maskNestedRecord(safe.payment, ["amount"], "currency");
 
@@ -89,5 +89,5 @@ export function maskInvoiceMoney<T extends MoneyRecord>(invoice: T): T {
     safe.job = safeJob;
   }
 
-  return safe;
+  return safe as T;
 }
