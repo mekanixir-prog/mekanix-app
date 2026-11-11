@@ -129,12 +129,20 @@ describe("wallet escrow release atomicity", () => {
         findFirst: vi.fn().mockResolvedValue({ netAmount: 1250 }),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
-      wallet: { updateMany: vi.fn(), findUnique: vi.fn() },
+      wallet: {
+        findUnique: vi.fn().mockResolvedValue({
+          financialUnitStatus: "VERIFIED_IRR",
+          balance: new Prisma.Decimal(2000),
+          pendingBalance: new Prisma.Decimal(1250),
+        }),
+        updateMany: vi.fn(),
+      },
       walletLedger: { create: vi.fn() },
     };
     const db = { $transaction: vi.fn(async (callback: (tx: any) => Promise<boolean>) => callback(tx)) } as any;
 
     await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-1", new Date())).resolves.toBe(false);
+    expect(tx.walletTransaction.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.wallet.updateMany).not.toHaveBeenCalled();
     expect(tx.walletLedger.create).not.toHaveBeenCalled();
   });
