@@ -104,8 +104,7 @@ async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
       `SELECT CASE WHEN EXISTS (
          SELECT 1 FROM "PaymentOutboxEvent" o JOIN "UserVipSubscription" s ON s."paymentId"=?
          WHERE o."id"=? AND o."status"='PROCESSED' AND o."processedAt"=?
-           AND s."userId"=? AND s."planId"=? AND s."status"='ACTIVE'
-           AND s."status"='ACTIVE' AND s."startedAt" IS NOT NULL AND s."expiresAt" IS NOT NULL
+           AND s."userId"=? AND s."planId"=? AND s."status"='ACTIVE' AND s."startedAt" IS NOT NULL AND s."expiresAt" IS NOT NULL
            AND (strftime('%s',s."expiresAt")-strftime('%s',s."startedAt"))=?*86400
        AND EXISTS (SELECT 1 FROM "Payment" pay JOIN "PaymentGatewayLog" gw ON gw."id"=pay."gatewayLogId"
            WHERE pay."id"=? AND pay."gatewayLogId"=? AND pay."userId"=? AND pay."amount"=?
@@ -166,14 +165,14 @@ async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
   const notification = db.prepare(
     `INSERT INTO "Notification" ("id","userId","type","title","body","category","link","read","createdAt")
      SELECT ?,?,'vip_activated','اشتراک VIP فعال شد','اشتراک VIP شما ثبت و فعال‌سازی شد.','system','customer/settings',0,?
-     WHERE EXISTS (SELECT 1 FROM "UserVipSubscription" WHERE "paymentId"=? AND "userId"=? AND "planId"=?)
+     WHERE EXISTS (SELECT 1 FROM "UserVipSubscription" WHERE "paymentId"=? AND "userId"=? AND "planId"=? AND "status"='ACTIVE')
      ON CONFLICT("id") DO NOTHING`
   ).bind(`vip-activated:${p.paymentId}`,p.userId,now.toISOString(),p.paymentId,p.userId,p.targetPlanId);
 
   const markProcessed = db.prepare(
     `UPDATE "PaymentOutboxEvent" SET "status"='PROCESSED',"processedAt"=?,"lockedAt"=NULL,"lastError"=NULL,"updatedAt"=?
      WHERE "id"=? AND "status"='PROCESSING' AND "lockedAt"=? AND "idempotencyKey"=?
-       AND EXISTS (SELECT 1 FROM "UserVipSubscription" s WHERE s."paymentId"=? AND s."userId"=? AND s."planId"=?
+       AND EXISTS (SELECT 1 FROM "UserVipSubscription" s WHERE s."paymentId"=? AND s."userId"=? AND s."planId"=? AND s."status"='ACTIVE'
          AND s."startedAt" IS NOT NULL AND s."expiresAt" IS NOT NULL
          AND (strftime('%s',s."expiresAt")-strftime('%s',s."startedAt"))=?*86400)`
   ).bind(now.toISOString(),now.toISOString(),event.id,event.lockedAt,event.idempotencyKey,p.paymentId,p.userId,p.targetPlanId,p.durationDays);
@@ -182,7 +181,7 @@ async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
     `SELECT CASE WHEN EXISTS (
        SELECT 1 FROM "PaymentOutboxEvent" o JOIN "UserVipSubscription" s ON s."paymentId"=?
        WHERE o."id"=? AND o."status"='PROCESSED' AND o."processedAt"=?
-         AND s."userId"=? AND s."planId"=?
+         AND s."userId"=? AND s."planId"=? AND s."status"='ACTIVE'
          AND s."startedAt" IS NOT NULL AND s."expiresAt" IS NOT NULL
          AND (strftime('%s',s."expiresAt")-strftime('%s',s."startedAt"))=?*86400
      AND EXISTS (SELECT 1 FROM "Payment" pay JOIN "PaymentGatewayLog" gw ON gw."id"=pay."gatewayLogId"
