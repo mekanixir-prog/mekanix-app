@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   applicationFindFirst: vi.fn(),
   applicationUpdateMany: vi.fn(),
   applicationCreate: vi.fn(),
+  rateLimitAsync: vi.fn(),
+  getClientId: vi.fn(),
 }));
 
 vi.mock("@/lib/db-access", () => ({
@@ -23,6 +25,11 @@ vi.mock("@/lib/db-access", () => ({
   })),
 }));
 vi.mock("@/lib/api-helpers", () => ({ requireAuth: vi.fn() }));
+vi.mock("@/lib/rate-limit", () => ({
+  rateLimitAsync: mocks.rateLimitAsync,
+  getClientId: mocks.getClientId,
+  RATE_LIMITS: { MECHANIC_APPLICATION: { max: 3, windowMs: 3_600_000 } },
+}));
 vi.mock("@/lib/auth", () => ({
   requireRole: vi.fn(),
   sanitizeInput: vi.fn(),
@@ -50,6 +57,8 @@ beforeEach(() => {
   mocks.applicationFindFirst.mockResolvedValue(null);
   mocks.applicationUpdateMany.mockResolvedValue({ count: 1 });
   mocks.applicationCreate.mockResolvedValue({ id: "application-new", status: "PENDING" });
+  mocks.getClientId.mockReturnValue("203.0.113.10");
+  mocks.rateLimitAsync.mockResolvedValue({ success: true, resetMs: 3_600_000 });
 });
 
 describe("public mechanic application resubmission state guard", () => {
@@ -135,5 +144,26 @@ describe("public mechanic application resubmission state guard", () => {
     expect(response.status).toBe(409);
     expect(payload.status).toBe("PENDING");
     expect(mocks.applicationCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed when the production rate-limit store is unavailable", async () => {
+    mocks.rateLimitAsync.mockResolvedValue({ success: false, resetMs: 60_000, unavailable: true });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(503);
+    expect(mocks.userFindUnique).not.toHaveBeenCalled();
+    expect(mocks.applicationCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects excessive application submissions before database work", async () => {
+    mocks.rateLimitAsync.mockResolvedValue({ success: false, resetMs: 45_000 });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("45");
+    expect(mocks.userFindUnique).not.toHaveBeenCalled();
+    expect(mocks.applicationCreate).not.toHaveBeenCalled();
   });
 });
