@@ -7,6 +7,7 @@ import { areJobPartPriceSourcesVerified } from "@/lib/money/provenance";
 import { calculatePrice } from "@/lib/pricing";
 import { estimateTravelDistanceKm, serviceCodeFromCategory } from "@/lib/job-invoice-pricing";
 import { maskInvoiceFinancialData } from "@/lib/money/financial-read-mask";
+import { assertAtomicInvoiceInput, type AtomicInvoiceInput } from "@/lib/job-status-atomic";
 
 const FULL_INCLUDE = {
   job: {
@@ -162,30 +163,38 @@ export async function POST(req: Request) {
   const total = pricing.total;
 
   const code = `INV-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`;
+  const invoiceData: AtomicInvoiceInput = {
+    id: crypto.randomUUID(),
+    code,
+    jobId,
+    laborHours,
+    laborRate,
+    laborTotal,
+    partsTotal,
+    travelFee,
+    inspectionFee,
+    emergencyFee,
+    subtotal,
+    taxRate,
+    taxTotal,
+    discount,
+    total,
+    currency: "IRR",
+    pricingVersion: pricing.pricingVersion,
+    financialUnitStatus: "VERIFIED_IRR",
+    status: "SENT",
+    notes: `Fixed-fee rate card ${pricing.pricingVersion}; service ${serviceCode}; estimated technician travel ${travelDistanceKm} km. Warranty terms, if applicable, are governed by the separately approved service agreement.`,
+  };
+  try {
+    assertAtomicInvoiceInput(invoiceData, jobId);
+  } catch {
+    return NextResponse.json({ error: "اجزای مالی فاکتور باید مبالغ صحیح و سازگار ریالی باشند", code: "INVOICE_IRR_COMPONENTS_INVALID" }, { status: 409 });
+  }
+
   let invoice: any;
   try {
     invoice = await db.invoice.create({
-      data: {
-        code,
-        jobId,
-        laborHours,
-        laborRate,
-        laborTotal,
-        partsTotal,
-        travelFee,
-        inspectionFee,
-        emergencyFee,
-        discount,
-        subtotal,
-        taxRate,
-        taxTotal,
-        total,
-        currency: "IRR",
-        pricingVersion: pricing.pricingVersion,
-        financialUnitStatus: "VERIFIED_IRR",
-        status: "SENT",
-        notes: `Fixed-fee rate card ${pricing.pricingVersion}; service ${serviceCode}; estimated technician travel ${travelDistanceKm} km. Warranty terms, if applicable, are governed by the separately approved service agreement.`,
-      },
+      data: invoiceData,
       include: FULL_INCLUDE,
     });
   } catch (error) {
