@@ -18,6 +18,10 @@ describe("financial API read provenance masking", () => {
         { financialUnitStatus: "UNVERIFIED", amount: 50, status: "REQUESTED" },
         { financialUnitStatus: "VERIFIED_IRR", amount: 75, status: "PAID" },
       ],
+      ledger: [
+        { financialUnitStatus: "UNVERIFIED", amount: 25, balanceBefore: 100, balanceAfter: 75, type: "DEBIT" },
+        { financialUnitStatus: "VERIFIED_IRR", amount: -10, balanceBefore: 75, balanceAfter: 65, type: "DEBIT" },
+      ],
     });
 
     expect(result.balance).toBeNull();
@@ -28,6 +32,10 @@ describe("financial API read provenance masking", () => {
     expect((result.transactions as any[])[1].netAmount).toBe(180);
     expect((result.withdrawals as any[])[0]).toMatchObject({ amount: null, status: "REQUESTED" });
     expect((result.withdrawals as any[])[1].amount).toBe(75);
+    expect((result.ledger as any[])[0]).toMatchObject({
+      amount: null, balanceBefore: null, balanceAfter: null, type: "DEBIT",
+    });
+    expect((result.ledger as any[])[1].amount).toBe(-10);
   });
 
   it("requires explicit verified IRR on wallet and all child records", () => {
