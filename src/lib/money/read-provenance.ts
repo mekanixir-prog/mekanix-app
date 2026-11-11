@@ -1,15 +1,28 @@
 import { isVerifiedIrrRecord } from "./record-provenance";
+import { toSafeIntegerIrr } from "./provenance";
 
 type MoneyRecord = Record<string, unknown>;
 
 function maskFields<T extends MoneyRecord>(
   record: T,
   fields: readonly string[],
-  verified: boolean,
+  attested: boolean,
+  allowNegativeFields: readonly string[] = [],
 ): T {
+  const amountsAreSafe = fields.every((field) =>
+    record[field] === null || record[field] === undefined ||
+    toSafeIntegerIrr(record[field], allowNegativeFields.includes(field)) !== null
+  );
+  const verified = attested && amountsAreSafe;
   const masked: MoneyRecord = { ...record };
+
   if (!verified) {
-    for (const field of fields) masked[field] = null;
+    masked.financialUnitStatus = record.financialUnitStatus === "VERIFIED_IRR"
+      ? "QUARANTINED"
+      : record.financialUnitStatus ?? "UNVERIFIED";
+    for (const field of fields) {
+      if (record[field] !== null && record[field] !== undefined) masked[field] = null;
+    }
   }
   return masked as T;
 }
@@ -18,17 +31,23 @@ function maskNestedRecord(
   value: unknown,
   fields: readonly string[],
   currencyField?: string,
+  allowNegativeFields: readonly string[] = [],
 ): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   const record = value as MoneyRecord;
   const currency = currencyField ? record[currencyField] : undefined;
-  return maskFields(record, fields, isVerifiedIrrRecord(record.financialUnitStatus, currency));
+  return maskFields(
+    record,
+    fields,
+    isVerifiedIrrRecord(record.financialUnitStatus, currency),
+    allowNegativeFields,
+  );
 }
 
 /**
  * Mask every wallet amount unless its owning database row carries an explicit
- * VERIFIED_IRR attestation. Currency labels alone are not evidence. Metadata
- * and lifecycle fields remain available for support and reconciliation.
+ * VERIFIED_IRR attestation and every stored value is an exact safe integer.
+ * Metadata and lifecycle fields remain available for support and reconciliation.
  */
 export function maskWalletMoney<T extends MoneyRecord>(wallet: T): T {
   const safe = maskFields(
@@ -39,7 +58,7 @@ export function maskWalletMoney<T extends MoneyRecord>(wallet: T): T {
 
   if (Array.isArray(safe.transactions)) {
     safe.transactions = safe.transactions.map((transaction) =>
-      maskNestedRecord(transaction, ["grossAmount", "commissionAmount", "netAmount"]),
+      maskNestedRecord(transaction, ["grossAmount", "commissionAmount", "netAmount"], undefined, ["netAmount"]),
     );
   }
   if (Array.isArray(safe.withdrawals)) {
@@ -49,7 +68,7 @@ export function maskWalletMoney<T extends MoneyRecord>(wallet: T): T {
   }
   if (Array.isArray(safe.ledger)) {
     safe.ledger = safe.ledger.map((entry) =>
-      maskNestedRecord(entry, ["amount", "balanceBefore", "balanceAfter"]),
+      maskNestedRecord(entry, ["amount", "balanceBefore", "balanceAfter"], undefined, ["amount"]),
     );
   }
   return safe as T;
