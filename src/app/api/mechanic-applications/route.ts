@@ -6,6 +6,8 @@ import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { otpSendSchema } from "@/lib/schemas";
 
 // GET: list mechanic applications — ADMIN only
+const APPLICATION_STATUSES = ["PENDING", "APPROVING", "REJECTING", "APPROVED", "REJECTED", "ON_HOLD"] as const;
+
 export async function GET(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
@@ -14,13 +16,19 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const status = url.searchParams.get("status");
+  if (status && !APPLICATION_STATUSES.includes(status as (typeof APPLICATION_STATUSES)[number])) {
+    return NextResponse.json(
+      { error: "وضعیت درخواست نامعتبر است" },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
+    );
+  }
   const db = await getDbForLib();
   const list = await db.mechanicApplication.findMany({
-    where: status ? { status: status as any } : undefined,
+    where: status ? { status } : undefined,
     orderBy: { createdAt: "desc" },
     include: { user: { select: { id: true, name: true, phone: true, email: true } } },
   });
-  return NextResponse.json(list);
+  return NextResponse.json(list, { headers: { "Cache-Control": "no-store" } });
 }
 
 // POST: public — anyone can apply to become a mechanic.
