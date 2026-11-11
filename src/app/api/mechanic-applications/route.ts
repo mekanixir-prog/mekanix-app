@@ -24,6 +24,11 @@ export async function GET(req: Request) {
 // POST: public — anyone can apply to become a mechanic.
 // Application status is PENDING — NOT auto-approved.
 // Admin must review and approve before technician is activated.
+function isUniqueConflict(error: unknown): boolean {
+  const value = error as { code?: string; message?: string } | null;
+  return value?.code === "P2002" || /unique constraint/i.test(value?.message ?? "");
+}
+
 const ALLOWED_APPLICATION_FIELDS = [
   "fullName", "phone", "email", "city", "experienceYears",
   "specialties", "certifications", "bio", "vehicleOwned",
@@ -112,14 +117,30 @@ export async function POST(req: Request) {
     return NextResponse.json({ ...updated, pendingReview: true });
   }
 
-  const created = await db.mechanicApplication.create({
-    data: {
-      code,
-      ...applicationData,
-      status: "PENDING",
-      userId: existingUser?.id ?? null,
-    },
-  });
+  let created;
+  try {
+    created = await db.mechanicApplication.create({
+      data: {
+        code,
+        ...applicationData,
+        status: "PENDING",
+        userId: existingUser?.id ?? null,
+      },
+    });
+  } catch (error) {
+    // The database unique index is the final arbiter for simultaneous public
+    // submissions using the same phone. Return a conflict, never a 500.
+    if (!isUniqueConflict(error)) throw error;
+    const concurrentApplication = await db.mechanicApplication.findFirst({
+      where: { phone: normalizedPhone },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!concurrentApplication) throw error;
+    return NextResponse.json(
+      { error: "برای این شماره تلفن درخواست همکاری ثبت شده است", status: concurrentApplication.status },
+      { status: 409 },
+    );
+  }
 
   // A technician account/profile is never created by public submission.
   return NextResponse.json({ ...created, pendingReview: true });
