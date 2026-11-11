@@ -48,6 +48,8 @@ describe("financial API read provenance masking", () => {
       currency: "IRR",
       total: 1000,
       laborRate: 100,
+      inspectionFee: 25,
+      emergencyFee: 40,
       payment: { financialUnitStatus: "VERIFIED_IRR", currency: "IRR", amount: 1000 },
       job: {
         financialUnitStatus: "UNVERIFIED",
@@ -66,11 +68,28 @@ describe("financial API read provenance masking", () => {
 
     expect(result.total).toBeNull();
     expect(result.laborRate).toBeNull();
+    expect(result.inspectionFee).toBeNull();
+    expect(result.emergencyFee).toBeNull();
     expect((result.payment as any).amount).toBe(1000);
     expect((result.job as any).inspectionFee).toBeNull();
     expect((result.job as any).technician.hourlyRate).toBe(100);
     expect((result.job as any).parts[0]).toMatchObject({ unitPrice: null, name: "part A" });
     expect((result.job as any).parts[1].unitPrice).toBe(400);
+  });
+
+  it("quarantines verified invoices with unsafe inspection or emergency fees", () => {
+    const result = maskInvoiceMoney({
+      financialUnitStatus: "VERIFIED_IRR",
+      currency: "IRR",
+      total: 150,
+      laborTotal: 100,
+      inspectionFee: 25.5,
+      emergencyFee: 25,
+    });
+    expect(result.financialUnitStatus).toBe("QUARANTINED");
+    expect(result.total).toBeNull();
+    expect(result.inspectionFee).toBeNull();
+    expect(result.emergencyFee).toBeNull();
   });
 
   it("does not treat an IRR currency label as provenance", () => {
