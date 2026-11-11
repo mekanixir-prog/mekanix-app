@@ -27,14 +27,14 @@ describe("wallet escrow release atomicity", () => {
     await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-1", new Date())).resolves.toBe(true);
     expect(db.$transaction).toHaveBeenCalledTimes(1);
     expect(tx.walletTransaction.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ netAmount: { gte: 0 } }),
+      where: expect.objectContaining({ netAmount: { gte: 0 }, financialUnitStatus: "VERIFIED_IRR" }),
     }));
     expect(tx.walletTransaction.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ netAmount: { gte: 0 } }),
     }));
     expect(tx.walletTransaction.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.wallet.updateMany).toHaveBeenCalledWith({
-      where: { id: "wallet-1", pendingBalance: { gte: netAmount } },
+      where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR", pendingBalance: { gte: netAmount } },
       data: {
         pendingBalance: { decrement: netAmount },
         balance: { increment: netAmount },
@@ -44,6 +44,7 @@ describe("wallet escrow release atomicity", () => {
     const ledgerData = tx.walletLedger.create.mock.calls[0][0].data;
     expect(ledgerData).toMatchObject({
       walletId: "wallet-1",
+      financialUnitStatus: "VERIFIED_IRR",
       type: "RELEASE",
       referenceType: "WalletTransaction",
       referenceId: "txn-1",
@@ -114,6 +115,8 @@ describe("wallet escrow release atomicity", () => {
     expect(statements[0].sql).toContain("'RELEASE'");
     expect(statements[0].sql).toContain('"balanceBefore"');
     expect(statements[0].sql).toContain('"balanceAfter"');
+    expect(statements[0].sql).toContain('"financialUnitStatus"');
+    expect(statements[0].sql).toContain("VERIFIED_IRR");
     expect(statements[1].sql).toContain('"pendingBalance"');
     expect(statements[1].sql).toContain('"balanceBefore" = w."balance"');
     expect(statements[2].sql).toContain('"status" = \'PENDING\'');
