@@ -15,6 +15,7 @@ export async function releaseWalletTransactionWithPrisma(
         id: transactionId,
         walletId,
         status: "PENDING",
+        financialUnitStatus: "VERIFIED_IRR",
         netAmount: { gte: 0 },
         holdUntil: { not: null, lte: now },
       },
@@ -27,6 +28,7 @@ export async function releaseWalletTransactionWithPrisma(
         id: transactionId,
         walletId,
         status: "PENDING",
+        financialUnitStatus: "VERIFIED_IRR",
         netAmount: { gte: 0 },
         holdUntil: { not: null, lte: now },
       },
@@ -58,6 +60,7 @@ export async function releaseWalletTransactionWithPrisma(
     await tx.walletLedger.create({
       data: {
         walletId,
+        financialUnitStatus: "VERIFIED_IRR",
         type: "RELEASE",
         amount,
         balanceBefore: balanceAfter.minus(amount),
