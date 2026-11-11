@@ -1,6 +1,6 @@
 /**
  * Phone identity helpers shared by public applications and OTP account lookup.
- * Iranian domestic and international mobile formats map to one stored key.
+ * Iranian domestic and international, plus common +1 formats map to one stored key.
  */
 export function normalizePhoneForStorage(input: string): string {
   const compact = input.replace(/[\s\-()]/g, "");
@@ -8,6 +8,7 @@ export function normalizePhoneForStorage(input: string): string {
 
   if (digits.startsWith("98") && digits.length === 12) return `+${digits}`;
   if (digits.startsWith("0") && digits.length === 11) return `+98${digits.slice(1)}`;
+  if (digits.startsWith("1") && digits.length === 11) return `+${digits}`;
   if (compact.startsWith("+")) return `+${digits}`;
   return compact;
 }
