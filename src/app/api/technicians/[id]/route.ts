@@ -1,52 +1,63 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
-import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
+import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS, verifySession } from "@/lib/auth";
 import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 // Public-facing technician fields — never expose sensitive data.
 const PUBLIC_USER_FIELDS = {
-  id: true,
   name: true,
   avatar: true,
-  role: true,
-  status: true,
-  country: true,
-  currency: true,
-  language: true,
-  createdAt: true,
 } as const;
 
 // GET /api/technicians/[id] — public profile (no auth required).
 // Selects only safe fields.
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const auth = req.headers.get("authorization");
+  const session = auth?.startsWith("Bearer ") ? await verifySession(auth.slice(7)) : null;
   const db = await getDbForLib();
   const tech = await db.technician.findUnique({
     where: { id },
     include: {
-      user: { select: PUBLIC_USER_FIELDS },
+      user: { select: { id: true, name: true, avatar: true, role: true, status: true } },
       specialties: true,
       certifications: true,
       serviceAreas: true,
       reviews: { include: { fromUser: { select: PUBLIC_USER_FIELDS } }, orderBy: { createdAt: "desc" }, take: 20 },
-      jobsAssigned: {
-        where: { status: "COMPLETED" },
-        take: 8,
-        orderBy: { completedAt: "desc" },
-        include: { request: { include: { vehicle: true } } },
-      },
     },
   });
   if (!tech) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(maskFinancialFields(tech, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]));
+
+  const isOwner = session?.role === "TECHNICIAN" &&
+    session.userId === tech.userId &&
+    tech.user.status === "ACTIVE";
+  const isAdmin = session?.role === "ADMIN";
+  const isPubliclyDiscoverable =
+    tech.status === "ONLINE" &&
+    tech.availableNow &&
+    tech.verified &&
+    tech.user.status === "ACTIVE" &&
+    tech.user.role === "TECHNICIAN";
+
+  // Offline profiles are hidden from the public, but an authenticated owner
+  // can still open their own profile/reviews while offline.
+  if (!isOwner && !isAdmin && !isPubliclyDiscoverable) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // Never expose exact technician coordinates, internal user IDs, service-area
+  // coordinate pins, or private customer/job/vehicle records—even to profile owners.
+  const { lat: _lat, lng: _lng, heading: _heading, userId: _userId, serviceAreas, user, ...safeTech } = tech;
+  return NextResponse.json(maskFinancialFields({
+    ...safeTech,
+    user: { name: user.name, avatar: user.avatar },
+    lat: null,
+    lng: null,
+    serviceAreas: serviceAreas.map(({ name, radiusKm }) => ({ name, radiusKm })),
+  }, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]));
 }
 
-// PATCH /api/technicians/[id]
-// Only the technician themselves (matching session.userId → technician.userId) or ADMIN may edit.
-// Mass-assignment protection: server-authoritative fields (verified, rating, reviewCount,
-// completedJobs, level, status) are BLOCKED from client updates — only admins may set them,
-// and they go through /api/admin/technicians/[id].
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
@@ -70,6 +81,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  // Availability and live location are controlled exclusively by the dedicated
+  // owner-scoped /availability endpoint. Accepting these fields here would let
+  // clients bypass its eligibility, GPS validation, active-job and CAS guards.
+  const availabilityFields = ["availableNow", "lat", "lng", "heading"];
+  if (availabilityFields.some((key) => Object.prototype.hasOwnProperty.call(body, key))) {
+    return NextResponse.json(
+      { error: "وضعیت حضور و موقعیت مکانی فقط از مسیر اختصاصی حضور قابل تغییر است", code: "USE_AVAILABILITY_ENDPOINT" },
+      { status: 400 },
+    );
   }
 
   // Defense-in-depth: strip forbidden server-authoritative fields, even for admins using this route.

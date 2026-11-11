@@ -160,6 +160,8 @@ export async function POST(req: Request) {
           where: {
             availableNow: true,
             verified: true,
+            status: "ONLINE",
+            user: { is: { status: "ACTIVE", role: "TECHNICIAN" } },
             specialties: { some: { category: normalized.category } },
           },
           take: 3,

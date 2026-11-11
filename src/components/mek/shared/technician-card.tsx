@@ -2,7 +2,7 @@
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { Star, MapPin, Clock, BadgeCheck, ChevronRight } from "lucide-react";
-import type { Technician } from "@/lib/api";
+import type { Technician, PublicTechnician } from "@/lib/api";
 import { StarRating } from "./primitives";
 import { TECH_LEVELS } from "@/lib/constants";
 import { fmtDistance, fmtDuration, haversine, toPersianDigits } from "@/lib/format";
@@ -19,7 +19,7 @@ export function TechnicianCard({
   travelFee,
   className,
 }: {
-  tech: Technician;
+  tech: PublicTechnician;
   distanceKm?: number;
   etaMins?: number;
   onSelect?: () => void;
@@ -33,6 +33,7 @@ export function TechnicianCard({
   const lang = isFa ? "fa" : "en";
   const level = TECH_LEVELS.find((l) => l.slug === tech.level) ?? TECH_LEVELS[0];
   const hasFees = inspectionFee != null || travelFee != null;
+  const priceKnown = tech.financialUnitStatus === "VERIFIED_IRR" && tech.hourlyRate != null;
   return (
     <motion.button
       type="button"
@@ -122,7 +123,7 @@ export function TechnicianCard({
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="font-display text-sm font-semibold">{money(Number(tech.hourlyRate))}<span className="text-[10px] text-muted-foreground">/{t("common.hr")}</span></span>
+          <span className="font-display text-sm font-semibold">{priceKnown ? <>{money(Number(tech.hourlyRate))}<span className="text-[10px] text-muted-foreground">/{t("common.hr")}</span></> : <span className="text-xs text-muted-foreground">{t("fees.quoteRequired")}</span>}</span>
           <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
         </div>
       </div>

@@ -3,6 +3,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireRole } from "@/lib/auth";
 import { maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 
 const techInclude = {
   specialties: true,
@@ -17,31 +18,61 @@ const techInclude = {
 // not leak technician phone numbers. Customers contact technicians through the
 // platform (chat / job dispatch), never via direct phone.
 const PUBLIC_USER_FIELDS = {
-  id: true,
   name: true,
   avatar: true,
-  role: true,
-  status: true,
-  country: true,
-  currency: true,
-  language: true,
-  createdAt: true,
 } as const;
 
 // GET /api/technicians — public listing (no auth required).
 // Selects only safe fields (no password, no sensitive data).
 export async function GET(req: Request) {
+  const clientId = getClientId(req);
+  const limited = await rateLimitAsync(
+    `technician-discovery:${clientId}`,
+    RATE_LIMITS.API_DEFAULT.max,
+    RATE_LIMITS.API_DEFAULT.windowMs,
+  );
+  if (limited.unavailable) {
+    return NextResponse.json(
+      { error: "سرویس جست‌وجوی تعمیرکاران موقتاً در دسترس نیست" },
+      { status: 503, headers: { "Retry-After": "30" } },
+    );
+  }
+  if (!limited.success) {
+    return NextResponse.json(
+      { error: "تعداد درخواست‌های جست‌وجو بیش از حد مجاز است" },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(limited.resetMs / 1000)) } },
+    );
+  }
+
   const url = new URL(req.url);
   const lat = url.searchParams.get("lat");
   const lng = url.searchParams.get("lng");
   const category = url.searchParams.get("category");
 
-  const where: any = { availableNow: true, verified: true };
-  if (category) {
-    where.specialties = { some: { category } };
+  const where: any = {
+    availableNow: true,
+    verified: true,
+    status: "ONLINE",
+    user: { is: { status: "ACTIVE", role: "TECHNICIAN" } },
+  };
+  if (category) where.specialties = { some: { category } };
+
+  // Validate request coordinates and calculate distance server-side. Exact
+  // technician coordinates and service-area pins are never sent to the client.
+  let customerPoint: { lat: number; lng: number } | null = null;
+  if (lat !== null || lng !== null) {
+    const parsedLat = lat === null ? NaN : Number(lat);
+    const parsedLng = lng === null ? NaN : Number(lng);
+    if (
+      !Number.isFinite(parsedLat) || parsedLat < -90 || parsedLat > 90 ||
+      !Number.isFinite(parsedLng) || parsedLng < -180 || parsedLng > 180
+    ) {
+      return NextResponse.json({ error: "موقعیت جغرافیایی نامعتبر است" }, { status: 400 });
+    }
+    customerPoint = { lat: parsedLat, lng: parsedLng };
   }
 
-  let techs = await (await getDbForLib()).technician.findMany({
+  const techs = await (await getDbForLib()).technician.findMany({
     where,
     include: {
       user: { select: PUBLIC_USER_FIELDS },
@@ -49,28 +80,40 @@ export async function GET(req: Request) {
     },
   });
 
-  // distance sort + arrival estimate
-  if (lat && lng) {
-    const la = parseFloat(lat);
-    const ln = parseFloat(lng);
+  const calculateDistance = (tech: { lat: number | null; lng: number | null }): number | null => {
+    if (!customerPoint || tech.lat === null || tech.lng === null) return null;
     const R = 6371;
-    const dist = (t: { lat: number | null; lng: number | null }) => {
-      if (t.lat == null || t.lng == null) return 9999;
-      const dLat = ((la - t.lat) * Math.PI) / 180;
-      const dLng = ((ln - t.lng) * Math.PI) / 180;
-      const a =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos((la * Math.PI) / 180) *
-          Math.cos((t.lat * Math.PI) / 180) *
-          Math.sin(dLng / 2) ** 2;
-      return 2 * R * Math.asin(Math.sqrt(a));
-    };
-    techs = techs
-      .map((t) => ({ ...t, _dist: dist(t) }))
-      .sort((a, b) => (a._dist as number) - (b._dist as number));
-  }
+    const dLat = ((customerPoint.lat - tech.lat) * Math.PI) / 180;
+    const dLng = ((customerPoint.lng - tech.lng) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((customerPoint.lat * Math.PI) / 180) *
+        Math.cos((tech.lat * Math.PI) / 180) *
+        Math.sin(dLng / 2) ** 2;
+    return Math.round(2 * R * Math.asin(Math.sqrt(a)) * 10) / 10;
+  };
 
-  return NextResponse.json(techs.map((tech) => maskFinancialFields(tech, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"])));
+  const safeTechs = techs
+    .map((tech) => ({ tech, distanceKm: calculateDistance(tech) }))
+    .sort((a, b) => {
+      if (a.distanceKm === null && b.distanceKm === null) return 0;
+      if (a.distanceKm === null) return 1;
+      if (b.distanceKm === null) return -1;
+      return a.distanceKm - b.distanceKm;
+    })
+    .map(({ tech, distanceKm }) => {
+      const { lat: _lat, lng: _lng, heading: _heading, userId: _userId, serviceAreas, user, ...safeTech } = tech;
+      return maskFinancialFields({
+        ...safeTech,
+        user: { name: user.name, avatar: user.avatar },
+        lat: null,
+        lng: null,
+        serviceAreas: serviceAreas.map(({ name, radiusKm }) => ({ name, radiusKm })),
+        distanceKm,
+      }, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]);
+    });
+
+  return NextResponse.json(safeTechs);
 }
 
 // POST: create technician profile — ADMIN ONLY
