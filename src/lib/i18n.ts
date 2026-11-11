@@ -551,6 +551,8 @@ const DICT: Record<Lang, Record<string, string>> = {
     "req.techProfile.notified": "{name} has been notified",
     "req.techProfile.assignFailed": "Could not assign technician",
     "req.techProfile.requestNotFound": "Request not found",
+    "req.techProfile.unavailable": "This technician is no longer available",
+    "req.techProfile.unavailableDesc": "They may have gone offline or their profile is temporarily unavailable. Return to the list to choose another technician.",
 
     // ── Fees (inline display on technician cards / booking summary) ──
     "fees.inspectionFee": "Inspection fee",
@@ -2177,6 +2179,8 @@ const DICT: Record<Lang, Record<string, string>> = {
     "req.techProfile.notified": "به {name} اطلاع داده شد",
     "req.techProfile.assignFailed": "اختصاص مکانیک ناموفق بود",
     "req.techProfile.requestNotFound": "درخواست یافت نشد",
+    "req.techProfile.unavailable": "این تعمیرکار دیگر در دسترس نیست",
+    "req.techProfile.unavailableDesc": "ممکن است آفلاین شده باشد یا پروفایلش موقتاً در دسترس نباشد. به فهرست برگردید و تعمیرکار دیگری انتخاب کنید.",
 
     // ── Fees (inline display on technician cards / booking summary) ──
     "fees.inspectionFee": "هزینه عیب‌یابی",
