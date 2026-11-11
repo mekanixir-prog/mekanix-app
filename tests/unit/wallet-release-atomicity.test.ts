@@ -30,7 +30,7 @@ describe("wallet escrow release atomicity", () => {
       where: expect.objectContaining({ netAmount: { gte: 0 }, financialUnitStatus: "VERIFIED_IRR" }),
     }));
     expect(tx.walletTransaction.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ netAmount: { gte: 0 } }),
+      where: expect.objectContaining({ netAmount: { gte: 0 }, financialUnitStatus: "VERIFIED_IRR" }),
     }));
     expect(tx.walletTransaction.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.wallet.updateMany).toHaveBeenCalledWith({
@@ -53,6 +53,23 @@ describe("wallet escrow release atomicity", () => {
     expect(Number(ledgerData.amount)).toBe(netAmount);
     expect(Number(ledgerData.balanceBefore)).toBe(2000);
     expect(Number(ledgerData.balanceAfter)).toBe(3250);
+  });
+
+  it("does not mutate wallet state when the transaction lacks verified IRR provenance", async () => {
+    const tx = {
+      walletTransaction: { findFirst: vi.fn().mockResolvedValue(null), updateMany: vi.fn() },
+      wallet: { updateMany: vi.fn(), findUnique: vi.fn() },
+      walletLedger: { create: vi.fn() },
+    };
+    const db = { $transaction: vi.fn(async (callback: (tx: any) => Promise<boolean>) => callback(tx)) } as any;
+
+    await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-unverified", new Date())).resolves.toBe(false);
+    expect(tx.walletTransaction.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ financialUnitStatus: "VERIFIED_IRR" }),
+    }));
+    expect(tx.walletTransaction.updateMany).not.toHaveBeenCalled();
+    expect(tx.wallet.updateMany).not.toHaveBeenCalled();
+    expect(tx.walletLedger.create).not.toHaveBeenCalled();
   });
 
   it("does not touch the wallet or ledger when another request already transitioned the transaction", async () => {
