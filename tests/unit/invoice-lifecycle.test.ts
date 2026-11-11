@@ -77,7 +77,7 @@ const existingInvoice = {
 const pricingJob = {
   id: "job-1",
   status: "WAITING_APPROVAL",
-  parts: [{ unitPrice: 100, quantity: 2 }],
+  parts: [{ financialUnitStatus: "VERIFIED_IRR", unitPrice: 100, quantity: 2 }],
   technician: { hourlyRate: 200, travelFeeBase: 50, lat: null, lng: null },
   tracking: [],
   request: { category: "diagnostic", urgency: "NORMAL", lat: 35.7, lng: 51.4, vehicle: { type: "CAR" } },
@@ -132,6 +132,19 @@ describe("POST /api/invoices lifecycle", () => {
     expect(await response.json()).toEqual(existingInvoice);
     expect(mocks.invoiceCreate).toHaveBeenCalledTimes(1);
     expect(mocks.notificationCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects invoice issuance when any persisted part lacks row-level IRR provenance", async () => {
+    mocks.invoiceFindUnique.mockResolvedValueOnce(null);
+    mocks.jobFindUnique.mockResolvedValueOnce({
+      ...pricingJob,
+      parts: [{ financialUnitStatus: "UNVERIFIED", unitPrice: 100, quantity: 2 }],
+    });
+
+    const response = await createInvoice(postRequest({ jobId: "job-1" }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "JOB_PART_CURRENCY_UNVERIFIED" });
+    expect(mocks.invoiceCreate).not.toHaveBeenCalled();
   });
 
   it("creates an invoice using fixed IRR labor, dispatch, and inspection rates", async () => {
