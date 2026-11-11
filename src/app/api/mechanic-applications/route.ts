@@ -107,16 +107,39 @@ export async function POST(req: Request) {
       ?? await db.mechanicApplication.findFirst({ where: { phone: normalizedPhone }, orderBy: { createdAt: "desc" } })
     : await db.mechanicApplication.findFirst({ where: { phone: normalizedPhone }, orderBy: { createdAt: "desc" } });
 
+  const safeSpecialties = Array.isArray(specialties)
+    ? specialties
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim().slice(0, 64))
+        .filter(Boolean)
+        .slice(0, 20)
+    : [];
+  const safeCertifications = Array.isArray(certifications)
+    ? certifications.slice(0, 20).flatMap((value) => {
+        if (typeof value === "string") return [value.trim().slice(0, 200)].filter(Boolean);
+        if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+        const item = value as Record<string, unknown>;
+        const name = typeof item.name === "string" ? item.name.trim().slice(0, 150) : "";
+        if (!name) return [];
+        const issuer = typeof item.issuer === "string" ? item.issuer.trim().slice(0, 150) : "Self-reported";
+        const year = typeof item.year === "number" && Number.isInteger(item.year)
+          ? Math.min(new Date().getFullYear() + 1, Math.max(1900, item.year))
+          : new Date().getFullYear();
+        return [{ name, issuer, year }];
+      })
+    : [];
   const applicationData = {
     fullName: fullName.slice(0, 200).trim(),
     phone: normalizedPhone,
-    email: typeof email === "string" ? email.slice(0, 200).trim() : null,
-    city: typeof city === "string" ? city.slice(0, 100).trim() : null,
-    experienceYears: typeof experienceYears === "number" ? Math.max(0, Math.floor(experienceYears)) : 0,
-    specialties: JSON.stringify(Array.isArray(specialties) ? specialties.slice(0, 20) : []),
-    certifications: certifications ? JSON.stringify(certifications).slice(0, 5000) : null,
-    bio: typeof bio === "string" ? bio.slice(0, 1000).trim() : null,
-    vehicleOwned: Boolean(vehicleOwned),
+    email: typeof email === "string" && email.trim() ? email.slice(0, 200).trim() : null,
+    city: typeof city === "string" && city.trim() ? city.slice(0, 100).trim() : null,
+    experienceYears: typeof experienceYears === "number" && Number.isFinite(experienceYears)
+      ? Math.min(80, Math.max(0, Math.floor(experienceYears)))
+      : 0,
+    specialties: JSON.stringify(safeSpecialties),
+    certifications: safeCertifications.length ? JSON.stringify(safeCertifications) : null,
+    bio: typeof bio === "string" && bio.trim() ? bio.slice(0, 1000).trim() : null,
+    vehicleOwned: vehicleOwned === true,
   };
 
   if (existingApplication) {
