@@ -36,8 +36,8 @@ export async function GET(req: Request) {
 // Application status is PENDING — NOT auto-approved.
 // Admin must review and approve before technician is activated.
 function normalizeApplicantPhone(phone: string): string {
-  const formatted = phone.replace(/[\\s\\-()]/g, "");
-  const digits = formatted.replace(/\\D/g, "");
+  const formatted = phone.replace(/[\s\-()]/g, "");
+  const digits = formatted.replace(/\D/g, "");
   // Canonicalize Iranian domestic and international mobile formats to +98…
   // so 09…, 98… and +98… cannot create separate applications for one person.
   if (digits.startsWith("98") && digits.length === 12) return `+${digits}`;
