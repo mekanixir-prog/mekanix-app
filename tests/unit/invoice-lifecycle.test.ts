@@ -22,10 +22,13 @@ vi.mock("@/lib/auth", () => ({
   requireJobParticipant: mocks.participant,
   getTechnicianFromSession: mocks.technician,
 }));
-vi.mock("@/lib/job-status-atomic", () => ({
-  JobStatusConflictError: class JobStatusConflictError extends Error {},
-  transitionJobStatusAtomically: mocks.transition,
-}));
+vi.mock("@/lib/job-status-atomic", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/job-status-atomic")>();
+  return {
+    ...actual,
+    transitionJobStatusAtomically: mocks.transition,
+  };
+});
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: vi.fn(async () => ({
     invoice: {
