@@ -65,7 +65,7 @@ describe("technician availability state transition", () => {
         verified: true,
         user: { is: { status: "ACTIVE", role: "TECHNICIAN" } },
       },
-      data: { status: "ONLINE", availableNow: true, lat: 35.7, lng: 51.4 },
+      data: { status: "ONLINE", availableNow: true, lat: 35.7, lng: 51.4, heading: null },
     });
   });
 
@@ -76,7 +76,7 @@ describe("technician availability state transition", () => {
     expect(response.status).toBe(200);
     expect(mocks.technicianUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ status: "ONLINE", availableNow: true }),
-      data: { status: "OFFLINE", availableNow: false },
+      data: { status: "OFFLINE", availableNow: false, lat: null, lng: null, heading: null },
     }));
   });
 
