@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { toSafeIntegerIrr } from "./money/provenance";
 import { releaseWalletTransactionWithD1, type D1Binding } from "./wallet-release-d1";
 export { releaseWalletTransactionWithD1 } from "./wallet-release-d1";
 
@@ -23,6 +24,19 @@ export async function releaseWalletTransactionWithPrisma(
     });
     if (!transaction) return false;
 
+    const amount = toSafeIntegerIrr(transaction.netAmount);
+    if (amount === null) return false;
+
+    const walletBefore = await tx.wallet.findUnique({
+      where: { id: walletId },
+      select: { financialUnitStatus: true, balance: true, pendingBalance: true },
+    });
+    if (!walletBefore || walletBefore.financialUnitStatus !== "VERIFIED_IRR") return false;
+    const balanceBefore = toSafeIntegerIrr(walletBefore.balance);
+    const pendingBefore = toSafeIntegerIrr(walletBefore.pendingBalance);
+    if (balanceBefore === null || pendingBefore === null ||
+        pendingBefore < amount || balanceBefore + amount > Number.MAX_SAFE_INTEGER) return false;
+
     const transition = await tx.walletTransaction.updateMany({
       where: {
         id: transactionId,
@@ -37,7 +51,13 @@ export async function releaseWalletTransactionWithPrisma(
     if (transition.count !== 1) return false;
 
     const walletUpdate = await tx.wallet.updateMany({
-      where: { id: walletId, financialUnitStatus: "VERIFIED_IRR", pendingBalance: { gte: transaction.netAmount } },
+      where: {
+        id: walletId,
+        financialUnitStatus: "VERIFIED_IRR",
+        balance: walletBefore.balance,
+        pendingBalance: walletBefore.pendingBalance,
+        pendingBalance: { gte: transaction.netAmount },
+      },
       data: {
         pendingBalance: { decrement: transaction.netAmount },
         balance: { increment: transaction.netAmount },
@@ -51,20 +71,25 @@ export async function releaseWalletTransactionWithPrisma(
 
     const updatedWallet = await tx.wallet.findUnique({
       where: { id: walletId },
-      select: { balance: true },
+      select: { financialUnitStatus: true, balance: true, pendingBalance: true },
     });
-    if (!updatedWallet) throw new Error("Wallet disappeared during escrow release");
+    if (!updatedWallet || updatedWallet.financialUnitStatus !== "VERIFIED_IRR") {
+      throw new Error("Wallet disappeared or lost verified IRR provenance during escrow release");
+    }
+    const balanceAfter = toSafeIntegerIrr(updatedWallet.balance);
+    const pendingAfter = toSafeIntegerIrr(updatedWallet.pendingBalance);
+    if (balanceAfter !== balanceBefore + amount || pendingAfter !== pendingBefore - amount) {
+      throw new Error("Wallet aggregates are not safe integer IRR after escrow release; transaction rolled back");
+    }
 
-    const amount = transaction.netAmount;
-    const balanceAfter = updatedWallet.balance;
     await tx.walletLedger.create({
       data: {
         walletId,
         financialUnitStatus: "VERIFIED_IRR",
         type: "RELEASE",
         amount,
-        balanceBefore: balanceAfter.minus(amount),
-        balanceAfter,
+        balanceBefore: walletBefore.balance,
+        balanceAfter: updatedWallet.balance,
         referenceType: "WalletTransaction",
         referenceId: transactionId,
         description: `Escrow released — transaction ${transactionId}`,
