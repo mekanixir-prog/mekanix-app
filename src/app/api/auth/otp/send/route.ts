@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   // formatting — it can no longer reject a previously-accepted payload.
   const phone = normalizePhoneForStorage(body.data.phone);
   // Keep the provider-facing receptor format compatible with the existing SMS adapter.
-  const deliveryPhone = body.data.phone.replace(/[\\s\\-()]/g, "");
+  const deliveryPhone = body.data.phone.replace(/[\s\-()]/g, "");
 
   if (!phone || phone.length < 8) {
     // Defensive: schema should already prevent this, but keep the guard in case
