@@ -75,6 +75,25 @@ describe("atomic job part mutation", () => {
     });
   });
 
+  it.each([
+    [1, 100.5],
+    [1, Number.MAX_SAFE_INTEGER + 1],
+    [1, -1],
+    [1.5, 100],
+    [Number.MAX_SAFE_INTEGER, 2],
+  ])("rejects invalid persisted amount inputs before touching either writer", async (quantity, unitPrice) => {
+    await expect(addJobPartBeforeInvoice(db, {
+      jobId: "job-1",
+      name: "Oil filter",
+      sku: null,
+      quantity,
+      unitPrice,
+    })).rejects.toBeInstanceOf(JobPartAmountValidationError);
+    expect(mocks.getD1Binding).not.toHaveBeenCalled();
+    expect(mocks.jobFindUnique).not.toHaveBeenCalled();
+    expect(mocks.partCreate).not.toHaveBeenCalled();
+  });
+
   it("rejects part changes if the status transition already won the race", async () => {
     mocks.jobUpdateMany.mockResolvedValueOnce({ count: 0 });
     await expect(addJobPartBeforeInvoice(db, {
