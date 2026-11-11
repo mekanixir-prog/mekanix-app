@@ -24,10 +24,14 @@ export async function releaseWalletTransactionWithD1(
 ): Promise<boolean> {
   const timestamp = now.toISOString();
   const idempotencyKey = `wallet-release:${transactionId}:LEDGER`;
+  const maxSafeIrr = "9007199254740991";
   const eligible = `
     wt."id" = ? AND wt."walletId" = ? AND wt."status" = 'PENDING'
     AND wt."financialUnitStatus" = 'VERIFIED_IRR'
-    AND wt."netAmount" >= 0 AND wt."holdUntil" IS NOT NULL AND wt."holdUntil" <= ?
+    AND wt."netAmount" >= 0
+    AND wt."netAmount" = CAST(wt."netAmount" AS INTEGER)
+    AND abs(wt."netAmount") <= ${maxSafeIrr}
+    AND wt."holdUntil" IS NOT NULL AND wt."holdUntil" <= ?
   `;
 
   const ledgerInsert = d1.prepare(`
@@ -42,7 +46,13 @@ export async function releaseWalletTransactionWithD1(
     WHERE ${eligible}
       AND w."id" = ?
       AND w."financialUnitStatus" = 'VERIFIED_IRR'
+      AND w."balance" >= 0
+      AND w."balance" = CAST(w."balance" AS INTEGER)
+      AND abs(w."balance") <= ${maxSafeIrr}
       AND w."pendingBalance" >= wt."netAmount"
+      AND w."pendingBalance" = CAST(w."pendingBalance" AS INTEGER)
+      AND abs(w."pendingBalance") <= ${maxSafeIrr}
+      AND w."balance" <= ${maxSafeIrr} - wt."netAmount"
       AND NOT EXISTS (
         SELECT 1 FROM "WalletLedger" existing
         WHERE existing."idempotencyKey" = ?
@@ -81,7 +91,14 @@ export async function releaseWalletTransactionWithD1(
           AND wt."netAmount" >= 0
           AND wt."holdUntil" IS NOT NULL AND wt."holdUntil" <= ?
           AND w."financialUnitStatus" = 'VERIFIED_IRR'
+          AND w."balance" >= 0
+          AND w."balance" = CAST(w."balance" AS INTEGER)
+          AND abs(w."balance") <= ${maxSafeIrr}
           AND w."pendingBalance" >= wt."netAmount"
+          AND w."pendingBalance" = CAST(w."pendingBalance" AS INTEGER)
+          AND abs(w."pendingBalance") <= ${maxSafeIrr}
+          AND w."balance" <= ${maxSafeIrr} - wt."netAmount"
+          AND ledger."financialUnitStatus" = 'VERIFIED_IRR'
           AND ledger."balanceBefore" = w."balance"
           AND ledger."balanceAfter" = w."balance" + wt."netAmount"
       )
@@ -102,6 +119,17 @@ export async function releaseWalletTransactionWithD1(
          AND ledger."referenceId" = wt."id"
          AND ledger."idempotencyKey" = ?
         WHERE w."id" = wt."walletId"
+          AND w."financialUnitStatus" = 'VERIFIED_IRR'
+          AND wt."financialUnitStatus" = 'VERIFIED_IRR'
+          AND ledger."financialUnitStatus" = 'VERIFIED_IRR'
+          AND w."balance" = CAST(w."balance" AS INTEGER)
+          AND abs(w."balance") <= ${maxSafeIrr}
+          AND w."pendingBalance" = CAST(w."pendingBalance" AS INTEGER)
+          AND abs(w."pendingBalance") <= ${maxSafeIrr}
+          AND ledger."balanceBefore" = CAST(ledger."balanceBefore" AS INTEGER)
+          AND abs(ledger."balanceBefore") <= ${maxSafeIrr}
+          AND ledger."balanceAfter" = CAST(ledger."balanceAfter" AS INTEGER)
+          AND abs(ledger."balanceAfter") <= ${maxSafeIrr}
           AND w."balance" = ledger."balanceAfter"
       )
   `).bind(timestamp, transactionId, walletId, timestamp, idempotencyKey);
@@ -135,6 +163,16 @@ export async function releaseWalletTransactionWithD1(
             AND wt."financialUnitStatus" = 'VERIFIED_IRR'
             AND w."financialUnitStatus" = 'VERIFIED_IRR'
             AND ledger."financialUnitStatus" = 'VERIFIED_IRR'
+            AND wt."netAmount" = CAST(wt."netAmount" AS INTEGER)
+            AND abs(wt."netAmount") <= ${maxSafeIrr}
+            AND w."balance" = CAST(w."balance" AS INTEGER)
+            AND abs(w."balance") <= ${maxSafeIrr}
+            AND w."pendingBalance" = CAST(w."pendingBalance" AS INTEGER)
+            AND abs(w."pendingBalance") <= ${maxSafeIrr}
+            AND ledger."balanceBefore" = CAST(ledger."balanceBefore" AS INTEGER)
+            AND abs(ledger."balanceBefore") <= ${maxSafeIrr}
+            AND ledger."balanceAfter" = CAST(ledger."balanceAfter" AS INTEGER)
+            AND abs(ledger."balanceAfter") <= ${maxSafeIrr}
             AND w."balance" = ledger."balanceAfter"
         ) THEN 1
         ELSE NULL
