@@ -124,9 +124,10 @@ export async function recordPrepayWithPrisma(
 /**
  * D1 implementation. D1 batch is transactional; each dependent write is
  * guarded by the Job's exact paidAt marker. The wallet aggregate update is
- * guarded by changes() from insertion of the unique HOLD ledger row. Unique-key
- * conflicts on any financial row are allowed to abort the batch so no partial
- * settlement can commit; post-batch result checks are assertions, not rollback.
+ * guarded by changes() from insertion of the unique COMMISSION ledger row.
+ * Both ledger inserts share the same job/wallet join and precede the aggregate
+ * update. Unique-key conflicts on any financial row abort the batch; post-batch
+ * result checks are assertions, not rollback.
  */
 export async function recordPrepayWithD1(
   d1: D1Database,
