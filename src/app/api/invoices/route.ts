@@ -94,7 +94,7 @@ export async function POST(req: Request) {
     },
   });
   if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
-  if (!areJobPartPriceSourcesVerified(job.parts.length > 0)) {
+  if (!areJobPartPriceSourcesVerified(job.parts)) {
     return NextResponse.json(
       { error: "واحد قیمت قطعات قدیمی هنوز به ریال تطبیق داده نشده است؛ صدور فاکتور پس از تأیید سوابق قطعات فعال می‌شود", code: "JOB_PART_CURRENCY_UNVERIFIED" },
       { status: 409 },
@@ -111,7 +111,7 @@ export async function POST(req: Request) {
     const unitPrice = Number(part.unitPrice);
     const quantity = Number(part.quantity);
     if (!Number.isSafeInteger(unitPrice) || unitPrice < 0 ||
-        !Number.isSafeInteger(quantity) || quantity < 0) return Number.NaN;
+        !Number.isSafeInteger(quantity) || quantity <= 0) return Number.NaN;
     const next = sum + unitPrice * quantity;
     return Number.isSafeInteger(next) ? next : Number.NaN;
   }, 0);
