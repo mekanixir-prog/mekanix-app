@@ -5,6 +5,7 @@ import { rateLimitAsync, getClientId } from "@/lib/rate-limit";
 import { otpSendSchema } from "@/lib/schemas";
 import { generateOtpCode, hashOtpCode, hashOtpPhone } from "@/lib/otp-crypto";
 import { assertSmsProviderReady, sendOtp } from "@/lib/sms-provider";
+import { normalizePhoneForStorage } from "@/lib/phone-normalization";
 
 // Send an OTP code to a phone number.
 // - Rate-limited per-phone (5 / 10min) AND per-IP (20 / hour).
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
   // Normalize phone: strip spaces, dashes, parentheses before storing/lookup.
   // The schema already proved the input is well-formed, so this only sanitizes
   // formatting — it can no longer reject a previously-accepted payload.
-  const phone = body.data.phone.replace(/[\s\-()]/g, "");
+  const phone = normalizePhoneForStorage(body.data.phone);
 
   if (!phone || phone.length < 8) {
     // Defensive: schema should already prevent this, but keep the guard in case
