@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { getDbForLib } from "@/lib/db-access";
 import { createSession } from "@/lib/auth";
 import { validateBody } from "@/lib/api-helpers";
@@ -14,6 +15,13 @@ const TECHNICIAN_INCLUDE = {
   certifications: true,
   serviceAreas: true,
 } as const;
+
+type OtpUser = Prisma.UserGetPayload<{
+  select: typeof AUTH_USER_SELECT & {
+    customer: true;
+    technician: { include: typeof TECHNICIAN_INCLUDE };
+  };
+}>;
 
 export async function POST(req: Request) {
   // Rate limit by client IP (5 verify attempts per minute) — uses the
@@ -130,7 +138,7 @@ export async function POST(req: Request) {
     phone,
     ...getPhoneLookupVariants(body.data.phone).filter((variant) => variant !== phone),
   ];
-  let user: Awaited<ReturnType<typeof db.user.findUnique>> = null;
+  let user: OtpUser | null = null;
   for (const variant of phoneVariants) {
     const match = await db.user.findUnique({
       where: { phone: variant },
