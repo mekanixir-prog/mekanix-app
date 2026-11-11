@@ -171,6 +171,18 @@ describe("atomic escrow release D1 SQLite integration", () => {
         sql: 'UPDATE "Wallet" SET "pendingBalance" = 1000.5 WHERE "id" = ?',
       },
       {
+        name: "negative wallet balance",
+        sql: 'UPDATE "Wallet" SET "balance" = -1 WHERE "id" = ?',
+      },
+      {
+        name: "unsafe wallet balance",
+        sql: 'UPDATE "Wallet" SET "balance" = 9007199254740992 WHERE "id" = ?',
+      },
+      {
+        name: "unsafe pending balance",
+        sql: 'UPDATE "Wallet" SET "pendingBalance" = 9007199254740992 WHERE "id" = ?',
+      },
+      {
         name: "balance overflow after release",
         sql: 'UPDATE "Wallet" SET "balance" = 9007199254740991 WHERE "id" = ?',
       },
