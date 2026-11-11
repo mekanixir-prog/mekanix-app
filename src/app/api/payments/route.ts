@@ -223,7 +223,7 @@ export async function POST(req: Request) {
             userId: inv.job.technician.userId,
             type: "job_completed",
             title: "Payment received",
-            body: `Invoice ${inv.code} paid — $${inv.total}`,
+            body: `Invoice ${inv.code} paid.`,
             category: "payment",
             link: "technician/earnings",
           },
