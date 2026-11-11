@@ -23,6 +23,12 @@ describe("fmtMoney", () => {
     expect(fmtMoney(1_250.5, "USD", "fa")).toBe("$۱،۲۵۰.۵");
   });
 
+  it("preserves exact tenths of Toman at the safe-integer boundary", () => {
+    expect(fmtMoney(Number.MAX_SAFE_INTEGER, "IRR", "fa"))
+      .toBe("۹۰۰،۷۱۹،۹۲۵،۴۷۴،۰۹۹.۱ تومان");
+    expect(fmtMoney(-1, "IRR", "fa")).toBe("-۰.۱ تومان");
+  });
+
   it("does not silently coerce missing, non-finite, fractional, or unsafe IRR values", () => {
     expect(fmtMoney(Number.NaN, "IRR", "en")).toBe("—");
     expect(fmtMoney(Number.POSITIVE_INFINITY, "IRR", "en")).toBe("—");
