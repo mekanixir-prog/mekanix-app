@@ -99,7 +99,7 @@ describe("OTP send route SMS delivery handling", () => {
     expect(mocks.createOtp).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ phone: "+989121234567" }),
     }));
-    expect(mocks.send).toHaveBeenCalledWith("+989121234567", "123456");
+    expect(mocks.send).toHaveBeenCalledWith("09121234567", "123456");
   });
 
   it("returns a success response without exposing the OTP in production", async () => {
