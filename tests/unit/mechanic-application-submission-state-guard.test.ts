@@ -185,4 +185,21 @@ describe("public mechanic application resubmission state guard", () => {
     expect(mocks.userFindUnique).not.toHaveBeenCalled();
     expect(mocks.applicationCreate).not.toHaveBeenCalled();
   });
+
+  it("normalizes optional application fields without trusting JavaScript truthiness or out-of-range values", async () => {
+    const response = await POST(request({
+      experienceYears: 9999,
+      specialties: [" hydraulics ", 12, "", "x".repeat(200)],
+      vehicleOwned: "false",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.applicationCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        experienceYears: 80,
+        specialties: JSON.stringify(["hydraulics", "x".repeat(64)]),
+        vehicleOwned: false,
+      }),
+    }));
+  });
 });
