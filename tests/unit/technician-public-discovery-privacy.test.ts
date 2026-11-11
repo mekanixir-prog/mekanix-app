@@ -111,6 +111,7 @@ describe("public technician discovery privacy", () => {
     expect(payload.user).toEqual({ name: "Technician", avatar: null });
     expect(payload.lat).toBeNull();
     expect(payload.lng).toBeNull();
+    expect(payload).not.toHaveProperty("heading");
     expect(payload.serviceAreas).toEqual([{ name: "Tabriz", radiusKm: 25 }]);
     expect(JSON.stringify(payload)).not.toContain("38.08");
     expect(JSON.stringify(payload)).not.toContain("46.29");
@@ -135,6 +136,7 @@ describe("public technician discovery privacy", () => {
     expect(payload.user).toEqual({ name: "Technician", avatar: null });
     expect(payload.lat).toBeNull();
     expect(payload.lng).toBeNull();
+    expect(payload).not.toHaveProperty("heading");
     expect(payload).not.toHaveProperty("userId");
   });
 
