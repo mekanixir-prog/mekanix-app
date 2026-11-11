@@ -2,7 +2,9 @@
 
 ## Purpose
 
-Wallet escrow is currently released when the technician wallet is read. That makes a GET request perform financial writes and means a matured hold can remain pending if nobody opens the wallet. This dedicated Worker moves the release job to a 15-minute Cloudflare Cron Trigger.
+The dedicated Worker is intended to release matured wallet escrow every 15 minutes. The production application currently **does not release escrow from wallet GET requests**: `shouldUseLegacyWalletReleaseFallback` always returns false when `NODE_ENV=production`, regardless of `WALLET_RELEASE_SCHEDULED`. The committed Worker configuration is staging-only and contains a placeholder D1 ID. Therefore, until a separately configured production Worker is deployed and verified, matured production escrow transactions can remain `PENDING`.
+
+This is an intentional fail-closed financial safety posture. Do not re-enable GET-triggered financial writes as a workaround. Wallet reads must remain read-only with respect to escrow release.
 
 ## Deployment order
 
@@ -46,8 +48,8 @@ Wallet escrow is currently released when the technician wallet is read. That mak
    ```
 
    This fixture is synthetic and does not initiate a payment, payout, or bank transfer.
-8. Keep `WALLET_RELEASE_SCHEDULED` unset in production. Production Worker configuration and rollout require a separate launch change, explicit target-account verification, backup, and approval; do not copy a staging ID into production or reuse the committed staging config.
-9. Keep the GET fallback enabled until a separately approved production scheduled Worker has been deployed and observed successfully. Do not set the variable early.
+8. Production rollout is a separate, currently incomplete release task. It requires a production-specific Worker config bound to the exact production D1 database, independent Cloudflare account/database verification, a backup and restore plan, an approved migration review, a controlled rollout, and monitoring evidence. Do not copy a staging ID into production or reuse the committed staging config.
+9. The application currently has no production GET fallback to keep enabled or disable: the policy always returns false in production. `WALLET_RELEASE_SCHEDULED` does not change that production behavior. Do not change this policy or enable GET-triggered financial writes as a substitute for the scheduled Worker.
 
 ## Processing behavior
 
@@ -65,5 +67,6 @@ Wallet escrow is currently released when the technician wallet is read. That mak
 - Run a real isolated D1 integration test before production rollout.
 - Confirm Cron Trigger execution and D1 binding in the target Cloudflare account.
 - Monitor failed counts and compare matured PENDING rows with released AVAILABLE rows during a controlled rollout.
+- Until the production Worker is deployed and observed, track matured production `PENDING` escrow rows as a release blocker and reconcile them operationally. Do not assume that the staging Worker or CI build provides production coverage.
 
 No production Worker was deployed and no production environment variable was changed while preparing this change.
