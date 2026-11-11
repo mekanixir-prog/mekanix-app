@@ -181,7 +181,7 @@ export async function POST(req: Request) {
         currency: "IRR",
         financialUnitStatus: "VERIFIED_IRR",
         status: "SENT",
-        notes: "Parts & labor covered by 6-month MEKANIX warranty.",
+        notes: "Invoice generated from independently verified IRR pricing sources.",
       },
       include: FULL_INCLUDE,
     });
