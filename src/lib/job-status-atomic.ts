@@ -101,7 +101,61 @@ function isTechnicianReleaseTransition(status: string) {
   return status === "COMPLETED" || isRequestTerminalTransition(status);
 }
 
+function assertAtomicInvoiceInput(invoice: AtomicInvoiceInput, jobId: string): void {
+  const moneyFields = [
+    invoice.laborRate,
+    invoice.laborTotal,
+    invoice.partsTotal,
+    invoice.travelFee,
+    invoice.inspectionFee,
+    invoice.emergencyFee,
+    invoice.subtotal,
+    invoice.taxTotal,
+    invoice.discount,
+    invoice.total,
+  ];
+  if (invoice.jobId !== jobId ||
+      invoice.currency !== "IRR" ||
+      invoice.financialUnitStatus !== "VERIFIED_IRR" ||
+      invoice.status !== "SENT" ||
+      !/^rate-card-\\d+$/.test(invoice.pricingVersion) ||
+      typeof invoice.notes !== "string" ||
+      !Number.isSafeInteger(invoice.laborHours) ||
+      invoice.laborHours <= 0 ||
+      !Number.isFinite(invoice.taxRate) ||
+      invoice.taxRate < 0 || invoice.taxRate > 1 ||
+      !Number.isSafeInteger(invoice.taxRate * 10_000) ||
+      invoice.discount !== 0 ||
+      moneyFields.some((value) => !Number.isSafeInteger(value) || value < 0)) {
+    throw new JobStatusConflictError();
+  }
+
+  const [laborRate, laborTotal, partsTotal, travelFee, inspectionFee, emergencyFee,
+    subtotal, taxTotal, discount, total] = moneyFields;
+  const max = BigInt(Number.MAX_SAFE_INTEGER);
+  const expectedLabor = BigInt(laborRate) * BigInt(invoice.laborHours);
+  const expectedSubtotal = BigInt(laborTotal) + BigInt(partsTotal) +
+    BigInt(travelFee) + BigInt(inspectionFee) + BigInt(emergencyFee);
+  const expectedTotal = BigInt(subtotal) + BigInt(taxTotal) - BigInt(discount);
+  const taxRateBps = invoice.taxRate * 10_000;
+
+  if (expectedLabor > max || expectedSubtotal > max || expectedTotal > max ||
+      expectedLabor !== BigInt(laborTotal) ||
+      expectedSubtotal !== BigInt(subtotal) ||
+      expectedTotal !== BigInt(total)) {
+    throw new JobStatusConflictError();
+  }
+
+  // The persisted tax rate is an exact basis-point ratio. Tax remains disabled
+  // by default; if enabled later, the writer still verifies the rounded IRR total.
+  const expectedTax = Math.round((subtotal * taxRateBps) / 10_000);
+  if (!Number.isSafeInteger(expectedTax) || expectedTax !== taxTotal) {
+    throw new JobStatusConflictError();
+  }
+}
+
 function assertRoleTransition(input: AtomicJobStatusInput) {
+  if (input.invoice) assertAtomicInvoiceInput(input.invoice, input.jobId);
   const isCustomerActor = input.actorRole === "CUSTOMER" || input.actorRole === "FLEET_MANAGER";
   if (input.actorRole === "TECHNICIAN" &&
       (!input.actorTechnicianId || input.actorTechnicianId !== input.technicianId)) {
