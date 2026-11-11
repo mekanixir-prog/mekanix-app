@@ -39,7 +39,9 @@ function maskNestedRecord(
   return maskFields(
     record,
     fields,
-    isVerifiedIrrRecord(record.financialUnitStatus, currency),
+    currencyField
+      ? currency === "IRR" && isVerifiedIrrRecord(record.financialUnitStatus, currency)
+      : isVerifiedIrrRecord(record.financialUnitStatus),
     allowNegativeFields,
   );
 }
@@ -82,7 +84,7 @@ export function maskInvoiceMoney<T extends MoneyRecord>(invoice: T): T {
   const safe = maskFields(
     invoice,
     ["laborRate", "laborTotal", "partsTotal", "travelFee", "inspectionFee", "emergencyFee", "subtotal", "taxTotal", "discount", "total"],
-    isVerifiedIrrRecord(invoice.financialUnitStatus, invoice.currency),
+    invoice.currency === "IRR" && isVerifiedIrrRecord(invoice.financialUnitStatus, invoice.currency),
   ) as MoneyRecord;
 
   safe.payment = maskNestedRecord(safe.payment, ["amount"], "currency");
