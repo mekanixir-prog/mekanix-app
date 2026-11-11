@@ -101,6 +101,21 @@ describe("atomic withdrawal route", () => {
     expect(db.notification.create).not.toHaveBeenCalled();
   });
 
+  it("does not expose internal persistence errors when withdrawal processing fails", async () => {
+    atomic.mockRejectedValue(new Error("Prisma P2002: private_table constraint details"));
+    db.withdrawalRequest.findUnique.mockResolvedValue(null);
+
+    const response = await POST(request({ amount: 500 }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(payload.code).toBe("WITHDRAWAL_PROCESSING_FAILED");
+    expect(payload.error).toContain("پردازش درخواست برداشت");
+    expect(JSON.stringify(payload)).not.toContain("Prisma");
+    expect(JSON.stringify(payload)).not.toContain("private_table");
+    expect(db.notification.create).not.toHaveBeenCalled();
+  });
+
   it("does not send a notification when the atomic debit fails", async () => {
     atomic.mockResolvedValue(false);
     const response = await POST(request({ amount: 500 }));
