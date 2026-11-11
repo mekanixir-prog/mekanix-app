@@ -23,6 +23,11 @@ describe("fmtMoney", () => {
     expect(fmtMoney(1_250.5, "USD", "fa")).toBe("$۱،۲۵۰.۵");
   });
 
+  it("uses the exact 10 IRR to 1 Toman presentation ratio", () => {
+    expect(fmtMoney(10, "IRR", "fa")).toBe("۱ تومان");
+    expect(fmtMoney(1, "IRR", "fa")).toBe("۰.۱ تومان");
+  });
+
   it("preserves exact tenths of Toman at the safe-integer boundary", () => {
     expect(fmtMoney(Number.MAX_SAFE_INTEGER, "IRR", "fa"))
       .toBe("۹۰۰،۷۱۹،۹۲۵،۴۷۴،۰۹۹.۱ تومان");
