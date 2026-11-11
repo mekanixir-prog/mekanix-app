@@ -23,6 +23,7 @@ export function areJobPartPriceSourcesVerified(parts: readonly unknown[]): boole
     if (!value || typeof value !== "object" || Array.isArray(value)) return false;
     const part = value as Record<string, unknown>;
     if (part.financialUnitStatus !== "VERIFIED_IRR" ||
+        part.unitPrice === null || part.unitPrice === undefined ||
         !isSafeStoredIrrAmount(part.unitPrice)) return false;
     const unitPrice = Number(part.unitPrice);
     const quantity = part.quantity;
