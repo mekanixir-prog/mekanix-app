@@ -68,7 +68,7 @@ describe("read-only offline reconciliation endpoints", () => {
       status: "REQUESTED", requestedAt: new Date("2026-10-31T10:00:00Z"), processedAt: null,
     });
     mocks.withdrawalLedger.mockResolvedValue({ id: "ledger-1", walletId: "wallet-1", type: "WITHDRAWAL", amount: -500, balanceBefore: 1000, balanceAfter: 500, referenceType: "Withdrawal", referenceId: "wd-1", financialUnitStatus: "VERIFIED_IRR" });
-    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=00000000"));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       state: "COMMITTED",
@@ -90,7 +90,7 @@ describe("read-only offline reconciliation endpoints", () => {
       balanceBefore: 1000, balanceAfter: 500, referenceType: "Withdrawal",
       referenceId: "wd-1", financialUnitStatus: "UNVERIFIED",
     });
-    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=00000000"));
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toMatchObject({
       state: "RECONCILIATION_REQUIRED",
@@ -109,7 +109,7 @@ describe("read-only offline reconciliation endpoints", () => {
       balanceBefore: 400, balanceAfter: -100, referenceType: "Withdrawal",
       referenceId: "wd-1", financialUnitStatus: "VERIFIED_IRR",
     });
-    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=00000000"));
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toMatchObject({ state: "RECONCILIATION_REQUIRED" });
   });
@@ -120,7 +120,7 @@ describe("read-only offline reconciliation endpoints", () => {
       status: "REQUESTED", requestedAt: new Date("2026-10-31T10:00:00Z"), processedAt: null,
     });
     mocks.withdrawalLedger.mockResolvedValue(null);
-    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=00000000"));
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toMatchObject({
       state: "RECONCILIATION_REQUIRED",
@@ -132,7 +132,7 @@ describe("read-only offline reconciliation endpoints", () => {
   it("flags an orphan debit ledger row instead of reporting NOT_COMMITTED", async () => {
     mocks.withdrawal.mockResolvedValue(null);
     mocks.withdrawalLedger.mockResolvedValue({ id: "ledger-orphan", referenceId: "wd-missing", amount: -500 });
-    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=00000000"));
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toMatchObject({
       state: "RECONCILIATION_REQUIRED",
@@ -148,7 +148,7 @@ describe("read-only offline reconciliation endpoints", () => {
       status: "REQUESTED", requestedAt: new Date(), processedAt: null,
     });
     mocks.withdrawalLedger.mockResolvedValue({ id: "ledger-1", referenceId: "wd-1", amount: -500 });
-    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=00000000"));
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toMatchObject({
       state: "RECONCILIATION_REQUIRED",
@@ -158,14 +158,14 @@ describe("read-only offline reconciliation endpoints", () => {
   });
 
   it("reports NOT_COMMITTED when no withdrawal record exists", async () => {
-    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=00000000"));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ state: "NOT_COMMITTED" });
   });
 
   it("does not disclose a key owned by another technician", async () => {
     mocks.withdrawal.mockResolvedValue({ id: "wd-other", walletId: "wallet-other" });
-    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    const response = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=00000000"));
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({ state: "KEY_CONFLICT" });
   });
@@ -174,7 +174,7 @@ describe("read-only offline reconciliation endpoints", () => {
     const invalid = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=x"));
     expect(invalid.status).toBe(400);
     mocks.auth.mockResolvedValue(customerSession);
-    const forbidden = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=idem_12345678"));
+    const forbidden = await getWithdrawalStatus(request("/api/wallets/withdraw/status?key=00000000"));
     expect(forbidden.status).toBe(403);
   });
 
