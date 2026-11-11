@@ -120,7 +120,7 @@ export async function POST(req: Request) {
   const existingApplication = existingUser
     ? await db.mechanicApplication.findUnique({ where: { userId: existingUser.id } })
       ?? await db.mechanicApplication.findFirst({ where: { phone: { in: phoneVariants } }, orderBy: { createdAt: "desc" } })
-    : await db.mechanicApplication.findFirst({ where: { phone: normalizedPhone }, orderBy: { createdAt: "desc" } });
+    : await db.mechanicApplication.findFirst({ where: { phone: { in: phoneVariants } }, orderBy: { createdAt: "desc" } });
 
   const safeSpecialties = Array.isArray(specialties)
     ? specialties
