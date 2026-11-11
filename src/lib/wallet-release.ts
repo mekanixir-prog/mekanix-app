@@ -43,7 +43,7 @@ export async function releaseWalletTransactionWithPrisma(
         walletId,
         status: "PENDING",
         financialUnitStatus: "VERIFIED_IRR",
-        netAmount: { gte: 0 },
+        netAmount: transaction.netAmount,
         holdUntil: { not: null, lte: now },
       },
       data: { status: "AVAILABLE", releasedAt: now },
@@ -56,7 +56,6 @@ export async function releaseWalletTransactionWithPrisma(
         financialUnitStatus: "VERIFIED_IRR",
         balance: walletBefore.balance,
         pendingBalance: walletBefore.pendingBalance,
-        pendingBalance: { gte: transaction.netAmount },
       },
       data: {
         pendingBalance: { decrement: transaction.netAmount },
