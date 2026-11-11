@@ -89,6 +89,8 @@ export async function releaseWalletTransactionWithD1(
         WHERE wt."id" = ? AND wt."walletId" = w."id"
           AND wt."status" = 'PENDING' AND wt."financialUnitStatus" = 'VERIFIED_IRR'
           AND wt."netAmount" >= 0
+          AND wt."netAmount" = CAST(wt."netAmount" AS INTEGER)
+          AND abs(wt."netAmount") <= ${maxSafeIrr}
           AND wt."holdUntil" IS NOT NULL AND wt."holdUntil" <= ?
           AND w."financialUnitStatus" = 'VERIFIED_IRR'
           AND w."balance" >= 0
@@ -99,6 +101,9 @@ export async function releaseWalletTransactionWithD1(
           AND abs(w."pendingBalance") <= ${maxSafeIrr}
           AND w."balance" <= ${maxSafeIrr} - wt."netAmount"
           AND ledger."financialUnitStatus" = 'VERIFIED_IRR'
+          AND ledger."amount" = wt."netAmount"
+          AND ledger."amount" = CAST(ledger."amount" AS INTEGER)
+          AND abs(ledger."amount") <= ${maxSafeIrr}
           AND ledger."balanceBefore" = w."balance"
           AND ledger."balanceAfter" = w."balance" + wt."netAmount"
       )
