@@ -5,7 +5,7 @@ DO $$
 BEGIN
   IF EXISTS (
     WITH compacted AS (
-      SELECT regexp_replace("phone", '[[:space:]()\\-]', '', 'g') AS compact
+      SELECT regexp_replace(regexp_replace("phone", '[[:space:]]', '', 'g'), '[-()]', '', 'g') AS compact
       FROM "MechanicApplication"
     ),
     canonical AS (
