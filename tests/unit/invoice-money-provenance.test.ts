@@ -50,5 +50,10 @@ describe("production invoice money provenance", () => {
       unitPrice: 100,
       quantity: 0,
     }])).toBe(false);
+    expect(areJobPartPriceSourcesVerified([{
+      financialUnitStatus: "VERIFIED_IRR",
+      unitPrice: null,
+      quantity: 1,
+    }])).toBe(false);
   });
 });
