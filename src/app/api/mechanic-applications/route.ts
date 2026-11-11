@@ -3,6 +3,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireRole } from "@/lib/auth";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
+import { otpSendSchema } from "@/lib/schemas";
 
 // GET: list mechanic applications — ADMIN only
 export async function GET(req: Request) {
@@ -72,11 +73,17 @@ export async function POST(req: Request) {
   }
 
   const { fullName, phone, email, city, experienceYears, specialties, certifications, bio, vehicleOwned } = safe;
-  if (typeof fullName !== "string" || !fullName.trim() || typeof phone !== "string" || !phone.trim()) {
+  if (typeof fullName !== "string" || !fullName.trim() || typeof phone !== "string") {
     return NextResponse.json({ error: "نام و شماره تلفن الزامی است" }, { status: 400 });
   }
+  const phoneValidation = otpSendSchema.safeParse({ phone });
+  if (!phoneValidation.success) {
+    return NextResponse.json({ error: phoneValidation.error.issues[0]?.message ?? "شماره موبایل نامعتبر است" }, { status: 400 });
+  }
 
-  const normalizedPhone = phone.trim();
+  // Keep the application phone identical to the OTP identity key. This avoids
+  // creating a technician account with a formatted phone that login cannot match.
+  const normalizedPhone = phoneValidation.data.phone.replace(/[\\s\\-()]/g, "");
   const code = `APP-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`;
   const db = await getDbForLib();
 
