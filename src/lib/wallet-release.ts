@@ -38,7 +38,7 @@ export async function releaseWalletTransactionWithPrisma(
     if (transition.count !== 1) return false;
 
     const walletUpdate = await tx.wallet.updateMany({
-      where: { id: walletId, financialUnitStatus: "VERIFIED_IRR", pendingBalance: { gte: transaction.netAmount } },
+      where: { id: walletId, financialUnitStatus: "VERIFIED_IRR", balance: { gte: 0 }, pendingBalance: { gte: transaction.netAmount } },
       data: {
         pendingBalance: { decrement: transaction.netAmount },
         balance: { increment: transaction.netAmount },
