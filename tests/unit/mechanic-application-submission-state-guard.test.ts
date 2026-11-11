@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
   applicationCreate: vi.fn(),
   rateLimitAsync: vi.fn(),
   getClientId: vi.fn(),
+  requireAuth: vi.fn(),
+  requireRole: vi.fn(),
+  applicationFindMany: vi.fn(),
 }));
 
 vi.mock("@/lib/db-access", () => ({
@@ -17,6 +20,7 @@ vi.mock("@/lib/db-access", () => ({
     user: { findUnique: mocks.userFindUnique },
     technician: { findUnique: mocks.technicianFindUnique },
     mechanicApplication: {
+      findMany: mocks.applicationFindMany,
       findUnique: mocks.applicationFindUnique,
       findFirst: mocks.applicationFindFirst,
       updateMany: mocks.applicationUpdateMany,
@@ -24,19 +28,19 @@ vi.mock("@/lib/db-access", () => ({
     },
   })),
 }));
-vi.mock("@/lib/api-helpers", () => ({ requireAuth: vi.fn() }));
+vi.mock("@/lib/api-helpers", () => ({ requireAuth: mocks.requireAuth }));
 vi.mock("@/lib/rate-limit", () => ({
   rateLimitAsync: mocks.rateLimitAsync,
   getClientId: mocks.getClientId,
   RATE_LIMITS: { MECHANIC_APPLICATION: { max: 3, windowMs: 3_600_000 } },
 }));
 vi.mock("@/lib/auth", () => ({
-  requireRole: vi.fn(),
+  requireRole: mocks.requireRole,
   sanitizeInput: vi.fn(),
   FORBIDDEN_FIELDS: [],
 }));
 
-import { POST } from "@/app/api/mechanic-applications/route";
+import { GET, POST } from "@/app/api/mechanic-applications/route";
 
 const request = (overrides: Record<string, unknown> = {}) => new Request("https://mekanix.test/api/mechanic-applications", {
   method: "POST",
@@ -60,6 +64,9 @@ beforeEach(() => {
   mocks.applicationCreate.mockResolvedValue({ id: "application-new", status: "PENDING" });
   mocks.getClientId.mockReturnValue("203.0.113.10");
   mocks.rateLimitAsync.mockResolvedValue({ success: true, resetMs: 3_600_000 });
+  mocks.requireAuth.mockResolvedValue({ userId: "admin-1", role: "ADMIN" });
+  mocks.requireRole.mockReturnValue(null);
+  mocks.applicationFindMany.mockResolvedValue([]);
 });
 
 describe("public mechanic application resubmission state guard", () => {
@@ -201,5 +208,20 @@ describe("public mechanic application resubmission state guard", () => {
         vehicleOwned: false,
       }),
     }));
+  });
+
+  it("does not cache the administrator application list containing personal data", async () => {
+    const response = await GET(new Request("https://mekanix.test/api/mechanic-applications"));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("rejects unknown application status filters without querying the database", async () => {
+    const response = await GET(new Request("https://mekanix.test/api/mechanic-applications?status=ROOT"));
+
+    expect(response.status).toBe(400);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(mocks.applicationFindMany).not.toHaveBeenCalled();
   });
 });
