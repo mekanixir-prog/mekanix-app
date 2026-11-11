@@ -75,11 +75,14 @@ async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
   if (!verifiedSource) throw new Error("PAYMENT_SOURCE_OF_TRUTH_MISMATCH");
 
   const existing = await db.prepare(
-    `SELECT "id","userId","planId","startedAt","expiresAt" FROM "UserVipSubscription" WHERE "paymentId"=?`
-  ).bind(p.paymentId).first<{id:string;userId:string;planId:string;startedAt:string|null;expiresAt:string|null}>();
+    `SELECT "id","userId","planId","status","startedAt","expiresAt" FROM "UserVipSubscription" WHERE "paymentId"=?`
+  ).bind(p.paymentId).first<{id:string;userId:string;planId:string;status:string;startedAt:string|null;expiresAt:string|null}>();
   if (existing) {
     if (existing.userId!==p.userId || existing.planId!==p.targetPlanId) {
       throw new Error("PAYMENT_ALREADY_BOUND_TO_DIFFERENT_SUBSCRIPTION");
+    }
+    if (existing.status!=="ACTIVE") {
+      throw new Error("EXISTING_SUBSCRIPTION_NOT_ACTIVE");
     }
     if (!existing.startedAt || !existing.expiresAt || Date.parse(existing.expiresAt)-Date.parse(existing.startedAt)!==p.durationDays*86400000) {
       throw new Error("EXISTING_SUBSCRIPTION_DURATION_SNAPSHOT_MISMATCH");
@@ -88,7 +91,7 @@ async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
     const notification = db.prepare(
       `INSERT INTO "Notification" ("id","userId","type","title","body","category","link","read","createdAt")
        SELECT ?,?,'vip_activated','اشتراک VIP فعال شد','اشتراک VIP شما ثبت و فعال‌سازی شد.','system','customer/settings',0,?
-       WHERE EXISTS (SELECT 1 FROM "UserVipSubscription" WHERE "paymentId"=? AND "userId"=? AND "planId"=?)
+       WHERE EXISTS (SELECT 1 FROM "UserVipSubscription" WHERE "paymentId"=? AND "userId"=? AND "planId"=? AND "status"='ACTIVE')
        ON CONFLICT("id") DO NOTHING`
     ).bind(`vip-activated:${p.paymentId}`,p.userId,now.toISOString(),p.paymentId,p.userId,p.targetPlanId);
 
@@ -101,8 +104,8 @@ async function fulfillVip(db:D1Database,event:OutboxRow,p:VipPayload,now:Date) {
       `SELECT CASE WHEN EXISTS (
          SELECT 1 FROM "PaymentOutboxEvent" o JOIN "UserVipSubscription" s ON s."paymentId"=?
          WHERE o."id"=? AND o."status"='PROCESSED' AND o."processedAt"=?
-           AND s."userId"=? AND s."planId"=?
-           AND s."startedAt" IS NOT NULL AND s."expiresAt" IS NOT NULL
+           AND s."userId"=? AND s."planId"=? AND s."status"='ACTIVE'
+           AND s."status"='ACTIVE' AND s."startedAt" IS NOT NULL AND s."expiresAt" IS NOT NULL
            AND (strftime('%s',s."expiresAt")-strftime('%s',s."startedAt"))=?*86400
        AND EXISTS (SELECT 1 FROM "Payment" pay JOIN "PaymentGatewayLog" gw ON gw."id"=pay."gatewayLogId"
            WHERE pay."id"=? AND pay."gatewayLogId"=? AND pay."userId"=? AND pay."amount"=?
