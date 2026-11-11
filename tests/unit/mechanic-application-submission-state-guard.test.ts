@@ -179,7 +179,9 @@ describe("public mechanic application resubmission state guard", () => {
     ["+98 912-123-4567", "+989121234567"],
     ["09121234567", "+989121234567"],
     ["989121234567", "+989121234567"],
-  ])("canonicalizes Iranian phone format %s to %s", async (phone, expectedPhone) => {
+    ["+1 (415) 224-1180", "+14152241180"],
+    ["14152241180", "+14152241180"],
+  ])("canonicalizes phone format %s to %s", async (phone, expectedPhone) => {
     const response = await POST(request({ phone }));
 
     expect(response.status).toBe(200);
