@@ -13,7 +13,7 @@ export function isInvoicePricingPolicyApproved(
  * VERIFIED_IRR and every monetary source is an exact, non-negative safe
  * integer. Environment flags are not provenance evidence.
  */
-function toSafeIntegerIrr(value: unknown): number | null {
+export function toSafeIntegerIrr(value: unknown): number | null {
   let raw: string;
   if (typeof value === "number") {
     return Number.isSafeInteger(value) && value >= 0 ? value : null;
