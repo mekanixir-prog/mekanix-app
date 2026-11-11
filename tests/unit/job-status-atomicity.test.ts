@@ -118,6 +118,53 @@ describe("atomic job status writer", () => {
     expect(tx.technician.updateMany).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { laborTotal: 18_000_000.5 },
+    { total: Number.MAX_SAFE_INTEGER + 1 },
+    { currency: "USD" },
+    { financialUnitStatus: "UNVERIFIED" },
+    { subtotal: 39_000_001 },
+    { taxRate: 0.09 },
+    { discount: 1 },
+    { laborHours: 1.5 },
+    { pricingVersion: "legacy-hourly" },
+  ])("rejects an invalid invoice before either database adapter writes", async (overrides) => {
+    const validInvoice = {
+      id: "invoice-1",
+      code: "INV-123456789ABC",
+      jobId: input.jobId,
+      laborHours: 1,
+      laborRate: 18_000_000,
+      laborTotal: 18_000_000,
+      partsTotal: 10_000_000,
+      travelFee: 5_000_000,
+      inspectionFee: 6_000_000,
+      emergencyFee: 0,
+      subtotal: 39_000_000,
+      taxRate: 0,
+      taxTotal: 0,
+      discount: 0,
+      total: 39_000_000,
+      currency: "IRR",
+      pricingVersion: "rate-card-2",
+      financialUnitStatus: "VERIFIED_IRR" as const,
+      status: "SENT" as const,
+      notes: "Fixed-fee estimate",
+    };
+    const db = { $transaction: vi.fn() } as any;
+    mocks.getD1Binding.mockResolvedValue(null);
+
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      currentStatus: "REPAIRING",
+      nextStatus: "WAITING_APPROVAL",
+      invoice: { ...validInvoice, ...overrides } as typeof validInvoice,
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+
+    expect(mocks.getD1Binding).not.toHaveBeenCalled();
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
   it("creates the approval invoice inside the same Prisma transaction as WAITING_APPROVAL", async () => {
     const invoice = {
       id: "invoice-1",
