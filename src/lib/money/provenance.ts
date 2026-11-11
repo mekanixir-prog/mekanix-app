@@ -42,7 +42,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Technician fees are usable only when the technician row attests to IRR. */
 export function areInvoicePriceSourcesVerified(technician: unknown): boolean {
   if (!isRecord(technician) || technician.financialUnitStatus !== "VERIFIED_IRR") return false;
-  return ["hourlyRate", "travelFeeBase"].every((field) =>
+  return ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"].every((field) =>
     toSafeIntegerIrr(technician[field]) !== null
   );
 }
