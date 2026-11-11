@@ -17,7 +17,7 @@ export async function releaseWalletTransactionWithPrisma(
         walletId,
         status: "PENDING",
         financialUnitStatus: "VERIFIED_IRR",
-        netAmount: { gte: 0 },
+        netAmount: { gt: 0 },
         holdUntil: { not: null, lte: now },
       },
       select: { netAmount: true },
@@ -25,7 +25,7 @@ export async function releaseWalletTransactionWithPrisma(
     if (!transaction) return false;
 
     const amount = toSafeIntegerIrr(transaction.netAmount);
-    if (amount === null) return false;
+    if (amount === null || amount <= 0) return false;
 
     const walletBefore = await tx.wallet.findUnique({
       where: { id: walletId },
