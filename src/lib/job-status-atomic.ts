@@ -102,7 +102,7 @@ function isTechnicianReleaseTransition(status: string) {
   return status === "COMPLETED" || isRequestTerminalTransition(status);
 }
 
-function assertAtomicInvoiceInput(invoice: AtomicInvoiceInput, jobId: string): void {
+export function assertAtomicInvoiceInput(invoice: AtomicInvoiceInput, jobId: string): void {
   const moneyFields = [
     invoice.laborRate,
     invoice.laborTotal,
