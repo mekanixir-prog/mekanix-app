@@ -445,6 +445,7 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
       status: "REDIRECTED",
       purpose: "vip",
       targetPlanId: "plan-1",
+      targetPlanDurationDays: 30,
       verifiedAt: null,
     });
     mockPaymentFindUnique.mockReset();
@@ -466,6 +467,7 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
     expect(mockRecordVerifiedGatewayPayment).toHaveBeenCalledTimes(1);
     expect(mockRecordVerifiedGatewayPayment).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       gatewayLogId: "log-1", userId: "user-1", amount: 100_000, targetPlanId: "plan-1",
+      durationDays: 30,
     }));
   });
 
@@ -528,6 +530,7 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
       financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip",
       targetPlanId: "plan-1",
+      targetPlanDurationDays: 30,
       paymentId: "pay-1",
       verifiedAt: new Date("2026-10-30T10:00:00.000Z"),
     });
@@ -557,6 +560,7 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
       financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip",
       targetPlanId: "plan-1",
+      targetPlanDurationDays: 30,
       paymentId: null,
       verifiedAt: new Date("2026-10-30T10:00:00.000Z"),
     });
@@ -683,6 +687,8 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
     // Clear one-time mock queues left by the gateway-verification cases above.
     mockPaymentFindUnique.mockReset();
     mockPaymentGatewayLogFindUnique.mockReset();
+    mockUserVipSubscriptionFindFirst.mockReset();
+    mockCreateVipSubscriptionAtomically.mockReset();
     mockRequireAuth.mockResolvedValue({
       userId: "user-1",
       role: "CUSTOMER",
@@ -713,6 +719,7 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
       financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip",
       targetPlanId: "plan-1",
+      targetPlanDurationDays: 30,
       paymentId: "pay-1",
       amount: 100_000,
       currency: "IRR",
@@ -745,8 +752,37 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
     expect(mockCreateVipSubscriptionAtomically).toHaveBeenCalledTimes(1);
   });
 
-  // Sanity: second subscribe after the first committed returns 409 (control)
-  it("second subscribe AFTER first committed returns 409 (sequential, control)", async () => {
+  it("rejects an existing-subscription replay when the gateway duration snapshot is missing", async () => {
+    mockPaymentGatewayLogFindUnique.mockResolvedValueOnce({
+      id: "gateway-pay-1", userId: "user-1", status: "VERIFIED", financialUnitStatus: "VERIFIED_IRR",
+      purpose: "vip", targetPlanId: "plan-1", targetPlanDurationDays: null,
+      paymentId: "pay-1", amount: 100_000, currency: "IRR",
+    });
+    mockUserVipSubscriptionFindFirst.mockResolvedValueOnce({
+      id: "sub-1", userId: "user-1", planId: "plan-1", paymentId: "pay-1", status: "ACTIVE",
+      startedAt: new Date("2026-11-01T00:00:00.000Z"), expiresAt: new Date("2026-12-01T00:00:00.000Z"),
+      plan: { id: "plan-1", name: "Gold" },
+    });
+    const res = await vipSubscribePOST(makePostRequest("http://localhost/api/vip/subscribe", { planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe("VIP_DURATION_SNAPSHOT_MISSING");
+    expect(mockUserVipSubscriptionFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("rejects an existing subscription whose duration differs from the immutable purchase snapshot", async () => {
+    mockUserVipSubscriptionFindFirst.mockResolvedValueOnce({
+      id: "sub-1", userId: "user-1", planId: "plan-1", paymentId: "pay-1", status: "ACTIVE",
+      startedAt: new Date("2026-11-01T00:00:00.000Z"), expiresAt: new Date("2026-12-02T00:00:00.000Z"),
+      plan: { id: "plan-1", name: "Gold" },
+    });
+    const res = await vipSubscribePOST(makePostRequest("http://localhost/api/vip/subscribe", { planId: "plan-1", paymentId: "pay-1" }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe("VIP_EXISTING_DURATION_MISMATCH");
+    expect(mockCreateVipSubscriptionAtomically).not.toHaveBeenCalled();
+  });
+
+  // Exact replay returns the same subscription rather than rejecting a paid payment.
+  it("second subscribe AFTER first committed returns the existing subscription (sequential replay)", async () => {
     // First call: no existing sub → create
     mockUserVipSubscriptionFindFirst.mockResolvedValueOnce(null);
     const req1 = makePostRequest("http://localhost/api/vip/subscribe", {
@@ -756,19 +792,24 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
     const res1 = await vipSubscribePOST(req1);
     expect(res1.status).toBe(200);
 
-    // Second call: findFirst NOW sees the committed sub → 409
+    // Second call: findFirst NOW sees the committed sub → idempotent success
     mockUserVipSubscriptionFindFirst.mockResolvedValueOnce({
       id: "sub-1",
       userId: "user-1",
+      planId: "plan-1",
       paymentId: "pay-1",
       status: "ACTIVE",
+      startedAt: new Date("2026-11-01T00:00:00.000Z"),
+      expiresAt: new Date("2026-12-01T00:00:00.000Z"),
+      plan: { id: "plan-1", name: "Gold" },
     });
     const req2 = makePostRequest("http://localhost/api/vip/subscribe", {
       planId: "plan-1",
       paymentId: "pay-1",
     });
     const res2 = await vipSubscribePOST(req2);
-    expect(res2.status).toBe(409);
+    expect(res2.status).toBe(200);
+    expect((await res2.json()).alreadyProcessed).toBe(true);
     // The atomic helper is called only for the first successful payment use.
     expect(mockCreateVipSubscriptionAtomically).toHaveBeenCalledTimes(1);
   });
@@ -780,7 +821,10 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
   it(
     "VIP-01 FIXED: two concurrent subscribes with same paymentId — exactly one succeeds, one 409",
     async () => {
-      mockUserVipSubscriptionFindFirst.mockResolvedValue(null);
+      mockUserVipSubscriptionFindFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: "sub-1", userId: "user-1", planId: "plan-1", paymentId: "pay-1", status: "ACTIVE", startedAt: new Date("2026-11-01T00:00:00.000Z"), expiresAt: new Date("2026-12-01T00:00:00.000Z"), plan: { id: "plan-1", name: "Gold" } });
       mockCreateVipSubscriptionAtomically
         .mockResolvedValueOnce("sub-1")
         .mockRejectedValueOnce({ code: "P2002", message: "Unique constraint failed on the fields: (paymentId)" });
@@ -801,7 +845,7 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
 
       expect(mockCreateVipSubscriptionAtomically).toHaveBeenCalledTimes(2);
       const statuses = [res1.status, res2.status].sort();
-      expect(statuses).toEqual([200, 409]);
+      expect(statuses).toEqual([200, 200]);
     }
   );
   it(
@@ -823,6 +867,7 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
       financialUnitStatus: "VERIFIED_IRR",
         purpose: "vip",
         targetPlanId: "plan-1",
+      targetPlanDurationDays: 30,
         paymentId: where.id.replace("gateway-", ""),
         amount: 100_000,
         currency: "IRR",

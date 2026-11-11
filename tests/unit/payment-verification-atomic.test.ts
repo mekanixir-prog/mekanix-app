@@ -1,5 +1,6 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DatabaseSync } from "node:sqlite";
 import { recordVerifiedGatewayPaymentAtomically } from "@/lib/payment-verification-atomic";
 
 const mockLogFindUnique = vi.fn();
@@ -15,6 +16,72 @@ const mockGetD1Binding = vi.hoisted(() => vi.fn(async (): Promise<any> => null))
 vi.mock("@/lib/idempotency", () => ({
   getD1Binding: mockGetD1Binding,
 }));
+
+
+const sqliteDbs: DatabaseSync[] = [];
+afterEach(() => {
+  for (const db of sqliteDbs.splice(0)) db.close();
+});
+
+function makeSqliteD1() {
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec(`
+    CREATE TABLE "Payment" (
+      "id" TEXT PRIMARY KEY, "code" TEXT NOT NULL, "invoiceId" TEXT, "userId" TEXT NOT NULL,
+      "amount" INTEGER NOT NULL, "currency" TEXT NOT NULL, "method" TEXT NOT NULL,
+      "status" TEXT NOT NULL, "financialUnitStatus" TEXT NOT NULL, "gatewayLogId" TEXT UNIQUE,
+      "createdAt" TEXT NOT NULL
+    );
+    CREATE TABLE "PaymentGatewayLog" (
+      "id" TEXT PRIMARY KEY, "userId" TEXT NOT NULL, "purpose" TEXT NOT NULL, "targetPlanId" TEXT NOT NULL,
+      "targetPlanDurationDays" INTEGER NOT NULL, "amount" INTEGER NOT NULL, "currency" TEXT NOT NULL,
+      "financialUnitStatus" TEXT NOT NULL, "status" TEXT NOT NULL, "verifiedAt" TEXT, "paymentId" TEXT
+    );
+    CREATE TABLE "PaymentOutboxEvent" (
+      "id" TEXT PRIMARY KEY, "eventType" TEXT NOT NULL, "aggregateType" TEXT NOT NULL, "aggregateId" TEXT NOT NULL,
+      "payload" TEXT NOT NULL, "idempotencyKey" TEXT UNIQUE NOT NULL, "status" TEXT NOT NULL,
+      "attempts" INTEGER NOT NULL, "availableAt" TEXT NOT NULL, "createdAt" TEXT NOT NULL, "updatedAt" TEXT NOT NULL
+    );
+  `);
+  const d1 = {
+    prepare(sql: string) {
+      return {
+        bind(...values: unknown[]) {
+          return {
+            first<T>() {
+              return Promise.resolve((sqlite.prepare(sql).get(...values as never[]) as T) ?? null);
+            },
+            run() {
+              const result = sqlite.prepare(sql).run(...values as never[]);
+              return Promise.resolve({ meta: { changes: Number(result.changes) } });
+            },
+          };
+        },
+      };
+    },
+    async batch(statements: Array<{ run: () => Promise<{ meta: { changes: number } }> }>) {
+      sqlite.exec("BEGIN");
+      try {
+        const results: Array<{ meta: { changes: number } }> = [];
+        for (const statement of statements) results.push(await statement.run());
+        sqlite.exec("COMMIT");
+        return results;
+      } catch (error) {
+        sqlite.exec("ROLLBACK");
+        throw error;
+      }
+    },
+  };
+  return { sqlite, d1 };
+}
+
+function seedSqliteGateway(sqlite: DatabaseSync, durationDays = 30) {
+  sqlite.prepare(`INSERT INTO "PaymentGatewayLog"
+    ("id","userId","purpose","targetPlanId","targetPlanDurationDays","amount","currency","financialUnitStatus","status","verifiedAt","paymentId")
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
+      "gateway-1", "customer-1", "vip", "plan-1", durationDays, 100_000, "IRR", "VERIFIED_IRR", "REDIRECTED", null, null
+    );
+}
 
 function makeDb() {
   const tx = {
@@ -32,6 +99,7 @@ const input = {
   paymentCode: "PAY-PG-test",
   amount: 100_000,
   targetPlanId: "plan-1",
+  durationDays: 30,
   verifiedAt: new Date("2026-11-07T10:00:00.000Z"),
 };
 
@@ -40,7 +108,7 @@ describe("atomic verified gateway payment persistence", () => {
     vi.clearAllMocks();
     mockGetD1Binding.mockResolvedValue(null);
     mockLogFindUnique.mockResolvedValue({
-      id: "gateway-1", userId: "customer-1", purpose: "vip", targetPlanId: "plan-1",
+      id: "gateway-1", userId: "customer-1", purpose: "vip", targetPlanId: "plan-1", targetPlanDurationDays: 30,
       amount: 100_000, currency: "IRR", financialUnitStatus: "VERIFIED_IRR",
       status: "REDIRECTED", verifiedAt: null,
     });
@@ -73,6 +141,7 @@ describe("atomic verified gateway payment persistence", () => {
         aggregateType: "Payment",
         aggregateId: "payment-1",
         idempotencyKey: "payment.succeeded:gateway-1",
+        payload: expect.stringContaining('"durationDays":30'),
       }),
       update: {},
     }));
@@ -114,13 +183,52 @@ describe("atomic verified gateway payment persistence", () => {
     }));
   });
 
-  it("builds a valid D1 outbox JSON projection with closed SQL identifiers", async () => {
-    const prepared: Array<{ sql: string; values: unknown[] }> = [];
+  it("executes D1 payment, gateway, and outbox writes atomically on SQLite", async () => {
+    const { sqlite, d1 } = makeSqliteD1();
+    sqliteDbs.push(sqlite);
+    seedSqliteGateway(sqlite);
+    mockGetD1Binding.mockResolvedValue(d1);
+
+    const result = await recordVerifiedGatewayPaymentAtomically(makeDb(), input);
+    expect(result).toBe("payment-1");
+    expect(sqlite.prepare(`SELECT "status","paymentId","financialUnitStatus" FROM "PaymentGatewayLog" WHERE "id"='gateway-1'`).get()).toEqual({
+      status: "VERIFIED", paymentId: "payment-1", financialUnitStatus: "VERIFIED_IRR",
+    });
+    expect(sqlite.prepare(`SELECT "userId","amount","currency","status","gatewayLogId" FROM "Payment" WHERE "id"='payment-1'`).get()).toEqual({
+      userId: "customer-1", amount: 100_000, currency: "IRR", status: "SUCCEEDED", gatewayLogId: "gateway-1",
+    });
+    const event = sqlite.prepare(`SELECT "eventType","aggregateId","idempotencyKey","status","payload" FROM "PaymentOutboxEvent"`).get() as { eventType: string; aggregateId: string; idempotencyKey: string; status: string; payload: string };
+    expect(event).toMatchObject({
+      eventType: "PAYMENT_SUCCEEDED", aggregateId: "payment-1",
+      idempotencyKey: "payment.succeeded:gateway-1", status: "PENDING",
+    });
+    expect(JSON.parse(event.payload)).toMatchObject({
+      paymentId: "payment-1", gatewayLogId: "gateway-1", userId: "customer-1",
+      amount: 100_000, currency: "IRR", purpose: "vip", targetPlanId: "plan-1", durationDays: 30,
+    });
+  });
+
+  it("rolls back the D1 batch when the purchase-time duration snapshot does not match", async () => {
+    const { sqlite, d1 } = makeSqliteD1();
+    sqliteDbs.push(sqlite);
+    seedSqliteGateway(sqlite, 31);
+    mockGetD1Binding.mockResolvedValue(d1);
+
+    await expect(recordVerifiedGatewayPaymentAtomically(makeDb(), input)).rejects.toThrow();
+    expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "Payment"`).get()).toEqual({ count: 0 });
+    expect(sqlite.prepare(`SELECT "status","paymentId" FROM "PaymentGatewayLog" WHERE "id"='gateway-1'`).get()).toEqual({
+      status: "REDIRECTED", paymentId: null,
+    });
+    expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "PaymentOutboxEvent"`).get()).toEqual({ count: 0 });
+  });
+
+  it("builds the D1 outbox JSON projection with valid column quoting", async () => {
+    const prepared: string[] = [];
     const d1 = {
       prepare(sql: string) {
         return {
-          bind(...values: unknown[]) {
-            prepared.push({ sql, values });
+          bind(..._values: unknown[]) {
+            prepared.push(sql);
             return { first: async () => ({ id: "payment-1" }) };
           },
         };
@@ -128,23 +236,20 @@ describe("atomic verified gateway payment persistence", () => {
       batch: vi.fn(async () => []),
     };
     mockGetD1Binding.mockResolvedValue(d1);
-
     const result = await recordVerifiedGatewayPaymentAtomically(makeDb(), input);
     expect(result).toBe("payment-1");
     expect(d1.batch).toHaveBeenCalledTimes(1);
-
-    const outboxSql = prepared.find(({ sql }) => sql.includes('INSERT INTO "PaymentOutboxEvent"'))?.sql;
-    expect(outboxSql).toBeDefined();
+    const outboxSql = prepared.find((sql) => sql.includes('INSERT INTO "PaymentOutboxEvent"'));
     expect(outboxSql).toContain("'paymentId', p." + '"id"' + ", 'gatewayLogId'");
     expect(outboxSql).toContain("'userId', p." + '"userId"' + ", 'amount', p." + '"amount"' + ", 'currency'");
-    expect(outboxSql).not.toContain('p."id\',');
-    expect(outboxSql).not.toContain('p."userId\',');
-    expect(outboxSql).not.toContain('p."amount\',');
+    expect(outboxSql).not.toContain("p.\"id\\',");
+    expect(outboxSql).not.toContain("p.\"userId\\',");
+    expect(outboxSql).not.toContain("p.\"amount\\',");
   });
 
   it("rejects a gateway attempt whose server-owned amount no longer matches", async () => {
     mockLogFindUnique.mockResolvedValue({
-      id: "gateway-1", userId: "customer-1", purpose: "vip", targetPlanId: "plan-1",
+      id: "gateway-1", userId: "customer-1", purpose: "vip", targetPlanId: "plan-1", targetPlanDurationDays: 30,
       amount: 90_000, currency: "IRR", financialUnitStatus: "VERIFIED_IRR", status: "REDIRECTED",
     });
     await expect(recordVerifiedGatewayPaymentAtomically(makeDb(), input)).rejects.toThrow(

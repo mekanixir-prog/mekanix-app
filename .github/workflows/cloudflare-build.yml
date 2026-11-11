@@ -26,6 +26,10 @@ on:
       - 'src/lib/db-access.ts'
       - 'workers/wallet-release/**'
       - 'wrangler.wallet-release.toml'
+      - 'workers/payment-outbox/**'
+      - 'wrangler.payment-outbox.toml'
+      - 'tests/integration/payment-outbox-vip-d1.test.ts'
+      - 'docs/PAYMENT_OUTBOX_VIP_DISPATCHER.md'
       - 'docs/WALLET_ESCROW_SCHEDULED_WORKER.md'
       - '.dockerignore'
       - 'tests/unit/wallet-escrow-scheduled-worker.test.ts'
@@ -85,6 +89,9 @@ jobs:
         run: bash scripts/build-cloudflare.sh
         # build-cloudflare.sh handles: schema engineType swap, next.config.worker swap,
         # db.worker.ts swap, prisma generate, OpenNext build, and trap-based restore.
+
+      - name: Build VIP payment outbox Worker (dry run only)
+        run: bunx wrangler deploy --dry-run --config wrangler.payment-outbox.toml
 
       - name: Verify Worker artifact
         run: |

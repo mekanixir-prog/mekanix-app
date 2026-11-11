@@ -9,6 +9,7 @@ type VerifiedGatewayPaymentInput = {
   paymentCode: string;
   amount: number;
   targetPlanId: string;
+  durationDays: number;
   legacyPaymentId?: string;
   verifiedAt: Date;
 };
@@ -24,7 +25,8 @@ type VerifiedGatewayPayment = {
 
 function assertInput(input: VerifiedGatewayPaymentInput) {
   if (!input.gatewayLogId || !input.userId || !input.paymentId || !input.paymentCode || !input.targetPlanId ||
-      !Number.isSafeInteger(input.amount) || input.amount <= 0 || input.amount > 100_000_000) {
+      !Number.isSafeInteger(input.amount) || input.amount <= 0 || input.amount > 100_000_000 ||
+      !Number.isSafeInteger(input.durationDays) || input.durationDays <= 0 || input.durationDays > 36500) {
     throw new Error("Invalid verified gateway payment input");
   }
 }
@@ -74,36 +76,36 @@ export async function recordVerifiedGatewayPaymentAtomically(
     const linkAndVerify = d1.prepare(
       'UPDATE "PaymentGatewayLog" SET "status" = \'VERIFIED\', "financialUnitStatus" = \'VERIFIED_IRR\', ' +
       '"verifiedAt" = COALESCE("verifiedAt", ?), "paymentId" = (SELECT p."id" FROM "Payment" p WHERE p."gatewayLogId" = ? AND p."userId" = ? AND p."amount" = ? AND p."currency" = \'IRR\' AND p."status" = \'SUCCEEDED\' AND p."financialUnitStatus" = \'VERIFIED_IRR\') ' +
-      'WHERE "id" = ? AND "userId" = ? AND "purpose" = \'vip\' AND "targetPlanId" = ? AND "amount" = ? AND "currency" = \'IRR\' AND "financialUnitStatus" = \'VERIFIED_IRR\' ' +
+      'WHERE "id" = ? AND "userId" = ? AND "purpose" = \'vip\' AND "targetPlanId" = ? AND "targetPlanDurationDays" = ? AND "amount" = ? AND "currency" = \'IRR\' AND "financialUnitStatus" = \'VERIFIED_IRR\' ' +
       'AND ("status" = \'REDIRECTED\' OR ("status" = \'VERIFIED\' AND ("paymentId" IS NULL OR "paymentId" = (SELECT p."id" FROM "Payment" p WHERE p."gatewayLogId" = ? AND p."userId" = ?)))) ' +
       'AND EXISTS (SELECT 1 FROM "Payment" p WHERE p."gatewayLogId" = ? AND p."userId" = ? AND p."amount" = ? AND p."currency" = \'IRR\' AND p."status" = \'SUCCEEDED\' AND p."financialUnitStatus" = \'VERIFIED_IRR\')'
     ).bind(
       now, input.gatewayLogId, input.userId, input.amount,
-      input.gatewayLogId, input.userId, input.targetPlanId, input.amount,
+      input.gatewayLogId, input.userId, input.targetPlanId, input.durationDays, input.amount,
       input.gatewayLogId, input.userId,
       input.gatewayLogId, input.userId, input.amount,
     );
 
     const outboxInsert = d1.prepare(
       'INSERT INTO "PaymentOutboxEvent" ("id", "eventType", "aggregateType", "aggregateId", "payload", "idempotencyKey", "status", "attempts", "availableAt", "createdAt", "updatedAt") ' +
-      'SELECT ?, \'PAYMENT_SUCCEEDED\', \'Payment\', p."id", json_object(\'eventType\', \'PAYMENT_SUCCEEDED\', \'paymentId\', p."id", \'gatewayLogId\', ?, \'userId\', p."userId", \'amount\', p."amount", \'currency\', \'IRR\', \'purpose\', \'vip\', \'targetPlanId\', ?), ?, \'PENDING\', 0, ?, ?, ? ' +
+      'SELECT ?, \'PAYMENT_SUCCEEDED\', \'Payment\', p."id", json_object(\'eventType\', \'PAYMENT_SUCCEEDED\', \'paymentId\', p."id", \'gatewayLogId\', ?, \'userId\', p."userId", \'amount\', p."amount", \'currency\', \'IRR\', \'purpose\', \'vip\', \'targetPlanId\', ?, \'durationDays\', ?), ?, \'PENDING\', 0, ?, ?, ? ' +
       'FROM "Payment" p JOIN "PaymentGatewayLog" g ON g."id" = p."gatewayLogId" ' +
       'WHERE p."gatewayLogId" = ? AND p."userId" = ? AND p."amount" = ? AND p."currency" = \'IRR\' AND p."status" = \'SUCCEEDED\' ' +
       'AND g."status" = \'VERIFIED\' AND g."paymentId" = p."id" ' +
       'ON CONFLICT("idempotencyKey") DO NOTHING'
-    ).bind(eventId, input.gatewayLogId, input.targetPlanId, eventKey, now, now, now, input.gatewayLogId, input.userId, input.amount);
+    ).bind(eventId, input.gatewayLogId, input.targetPlanId, input.durationDays, eventKey, now, now, now, input.gatewayLogId, input.userId, input.amount);
 
     const assertVerifiedAndEnqueued = d1.prepare(
       'SELECT CASE WHEN EXISTS (SELECT 1 FROM "Payment" p JOIN "PaymentGatewayLog" g ON g."id" = p."gatewayLogId" ' +
       'JOIN "PaymentOutboxEvent" o ON o."idempotencyKey" = ? AND o."aggregateId" = p."id" AND o."eventType" = \'PAYMENT_SUCCEEDED\' ' +
       'AND json_extract(o."payload", \'$.paymentId\') = p."id" AND json_extract(o."payload", \'$.gatewayLogId\') = p."gatewayLogId" ' +
       'AND json_extract(o."payload", \'$.userId\') = p."userId" AND json_extract(o."payload", \'$.amount\') = p."amount" ' +
-      'AND json_extract(o."payload", \'$.targetPlanId\') = ? ' +
+      'AND json_extract(o."payload", \'$.targetPlanId\') = ? AND json_extract(o."payload", \'$.durationDays\') = ? ' +
       'WHERE p."gatewayLogId" = ? AND p."userId" = ? AND p."amount" = ? AND p."currency" = \'IRR\' AND p."status" = \'SUCCEEDED\' ' +
       'AND p."financialUnitStatus" = \'VERIFIED_IRR\' AND g."status" = \'VERIFIED\' AND g."paymentId" = p."id" ' +
-      'AND g."purpose" = \'vip\' AND g."targetPlanId" = ? AND g."financialUnitStatus" = \'VERIFIED_IRR\') ' +
+      'AND g."purpose" = \'vip\' AND g."targetPlanId" = ? AND g."targetPlanDurationDays" = ? AND g."financialUnitStatus" = \'VERIFIED_IRR\') ' +
       'THEN 1 ELSE json_extract(\'not-json\', \'$\') END'
-    ).bind(eventKey, input.targetPlanId, input.gatewayLogId, input.userId, input.amount, input.targetPlanId);
+    ).bind(eventKey, input.targetPlanId, input.durationDays, input.gatewayLogId, input.userId, input.amount, input.targetPlanId, input.durationDays);
 
     await d1.batch([paymentWrite, linkAndVerify, outboxInsert, assertVerifiedAndEnqueued]);
     const row = await d1.prepare('SELECT "id" FROM "Payment" WHERE "gatewayLogId" = ?').bind(input.gatewayLogId).first<{ id: string }>();
@@ -115,7 +117,7 @@ export async function recordVerifiedGatewayPaymentAtomically(
     const log = await tx.paymentGatewayLog.findUnique({ where: { id: input.gatewayLogId } });
     if (
       !log || log.userId !== input.userId || log.purpose !== "vip" ||
-      log.targetPlanId !== input.targetPlanId || log.currency !== "IRR" ||
+      log.targetPlanId !== input.targetPlanId || log.targetPlanDurationDays !== input.durationDays || log.currency !== "IRR" ||
       log.financialUnitStatus !== "VERIFIED_IRR" ||
       !isSafeStoredIrrAmount(log.amount) || Number(log.amount) !== input.amount ||
       !["REDIRECTED", "VERIFIED"].includes(log.status)
@@ -172,6 +174,7 @@ export async function recordVerifiedGatewayPaymentAtomically(
         userId: input.userId,
         purpose: "vip",
         targetPlanId: input.targetPlanId,
+        targetPlanDurationDays: input.durationDays,
         amount: input.amount,
         currency: "IRR",
         financialUnitStatus: "VERIFIED_IRR",
@@ -191,6 +194,7 @@ export async function recordVerifiedGatewayPaymentAtomically(
       currency: "IRR",
       purpose: "vip",
       targetPlanId: input.targetPlanId,
+      durationDays: input.durationDays,
     });
     const event = await tx.paymentOutboxEvent.upsert({
       where: { idempotencyKey: eventKey },
