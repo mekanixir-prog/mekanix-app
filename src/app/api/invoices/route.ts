@@ -203,7 +203,7 @@ export async function POST(req: Request) {
           userId: cust.id,
           type: "invoice_issued",
           title: `Invoice ${invoice.code} issued`,
-          body: `${tech?.name ?? "Mechanic"} issued invoice for ${Number(invoice.total)}. Review and pay to complete the job.`,
+          body: `${tech?.name ?? "Mechanic"} issued an invoice. Review it to see the verified amount and payment details.`,
           category: "payment",
           link: "customer/invoice",
         },
@@ -214,7 +214,7 @@ export async function POST(req: Request) {
             userId: tech.id,
             type: "invoice_issued",
             title: `Invoice ${invoice.code} sent to customer`,
-            body: `${invoice.code} for ${Number(invoice.total)} was sent to ${cust.name} for review & payment.`,
+            body: `${invoice.code} was sent to ${cust.name} for review & payment.`,
             category: "payment",
             link: "technician/earnings",
           },
@@ -225,7 +225,7 @@ export async function POST(req: Request) {
           jobId: refreshed.id,
           fromUserId: tech?.id ?? cust.id,
           kind: "system",
-          body: `Invoice ${invoice.code} issued — total ${Number(invoice.total)} ${invoice.currency}.`,
+          body: `Invoice ${invoice.code} issued.`,
         },
       });
     } catch (error) {
