@@ -193,15 +193,6 @@ export async function recordPrepayWithD1(
       input.technicianId, input.technicianId, input.jobId, at),
 
     d1.prepare(`
-      UPDATE "Wallet"
-      SET "pendingBalance" = "pendingBalance" + ?,
-          "totalEarned" = "totalEarned" + ?,
-          "totalCommission" = "totalCommission" + ?,
-          "updatedAt" = ?
-      WHERE "technicianId" = ? AND changes() = 1
-    `).bind(input.net, input.gross, input.commission, at, input.technicianId),
-
-    d1.prepare(`
       INSERT INTO "WalletLedger"
         ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
          "referenceType", "referenceId", "description", "idempotencyKey", "createdAt")
@@ -212,6 +203,16 @@ export async function recordPrepayWithD1(
     `).bind(crypto.randomUUID(), -input.commission,
       `Platform commission — ${input.jobCode}`, commissionLedgerKey, at,
       input.technicianId, input.technicianId, input.jobId, at),
+
+    d1.prepare(`
+      UPDATE "Wallet"
+      SET "pendingBalance" = "pendingBalance" + ?,
+          "totalEarned" = "totalEarned" + ?,
+          "totalCommission" = "totalCommission" + ?,
+          "updatedAt" = ?
+      WHERE "technicianId" = ? AND changes() = 1
+    `).bind(input.net, input.gross, input.commission, at, input.technicianId),
+
   ];
 
   const results = await d1.batch(statements);
