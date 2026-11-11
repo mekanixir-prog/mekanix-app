@@ -4,6 +4,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
 import { areInvoicePriceSourcesVerified, areJobPartPriceSourcesVerified } from "@/lib/money/provenance";
+import { maskInvoiceMoney } from "@/lib/money/read-provenance";
 
 const FULL_INCLUDE = {
   job: {
@@ -31,7 +32,7 @@ export async function GET(req: Request) {
 
   const db = await getDbForLib();
   const inv = await db.invoice.findUnique({ where: { jobId }, include: FULL_INCLUDE });
-  return NextResponse.json(inv);
+  return NextResponse.json(inv ? maskInvoiceMoney(inv) : null);
 }
 
 // POST: only the assigned technician or an admin may issue an invoice.
