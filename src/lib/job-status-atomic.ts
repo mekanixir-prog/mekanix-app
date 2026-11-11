@@ -156,6 +156,8 @@ function assertAtomicInvoiceInput(invoice: AtomicInvoiceInput, jobId: string): v
 }
 
 function assertRoleTransition(input: AtomicJobStatusInput) {
+  const estimateTransition = input.currentStatus === "REPAIRING" && input.nextStatus === "WAITING_APPROVAL";
+  if (estimateTransition !== Boolean(input.invoice)) throw new JobStatusConflictError();
   if (input.invoice) assertAtomicInvoiceInput(input.invoice, input.jobId);
   const isCustomerActor = input.actorRole === "CUSTOMER" || input.actorRole === "FLEET_MANAGER";
   if (input.actorRole === "TECHNICIAN" &&
