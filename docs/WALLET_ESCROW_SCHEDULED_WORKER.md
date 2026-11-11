@@ -48,7 +48,7 @@ This is an intentional fail-closed financial safety posture. Do not re-enable GE
    ```
 
    This fixture is synthetic and does not initiate a payment, payout, or bank transfer.
-8. Production rollout is a separate, currently incomplete release task. It requires a production-specific Worker config bound to the exact production D1 database, independent Cloudflare account/database verification, a backup and restore plan, an approved migration review, a controlled rollout, and monitoring evidence. Do not copy a staging ID into production or reuse the committed staging config.
+8. Production rollout remains incomplete even though a production-specific Worker config and guarded deploy command are now included. It still requires independent Cloudflare account/database verification, a verified backup and restore plan, confirmation that the required schema is already present, explicit release approval, a controlled rollout, and monitoring evidence. Do not copy a staging ID into production or reuse the staging config.
 9. The application currently has no production GET fallback to keep enabled or disable: the policy always returns false in production. `WALLET_RELEASE_SCHEDULED` does not change that production behavior. Do not change this policy or enable GET-triggered financial writes as a substitute for the scheduled Worker.
 
 
