@@ -118,6 +118,32 @@ describe("atomic job status writer", () => {
     expect(tx.technician.updateMany).not.toHaveBeenCalled();
   });
 
+  it("requires an invoice exactly on the REPAIRING to WAITING_APPROVAL transition", async () => {
+    const db = { $transaction: vi.fn() } as any;
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      currentStatus: "REPAIRING",
+      nextStatus: "WAITING_APPROVAL",
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+
+    const invoice = {
+      id: "invoice-1", code: "INV-1", jobId: input.jobId,
+      laborHours: 1, laborRate: 1, laborTotal: 1, partsTotal: 0,
+      travelFee: 0, inspectionFee: 0, emergencyFee: 0,
+      subtotal: 1, taxRate: 0, taxTotal: 0, discount: 0, total: 1,
+      currency: "IRR", pricingVersion: "rate-card-1",
+      financialUnitStatus: "VERIFIED_IRR" as const, status: "SENT" as const, notes: "",
+    };
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      currentStatus: "REQUESTED",
+      nextStatus: "ACCEPTED",
+      invoice,
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+    expect(db.$transaction).not.toHaveBeenCalled();
+    expect(mocks.getD1Binding).not.toHaveBeenCalled();
+  });
+
   it.each([
     { laborTotal: 18_000_000.5 },
     { total: Number.MAX_SAFE_INTEGER + 1 },
