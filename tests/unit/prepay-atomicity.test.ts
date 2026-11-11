@@ -16,6 +16,25 @@ const input = {
 };
 
 describe("atomic prepay recording", () => {
+  it.each([
+    { gross: 1000.5 },
+    { commission: -1, net: 1001 },
+    { net: Number.MAX_SAFE_INTEGER + 1, commission: 0 },
+    { inspectionFee: 600.5 },
+    { travelFee: -1, gross: 599 },
+    { gross: Number.MAX_SAFE_INTEGER, inspectionFee: Number.MAX_SAFE_INTEGER, travelFee: 1 },
+  ])("rejects fractional, negative, unsafe, or overflowing IRR before either writer runs", async (overrides) => {
+    const invalidInput = { ...input, ...overrides };
+    const prisma = { $transaction: vi.fn() } as any;
+    await expect(recordPrepayWithPrisma(prisma, invalidInput)).resolves.toBe(false);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+
+    const d1 = { prepare: vi.fn(), batch: vi.fn() };
+    await expect(recordPrepayWithD1(d1 as any, invalidInput)).resolves.toBe(false);
+    expect(d1.prepare).not.toHaveBeenCalled();
+    expect(d1.batch).not.toHaveBeenCalled();
+  });
+
   it("writes the job marker, two transactions, two ledger rows and wallet totals in one Prisma transaction", async () => {
     const tx = {
       job: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
