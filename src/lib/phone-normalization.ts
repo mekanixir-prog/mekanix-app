@@ -15,17 +15,30 @@ export function normalizePhoneForStorage(input: string): string {
 export function getPhoneLookupVariants(input: string): string[] {
   const compact = input.replace(/[\s\-()]/g, "");
   const digits = compact.replace(/\D/g, "");
-  const variants = new Set<string>([compact, digits, `+${digits}`]);
+  const canonical = normalizePhoneForStorage(input);
+  const variants = new Set<string>([input, compact, digits, `+${digits}`, canonical]);
 
+  let iranianInternationalDigits: string | null = null;
   if (digits.startsWith("98") && digits.length === 12) {
-    variants.add(`+${digits}`);
-    variants.add(digits);
-    variants.add(`0${digits.slice(2)}`);
+    iranianInternationalDigits = digits;
   } else if (digits.startsWith("0") && digits.length === 11) {
-    const international = `98${digits.slice(1)}`;
-    variants.add(international);
-    variants.add(`+${international}`);
+    iranianInternationalDigits = `98${digits.slice(1)}`;
   }
 
-  return [...variants];
+  if (iranianInternationalDigits) {
+    const national = iranianInternationalDigits.slice(2);
+    variants.add(`+${iranianInternationalDigits}`);
+    variants.add(iranianInternationalDigits);
+    variants.add(`0${national}`);
+    variants.add(`+98 ${national.slice(0, 3)} ${national.slice(3, 6)} ${national.slice(6)}`);
+    variants.add(`+98-${national.slice(0, 3)}-${national.slice(3, 6)}-${national.slice(6)}`);
+  }
+
+  if (digits.startsWith("1") && digits.length === 11) {
+    const national = digits.slice(1);
+    variants.add(`+1-${national.slice(0, 3)}-${national.slice(3, 6)}-${national.slice(6)}`);
+    variants.add(`+1 ${national.slice(0, 3)} ${national.slice(3, 6)} ${national.slice(6)}`);
+  }
+
+  return [...variants].filter(Boolean);
 }
