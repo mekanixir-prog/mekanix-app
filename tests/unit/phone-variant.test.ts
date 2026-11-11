@@ -11,6 +11,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // are being looked up, without needing a real database.
 const findUniqueCalls: string[] = [];
 let legacyUser: any = null;
+const mockUserUpdate = vi.fn(async (args: any) => ({ ...legacyUser, ...args.data }));
 const mockUserFindUnique = vi.fn((args: any) => {
   const phone = args?.where?.phone;
   if (phone) findUniqueCalls.push(phone);
@@ -22,7 +23,7 @@ vi.mock("@/lib/db-access", () => ({
     user: {
       findUnique: (args: any) => mockUserFindUnique(args),
       create: vi.fn().mockResolvedValue({ id: "new", phone: "test", role: "CUSTOMER", phoneVerified: true, customer: { id: "cust_new", userId: "new" }, technician: null }),
-      update: vi.fn(async (args: any) => ({ ...legacyUser, ...args.data })),
+      update: mockUserUpdate,
     },
     otpCode: {
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -59,6 +60,7 @@ describe("D1-02 — phone variant lookups for Iranian and international formats"
     findUniqueCalls.length = 0;
     legacyUser = null;
     mockUserFindUnique.mockClear();
+    mockUserUpdate.mockClear();
   });
 
   it("generates correct variants for Iranian +98 format", async () => {
@@ -121,6 +123,9 @@ describe("D1-02 — phone variant lookups for Iranian and international formats"
     expect(response.status).toBe(200);
     expect(findUniqueCalls[0]).toBe("+989123456789");
     expect(findUniqueCalls).toContain("09123456789");
+    expect(mockUserUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      data: { phone: "+989123456789" },
+    }));
   });
 
   it("does NOT generate broken variants like +9-891-234-56789", async () => {
