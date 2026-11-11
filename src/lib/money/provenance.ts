@@ -1,4 +1,14 @@
 /**
+ * Commercial pricing approval is a separate policy gate. It is not evidence
+ * that any technician or part row has a verified financial unit.
+ */
+export function isInvoicePricingPolicyApproved(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return env.NODE_ENV !== "production" || env.MEKANIX_PRICING_IRR_APPROVED === "true";
+}
+
+/**
  * A writer may attest a source row only when its own record-level status is
  * VERIFIED_IRR and every monetary source is an exact, non-negative safe
  * integer. Environment flags are not provenance evidence.
