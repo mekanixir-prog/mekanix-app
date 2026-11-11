@@ -88,7 +88,7 @@ describe("GET /api/wallets financial provenance", () => {
     const payload = await response.json();
     expect(payload).toMatchObject({
       financialUnitStatus: "VERIFIED_IRR",
-      balance: 120000,
+      balance: "120000",
       transactions: [{ financialUnitStatus: "UNVERIFIED", grossAmount: null, netAmount: null }],
       withdrawals: [{ financialUnitStatus: "UNVERIFIED", amount: null }],
     });
