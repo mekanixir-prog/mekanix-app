@@ -65,6 +65,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
 
   const { resource, id } = await params;
 
+  // Payment status cannot be safely changed through this generic CRUD route.
+  // In particular, marking a payment REFUNDED must be backed by a verified
+  // provider refund and matching invoice/ledger reconciliation. The generic
+  // route previously stripped the status field and could return 200 without
+  // changing anything, so fail explicitly until that lifecycle exists.
+  if (resource === "payments") {
+    return NextResponse.json(
+      {
+        error: "تغییر وضعیت پرداخت از این مسیر پشتیبانی نمی‌شود؛ ابتدا باید گردش بازپرداخت و تطبیق درگاه پیاده‌سازی شود",
+        code: "PAYMENT_STATUS_REQUIRES_RECONCILIATION",
+      },
+      { status: 409 },
+    );
+  }
+
   let body: Record<string, any>;
   try {
     const parsed: unknown = await req.json();
