@@ -85,6 +85,29 @@ describe("financial API read provenance masking", () => {
     expect((result.job as any).parts[1].unitPrice).toBe(400);
   });
 
+  it("requires explicit IRR currency when the source record has a currency column", () => {
+    const invoice = maskInvoiceMoney({
+      financialUnitStatus: "VERIFIED_IRR",
+      total: 900,
+    });
+    expect(invoice.financialUnitStatus).toBe("QUARANTINED");
+    expect(invoice.total).toBeNull();
+
+    const payment = maskInvoiceMoney({
+      financialUnitStatus: "VERIFIED_IRR",
+      currency: "IRR",
+      total: 900,
+      payment: {
+        financialUnitStatus: "VERIFIED_IRR",
+        amount: 900,
+      },
+    });
+    expect((payment.payment as any)).toMatchObject({
+      financialUnitStatus: "QUARANTINED",
+      amount: null,
+    });
+  });
+
   it("quarantines verified invoices with unsafe inspection or emergency fees", () => {
     const result = maskInvoiceMoney({
       financialUnitStatus: "VERIFIED_IRR",
