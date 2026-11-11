@@ -48,7 +48,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   // Never expose exact technician coordinates, internal user IDs, service-area
   // coordinate pins, or private customer/job/vehicle records—even to profile owners.
-  const { lat: _lat, lng: _lng, userId: _userId, serviceAreas, user, ...safeTech } = tech;
+  const { lat: _lat, lng: _lng, heading: _heading, userId: _userId, serviceAreas, user, ...safeTech } = tech;
   return NextResponse.json(maskFinancialFields({
     ...safeTech,
     user: { name: user.name, avatar: user.avatar },
