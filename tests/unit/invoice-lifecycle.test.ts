@@ -349,6 +349,58 @@ describe("PATCH /api/invoices/[id] status transitions", () => {
 
 
 describe("GET /api/invoices financial provenance", () => {
+  it("quarantines claimed verified invoice trees with fractional or negative amounts", async () => {
+    mocks.auth.mockResolvedValue({ userId: "customer-1", role: "CUSTOMER" });
+    mocks.invoiceFindUnique.mockResolvedValueOnce({
+      ...existingInvoice,
+      financialUnitStatus: "VERIFIED_IRR",
+      currency: "IRR",
+      laborTotal: 100,
+      partsTotal: 0,
+      subtotal: 100,
+      total: 100.5,
+      payment: {
+        id: "payment-invalid",
+        financialUnitStatus: "VERIFIED_IRR",
+        currency: "IRR",
+        amount: 100.5,
+      },
+      job: {
+        id: "job-invalid",
+        financialUnitStatus: "VERIFIED_IRR",
+        travelFee: -1,
+        technician: {
+          id: "tech-invalid",
+          financialUnitStatus: "VERIFIED_IRR",
+          hourlyRate: -1,
+          travelFeeBase: 0,
+          inspectionFee: 0,
+          inspectionFeeHeavy: 0,
+        },
+        parts: [{
+          id: "part-invalid",
+          financialUnitStatus: "VERIFIED_IRR",
+          unitPrice: -1,
+        }],
+      },
+    });
+
+    const response = await getInvoice(new Request("https://mekanix.test/api/invoices?jobId=job-1"));
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload).toMatchObject({
+      financialUnitStatus: "QUARANTINED",
+      total: null,
+      payment: { financialUnitStatus: "QUARANTINED", amount: null },
+      job: {
+        financialUnitStatus: "QUARANTINED",
+        travelFee: null,
+        technician: { financialUnitStatus: "QUARANTINED", hourlyRate: null },
+        parts: [{ financialUnitStatus: "QUARANTINED", unitPrice: null }],
+      },
+    });
+  });
+
   it("masks unverified invoice, payment, job, technician, and part amounts", async () => {
     mocks.auth.mockResolvedValue({ userId: "customer-1", role: "CUSTOMER" });
     mocks.invoiceFindUnique.mockResolvedValueOnce({
