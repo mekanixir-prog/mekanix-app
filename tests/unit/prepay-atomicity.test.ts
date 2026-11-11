@@ -34,6 +34,9 @@ describe("atomic prepay recording", () => {
     expect(db.$transaction).toHaveBeenCalledTimes(1);
     expect(tx.walletTransaction.create).toHaveBeenCalledTimes(2);
     expect(tx.walletLedger.create).toHaveBeenCalledTimes(2);
+    expect(tx.job.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: input.jobId, technicianId: input.technicianId, prepayPaid: false },
+    }));
     expect(tx.wallet.update).toHaveBeenCalledWith({
       where: { id: "wallet-1" },
       data: {
@@ -100,9 +103,16 @@ describe("atomic prepay recording", () => {
     await expect(recordPrepayWithD1(d1 as any, input)).resolves.toBe(true);
     expect(d1.batch).toHaveBeenCalledTimes(1);
     expect(d1.batch.mock.calls[0][0]).toHaveLength(7);
-    expect(statements[5].sql).toContain("changes() = 1");
+    expect(statements[0].sql).toContain('"technicianId" = ?');
+    expect(statements[0].values).toContain(input.technicianId);
     expect(statements[2].sql).toContain('"idempotencyKey"');
     expect(statements[4].sql).toContain("'HOLD'");
+    // Both ledger snapshots must be recorded before pendingBalance is incremented,
+    // matching the Prisma transaction's ordering and balanceBefore/balanceAfter values.
+    expect(statements[5].sql).toContain("'COMMISSION'");
+    expect(statements[5].sql).toContain('w."pendingBalance", w."pendingBalance"');
+    expect(statements[6].sql).toContain('UPDATE "Wallet"');
+    expect(statements[6].sql).toContain("changes() = 1");
   });
 
   it("does not report success when the guarded Job update loses a race", async () => {

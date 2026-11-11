@@ -32,7 +32,7 @@ export async function recordPrepayWithPrisma(
 ): Promise<boolean> {
   return db.$transaction(async (tx) => {
     const jobUpdate = await tx.job.updateMany({
-      where: { id: input.jobId, prepayPaid: false },
+      where: { id: input.jobId, technicianId: input.technicianId, prepayPaid: false },
       data: {
         prepayPaid: true,
         prepayPaidAt: input.paidAt,
@@ -124,9 +124,10 @@ export async function recordPrepayWithPrisma(
 /**
  * D1 implementation. D1 batch is transactional; each dependent write is
  * guarded by the Job's exact paidAt marker. The wallet aggregate update is
- * guarded by changes() from insertion of the unique HOLD ledger row. Unique-key
- * conflicts on any financial row are allowed to abort the batch so no partial
- * settlement can commit; post-batch result checks are assertions, not rollback.
+ * guarded by changes() from insertion of the unique COMMISSION ledger row.
+ * Both ledger inserts share the same job/wallet join and precede the aggregate
+ * update. Unique-key conflicts on any financial row abort the batch; post-batch
+ * result checks are assertions, not rollback.
  */
 export async function recordPrepayWithD1(
   d1: D1Database,
@@ -147,8 +148,8 @@ export async function recordPrepayWithD1(
       SET "prepayPaid" = 1, "prepayPaidAt" = ?, "inspectionFee" = ?,
           "travelFee" = ?, "platformCommission" = ?, "netEarnings" = ?,
           "holdUntil" = NULL, "updatedAt" = ?
-      WHERE "id" = ? AND "prepayPaid" = 0
-    `).bind(at, input.inspectionFee, input.travelFee, input.commission, input.net, at, input.jobId),
+      WHERE "id" = ? AND "technicianId" = ? AND "prepayPaid" = 0
+    `).bind(at, input.inspectionFee, input.travelFee, input.commission, input.net, at, input.jobId, input.technicianId),
 
     d1.prepare(`
       INSERT INTO "Wallet" ("id", "technicianId", "createdAt", "updatedAt")
@@ -193,15 +194,6 @@ export async function recordPrepayWithD1(
       input.technicianId, input.technicianId, input.jobId, at),
 
     d1.prepare(`
-      UPDATE "Wallet"
-      SET "pendingBalance" = "pendingBalance" + ?,
-          "totalEarned" = "totalEarned" + ?,
-          "totalCommission" = "totalCommission" + ?,
-          "updatedAt" = ?
-      WHERE "technicianId" = ? AND changes() = 1
-    `).bind(input.net, input.gross, input.commission, at, input.technicianId),
-
-    d1.prepare(`
       INSERT INTO "WalletLedger"
         ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
          "referenceType", "referenceId", "description", "idempotencyKey", "createdAt")
@@ -212,6 +204,16 @@ export async function recordPrepayWithD1(
     `).bind(crypto.randomUUID(), -input.commission,
       `Platform commission — ${input.jobCode}`, commissionLedgerKey, at,
       input.technicianId, input.technicianId, input.jobId, at),
+
+    d1.prepare(`
+      UPDATE "Wallet"
+      SET "pendingBalance" = "pendingBalance" + ?,
+          "totalEarned" = "totalEarned" + ?,
+          "totalCommission" = "totalCommission" + ?,
+          "updatedAt" = ?
+      WHERE "technicianId" = ? AND changes() = 1
+    `).bind(input.net, input.gross, input.commission, at, input.technicianId),
+
   ];
 
   const results = await d1.batch(statements);
