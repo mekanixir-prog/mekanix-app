@@ -230,4 +230,36 @@ describe("VIP payment outbox dispatcher D1 integration",()=>{
     expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "UserVipSubscription" WHERE "paymentId"='payment-1'`).get()).toEqual({count:0});
     expect(sqlite.prepare(`SELECT "status","attempts" FROM "PaymentOutboxEvent"`).get()).toEqual({status:"PENDING",attempts:1});
   });
+
+  it("does not announce or complete a cancelled existing VIP subscription",async()=>{
+    const {sqlite,d1}=makeD1(); dbs.push(sqlite); seed(sqlite);
+    sqlite.prepare("INSERT INTO \"UserVipSubscription\" VALUES (?,?,?,?,?,?,?,?,?)").run(
+      "cancelled-sub","user-1","plan-1","CANCELLED",now.toISOString(),
+      new Date(now.getTime()+30*86400000).toISOString(),"payment-1",now.toISOString(),now.toISOString()
+    );
+    await runWorker(d1);
+    expect(sqlite.prepare("SELECT \"status\",\"attempts\",\"lastError\" FROM \"PaymentOutboxEvent\"").get()).toMatchObject({
+      status:"PENDING",attempts:1,lastError:"EXISTING_SUBSCRIPTION_NOT_ACTIVE"
+    });
+    expect(sqlite.prepare("SELECT \"status\" FROM \"UserVipSubscription\" WHERE \"id\"='cancelled-sub'").get()).toEqual({status:"CANCELLED"});
+    expect(sqlite.prepare("SELECT COUNT(*) AS count FROM \"Notification\"").get()).toEqual({count:0});
+  });
+
+  it("rolls back outbox completion if an active subscription is cancelled after preflight",async()=>{
+    const {sqlite,d1}=makeD1((db)=>{
+      db.prepare("UPDATE \"UserVipSubscription\" SET \"status\"='CANCELLED' WHERE \"paymentId\"='payment-1'").run();
+    });
+    dbs.push(sqlite); seed(sqlite);
+    sqlite.prepare("INSERT INTO \"UserVipSubscription\" VALUES (?,?,?,?,?,?,?,?,?)").run(
+      "raced-sub","user-1","plan-1","ACTIVE",now.toISOString(),
+      new Date(now.getTime()+30*86400000).toISOString(),"payment-1",now.toISOString(),now.toISOString()
+    );
+    await runWorker(d1);
+    expect(sqlite.prepare("SELECT \"status\",\"attempts\" FROM \"PaymentOutboxEvent\"").get()).toEqual({
+      status:"PENDING",attempts:1
+    });
+    expect(sqlite.prepare("SELECT \"status\" FROM \"UserVipSubscription\" WHERE \"id\"='raced-sub'").get()).toEqual({status:"CANCELLED"});
+    expect(sqlite.prepare("SELECT COUNT(*) AS count FROM \"Notification\"").get()).toEqual({count:0});
+  });
+
 });
