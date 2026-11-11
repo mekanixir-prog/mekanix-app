@@ -1,6 +1,7 @@
 // MEKANIX — formatting & utility helpers
 import { CURRENCIES } from "./constants";
 import Decimal from "decimal.js";
+import { formatTomanFromIrr } from "./money/irr";
 
 // Convert digits to Persian.
 function toPersianDigits(s: string | number): string {
@@ -47,22 +48,22 @@ export function fmtMoney(amount: unknown, currency = "IRR", lang: "en" | "fa" = 
   }
   if (!Number.isFinite(numericAmount) || Math.abs(numericAmount) > Number.MAX_SAFE_INTEGER) return "—";
 
-  // The canonical stored unit is IRR. Persian UI presents Toman (IRR / 10)
-  // without rounding; English UI keeps the canonical Rial amount.
-  const displayAmount = currency === "IRR" && lang === "fa"
-    ? numericAmount / 10
-    : numericAmount;
-  const symbol = currency === "IRR" && lang === "en" ? "﷼" : c.symbol;
+  // Persian Toman is rendered with integer arithmetic (BigInt), not a
+  // floating-point IRR / 10 operation that can lose the final tenth at scale.
+  if (currency === "IRR" && lang === "fa") {
+    const exactToman = formatTomanFromIrr(numericAmount, "en-US");
+    return `${toPersianDigits(exactToman.replace(/,/g, "،"))} تومان`;
+  }
+
+  const symbol = currency === "IRR" ? "﷼" : c.symbol;
   const formatted = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 0,
-    maximumFractionDigits: currency === "IRR" ? (lang === "fa" ? 1 : 0) : 2,
-  }).format(displayAmount);
+    maximumFractionDigits: currency === "IRR" ? 0 : 2,
+  }).format(numericAmount);
 
   if (lang === "fa") {
     const persianFormatted = toPersianDigits(formatted.replace(/,/g, "،"));
-    return currency === "IRR"
-      ? `${persianFormatted} تومان`
-      : `${symbol}${persianFormatted}`;
+    return `${symbol}${persianFormatted}`;
   }
 
   return `${symbol}${formatted}`;
