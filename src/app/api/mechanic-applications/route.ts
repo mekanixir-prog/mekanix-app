@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/api-helpers";
 import { requireRole } from "@/lib/auth";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { otpSendSchema } from "@/lib/schemas";
+import { getPhoneLookupVariants, normalizePhoneForStorage } from "@/lib/phone-normalization";
 
 // GET: list mechanic applications — ADMIN only
 const APPLICATION_STATUSES = ["PENDING", "APPROVING", "REJECTING", "APPROVED", "REJECTED", "ON_HOLD"] as const;
@@ -35,17 +36,6 @@ export async function GET(req: Request) {
 // POST: public — anyone can apply to become a mechanic.
 // Application status is PENDING — NOT auto-approved.
 // Admin must review and approve before technician is activated.
-function normalizeApplicantPhone(phone: string): string {
-  const formatted = phone.replace(/[\s\-()]/g, "");
-  const digits = formatted.replace(/\D/g, "");
-  // Canonicalize Iranian domestic and international mobile formats to +98…
-  // so 09…, 98… and +98… cannot create separate applications for one person.
-  if (digits.startsWith("98") && digits.length === 12) return `+${digits}`;
-  if (digits.startsWith("0") && digits.length === 11) return `+98${digits.slice(1)}`;
-  if (formatted.startsWith("+")) return `+${digits}`;
-  return formatted;
-}
-
 function isUniqueConflict(error: unknown): boolean {
   const value = error as { code?: string; message?: string } | null;
   return value?.code === "P2002" || /unique constraint/i.test(value?.message ?? "");
@@ -103,11 +93,16 @@ export async function POST(req: Request) {
 
   // Keep the application phone identical to the OTP identity key. This avoids
   // creating a technician account with a formatted phone that login cannot match.
-  const normalizedPhone = phoneValidation.data.phone.replace(/[\s\-()]/g, "");
+  const normalizedPhone = normalizePhoneForStorage(phoneValidation.data.phone);
+  const phoneVariants = getPhoneLookupVariants(normalizedPhone);
   const code = `APP-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`;
   const db = await getDbForLib();
 
-  const existingUser = await db.user.findUnique({ where: { phone: normalizedPhone } });
+  let existingUser = null;
+  for (const phoneVariant of phoneVariants) {
+    existingUser = await db.user.findUnique({ where: { phone: phoneVariant } });
+    if (existingUser) break;
+  }
   if (existingUser) {
     if (existingUser.status === "SUSPENDED" ||
         (existingUser.role !== "CUSTOMER" && existingUser.role !== "TECHNICIAN")) {
@@ -124,7 +119,7 @@ export async function POST(req: Request) {
   // to PENDING; that would invalidate the admin's atomic review claim.
   const existingApplication = existingUser
     ? await db.mechanicApplication.findUnique({ where: { userId: existingUser.id } })
-      ?? await db.mechanicApplication.findFirst({ where: { phone: normalizedPhone }, orderBy: { createdAt: "desc" } })
+      ?? await db.mechanicApplication.findFirst({ where: { phone: { in: phoneVariants } }, orderBy: { createdAt: "desc" } })
     : await db.mechanicApplication.findFirst({ where: { phone: normalizedPhone }, orderBy: { createdAt: "desc" } });
 
   const safeSpecialties = Array.isArray(specialties)
@@ -168,6 +163,9 @@ export async function POST(req: Request) {
   };
 
   if (existingApplication) {
+    if (existingApplication.userId && existingUser && existingApplication.userId !== existingUser.id) {
+      return NextResponse.json({ error: "این شماره به حساب دیگری متصل است" }, { status: 409 });
+    }
     if (existingApplication.status !== "REJECTED" && existingApplication.status !== "ON_HOLD") {
       return NextResponse.json(
         { error: "درخواست شما در حال بررسی است یا قبلاً تعیین تکلیف شده است", status: existingApplication.status },
@@ -179,6 +177,7 @@ export async function POST(req: Request) {
       where: { id: existingApplication.id, status: existingApplication.status },
       data: {
         ...applicationData,
+        userId: existingApplication.userId ?? existingUser?.id ?? null,
         status: "PENDING",
         adminNotes: null,
         reviewerId: null,
@@ -207,7 +206,7 @@ export async function POST(req: Request) {
     // submissions using the same phone. Return a conflict, never a 500.
     if (!isUniqueConflict(error)) throw error;
     const concurrentApplication = await db.mechanicApplication.findFirst({
-      where: { phone: normalizedPhone },
+      where: { phone: { in: phoneVariants } },
       orderBy: { createdAt: "desc" },
     });
     if (!concurrentApplication) throw error;
