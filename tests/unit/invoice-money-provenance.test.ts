@@ -7,7 +7,7 @@ import {
 describe("production invoice money provenance", () => {
   it("keeps development and test invoice workflows available", () => {
     expect(areInvoicePriceSourcesVerified({ NODE_ENV: "test" })).toBe(true);
-    expect(areJobPartPriceSourcesVerified(true, { NODE_ENV: "development" })).toBe(true);
+    expect(areJobPartPriceSourcesVerified([])).toBe(true);
   });
 
   it("requires both an approved IRR rate card and verified technician fee units", () => {
@@ -23,12 +23,32 @@ describe("production invoice money provenance", () => {
     })).toBe(true);
   });
 
-  it("requires JobPart provenance only when an invoice contains parts", () => {
-    expect(areJobPartPriceSourcesVerified(false, { NODE_ENV: "production" })).toBe(true);
-    expect(areJobPartPriceSourcesVerified(true, { NODE_ENV: "production" })).toBe(false);
-    expect(areJobPartPriceSourcesVerified(true, {
-      NODE_ENV: "production",
-      MEKANIX_JOB_PART_IRR_PROVENANCE_VERIFIED: "true",
-    })).toBe(true);
+  it("requires every part row to independently attest safe integer IRR", () => {
+    expect(areJobPartPriceSourcesVerified([])).toBe(true);
+    expect(areJobPartPriceSourcesVerified([{
+      financialUnitStatus: "VERIFIED_IRR",
+      unitPrice: "125000.00",
+      quantity: 2,
+    }])).toBe(true);
+    expect(areJobPartPriceSourcesVerified([{
+      financialUnitStatus: "UNVERIFIED",
+      unitPrice: 125_000,
+      quantity: 2,
+    }])).toBe(false);
+    expect(areJobPartPriceSourcesVerified([{
+      financialUnitStatus: "VERIFIED_IRR",
+      unitPrice: "125000.5",
+      quantity: 2,
+    }])).toBe(false);
+    expect(areJobPartPriceSourcesVerified([{
+      financialUnitStatus: "VERIFIED_IRR",
+      unitPrice: Number.MAX_SAFE_INTEGER,
+      quantity: 2,
+    }])).toBe(false);
+    expect(areJobPartPriceSourcesVerified([{
+      financialUnitStatus: "VERIFIED_IRR",
+      unitPrice: 100,
+      quantity: 0,
+    }])).toBe(false);
   });
 });
