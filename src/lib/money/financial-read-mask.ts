@@ -68,6 +68,20 @@ export function isSafeStoredIrrAmount(value: unknown): boolean {
   }
 }
 
+/** Validate a monetary amount that must be non-negative (fees, balances, invoice totals). */
+export function isSafeNonNegativeStoredIrrAmount(value: unknown): boolean {
+  if (!isSafeStoredIrrAmount(value)) return false;
+  if (value === null || value === undefined) return true;
+  try {
+    const raw = typeof value === "object" && value !== null
+      ? value.toString()
+      : String(value);
+    return new Decimal(raw).gte(0);
+  } catch {
+    return false;
+  }
+}
+
 /** Sum stored IRR amounts without floating-point overflow or rounding. */
 export function sumSafeStoredIrrAmounts(values: readonly unknown[]): number | null {
   try {
@@ -126,13 +140,16 @@ export function maskFinancialFields<T extends object>(
   record: T,
   fields: readonly string[],
   currencyField?: string,
+  allowNegativeFields: readonly string[] = [],
 ): T {
   const source = record as FinancialRecord;
   const currency = currencyField ? source[currencyField] : undefined;
   const currencyValid = currencyField === undefined || currency === "IRR";
   const verified = currencyValid &&
     isVerifiedIrrRecord(source.financialUnitStatus, currency) &&
-    fields.every((field) => isSafeStoredIrrAmount(source[field]));
+    fields.every((field) => allowNegativeFields.includes(field)
+      ? isSafeStoredIrrAmount(source[field])
+      : isSafeNonNegativeStoredIrrAmount(source[field]));
 
   if (verified) return record;
 
@@ -153,7 +170,7 @@ export function maskWalletFinancialData<T extends object>(wallet: T): T {
   const masked = maskFinancialFields(wallet, WALLET_FIELDS);
   const transactions = Array.isArray(source.transactions)
     ? source.transactions.map((transaction) =>
-        maskFinancialFields(transaction as FinancialRecord, WALLET_TRANSACTION_FIELDS),
+        maskFinancialFields(transaction as FinancialRecord, WALLET_TRANSACTION_FIELDS, undefined, ["netAmount"]),
       )
     : source.transactions;
   const withdrawals = Array.isArray(source.withdrawals)
