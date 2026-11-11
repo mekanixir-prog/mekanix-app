@@ -49,10 +49,10 @@ export async function GET(req: Request) {
     });
   }
 
-  // Transitional fallback: keep the legacy GET-triggered release until the
-  // dedicated scheduled Worker has been deployed and verified. Once
-  // WALLET_RELEASE_SCHEDULED=true is set on this app Worker, escrow releases
-  // are performed only by the scheduled Worker, not by a read request.
+  // Legacy GET-triggered release is restricted to non-production environments.
+  // Production wallet reads never release escrow, regardless of
+  // WALLET_RELEASE_SCHEDULED. Until the dedicated production Cron Worker is
+  // deployed and verified, matured production holds may remain PENDING.
   if (shouldUseLegacyWalletReleaseFallback()) {
     const now = new Date();
     const releasable = wallet.transactions.filter(
