@@ -89,7 +89,7 @@ export async function POST(req: Request) {
     where: { jobId },
     include: FULL_INCLUDE,
   });
-  if (existingInvoice) return NextResponse.json(existingInvoice);
+  if (existingInvoice) return NextResponse.json(maskInvoiceMoney(existingInvoice));
 
   const job = await db.job.findUnique({
     where: { id: jobId },
@@ -181,7 +181,7 @@ export async function POST(req: Request) {
       where: { jobId },
       include: FULL_INCLUDE,
     }).catch(() => null);
-    if (racedInvoice) return NextResponse.json(racedInvoice);
+    if (racedInvoice) return NextResponse.json(maskInvoiceMoney(racedInvoice));
     throw error;
   }
 
@@ -232,5 +232,5 @@ export async function POST(req: Request) {
       console.error("[invoices] invoice notification failed:", error);
     }
   }
-  return NextResponse.json(invoice);
+  return NextResponse.json(maskInvoiceMoney(invoice));
 }
