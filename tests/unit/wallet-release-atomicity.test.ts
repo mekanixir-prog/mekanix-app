@@ -71,7 +71,7 @@ describe("wallet escrow release atomicity", () => {
   });
 
   it("rejects fractional or unsafe escrow source amounts before any state mutation", async () => {
-    for (const netAmount of [new Prisma.Decimal("100.5"), new Prisma.Decimal("9007199254740992")]) {
+    for (const netAmount of [new Prisma.Decimal("100.5"), new Prisma.Decimal("9007199254740992"), new Prisma.Decimal(0)]) {
       const tx = {
         walletTransaction: { findFirst: vi.fn().mockResolvedValue({ netAmount }), updateMany: vi.fn() },
         wallet: { findUnique: vi.fn(), updateMany: vi.fn() },
