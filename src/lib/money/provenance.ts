@@ -13,10 +13,10 @@ export function isInvoicePricingPolicyApproved(
  * VERIFIED_IRR and every monetary source is an exact, non-negative safe
  * integer. Environment flags are not provenance evidence.
  */
-export function toSafeIntegerIrr(value: unknown): number | null {
+export function toSafeIntegerIrr(value: unknown, allowNegative = false): number | null {
   let raw: string;
   if (typeof value === "number") {
-    return Number.isSafeInteger(value) && value >= 0 ? value : null;
+    return Number.isSafeInteger(value) && (allowNegative || value >= 0) ? value : null;
   }
   if (typeof value === "string") {
     raw = value.trim();
@@ -29,9 +29,10 @@ export function toSafeIntegerIrr(value: unknown): number | null {
   }
 
   // Prisma Decimal may stringify an integral value with a zero-only fraction.
-  if (!/^\+?\d+(?:\.0+)?$/.test(raw)) return null;
+  const integerPattern = allowNegative ? /^-?\\d+(?:\\.0+)?$/ : /^\\+?\\d+(?:\\.0+)?$/;
+  if (!integerPattern.test(raw)) return null;
   const parsed = Number(raw);
-  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+  return Number.isSafeInteger(parsed) && (allowNegative || parsed >= 0) ? parsed : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
