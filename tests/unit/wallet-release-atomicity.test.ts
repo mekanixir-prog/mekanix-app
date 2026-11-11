@@ -88,8 +88,10 @@ describe("wallet escrow release atomicity", () => {
   it("rejects fractional, negative, or overflowing wallet aggregates before transition", async () => {
     for (const wallet of [
       { financialUnitStatus: "VERIFIED_IRR", balance: new Prisma.Decimal("10.5"), pendingBalance: new Prisma.Decimal(100) },
+      { financialUnitStatus: "VERIFIED_IRR", balance: new Prisma.Decimal(2000), pendingBalance: new Prisma.Decimal("100.5") },
       { financialUnitStatus: "VERIFIED_IRR", balance: new Prisma.Decimal(Number.MAX_SAFE_INTEGER), pendingBalance: new Prisma.Decimal(100) },
       { financialUnitStatus: "VERIFIED_IRR", balance: new Prisma.Decimal(-1), pendingBalance: new Prisma.Decimal(100) },
+      { financialUnitStatus: "UNVERIFIED", balance: new Prisma.Decimal(2000), pendingBalance: new Prisma.Decimal(100) },
     ]) {
       const tx = {
         walletTransaction: { findFirst: vi.fn().mockResolvedValue({ netAmount: new Prisma.Decimal(1) }), updateMany: vi.fn() },
