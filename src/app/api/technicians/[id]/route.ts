@@ -83,6 +83,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  // Availability and live location are controlled exclusively by the dedicated
+  // owner-scoped /availability endpoint. Accepting these fields here would let
+  // clients bypass its eligibility, GPS validation, active-job and CAS guards.
+  const availabilityFields = ["availableNow", "lat", "lng", "heading"];
+  if (availabilityFields.some((key) => Object.prototype.hasOwnProperty.call(body, key))) {
+    return NextResponse.json(
+      { error: "وضعیت حضور و موقعیت مکانی فقط از مسیر اختصاصی حضور قابل تغییر است", code: "USE_AVAILABILITY_ENDPOINT" },
+      { status: 400 },
+    );
+  }
+
   // Defense-in-depth: strip forbidden server-authoritative fields, even for admins using this route.
   for (const key of Object.keys(body)) {
     if (FORBIDDEN_FIELDS.has(key)) delete body[key];
