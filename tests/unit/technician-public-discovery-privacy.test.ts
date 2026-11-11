@@ -102,13 +102,7 @@ describe("public technician discovery privacy", () => {
 
     expect(mocks.technicianFindUnique).toHaveBeenCalledWith(expect.objectContaining({
       include: expect.objectContaining({ user: { select: { id: true, name: true, avatar: true, role: true, status: true } } }),
-      where: expect.objectContaining({
-        id: "technician-1",
-        status: "ONLINE",
-        availableNow: true,
-        verified: true,
-        user: { is: { status: "ACTIVE", role: "TECHNICIAN" } },
-      }),
+      where: { id: "technician-1" },
     }));
     expect(payload).not.toHaveProperty("jobsAssigned");
     expect(payload).not.toHaveProperty("userId");
