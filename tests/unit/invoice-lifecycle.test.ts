@@ -72,7 +72,7 @@ const pricingJob = {
   id: "job-1",
   status: "WAITING_APPROVAL",
   parts: [{ financialUnitStatus: "VERIFIED_IRR", unitPrice: 100, quantity: 2 }],
-  technician: { financialUnitStatus: "VERIFIED_IRR", hourlyRate: 500, travelFeeBase: 50 },
+  technician: { financialUnitStatus: "VERIFIED_IRR", hourlyRate: 500, travelFeeBase: 50, inspectionFee: 20, inspectionFeeHeavy: 50 },
 };
 
 const refreshedJob = {
