@@ -148,6 +148,51 @@ describe("atomic escrow release D1 SQLite integration", () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
   });
 
+  it("rolls back releases for fractional, unsafe, or overflowing source amounts and balances", async () => {
+    const cases = [
+      {
+        name: "fractional net amount",
+        sql: 'UPDATE "WalletTransaction" SET "netAmount" = 1000.5 WHERE "id" = ?',
+      },
+      {
+        name: "unsafe net amount",
+        sql: 'UPDATE "WalletTransaction" SET "netAmount" = 9007199254740992 WHERE "id" = ?',
+      },
+      {
+        name: "fractional wallet balance",
+        sql: 'UPDATE "Wallet" SET "balance" = 2000.5 WHERE "id" = ?',
+      },
+      {
+        name: "fractional pending balance",
+        sql: 'UPDATE "Wallet" SET "pendingBalance" = 1000.5 WHERE "id" = ?',
+      },
+      {
+        name: "balance overflow after release",
+        sql: 'UPDATE "Wallet" SET "balance" = 9007199254740991 WHERE "id" = ?',
+      },
+    ];
+
+    for (const scenario of cases) {
+      const { sqlite, d1 } = makeD1();
+      databases.push(sqlite);
+      seed(sqlite);
+      if (scenario.name === "balance overflow after release") {
+        sqlite.prepare(scenario.sql).run("wallet-1");
+      } else {
+        sqlite.prepare(scenario.sql).run(scenario.name.includes("net amount") ? "txn-1" : "wallet-1");
+      }
+
+      await expect(
+        releaseWalletTransactionWithD1(d1 as never, "wallet-1", "txn-1", new Date("2026-10-30T10:00:00.000Z"))
+      ).rejects.toThrow();
+
+      expect(sqlite.prepare('SELECT "status" FROM "WalletTransaction" WHERE "id" = ?').get("txn-1"))
+        .toEqual({ status: "PENDING" });
+      expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
+      expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletReleaseGuard"').get()).toEqual({ count: 0 });
+    }
+  });
+
   it("does not release a negative net amount", async () => {
     const { sqlite, d1 } = makeD1(); databases.push(sqlite);
     sqlite.prepare('INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "pendingBalance") VALUES (?, ?, ?, ?)').run("wallet-1", "VERIFIED_IRR", 2000, 1000);
