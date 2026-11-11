@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import Decimal from "decimal.js";
 import {
   isSafeStoredIrrAmount,
+  isSafeNonNegativeStoredIrrAmount,
   sumSafeStoredIrrAmounts,
   sumVerifiedPositiveIrrAmounts,
   markFinancialRecordUnverifiedWhenFieldsChanged,
@@ -20,6 +21,9 @@ describe("financial read masking", () => {
     expect(isSafeStoredIrrAmount("9007199254740992")).toBe(false);
     expect(isSafeStoredIrrAmount("not-a-number")).toBe(false);
     expect(isSafeStoredIrrAmount(null)).toBe(true);
+    expect(isSafeNonNegativeStoredIrrAmount(0)).toBe(true);
+    expect(isSafeNonNegativeStoredIrrAmount(-1)).toBe(false);
+    expect(isSafeNonNegativeStoredIrrAmount("12.5")).toBe(false);
   });
 
   it("sums exact IRR amounts and returns null on invalid or overflowing aggregates", () => {
@@ -45,6 +49,33 @@ describe("financial read masking", () => {
       { bio: "updated" },
       ["hourlyRate", "travelFeeBase"],
     )).toEqual({ bio: "updated" });
+  });
+
+  it("quarantines negative nonnegative fields while preserving signed transaction deltas", () => {
+    const invoice = maskFinancialFields(
+      { financialUnitStatus: "VERIFIED_IRR", total: -100 },
+      ["total"],
+    );
+    expect(invoice).toMatchObject({ financialUnitStatus: "QUARANTINED", total: null });
+
+    const wallet = maskWalletFinancialData({
+      financialUnitStatus: "VERIFIED_IRR",
+      balance: -1,
+      pendingBalance: 0,
+      totalEarned: 0,
+      totalCommission: 0,
+      totalWithdrawn: 0,
+      transactions: [{
+        financialUnitStatus: "VERIFIED_IRR",
+        grossAmount: 0,
+        commissionAmount: 100,
+        netAmount: -100,
+      }],
+    });
+    expect(wallet.financialUnitStatus).toBe("QUARANTINED");
+    expect(wallet.balance).toBeNull();
+    expect(wallet.transactions[0].financialUnitStatus).toBe("VERIFIED_IRR");
+    expect(wallet.transactions[0].netAmount).toBe(-100);
   });
 
   it("masks all monetary fields when provenance is absent or unverified", () => {
