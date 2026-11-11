@@ -8,6 +8,11 @@ const mocks = vi.hoisted(() => ({
   applicationFindFirst: vi.fn(),
   applicationUpdateMany: vi.fn(),
   applicationCreate: vi.fn(),
+  rateLimitAsync: vi.fn(),
+  getClientId: vi.fn(),
+  requireAuth: vi.fn(),
+  requireRole: vi.fn(),
+  applicationFindMany: vi.fn(),
 }));
 
 vi.mock("@/lib/db-access", () => ({
@@ -15,6 +20,7 @@ vi.mock("@/lib/db-access", () => ({
     user: { findUnique: mocks.userFindUnique },
     technician: { findUnique: mocks.technicianFindUnique },
     mechanicApplication: {
+      findMany: mocks.applicationFindMany,
       findUnique: mocks.applicationFindUnique,
       findFirst: mocks.applicationFindFirst,
       updateMany: mocks.applicationUpdateMany,
@@ -22,16 +28,21 @@ vi.mock("@/lib/db-access", () => ({
     },
   })),
 }));
-vi.mock("@/lib/api-helpers", () => ({ requireAuth: vi.fn() }));
+vi.mock("@/lib/api-helpers", () => ({ requireAuth: mocks.requireAuth }));
+vi.mock("@/lib/rate-limit", () => ({
+  rateLimitAsync: mocks.rateLimitAsync,
+  getClientId: mocks.getClientId,
+  RATE_LIMITS: { MECHANIC_APPLICATION: { max: 3, windowMs: 3_600_000 } },
+}));
 vi.mock("@/lib/auth", () => ({
-  requireRole: vi.fn(),
+  requireRole: mocks.requireRole,
   sanitizeInput: vi.fn(),
   FORBIDDEN_FIELDS: [],
 }));
 
-import { POST } from "@/app/api/mechanic-applications/route";
+import { GET, POST } from "@/app/api/mechanic-applications/route";
 
-const request = () => new Request("https://mekanix.test/api/mechanic-applications", {
+const request = (overrides: Record<string, unknown> = {}) => new Request("https://mekanix.test/api/mechanic-applications", {
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify({
@@ -39,6 +50,7 @@ const request = () => new Request("https://mekanix.test/api/mechanic-application
     phone: "+989121234567",
     city: "Tabriz",
     specialties: ["hydraulics"],
+    ...overrides,
   }),
 });
 
@@ -50,6 +62,11 @@ beforeEach(() => {
   mocks.applicationFindFirst.mockResolvedValue(null);
   mocks.applicationUpdateMany.mockResolvedValue({ count: 1 });
   mocks.applicationCreate.mockResolvedValue({ id: "application-new", status: "PENDING" });
+  mocks.getClientId.mockReturnValue("203.0.113.10");
+  mocks.rateLimitAsync.mockResolvedValue({ success: true, resetMs: 3_600_000 });
+  mocks.requireAuth.mockResolvedValue({ userId: "admin-1", role: "ADMIN" });
+  mocks.requireRole.mockReturnValue(null);
+  mocks.applicationFindMany.mockResolvedValue([]);
 });
 
 describe("public mechanic application resubmission state guard", () => {
@@ -121,5 +138,114 @@ describe("public mechanic application resubmission state guard", () => {
     expect(response.status).toBe(409);
     expect(mocks.applicationFindFirst).not.toHaveBeenCalled();
     expect(mocks.applicationCreate).not.toHaveBeenCalled();
+  });
+
+  it("returns a conflict when a concurrent submission wins the unique phone constraint", async () => {
+    mocks.applicationFindFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "application-winner", status: "PENDING" });
+    mocks.applicationCreate.mockRejectedValueOnce({ code: "P2002" });
+
+    const response = await POST(request());
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload.status).toBe("PENDING");
+    expect(mocks.applicationCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed when the production rate-limit store is unavailable", async () => {
+    mocks.rateLimitAsync.mockResolvedValue({ success: false, resetMs: 60_000, unavailable: true });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(503);
+    expect(mocks.userFindUnique).not.toHaveBeenCalled();
+    expect(mocks.applicationCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects excessive application submissions before database work", async () => {
+    mocks.rateLimitAsync.mockResolvedValue({ success: false, resetMs: 45_000 });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("45");
+    expect(mocks.userFindUnique).not.toHaveBeenCalled();
+    expect(mocks.applicationCreate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["+98 912-123-4567", "+989121234567"],
+    ["09121234567", "+989121234567"],
+    ["989121234567", "+989121234567"],
+    ["+1 (415) 224-1180", "+14152241180"],
+    ["14152241180", "+14152241180"],
+  ])("canonicalizes phone format %s to %s", async (phone, expectedPhone) => {
+    const response = await POST(request({ phone }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.userFindUnique).toHaveBeenCalledWith({ where: { phone: expectedPhone } });
+    expect(mocks.applicationCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ phone: expectedPhone }),
+    }));
+  });
+
+  it("rejects malformed phone numbers before touching application storage", async () => {
+    const response = await POST(request({ phone: "not-a-phone" }));
+
+    expect(response.status).toBe(400);
+    expect(mocks.userFindUnique).not.toHaveBeenCalled();
+    expect(mocks.applicationCreate).not.toHaveBeenCalled();
+  });
+
+  it("normalizes optional application fields without trusting JavaScript truthiness or out-of-range values", async () => {
+    const response = await POST(request({
+      experienceYears: 9999,
+      specialties: [" hydraulics ", 12, "", "x".repeat(200)],
+      vehicleOwned: "false",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.applicationCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        experienceYears: 80,
+        specialties: JSON.stringify(["hydraulics", "x".repeat(64)]),
+        vehicleOwned: false,
+      }),
+    }));
+  });
+
+  it("does not cache the administrator application list containing personal data", async () => {
+    const response = await GET(new Request("https://mekanix.test/api/mechanic-applications"));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("rejects unknown application status filters without querying the database", async () => {
+    const response = await GET(new Request("https://mekanix.test/api/mechanic-applications?status=ROOT"));
+
+    expect(response.status).toBe(400);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(mocks.applicationFindMany).not.toHaveBeenCalled();
+  });
+
+  it("links an existing Iranian customer account when the applicant uses the other phone format", async () => {
+    mocks.userFindUnique.mockImplementation(async ({ where }) =>
+      where.phone === "09121234567"
+        ? { id: "legacy-user", role: "CUSTOMER", status: "ACTIVE" }
+        : null
+    );
+
+    const response = await POST(request({ phone: "+98 912-123-4567" }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.applicationCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        phone: "+989121234567",
+        userId: "legacy-user",
+      }),
+    }));
   });
 });

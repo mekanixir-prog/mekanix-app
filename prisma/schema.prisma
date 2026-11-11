@@ -540,7 +540,7 @@ model MechanicApplication {
   id              String            @id @default(cuid())
   code            String            @unique
   fullName        String
-  phone           String
+  phone           String            @unique
   email           String?
   city            String?
   experienceYears Int               @default(0)

@@ -20,6 +20,7 @@ export const RATE_LIMITS = {
   OTP_VERIFY: { max: 5, windowMs: 60_000 },       // 5 per minute
   PAYMENT: { max: 5, windowMs: 60_000 },           // 5 per minute
   WITHDRAW: { max: 3, windowMs: 3_600_000 },       // 3 per hour
+  MECHANIC_APPLICATION: { max: 3, windowMs: 3_600_000 }, // 3 applications per hour per client IP
   API_DEFAULT: { max: 60, windowMs: 60_000 },      // 60 per minute
 } as const;
 

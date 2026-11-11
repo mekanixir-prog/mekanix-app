@@ -211,4 +211,26 @@ describe("mechanic application review state machine", () => {
     expect(currentTechnician?.status).toBe("OFFLINE");
     expect(mocks.applicationUpdateMany).not.toHaveBeenCalled();
   });
+
+  it("reuses a legacy local-format user when approving a canonical Iranian application", async () => {
+    currentUser = {
+      id: "user-1",
+      phone: "09121234567",
+      role: "CUSTOMER",
+      status: "ACTIVE",
+      phoneVerified: false,
+    };
+    mocks.userFindUnique.mockImplementation(async ({ where }) => {
+      if (where.id === "user-1") return { ...currentUser! };
+      if (where.phone === "09121234567") return { ...currentUser! };
+      return null;
+    });
+
+    const response = await approve(makeRequest("approve"), context);
+
+    expect(response.status).toBe(200);
+    expect(mocks.userCreate).not.toHaveBeenCalled();
+    expect(application.userId).toBe("user-1");
+    expect(currentUser?.role).toBe("TECHNICIAN");
+  });
 });

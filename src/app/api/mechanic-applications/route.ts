@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
+import type { User } from "@prisma/client";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireRole } from "@/lib/auth";
+import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
+import { otpSendSchema } from "@/lib/schemas";
+import { getPhoneLookupVariants, normalizePhoneForStorage } from "@/lib/phone-normalization";
 
 // GET: list mechanic applications — ADMIN only
+const APPLICATION_STATUSES = ["PENDING", "APPROVING", "REJECTING", "APPROVED", "REJECTED", "ON_HOLD"] as const;
+
 export async function GET(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
@@ -12,24 +18,55 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const status = url.searchParams.get("status");
+  if (status && !APPLICATION_STATUSES.includes(status as (typeof APPLICATION_STATUSES)[number])) {
+    return NextResponse.json(
+      { error: "وضعیت درخواست نامعتبر است" },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+  const statusFilter = status as (typeof APPLICATION_STATUSES)[number] | null;
   const db = await getDbForLib();
   const list = await db.mechanicApplication.findMany({
-    where: status ? { status: status as any } : undefined,
+    where: statusFilter ? { status: statusFilter } : undefined,
     orderBy: { createdAt: "desc" },
     include: { user: { select: { id: true, name: true, phone: true, email: true } } },
   });
-  return NextResponse.json(list);
+  return NextResponse.json(list, { headers: { "Cache-Control": "no-store" } });
 }
 
 // POST: public — anyone can apply to become a mechanic.
 // Application status is PENDING — NOT auto-approved.
 // Admin must review and approve before technician is activated.
+function isUniqueConflict(error: unknown): boolean {
+  const value = error as { code?: string; message?: string } | null;
+  return value?.code === "P2002" || /unique constraint/i.test(value?.message ?? "");
+}
+
 const ALLOWED_APPLICATION_FIELDS = [
   "fullName", "phone", "email", "city", "experienceYears",
   "specialties", "certifications", "bio", "vehicleOwned",
 ] as const;
 
 export async function POST(req: Request) {
+  const clientId = getClientId(req);
+  const rateLimit = await rateLimitAsync(
+    `mechanic-application:${clientId}`,
+    RATE_LIMITS.MECHANIC_APPLICATION.max,
+    RATE_LIMITS.MECHANIC_APPLICATION.windowMs,
+  );
+  if (rateLimit.unavailable) {
+    return NextResponse.json(
+      { error: "سرویس ثبت درخواست موقتاً در دسترس نیست" },
+      { status: 503, headers: { "Retry-After": "60" } },
+    );
+  }
+  if (!rateLimit.success) {
+    return NextResponse.json(
+      { error: "تعداد درخواست‌های همکاری بیش از حد مجاز است؛ بعداً دوباره تلاش کنید" },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rateLimit.resetMs / 1000)) } },
+    );
+  }
+
   let body: Record<string, any>;
   try {
     body = await req.json();
@@ -47,15 +84,26 @@ export async function POST(req: Request) {
   }
 
   const { fullName, phone, email, city, experienceYears, specialties, certifications, bio, vehicleOwned } = safe;
-  if (typeof fullName !== "string" || !fullName.trim() || typeof phone !== "string" || !phone.trim()) {
+  if (typeof fullName !== "string" || !fullName.trim() || typeof phone !== "string") {
     return NextResponse.json({ error: "نام و شماره تلفن الزامی است" }, { status: 400 });
   }
+  const phoneValidation = otpSendSchema.safeParse({ phone });
+  if (!phoneValidation.success) {
+    return NextResponse.json({ error: phoneValidation.error.issues[0]?.message ?? "شماره موبایل نامعتبر است" }, { status: 400 });
+  }
 
-  const normalizedPhone = phone.trim();
+  // Keep the application phone identical to the OTP identity key. This avoids
+  // creating a technician account with a formatted phone that login cannot match.
+  const normalizedPhone = normalizePhoneForStorage(phoneValidation.data.phone);
+  const phoneVariants = getPhoneLookupVariants(phoneValidation.data.phone);
   const code = `APP-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`;
   const db = await getDbForLib();
 
-  const existingUser = await db.user.findUnique({ where: { phone: normalizedPhone } });
+  let existingUser: User | null = null;
+  for (const phoneVariant of phoneVariants) {
+    existingUser = await db.user.findUnique({ where: { phone: phoneVariant } });
+    if (existingUser) break;
+  }
   if (existingUser) {
     if (existingUser.status === "SUSPENDED" ||
         (existingUser.role !== "CUSTOMER" && existingUser.role !== "TECHNICIAN")) {
@@ -72,22 +120,53 @@ export async function POST(req: Request) {
   // to PENDING; that would invalidate the admin's atomic review claim.
   const existingApplication = existingUser
     ? await db.mechanicApplication.findUnique({ where: { userId: existingUser.id } })
-      ?? await db.mechanicApplication.findFirst({ where: { phone: normalizedPhone }, orderBy: { createdAt: "desc" } })
-    : await db.mechanicApplication.findFirst({ where: { phone: normalizedPhone }, orderBy: { createdAt: "desc" } });
+      ?? await db.mechanicApplication.findFirst({ where: { phone: { in: phoneVariants } }, orderBy: { createdAt: "desc" } })
+    : await db.mechanicApplication.findFirst({ where: { phone: { in: phoneVariants } }, orderBy: { createdAt: "desc" } });
 
+  const safeSpecialties = Array.isArray(specialties)
+    ? specialties
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim().slice(0, 64))
+        .filter(Boolean)
+        .slice(0, 20)
+    : [];
+  const safeCertifications: Array<string | { name: string; issuer: string; year: number }> = [];
+  if (Array.isArray(certifications)) {
+    for (const value of certifications.slice(0, 20)) {
+      if (typeof value === "string") {
+        const name = value.trim().slice(0, 200);
+        if (name) safeCertifications.push(name);
+        continue;
+      }
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      const item = value as Record<string, unknown>;
+      const name = typeof item.name === "string" ? item.name.trim().slice(0, 150) : "";
+      if (!name) continue;
+      const issuer = typeof item.issuer === "string" ? item.issuer.trim().slice(0, 150) : "Self-reported";
+      const year = typeof item.year === "number" && Number.isInteger(item.year)
+        ? Math.min(new Date().getFullYear() + 1, Math.max(1900, item.year))
+        : new Date().getFullYear();
+      safeCertifications.push({ name, issuer, year });
+    }
+  }
   const applicationData = {
     fullName: fullName.slice(0, 200).trim(),
     phone: normalizedPhone,
-    email: typeof email === "string" ? email.slice(0, 200).trim() : null,
-    city: typeof city === "string" ? city.slice(0, 100).trim() : null,
-    experienceYears: typeof experienceYears === "number" ? Math.max(0, Math.floor(experienceYears)) : 0,
-    specialties: JSON.stringify(Array.isArray(specialties) ? specialties.slice(0, 20) : []),
-    certifications: certifications ? JSON.stringify(certifications).slice(0, 5000) : null,
-    bio: typeof bio === "string" ? bio.slice(0, 1000).trim() : null,
-    vehicleOwned: Boolean(vehicleOwned),
+    email: typeof email === "string" && email.trim() ? email.slice(0, 200).trim() : null,
+    city: typeof city === "string" && city.trim() ? city.slice(0, 100).trim() : null,
+    experienceYears: typeof experienceYears === "number" && Number.isFinite(experienceYears)
+      ? Math.min(80, Math.max(0, Math.floor(experienceYears)))
+      : 0,
+    specialties: JSON.stringify(safeSpecialties),
+    certifications: safeCertifications.length ? JSON.stringify(safeCertifications) : null,
+    bio: typeof bio === "string" && bio.trim() ? bio.slice(0, 1000).trim() : null,
+    vehicleOwned: vehicleOwned === true,
   };
 
   if (existingApplication) {
+    if (existingApplication.userId && existingUser && existingApplication.userId !== existingUser.id) {
+      return NextResponse.json({ error: "این شماره به حساب دیگری متصل است" }, { status: 409 });
+    }
     if (existingApplication.status !== "REJECTED" && existingApplication.status !== "ON_HOLD") {
       return NextResponse.json(
         { error: "درخواست شما در حال بررسی است یا قبلاً تعیین تکلیف شده است", status: existingApplication.status },
@@ -99,6 +178,7 @@ export async function POST(req: Request) {
       where: { id: existingApplication.id, status: existingApplication.status },
       data: {
         ...applicationData,
+        userId: existingApplication.userId ?? existingUser?.id ?? null,
         status: "PENDING",
         adminNotes: null,
         reviewerId: null,
@@ -112,14 +192,30 @@ export async function POST(req: Request) {
     return NextResponse.json({ ...updated, pendingReview: true });
   }
 
-  const created = await db.mechanicApplication.create({
-    data: {
-      code,
-      ...applicationData,
-      status: "PENDING",
-      userId: existingUser?.id ?? null,
-    },
-  });
+  let created;
+  try {
+    created = await db.mechanicApplication.create({
+      data: {
+        code,
+        ...applicationData,
+        status: "PENDING",
+        userId: existingUser?.id ?? null,
+      },
+    });
+  } catch (error) {
+    // The database unique index is the final arbiter for simultaneous public
+    // submissions using the same phone. Return a conflict, never a 500.
+    if (!isUniqueConflict(error)) throw error;
+    const concurrentApplication = await db.mechanicApplication.findFirst({
+      where: { phone: { in: phoneVariants } },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!concurrentApplication) throw error;
+    return NextResponse.json(
+      { error: "برای این شماره تلفن درخواست همکاری ثبت شده است", status: concurrentApplication.status },
+      { status: 409 },
+    );
+  }
 
   // A technician account/profile is never created by public submission.
   return NextResponse.json({ ...created, pendingReview: true });
