@@ -185,7 +185,18 @@ export async function POST(req: Request) {
         idempotent: true,
       });
     }
-    const message = error instanceof Error ? error.message : "خطا در پردازش برداشت";
-    return NextResponse.json({ error: message }, { status: 400 });
+    // Never expose raw database/ORM errors to clients. The original failure
+    // remains available in server logs for operator diagnosis.
+    console.error(
+      "[wallet-withdrawal] atomic processing failed",
+      error instanceof Error ? error.message : "unknown error",
+    );
+    return NextResponse.json(
+      {
+        error: "پردازش درخواست برداشت موقتاً ناموفق بود؛ وضعیت درخواست را بررسی و در صورت نیاز با همان شناسه پیگیری دوباره تلاش کنید",
+        code: "WITHDRAWAL_PROCESSING_FAILED",
+      },
+      { status: 503 },
+    );
   }
 }
