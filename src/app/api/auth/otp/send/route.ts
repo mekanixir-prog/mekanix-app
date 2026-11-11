@@ -28,6 +28,8 @@ export async function POST(req: Request) {
   // The schema already proved the input is well-formed, so this only sanitizes
   // formatting — it can no longer reject a previously-accepted payload.
   const phone = normalizePhoneForStorage(body.data.phone);
+  // Keep the provider-facing receptor format compatible with the existing SMS adapter.
+  const deliveryPhone = body.data.phone.replace(/[\\s\\-()]/g, "");
 
   if (!phone || phone.length < 8) {
     // Defensive: schema should already prevent this, but keep the guard in case
@@ -122,7 +124,7 @@ export async function POST(req: Request) {
   // code cannot remain usable. Never log the phone number or plaintext OTP.
   let smsResult: Awaited<ReturnType<typeof sendOtp>>;
   try {
-    smsResult = await sendOtp(phone, code);
+    smsResult = await sendOtp(deliveryPhone, code);
   } catch {
     await db.otpCode.updateMany({
       where: { phone, code: codeHash, consumed: false },
