@@ -1,5 +1,6 @@
 import type { JobStatus, PrismaClient } from "@prisma/client";
 import { getD1Binding } from "@/lib/idempotency";
+import { multiplyRatioIrr } from "@/lib/money/irr";
 
 export class JobStatusConflictError extends Error {
   constructor() {
@@ -148,8 +149,8 @@ function assertAtomicInvoiceInput(invoice: AtomicInvoiceInput, jobId: string): v
 
   // The persisted tax rate is an exact basis-point ratio. Tax remains disabled
   // by default; if enabled later, the writer still verifies the rounded IRR total.
-  const expectedTax = Math.round((subtotal * taxRateBps) / 10_000);
-  if (!Number.isSafeInteger(expectedTax) || expectedTax !== taxTotal) {
+  const expectedTax = multiplyRatioIrr(subtotal, taxRateBps, 10_000, "half-up");
+  if (expectedTax !== taxTotal) {
     throw new JobStatusConflictError();
   }
 }
