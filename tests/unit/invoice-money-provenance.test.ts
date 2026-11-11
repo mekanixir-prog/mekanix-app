@@ -20,6 +20,8 @@ describe("invoice money source provenance", () => {
       financialUnitStatus: "VERIFIED_IRR",
       hourlyRate: 125_000,
       travelFeeBase: "50000",
+      inspectionFee: 20_000,
+      inspectionFeeHeavy: 50_000,
     })).toBe(true);
     expect(areInvoicePriceSourcesVerified({
       financialUnitStatus: "UNVERIFIED",
@@ -30,6 +32,13 @@ describe("invoice money source provenance", () => {
       financialUnitStatus: "VERIFIED_IRR",
       hourlyRate: "125000.5",
       travelFeeBase: 50_000,
+    })).toBe(false);
+    expect(areInvoicePriceSourcesVerified({
+      financialUnitStatus: "VERIFIED_IRR",
+      hourlyRate: 125_000,
+      travelFeeBase: 50_000,
+      inspectionFee: "20000.5",
+      inspectionFeeHeavy: 50_000,
     })).toBe(false);
     expect(areInvoicePriceSourcesVerified({
       financialUnitStatus: "VERIFIED_IRR",
