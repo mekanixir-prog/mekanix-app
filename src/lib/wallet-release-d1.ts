@@ -26,20 +26,22 @@ export async function releaseWalletTransactionWithD1(
   const idempotencyKey = `wallet-release:${transactionId}:LEDGER`;
   const eligible = `
     wt."id" = ? AND wt."walletId" = ? AND wt."status" = 'PENDING'
+    AND wt."financialUnitStatus" = 'VERIFIED_IRR'
     AND wt."netAmount" >= 0 AND wt."holdUntil" IS NOT NULL AND wt."holdUntil" <= ?
   `;
 
   const ledgerInsert = d1.prepare(`
     INSERT INTO "WalletLedger"
-      ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
+      ("id", "walletId", "financialUnitStatus", "type", "amount", "balanceBefore", "balanceAfter",
        "referenceType", "referenceId", "description", "idempotencyKey", "createdAt")
-    SELECT ?, w."id", 'RELEASE', wt."netAmount", w."balance",
+    SELECT ?, w."id", 'VERIFIED_IRR', 'RELEASE', wt."netAmount", w."balance",
            w."balance" + wt."netAmount",
            'WalletTransaction', wt."id", ?, ?, ?
     FROM "Wallet" w
     JOIN "WalletTransaction" wt ON wt."walletId" = w."id"
     WHERE ${eligible}
       AND w."id" = ?
+      AND w."financialUnitStatus" = 'VERIFIED_IRR'
       AND w."pendingBalance" >= wt."netAmount"
       AND NOT EXISTS (
         SELECT 1 FROM "WalletLedger" existing
@@ -75,8 +77,10 @@ export async function releaseWalletTransactionWithD1(
           ON ledger."referenceId" = wt."id"
          AND ledger."idempotencyKey" = ?
         WHERE wt."id" = ? AND wt."walletId" = w."id"
-          AND wt."status" = 'PENDING' AND wt."netAmount" >= 0
+          AND wt."status" = 'PENDING' AND wt."financialUnitStatus" = 'VERIFIED_IRR'
+          AND wt."netAmount" >= 0
           AND wt."holdUntil" IS NOT NULL AND wt."holdUntil" <= ?
+          AND w."financialUnitStatus" = 'VERIFIED_IRR'
           AND w."pendingBalance" >= wt."netAmount"
           AND ledger."balanceBefore" = w."balance"
           AND ledger."balanceAfter" = w."balance" + wt."netAmount"
@@ -113,8 +117,12 @@ export async function releaseWalletTransactionWithD1(
       ?,
       CASE
         WHEN NOT EXISTS (
-          SELECT 1 FROM "WalletTransaction"
-          WHERE "id" = ? AND "status" IN ('PENDING', 'AVAILABLE')
+          SELECT 1
+          FROM "WalletTransaction" wt
+          JOIN "Wallet" w ON w."id" = wt."walletId"
+          WHERE wt."id" = ? AND wt."status" IN ('PENDING', 'AVAILABLE')
+            AND wt."financialUnitStatus" = 'VERIFIED_IRR'
+            AND w."financialUnitStatus" = 'VERIFIED_IRR'
         ) OR EXISTS (
           SELECT 1
           FROM "WalletTransaction" wt
@@ -124,6 +132,9 @@ export async function releaseWalletTransactionWithD1(
            AND ledger."referenceId" = wt."id"
            AND ledger."idempotencyKey" = ?
           WHERE wt."id" = ? AND wt."status" = 'AVAILABLE'
+            AND wt."financialUnitStatus" = 'VERIFIED_IRR'
+            AND w."financialUnitStatus" = 'VERIFIED_IRR'
+            AND ledger."financialUnitStatus" = 'VERIFIED_IRR'
             AND w."balance" = ledger."balanceAfter"
         ) THEN 1
         ELSE NULL
