@@ -137,20 +137,28 @@ describe("wallet escrow release atomicity", () => {
     expect(tx.walletLedger.create).not.toHaveBeenCalled();
   });
 
-  it("throws inside the Prisma transaction when pending balance cannot cover the release", async () => {
+  it("rejects an insufficient pending balance before transitioning the transaction", async () => {
     const tx = {
       walletTransaction: {
         findFirst: vi.fn().mockResolvedValue({ netAmount: 1250 }),
-        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        updateMany: vi.fn(),
       },
-      wallet: { updateMany: vi.fn().mockResolvedValue({ count: 0 }), findUnique: vi.fn() },
+      wallet: {
+        findUnique: vi.fn().mockResolvedValue({
+          financialUnitStatus: "VERIFIED_IRR",
+          balance: new Prisma.Decimal(2000),
+          pendingBalance: new Prisma.Decimal(200),
+        }),
+        updateMany: vi.fn(),
+      },
       walletLedger: { create: vi.fn() },
     };
     const db = { $transaction: vi.fn(async (callback: (tx: any) => Promise<boolean>) => callback(tx)) } as any;
 
-    await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-1", new Date()))
-      .rejects.toThrow("escrow release rolled back");
+    await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-1", new Date())).resolves.toBe(false);
     expect(db.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.walletTransaction.updateMany).not.toHaveBeenCalled();
+    expect(tx.wallet.updateMany).not.toHaveBeenCalled();
     expect(tx.walletLedger.create).not.toHaveBeenCalled();
   });
 
