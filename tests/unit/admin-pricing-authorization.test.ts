@@ -28,6 +28,7 @@ vi.mock("@/lib/admin-api", () => ({
 }));
 
 import { GET, PUT } from "@/app/api/admin-panel/pricing/route";
+import { DEFAULT_PRICING_RATE_CARD } from "@/lib/pricing-rate-card";
 
 function putRequest(body: unknown) {
   return new Request("https://mekanix.test/api/admin-panel/pricing", {
@@ -66,6 +67,24 @@ describe("admin pricing authorization", () => {
     expect(mocks.updateMany).not.toHaveBeenCalled();
     expect(mocks.create).not.toHaveBeenCalled();
     expect(mocks.audit).not.toHaveBeenCalled();
+  });
+
+  it("allows SUPER_ADMIN to persist a valid versioned rate card with strict audit", async () => {
+    mocks.getAdmin.mockResolvedValue({ adminId: "root-1", username: "root", role: "SUPER_ADMIN" });
+    const response = await PUT(putRequest({
+      expectedVersion: 1,
+      rateCard: DEFAULT_PRICING_RATE_CARD,
+    }));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.current.version).toBe(2);
+    expect(body.current.updatedBy).toBe("root");
+    expect(body.history).toHaveLength(1);
+    expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({
+      action: "ATTEMPT_UPDATE_PRICING_RATE_CARD",
+      strict: true,
+    }));
+    expect(mocks.create).toHaveBeenCalledTimes(1);
   });
 
   it("requires SUPER_ADMIN before validating a pricing mutation payload", async () => {
