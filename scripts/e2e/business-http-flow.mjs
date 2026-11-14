@@ -228,8 +228,79 @@ const approved = await request(
 if (approved && approved.status !== "SENT") {
   throw new Error("Unexpected invoice approval response: " + JSON.stringify(approved));
 }
+
 await transition("REPAIRING");
 await transition("COMPLETED");
+
+// Inject a real PostgreSQL failure after the service-request and technician
+// claims but before Job insertion. The transaction must roll back both claims.
+const rollbackRequest = await request(
+  "/api/service-requests",
+  "POST",
+  customerToken,
+  {
+    vehicleId: ids.vehicle,
+    category: "diagnostic",
+    urgency: "NORMAL",
+    title: "Atomic assignment rollback verification",
+    description: "A trigger will reject Job insertion for this request only",
+    address: "MEKANIX isolated E2E test yard",
+    lat: 35.7,
+    lng: 51.4,
+  },
+  { "Idempotency-Key": "rollback-e2e-" + randomUUID() },
+);
+if (!rollbackRequest || rollbackRequest.status !== "OPEN") {
+  throw new Error("Rollback fixture request was not created OPEN");
+}
+const triggerSuffix = randomUUID().replaceAll("-", "");
+const triggerName = "mekanix_e2e_fail_job_" + triggerSuffix;
+const functionName = triggerName + "_fn";
+const createTriggerSql = [
+  "CREATE FUNCTION \"" + functionName + "\"() RETURNS trigger LANGUAGE plpgsql AS $",
+  "BEGIN",
+  "  IF NEW.\"requestId\" = " + sql(rollbackRequest.id) + " THEN",
+  "    RAISE EXCEPTION 'MEKANIX E2E injected Job insert failure';",
+  "  END IF;",
+  "  RETURN NEW;",
+  "END;",
+  "$;",
+  "CREATE TRIGGER \"" + triggerName + "\" BEFORE INSERT ON \"Job\" FOR EACH ROW EXECUTE FUNCTION \"" + functionName + "\"();",
+].join("\n");
+execFileSync("docker", [
+  "compose", "-f", "/tmp/mekanix-build/docker-compose.yml",
+  "exec", "-T", "db", "psql", "-U", "mekanix", "-d", "mekanix", "-v", "ON_ERROR_STOP=1",
+], { input: createTriggerSql, encoding: "utf8", stdio: ["pipe", "pipe", "inherit"] });
+let rollbackStatus = 0;
+let rollbackState = "";
+try {
+  const failedAssignment = await fetch(baseUrl + "/api/service-requests/" + rollbackRequest.id + "/assign", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + customerToken, "Content-Type": "application/json" },
+    body: JSON.stringify({ technicianId: ids.technician }),
+  });
+  rollbackStatus = failedAssignment.status;
+  if (rollbackStatus < 500 || rollbackStatus >= 600) {
+    throw new Error("Injected Job insert failure should surface as 5xx, got " + rollbackStatus + ": " + await failedAssignment.text());
+  }
+  rollbackState = execFileSync("docker", [
+    "compose", "-f", "/tmp/mekanix-build/docker-compose.yml",
+    "exec", "-T", "db", "psql", "-U", "mekanix", "-d", "mekanix", "-Atc",
+    'SELECT "status"::text || ' + sql(",") + ' || COALESCE("matchedTechId", ' + sql("NULL") + ') || ' + sql(",") +
+      ' || (SELECT COUNT(*) FROM "Job" WHERE "requestId" = ' + sql(rollbackRequest.id) + ')::text || ' + sql(",") +
+      ' || (SELECT "status"::text FROM "Technician" WHERE "id" = ' + sql(ids.technician) + ') || ' + sql(",") +
+      ' || (SELECT "availableNow"::text FROM "Technician" WHERE "id" = ' + sql(ids.technician) + ') FROM "ServiceRequest" WHERE "id" = ' + sql(rollbackRequest.id) + ";",
+  ], { encoding: "utf8" }).trim();
+  if (rollbackState !== "OPEN,NULL,0,ONLINE,true") {
+    throw new Error("Partial assignment failure was not fully rolled back: " + rollbackState);
+  }
+} finally {
+  const dropTriggerSql = 'DROP TRIGGER IF EXISTS "' + triggerName + '" ON "Job"; DROP FUNCTION IF EXISTS "' + functionName + '"();';
+  execFileSync("docker", [
+    "compose", "-f", "/tmp/mekanix-build/docker-compose.yml",
+    "exec", "-T", "db", "psql", "-U", "mekanix", "-d", "mekanix", "-v", "ON_ERROR_STOP=1",
+  ], { input: dropTriggerSql, encoding: "utf8", stdio: ["pipe", "pipe", "inherit"] });
+}
 
 // Production intentionally disables the payment simulator. The request must
 // fail closed and must not create Payment or Warranty records.
@@ -265,6 +336,7 @@ console.log(JSON.stringify({
   invoiceId,
   finalJobStatus: "COMPLETED",
   paymentSimulator: "DISABLED_IN_PRODUCTION",
+  atomicRollback: { injectedStatus: rollbackStatus, persistedState: rollbackState },
   paymentRows: 0,
   warrantyRows: 0,
   scope: "real HTTP + PostgreSQL + signed sessions; no external SMS/payment provider",
