@@ -23,6 +23,12 @@ export const PUBLIC_TECHNICIAN_SELECT = {
   specialties: { select: { id: true, category: true, label: true } },
   certifications: { select: { id: true, name: true, issuer: true, year: true, verified: true } },
   serviceAreas: { select: { id: true, name: true, radiusKm: true } },
+} as const;
+
+export const PUBLIC_TECHNICIAN_LIST_SELECT = PUBLIC_TECHNICIAN_SELECT;
+
+export const PUBLIC_TECHNICIAN_DETAIL_SELECT = {
+  ...PUBLIC_TECHNICIAN_SELECT,
   reviews: {
     select: {
       id: true,
