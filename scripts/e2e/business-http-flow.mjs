@@ -257,14 +257,14 @@ const triggerSuffix = randomUUID().replaceAll("-", "");
 const triggerName = "mekanix_e2e_fail_job_" + triggerSuffix;
 const functionName = triggerName + "_fn";
 const createTriggerSql = [
-  "CREATE FUNCTION \"" + functionName + "\"() RETURNS trigger LANGUAGE plpgsql AS $",
+  "CREATE FUNCTION \"" + functionName + "\"() RETURNS trigger LANGUAGE plpgsql AS $fn$",
   "BEGIN",
   "  IF NEW.\"requestId\" = " + sql(rollbackRequest.id) + " THEN",
   "    RAISE EXCEPTION 'MEKANIX E2E injected Job insert failure';",
   "  END IF;",
   "  RETURN NEW;",
   "END;",
-  "$;",
+  "$fn$;",
   "CREATE TRIGGER \"" + triggerName + "\" BEFORE INSERT ON \"Job\" FOR EACH ROW EXECUTE FUNCTION \"" + functionName + "\"();",
 ].join("\n");
 execFileSync("docker", [
