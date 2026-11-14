@@ -17,9 +17,11 @@ const ids = {
   otherCustomer: randomUUID(),
   vehicle: randomUUID(),
   rollbackVehicle: randomUUID(),
+  otherVehicle: randomUUID(),
   technician: randomUUID(),
   otherTechnician: randomUUID(),
   specialty: randomUUID(),
+  otherSpecialty: randomUUID(),
   customerSession: randomUUID(),
   technicianSession: randomUUID(),
   otherCustomerSession: randomUUID(),
@@ -91,12 +93,14 @@ const seedSql = [
   'INSERT INTO "Customer" ("id", "userId") VALUES (' + sql(ids.customer) + ", " + sql(ids.customerUser) + "), (" + sql(ids.otherCustomer) + ", " + sql(ids.otherCustomerUser) + ");",
   'INSERT INTO "Vehicle" ("id", "customerId", "type", "make", "model", "year") VALUES (' +
     [sql(ids.vehicle), sql(ids.customer), sql("EXCAVATOR"), sql("Caterpillar"), sql("320D E2E"), "2024"].join(", ") + "), (" +
-    [sql(ids.rollbackVehicle), sql(ids.customer), sql("EXCAVATOR"), sql("Caterpillar"), sql("320D E2E Rollback"), "2024"].join(", ") + ");",
+    [sql(ids.rollbackVehicle), sql(ids.customer), sql("EXCAVATOR"), sql("Caterpillar"), sql("320D E2E Rollback"), "2024"].join(", ") + "), (" +
+    [sql(ids.otherVehicle), sql(ids.otherCustomer), sql("EXCAVATOR"), sql("Caterpillar"), sql("320D E2E Foreign"), "2024"].join(", ") + ");",
   'INSERT INTO "Technician" ("id", "userId", "financialUnitStatus", "hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy", "status", "verified", "availableNow", "responseMins") VALUES (' +
     [sql(ids.technician), sql(ids.technicianUser), sql("VERIFIED_IRR"), "200000", "50000", "20000", "50000", sql("ONLINE"), "TRUE", "TRUE", "5"].join(", ") + "), (" +
     [sql(ids.otherTechnician), sql(ids.otherTechnicianUser), sql("VERIFIED_IRR"), "180000", "40000", "15000", "40000", sql("ONLINE"), "TRUE", "TRUE", "5"].join(", ") + ");",
   'INSERT INTO "TechnicianSpecialty" ("id", "technicianId", "category", "label") VALUES (' +
-    [sql(ids.specialty), sql(ids.technician), sql("diagnostic"), sql("Heavy machinery diagnostics")].join(", ") + ");",
+    [sql(ids.specialty), sql(ids.technician), sql("diagnostic"), sql("Heavy machinery diagnostics")].join(", ") + "), (" +
+    [sql(ids.otherSpecialty), sql(ids.otherTechnician), sql("diagnostic"), sql("Heavy machinery diagnostics")].join(", ") + ");",
   'INSERT INTO "Session" ("id", "userId", "tokenHash", "expiresAt") VALUES (' +
     [sql(ids.customerSession), sql(ids.customerUser), sql(customerSession.tokenHash), sql(expiresAt)].join(", ") + "), (" +
     [sql(ids.technicianSession), sql(ids.technicianUser), sql(technicianSession.tokenHash), sql(expiresAt)].join(", ") + "), (" +
@@ -239,9 +243,9 @@ await transition("COMPLETED");
 const rollbackRequest = await request(
   "/api/service-requests",
   "POST",
-  customerToken,
+  otherCustomerToken,
   {
-    vehicleId: ids.rollbackVehicle,
+    vehicleId: ids.otherVehicle,
     category: "diagnostic",
     urgency: "NORMAL",
     title: "Atomic assignment rollback verification",
@@ -278,8 +282,8 @@ let rollbackState = "";
 try {
   const failedAssignment = await fetch(baseUrl + "/api/service-requests/" + rollbackRequest.id + "/assign", {
     method: "POST",
-    headers: { Authorization: "Bearer " + customerToken, "Content-Type": "application/json" },
-    body: JSON.stringify({ technicianId: ids.technician }),
+    headers: { Authorization: "Bearer " + otherCustomerToken, "Content-Type": "application/json" },
+    body: JSON.stringify({ technicianId: ids.otherTechnician }),
   });
   rollbackStatus = failedAssignment.status;
   if (rollbackStatus < 500 || rollbackStatus >= 600) {
@@ -291,7 +295,7 @@ try {
     'SELECT "status"::text || ' + sql(",") + ' || COALESCE("matchedTechId", ' + sql("NULL") + ') || ' + sql(",") +
       ' || (SELECT COUNT(*) FROM "Job" WHERE "requestId" = ' + sql(rollbackRequest.id) + ')::text || ' + sql(",") +
       ' || (SELECT "status"::text FROM "Technician" WHERE "id" = ' + sql(ids.technician) + ') || ' + sql(",") +
-      ' || (SELECT "availableNow"::text FROM "Technician" WHERE "id" = ' + sql(ids.technician) + ') FROM "ServiceRequest" WHERE "id" = ' + sql(rollbackRequest.id) + ";",
+      ' || (SELECT "availableNow"::text FROM "Technician" WHERE "id" = ' + sql(ids.otherTechnician) + ') FROM "ServiceRequest" WHERE "id" = ' + sql(rollbackRequest.id) + ";",
   ], { encoding: "utf8" }).trim();
   if (rollbackState !== "OPEN,NULL,0,ONLINE,true") {
     throw new Error("Partial assignment failure was not fully rolled back: " + rollbackState);
