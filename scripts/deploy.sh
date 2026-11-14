@@ -23,9 +23,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_DIR"
 
-# Load an optional protected production .env file. Exported shell variables
-# take precedence because the file is sourced before the caller's exports
-# only when those values are absent.
+# Load an optional protected production .env file. Values in this file become
+# the deployment environment; keep it private and review it before running.
 if [ -f "$REPO_DIR/.env" ]; then
   ENV_PERMS="$(stat -c '%a' "$REPO_DIR/.env")"
   if [ $((8#$ENV_PERMS & 077)) -ne 0 ]; then
