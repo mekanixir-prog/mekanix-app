@@ -64,12 +64,6 @@ export async function POST(req: Request) {
   if (access) return access;
 
   const db = await getDbForLib();
-  if (!isInvoicePricingPolicyApproved()) {
-    return NextResponse.json(
-      { error: "سیاست نرخ‌گذاری ریالی هنوز تأیید نشده است؛ صدور فاکتور مسدود است", code: "INVOICE_PRICING_POLICY_UNAPPROVED" },
-      { status: 409 },
-    );
-  }
   if (session.role === "TECHNICIAN") {
     const tech = await getTechnicianFromSession(session);
     const job = await db.job.findUnique({ where: { id: jobId }, select: { technicianId: true } });
@@ -82,6 +76,13 @@ export async function POST(req: Request) {
     }
   } else if (session.role !== "ADMIN") {
     return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
+  }
+
+  if (!isInvoicePricingPolicyApproved()) {
+    return NextResponse.json(
+      { error: "سیاست نرخ‌گذاری ریالی هنوز تأیید نشده است؛ صدور فاکتور مسدود است", code: "INVOICE_PRICING_POLICY_UNAPPROVED" },
+      { status: 409 },
+    );
   }
 
   // Idempotent retry: the job-status flow may already have created this invoice.
