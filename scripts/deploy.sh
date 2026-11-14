@@ -41,6 +41,14 @@ for VAR_NAME in DB_PASSWORD REDIS_PASSWORD JWT_SECRET ADMIN_JWT_SECRET OTP_HASH_
     MISSING=1
   fi
 done
+if [ -n "${DB_PASSWORD:-}" ] && [ "${#DB_PASSWORD}" -lt 16 ]; then
+  echo "❌ DB_PASSWORD must contain at least 16 bytes"
+  MISSING=1
+fi
+if [ -n "${REDIS_PASSWORD:-}" ] && [ "${#REDIS_PASSWORD}" -lt 16 ]; then
+  echo "❌ REDIS_PASSWORD must contain at least 16 bytes"
+  MISSING=1
+fi
 if [ -n "${JWT_SECRET:-}" ] && [ "${#JWT_SECRET}" -lt 32 ]; then
   echo "❌ JWT_SECRET must contain at least 32 bytes"
   MISSING=1
@@ -131,8 +139,9 @@ echo "║  ✅ Deployment complete!                                ║"
 echo "║                                                          ║"
 echo "║  App:    http://localhost:3000                           ║"
 echo "║  Health: http://localhost:3000/api/health               ║"
-echo "║  DB:     localhost:5432 (PostgreSQL 16)                ║"
-echo "║  Redis:  localhost:6379 (Redis 7)                      ║"
+echo "║  DB:     internal Docker network (PostgreSQL 16)       ║"
+echo "║  Redis:  internal Docker network (Redis 7)             ║"
+echo "║  Public access: configured HTTPS reverse proxy only   ║"
 echo "║                                                          ║"
 echo "║  Logs:   docker compose logs -f                         ║"
 echo "║  Stop:   docker compose down                            ║"
