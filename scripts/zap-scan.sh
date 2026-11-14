@@ -27,11 +27,12 @@ else
   DOCKER_ARGS+=(--add-host=host.docker.internal:host-gateway)
 fi
 DOCKER_ARGS+=(-v "$REPORT_DIR:/zap/wrk" ghcr.io/zaproxy/zaproxy:stable)
+
+# Generate the default policy outside the mounted report directory. ZAP runs
+# as an unprivileged user and cannot create /zap/wrk/gen.conf on CI bind mounts.
 docker "${DOCKER_ARGS[@]}" \
   zap-baseline.py \
   -t "$TARGET_URL" \
-  # Generate the default policy outside the mounted report directory. ZAP runs
-  # as an unprivileged user and cannot create /zap/wrk/gen.conf on CI bind mounts.
   -g /tmp/zap-gen.conf \
   -r "zap-report-$TIMESTAMP.html" \
   -J "zap-report-$TIMESTAMP.json" \
