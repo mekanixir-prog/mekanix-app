@@ -20,16 +20,24 @@ const responseTime = new Trend("response_time_ms");
 // statuses remain failures and are caught by the global failure threshold.
 http.setResponseCallback(http.expectedStatuses(200, 429, 503));
 
+const fullLoadStages = [
+  { duration: "30s", target: 10 },
+  { duration: "1m", target: 10 },
+  { duration: "30s", target: 50 },
+  { duration: "1m", target: 50 },
+  { duration: "30s", target: 100 },
+  { duration: "1m", target: 100 },
+  { duration: "30s", target: 0 },
+];
+
+const smokeStages = [
+  { duration: "10s", target: 5 },
+  { duration: "20s", target: 5 },
+  { duration: "10s", target: 0 },
+];
+
 export const options = {
-  stages: [
-    { duration: "30s", target: 10 },
-    { duration: "1m", target: 10 },
-    { duration: "30s", target: 50 },
-    { duration: "1m", target: 50 },
-    { duration: "30s", target: 100 },
-    { duration: "1m", target: 100 },
-    { duration: "30s", target: 0 },
-  ],
+  stages: __ENV.K6_SMOKE === "true" ? smokeStages : fullLoadStages,
   thresholds: {
     http_req_duration: ["p(95)<500"],
     http_req_failed: ["rate<0.01"],
