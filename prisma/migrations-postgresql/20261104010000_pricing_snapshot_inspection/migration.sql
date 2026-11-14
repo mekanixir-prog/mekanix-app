@@ -1,0 +1,1 @@
+ALTER TABLE "PricingSnapshot" ADD COLUMN "inspectionPrice" DECIMAL NOT NULL DEFAULT 0;

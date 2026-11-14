@@ -21,12 +21,14 @@ From a clean checkout:
 ```bash
 git status --short
 git fetch origin
-git checkout feature/cloudflare-d1-validation
+git checkout main
+git pull --ff-only
+git checkout <approved-release-branch>
 git pull --ff-only
 git rev-parse HEAD
 ```
 
-Record the SHA. Verify the PR targets `main`, review the full diff, check the migration files, and confirm no unrelated generated files or secrets are included.
+Record the SHA. Verify the PR targets the current `main` tip and the release branch is not behind it. Review the full diff, check both migration tracks, and confirm no unrelated generated files or secrets are included. Do not merge from a stale branch.
 
 Run the same checks used by CI:
 
@@ -101,6 +103,8 @@ After deploying preview:
 Save actual status codes, sanitized logs, timestamps and evidence URLs. Do not record secret values.
 
 ## 5. Production approval gate
+
+**Independent distance-pricing gate:** Keep `MEKANIX_EXTRA_DISTANCE_IRR_APPROVED` unset or false unless the product owner explicitly approves the Haversine × 1.3 estimation policy or a verified routing-provider measurement has been deployed and validated. The application must charge only base dispatch while this flag is false. Do not enable extra-kilometre billing merely by setting `MEKANIX_PRICING_IRR_APPROVED`.
 
 Production deployment requires all of the following:
 - [ ] PR approved and merged according to repository policy.

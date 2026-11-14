@@ -20,6 +20,7 @@ export async function writeAuditLog(opts: {
   before?: unknown;
   after?: unknown;
   req?: Request;
+  strict?: boolean;
 }) {
   try {
     const db = await getDbForLib();
@@ -37,6 +38,7 @@ export async function writeAuditLog(opts: {
     });
   } catch (e) {
     console.error("[audit log error]", e);
+    if (opts.strict) throw e;
   }
 }
 

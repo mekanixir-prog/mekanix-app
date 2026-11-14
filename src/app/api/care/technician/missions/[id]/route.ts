@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 import {
   requireBookingParticipant,
   requireAssignedTechnician,
@@ -36,7 +37,15 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!mission) {
     return NextResponse.json({ error: "سفارش یافت نشد" }, { status: 404 });
   }
-  return NextResponse.json(mission);
+  return NextResponse.json({
+    ...mission,
+    package: mission.package ? maskFinancialFields(mission.package, ["basePrice"]) : mission.package,
+    findings: mission.findings.map((finding) => ({
+      ...finding,
+      approvals: finding.approvals.map((approval) => maskFinancialFields(approval, ["partPrice", "laborPrice", "totalPrice"])),
+    })),
+    partUsages: mission.partUsages.map((part) => maskFinancialFields(part, ["unitPrice", "totalPrice"])),
+  });
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {

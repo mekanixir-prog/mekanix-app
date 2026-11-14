@@ -15,12 +15,8 @@ export const URGENCY_LEVELS = ["NORMAL", "URGENT", "EMERGENCY"] as const;
 // ──────────── Create ────────────
 // POST /api/service-requests
 export const serviceRequestCreateSchema = z.object({
-  // Optional: if absent, the route creates an ad-hoc vehicle owned by the customer.
-  vehicleId: z.string().min(1).optional(),
-  // If no vehicleId, the caller may describe the machine inline:
-  machineType: z.string().max(50).optional(),
-  make: z.string().max(100).optional(),
-  model: z.string().max(100).optional(),
+  // A service request is accepted only for a previously registered vehicle.
+  vehicleId: z.string().min(1, "ثبت و انتخاب وسیله الزامی است"),
 
   category: z.string().min(1, "دسته‌بندی الزامی است").max(50, "دسته‌بندی بیش از حد طولانی است"),
   title: z

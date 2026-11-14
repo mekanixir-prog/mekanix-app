@@ -135,6 +135,23 @@ jobs:
           test "$OTP_ROWS" = "0"
           echo "✅ Production rejects console SMS and persists no OTP when no live provider is configured"
 
+      - name: Install Bun and browser test dependencies
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+
+      - name: Install project dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Chromium for Playwright
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run browser E2E against the live Docker stack
+        run: bun run test:e2e
+        env:
+          CI: "true"
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
+
       - name: Container logs (on failure)
         if: always()
         run: |

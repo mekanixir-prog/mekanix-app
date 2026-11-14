@@ -4,6 +4,8 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant } from "@/lib/auth";
 import { recordPrepayAtomically } from "@/lib/prepay-atomic";
+import { validatePrepayRecordSet } from "@/lib/prepay-reconciliation";
+import { isSafeStoredIrrAmount, maskFinancialFields, maskJobFinancialData } from "@/lib/money/financial-read-mask";
 
 // Pre-service payment: customer pays inspection fee + travel fee.
 // This activates chat/call with the mechanic.
@@ -26,8 +28,6 @@ import { recordPrepayAtomically } from "@/lib/prepay-atomic";
 //
 // MIGRATION: Uses getDbForLib() instead of direct db import.
 
-const COMMISSION_RATE = 0.10; // 10% platform cut
-const HOLD_HOURS = 12; // 12-hour hold from job completion
 
 function isHeavyMachine(type: string): boolean {
   return type !== "CAR";
@@ -42,6 +42,15 @@ export async function POST(req: Request) {
   // Require authentication
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
+
+  const policyApproved = process.env.MEKANIX_PREPAY_POLICY_APPROVED === "true";
+  const commissionRate = Number(process.env.MEKANIX_PREPAY_COMMISSION_RATE);
+  if (!policyApproved || !Number.isFinite(commissionRate) || commissionRate < 0 || commissionRate > 1) {
+    return NextResponse.json(
+      { error: "سیاست پیش‌پرداخت و کمیسیون هنوز تصویب و پیکربندی نشده است", code: "PREPAY_POLICY_UNAPPROVED" },
+      { status: 503 },
+    );
+  }
 
   const body = await req.json();
   const { jobId, method, cardNumber, mobile } = body;
@@ -71,20 +80,29 @@ export async function POST(req: Request) {
       db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_HOLD` } }),
       db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_COMMISSION` } }),
     ]);
-    if (!prepayTxn || !commissionTxn || !holdLedger || !commissionLedger) {
+    const reconciliation = validatePrepayRecordSet({
+      job,
+      prepayTransaction: prepayTxn,
+      commissionTransaction: commissionTxn,
+      holdLedger,
+      commissionLedger,
+    });
+    if (!reconciliation.ok) {
       return NextResponse.json({
         error: "Pre-service payment requires financial reconciliation",
         reconciliationRequired: true,
+        reason: reconciliation.reason,
         jobId: job.id,
       }, { status: 409 });
     }
+    const safeJob = maskFinancialFields(job, ["inspectionFee", "travelFee", "platformCommission", "netEarnings"]);
     return NextResponse.json({
       ok: true,
       alreadyPaid: true,
-      job,
-      amount: Number(job.inspectionFee ?? 0) + Number(job.travelFee ?? 0),
-      commission: Number(job.platformCommission ?? 0),
-      net: Number(job.netEarnings ?? 0),
+      job: safeJob,
+      amount: safeJob.inspectionFee == null || safeJob.travelFee == null ? null : Number(safeJob.inspectionFee) + Number(safeJob.travelFee),
+      commission: safeJob.platformCommission == null ? null : Number(safeJob.platformCommission),
+      net: safeJob.netEarnings == null ? null : Number(safeJob.netEarnings),
     });
   }
 
@@ -94,11 +112,19 @@ export async function POST(req: Request) {
   // Determine fee based on machine type (passenger CAR vs heavy)
   const machineType = job.request.vehicle.type;
   const heavy = isHeavyMachine(machineType);
-  const inspectionFee = Number(heavy ? tech.inspectionFeeHeavy : tech.inspectionFee);
-  const travelFee = Number(tech.travelFeeBase);
+  const inspectionFeeRaw = heavy ? tech.inspectionFeeHeavy : tech.inspectionFee;
+  const travelFeeRaw = tech.travelFeeBase;
+  if (tech.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(inspectionFeeRaw) || !isSafeStoredIrrAmount(travelFeeRaw)) {
+    return NextResponse.json({ error: "تعرفه‌های مکانیک هنوز از نظر منشأ و واحد ریال تأیید نشده‌اند", code: "TECHNICIAN_FEE_PROVENANCE_UNVERIFIED" }, { status: 409 });
+  }
+  const inspectionFee = Number(inspectionFeeRaw);
+  const travelFee = Number(travelFeeRaw);
   const gross = inspectionFee + travelFee;
-  const commission = gross * COMMISSION_RATE;
+  const commission = gross * commissionRate;
   const net = gross - commission;
+  if (![inspectionFee, travelFee, gross, commission, net].every(isSafeStoredIrrAmount)) {
+    return NextResponse.json({ error: "مبالغ پیش‌پرداخت باید اعداد صحیح امن ریالی باشند؛ گردکردن خودکار انجام نمی‌شود", code: "PREPAY_AMOUNT_NOT_INTEGER_IRR" }, { status: 409 });
+  }
 
   // Simulate gateway success (in production: call Zarinpal/IDPay verify here)
   if (!cardNumber && method === "card") {
@@ -124,13 +150,34 @@ export async function POST(req: Request) {
   if (!recorded) {
     const currentJob = await db.job.findUnique({ where: { id: jobId } });
     if (currentJob?.prepayPaid) {
+      const [prepayTxn, commissionTxn, holdLedger, commissionLedger] = await Promise.all([
+        db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${currentJob.id}:PREPAY` } }),
+        db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${currentJob.id}:COMMISSION` } }),
+        db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${currentJob.id}:LEDGER_HOLD` } }),
+        db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${currentJob.id}:LEDGER_COMMISSION` } }),
+      ]);
+      const reconciliation = validatePrepayRecordSet({
+        job: currentJob,
+        prepayTransaction: prepayTxn,
+        commissionTransaction: commissionTxn,
+        holdLedger,
+        commissionLedger,
+      });
+      if (!reconciliation.ok) {
+        return NextResponse.json({
+          error: "Pre-service payment requires financial reconciliation",
+          reconciliationRequired: true,
+          reason: reconciliation.reason,
+          jobId: currentJob.id,
+        }, { status: 409 });
+      }
       return NextResponse.json({
         ok: true,
         alreadyPaid: true,
-        job: currentJob,
-        amount: Number(currentJob.inspectionFee ?? 0) + Number(currentJob.travelFee ?? 0),
-        commission: Number(currentJob.platformCommission ?? 0),
-        net: Number(currentJob.netEarnings ?? 0),
+        job: maskFinancialFields(currentJob, ["inspectionFee", "travelFee", "platformCommission", "netEarnings"]),
+        amount: Number(currentJob.inspectionFee) + Number(currentJob.travelFee),
+        commission: Number(currentJob.platformCommission),
+        net: Number(currentJob.netEarnings),
       });
     }
     return NextResponse.json({ error: "Pre-service payment could not be recorded; retry safely" }, { status: 409 });
@@ -186,5 +233,5 @@ export async function POST(req: Request) {
     console.error("[prepay] financial commit succeeded but notification delivery failed", notificationError);
   }
 
-  return NextResponse.json({ ok: true, job: updatedJob, amount: gross, commission, net });
+  return NextResponse.json({ ok: true, job: maskJobFinancialData(updatedJob as unknown as Record<string, unknown>), amount: gross, commission, net });
 }

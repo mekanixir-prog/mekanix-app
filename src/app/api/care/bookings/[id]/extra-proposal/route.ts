@@ -3,6 +3,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 import { getTechnicianFromSession } from "@/lib/auth";
 import { validateExtraProposalInput } from "@/lib/care-extra-pricing";
 import {
@@ -167,14 +168,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       newFinding,
     });
 
-    const totalPrice = proposal.partPrice * proposal.quantity + proposal.laborPrice;
     try {
       await db.notification.create({
         data: {
           userId: booking.userId,
           type: "extra_proposal",
           title: "پیشنهاد هزینه اضافه",
-          body: `${proposal.proposedItem} — ${totalPrice} تومان`,
+          body: `${proposal.proposedItem} — پیشنهاد هزینه ثبت شد و پس از تأیید واحد مالی قابل بررسی است.`,
           category: "job",
           link: "care-detail",
         },
@@ -186,7 +186,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       );
     }
 
-    return NextResponse.json(approval);
+    return NextResponse.json(maskFinancialFields(approval, ["partPrice", "laborPrice", "totalPrice"]));
   } catch (error) {
     if (error instanceof CareExtraProposalConflictError) {
       return NextResponse.json(

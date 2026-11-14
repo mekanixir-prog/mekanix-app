@@ -3,7 +3,11 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
-import { areInvoicePriceSourcesVerified, areJobPartPriceSourcesVerified } from "@/lib/money/provenance";
+import { areJobPartPriceSourcesVerified } from "@/lib/money/provenance";
+import { calculatePrice } from "@/lib/pricing";
+import { estimateTravelDistanceKm, serviceCodeFromCategory } from "@/lib/job-invoice-pricing";
+import { maskInvoiceFinancialData } from "@/lib/money/financial-read-mask";
+import { assertAtomicInvoiceInput, type AtomicInvoiceInput } from "@/lib/job-status-atomic";
 
 const FULL_INCLUDE = {
   job: {
@@ -16,6 +20,7 @@ const FULL_INCLUDE = {
   },
   payment: true,
 } as const;
+
 
 // GET: returns invoice by jobId. Caller must be a participant in the job (BOLA).
 export async function GET(req: Request) {
@@ -31,7 +36,7 @@ export async function GET(req: Request) {
 
   const db = await getDbForLib();
   const inv = await db.invoice.findUnique({ where: { jobId }, include: FULL_INCLUDE });
-  return NextResponse.json(inv);
+  return NextResponse.json(inv ? maskInvoiceFinancialData(inv as unknown as Record<string, unknown>) : null);
 }
 
 // POST: only the assigned technician or an admin may issue an invoice.
@@ -73,29 +78,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
   }
 
-  // Production invoice totals currently depend on technician profile fees.
-  // Do not interpret legacy values as IRR until the rate card and fee units
-  // have both been independently reconciled and explicitly approved.
-  if (!areInvoicePriceSourcesVerified()) {
-    return NextResponse.json(
-      { error: "تعرفه یا واحد هزینه‌های مکانیک هنوز به‌عنوان ریال تأیید نشده است؛ صدور فاکتور پس از تطبیق مالی فعال می‌شود", code: "INVOICE_PRICE_PROVENANCE_UNVERIFIED" },
-      { status: 409 },
-    );
-  }
-
   // Idempotent retry: the job-status flow may already have created this invoice.
   const existingInvoice = await db.invoice.findUnique({
     where: { jobId },
     include: FULL_INCLUDE,
   });
-  if (existingInvoice) return NextResponse.json(existingInvoice);
+  if (existingInvoice) return NextResponse.json(maskInvoiceFinancialData(existingInvoice as unknown as Record<string, unknown>));
 
   const job = await db.job.findUnique({
     where: { id: jobId },
-    include: { parts: true, technician: true },
+    include: {
+      parts: true,
+      technician: true,
+      tracking: { orderBy: { ts: "asc" }, take: 1 },
+      request: { include: { vehicle: true } },
+    },
   });
   if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
-  if (!areJobPartPriceSourcesVerified(job.parts.length > 0)) {
+  if (!areJobPartPriceSourcesVerified(job.parts)) {
     return NextResponse.json(
       { error: "واحد قیمت قطعات قدیمی هنوز به ریال تطبیق داده نشده است؛ صدور فاکتور پس از تأیید سوابق قطعات فعال می‌شود", code: "JOB_PART_CURRENCY_UNVERIFIED" },
       { status: 409 },
@@ -104,73 +104,97 @@ export async function POST(req: Request) {
   if (job.status !== "WAITING_APPROVAL" && job.status !== "COMPLETED") {
     return NextResponse.json({ error: "فاکتور فقط پس از پایان عملیات تعمیر قابل صدور است" }, { status: 409 });
   }
-  if (!job.technician || !Array.isArray(job.parts)) {
-    return NextResponse.json({ error: "اطلاعات مکانیک یا قطعات کار کامل نیست" }, { status: 409 });
+  if (!job.technician || !Array.isArray(job.parts) || !job.request?.vehicle) {
+    return NextResponse.json({ error: "اطلاعات مکانیک، وسیله یا قطعات کار کامل نیست" }, { status: 409 });
   }
 
-  const laborHoursRaw = body.laborHours === undefined ? 1.5 : body.laborHours;
-  if (
-    typeof laborHoursRaw !== "number" ||
-    !Number.isFinite(laborHoursRaw) ||
-    laborHoursRaw <= 0 ||
-    laborHoursRaw > 24
-  ) {
-    return NextResponse.json({ error: "مدت کار باید عددی بزرگ‌تر از ۰ و حداکثر ۲۴ ساعت باشد" }, { status: 400 });
-  }
-  const laborHours = laborHoursRaw;
-  const laborRate = Number(job.technician.hourlyRate);
-  const travelFee = Number(job.technician.travelFeeBase);
   const partsTotal = job.parts.reduce((sum, part) => {
     const unitPrice = Number(part.unitPrice);
     const quantity = Number(part.quantity);
-    if (!Number.isFinite(unitPrice) || unitPrice < 0 ||
-        !Number.isSafeInteger(quantity) || quantity < 0) {
-      return Number.NaN;
-    }
-    return sum + unitPrice * quantity;
+    if (!Number.isSafeInteger(unitPrice) || unitPrice < 0 ||
+        !Number.isSafeInteger(quantity) || quantity <= 0) return Number.NaN;
+    const next = sum + unitPrice * quantity;
+    return Number.isSafeInteger(next) ? next : Number.NaN;
   }, 0);
-
-  if (!Number.isFinite(laborRate) || laborRate < 0 ||
-      !Number.isFinite(travelFee) || travelFee < 0 ||
-      !Number.isFinite(partsTotal) || partsTotal < 0) {
-    return NextResponse.json({ error: "اطلاعات قیمت‌گذاری کار نامعتبر است" }, { status: 409 });
+  if (!Number.isSafeInteger(partsTotal) || partsTotal < 0) {
+    return NextResponse.json({ error: "مبلغ قطعات باید ریال صحیح و تأییدشده باشد" }, { status: 409 });
   }
 
-  const laborTotal = laborHours * laborRate;
-  const discount = 0;
-  const subtotal = laborTotal + partsTotal + travelFee - discount;
-  const taxSetting = await db.platformSetting.findUnique({ where: { key: "tax_rate" } });
-  const taxRate = taxSetting?.value == null ? 0.09 : (taxSetting.value.trim() ? Number(taxSetting.value) : Number.NaN);
-  if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 1) {
-    return NextResponse.json({ error: "تنظیمات مالیات نامعتبر است" }, { status: 503 });
+  const serviceCode = serviceCodeFromCategory(job.request.category);
+  if (!serviceCode) {
+    return NextResponse.json({ error: "دسته خدمت در نرخ‌نامه تعریف نشده است؛ پیش از صدور فاکتور باید خدمت به کد تعرفه متصل شود", code: "SERVICE_RATE_MAPPING_REQUIRED" }, { status: 409 });
   }
-  const taxTotal = subtotal * taxRate;
-  const total = subtotal + taxTotal;
-  if (![laborTotal, subtotal, taxTotal, total].every(Number.isFinite)) {
-    return NextResponse.json({ error: "محاسبه مبلغ فاکتور نامعتبر است" }, { status: 409 });
+  // Charge extra distance only when a job-scoped route origin was recorded.
+  // Do not use the technician's latest GPS point at invoice time: it may be
+  // at the customer site and would understate the actual dispatch distance.
+  const dispatchOrigin = job.tracking[0];
+  const travelDistanceKm = dispatchOrigin
+    ? estimateTravelDistanceKm(
+        { lat: dispatchOrigin.lat, lng: dispatchOrigin.lng },
+        { lat: job.request.lat, lng: job.request.lng },
+      )
+    : 0;
+  let pricing: Awaited<ReturnType<typeof calculatePrice>>;
+  try {
+    pricing = await calculatePrice({
+      vehicleType: job.request.vehicle.type,
+      serviceCode,
+      laborHours: 1,
+      partsCost: partsTotal,
+      travelDistanceKm,
+      isEmergency: job.request.urgency === "EMERGENCY",
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "محاسبه تعرفه ممکن نیست", code: "PRICING_NOT_AVAILABLE" },
+      { status: 409 },
+    );
   }
+  const laborHours = 1;
+  const laborRate = pricing.labor;
+  const laborTotal = pricing.labor;
+  const travelFee = pricing.travel;
+  const inspectionFee = pricing.inspection;
+  const emergencyFee = pricing.emergency;
+  const subtotal = pricing.subtotal;
+  const taxRate = pricing.taxRate;
+  const taxTotal = pricing.taxTotal;
+  const discount = pricing.discount;
+  const total = pricing.total;
 
   const code = `INV-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`;
+  const invoiceData: AtomicInvoiceInput = {
+    id: crypto.randomUUID(),
+    code,
+    jobId,
+    laborHours,
+    laborRate,
+    laborTotal,
+    partsTotal,
+    travelFee,
+    inspectionFee,
+    emergencyFee,
+    subtotal,
+    taxRate,
+    taxTotal,
+    discount,
+    total,
+    currency: "IRR",
+    pricingVersion: pricing.pricingVersion,
+    financialUnitStatus: "VERIFIED_IRR",
+    status: "SENT",
+    notes: `Fixed-fee rate card ${pricing.pricingVersion}; service ${serviceCode}; estimated technician travel ${travelDistanceKm} km. Warranty terms, if applicable, are governed by the separately approved service agreement.`,
+  };
+  try {
+    assertAtomicInvoiceInput(invoiceData, jobId);
+  } catch {
+    return NextResponse.json({ error: "اجزای مالی فاکتور باید مبالغ صحیح و سازگار ریالی باشند", code: "INVOICE_IRR_COMPONENTS_INVALID" }, { status: 409 });
+  }
+
   let invoice: any;
   try {
     invoice = await db.invoice.create({
-      data: {
-        code,
-        jobId,
-        laborHours,
-        laborRate,
-        laborTotal,
-        partsTotal,
-        travelFee,
-        discount,
-        subtotal,
-        taxRate,
-        taxTotal,
-        total,
-        currency: "IRR",
-        status: "SENT",
-        notes: "Parts & labor covered by 6-month MEKANIX warranty.",
-      },
+      data: invoiceData,
       include: FULL_INCLUDE,
     });
   } catch (error) {
@@ -180,7 +204,7 @@ export async function POST(req: Request) {
       where: { jobId },
       include: FULL_INCLUDE,
     }).catch(() => null);
-    if (racedInvoice) return NextResponse.json(racedInvoice);
+    if (racedInvoice) return NextResponse.json(maskInvoiceFinancialData(racedInvoice as unknown as Record<string, unknown>));
     throw error;
   }
 
@@ -202,7 +226,7 @@ export async function POST(req: Request) {
           userId: cust.id,
           type: "invoice_issued",
           title: `Invoice ${invoice.code} issued`,
-          body: `${tech?.name ?? "Mechanic"} issued invoice for ${Number(invoice.total)}. Review and pay to complete the job.`,
+          body: `${tech?.name ?? "Mechanic"} issued an invoice. Review it to see the verified amount and payment details.`,
           category: "payment",
           link: "customer/invoice",
         },
@@ -213,7 +237,7 @@ export async function POST(req: Request) {
             userId: tech.id,
             type: "invoice_issued",
             title: `Invoice ${invoice.code} sent to customer`,
-            body: `${invoice.code} for ${Number(invoice.total)} was sent to ${cust.name} for review & payment.`,
+            body: `${invoice.code} was sent to ${cust.name} for review & payment.`,
             category: "payment",
             link: "technician/earnings",
           },
@@ -224,12 +248,12 @@ export async function POST(req: Request) {
           jobId: refreshed.id,
           fromUserId: tech?.id ?? cust.id,
           kind: "system",
-          body: `Invoice ${invoice.code} issued — total ${Number(invoice.total)} ${invoice.currency}.`,
+          body: `Invoice ${invoice.code} issued. Review the invoice for its amount and payment details.`,
         },
       });
     } catch (error) {
       console.error("[invoices] invoice notification failed:", error);
     }
   }
-  return NextResponse.json(invoice);
+  return NextResponse.json(maskInvoiceFinancialData(invoice as unknown as Record<string, unknown>));
 }

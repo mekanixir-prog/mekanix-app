@@ -52,7 +52,7 @@ describe.skipIf(!postgresConfigured)("wallet escrow release PostgreSQL transacti
     const technician = await db!.technician.create({ data: { userId: user.id } });
     technicianIds.push(technician.id);
     const wallet = await db!.wallet.create({
-      data: { technicianId: technician.id, balance: 2000, pendingBalance },
+      data: { technicianId: technician.id, balance: 2000, pendingBalance, financialUnitStatus: "VERIFIED_IRR" },
     });
     walletIds.push(wallet.id);
     const transaction = await db!.walletTransaction.create({
@@ -60,6 +60,7 @@ describe.skipIf(!postgresConfigured)("wallet escrow release PostgreSQL transacti
         walletId: wallet.id,
         kind: "PREPAY",
         status: "PENDING",
+        financialUnitStatus: "VERIFIED_IRR",
         grossAmount: netAmount,
         commissionAmount: 0,
         netAmount,
@@ -165,6 +166,30 @@ describe.skipIf(!postgresConfigured)("wallet escrow release PostgreSQL transacti
     });
     expect(Number(walletAfterEdgeCase?.balance)).toBe(2000);
     expect(Number(walletAfterEdgeCase?.pendingBalance)).toBe(100);
+    expect(await db!.walletTransaction.findUnique({
+      where: { id: fixture.transactionId },
+      select: { status: true },
+    })).toEqual({ status: "PENDING" });
+    expect(await db!.walletLedger.count({ where: { idempotencyKey: fixture.ledgerKey } })).toBe(0);
+  });
+
+  it("leaves the transaction PENDING when the starting wallet balance is negative", async () => {
+    const fixture = await makeDueTransaction("negative-wallet-balance", 1000, 1000);
+    await db!.wallet.update({
+      where: { id: fixture.walletId },
+      data: { balance: -1 },
+    });
+
+    await expect(releaseWalletTransactionWithPrisma(
+      db!, fixture.walletId, fixture.transactionId, releaseAt
+    )).rejects.toThrow("escrow release rolled back");
+
+    const walletAfter = await db!.wallet.findUnique({
+      where: { id: fixture.walletId },
+      select: { balance: true, pendingBalance: true },
+    });
+    expect(Number(walletAfter?.balance)).toBe(-1);
+    expect(Number(walletAfter?.pendingBalance)).toBe(1000);
     expect(await db!.walletTransaction.findUnique({
       where: { id: fixture.transactionId },
       select: { status: true },
