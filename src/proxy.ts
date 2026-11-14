@@ -39,8 +39,10 @@ function isSameOriginMutation(req: Request): boolean {
 }
 
 function buildContentSecurityPolicy(nonce: string, isProduction: boolean): string {
+  const allowPreviewEmbedding =
+    isProduction && process.env.MEKANIX_ALLOW_PREVIEW_EMBEDDING === "true";
   const frameAncestors = isProduction
-    ? "frame-ancestors 'self' https://*.space-z.ai"
+    ? `frame-ancestors 'self'${allowPreviewEmbedding ? " https://*.space-z.ai" : ""}`
     : "frame-ancestors 'self' https://*.space-z.ai http://localhost:* http://127.0.0.1:*";
 
   return [
