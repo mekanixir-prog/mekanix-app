@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   messageCreate: vi.fn(),
   calculatePrice: vi.fn(),
   partsVerified: vi.fn(),
+  technicianVerified: vi.fn(),
+  policyApproved: vi.fn(),
   serviceCode: vi.fn(),
   travelDistance: vi.fn(),
   transition: vi.fn(),
@@ -27,7 +29,11 @@ vi.mock("@/lib/db-access", () => ({
   })),
 }));
 vi.mock("@/lib/pricing", () => ({ calculatePrice: mocks.calculatePrice }));
-vi.mock("@/lib/money/provenance", () => ({ areJobPartPriceSourcesVerified: mocks.partsVerified }));
+vi.mock("@/lib/money/provenance", () => ({
+  areJobPartPriceSourcesVerified: mocks.partsVerified,
+  areTechnicianPriceSourcesVerified: mocks.technicianVerified,
+  isInvoicePricingPolicyApproved: mocks.policyApproved,
+}));
 vi.mock("@/lib/job-invoice-pricing", () => ({
   serviceCodeFromCategory: mocks.serviceCode,
   estimateTravelDistanceKm: mocks.travelDistance,
@@ -47,6 +53,7 @@ const beforeJob = {
   customerApproved: false,
   updatedAt: new Date("2026-11-06T10:00:00.000Z"),
   technicianId: "tech-1",
+  technician: { financialUnitStatus: "VERIFIED_IRR", hourlyRate: 200_000, travelFeeBase: 50_000, inspectionFee: 20_000, inspectionFeeHeavy: 50_000 },
   requestId: "request-1",
   code: "JOB-1",
   parts: [{ financialUnitStatus: "VERIFIED_IRR", unitPrice: 1_000_000, quantity: 1 }],
@@ -104,12 +111,35 @@ beforeEach(() => {
   mocks.messageCreate.mockResolvedValue({});
   mocks.calculatePrice.mockResolvedValue(pricing);
   mocks.partsVerified.mockReturnValue(true);
+  mocks.technicianVerified.mockReturnValue(true);
+  mocks.policyApproved.mockReturnValue(true);
   mocks.serviceCode.mockReturnValue("diagnostic");
   mocks.travelDistance.mockReturnValue(0);
   mocks.transition.mockResolvedValue(undefined);
 });
 
 describe("job status approval estimate uses the fixed rate card", () => {
+  it("fails closed when commercial pricing policy is not approved", async () => {
+    mocks.policyApproved.mockReturnValueOnce(false);
+    const response = await PATCH(request({ status: "WAITING_APPROVAL" }), {
+      params: Promise.resolve({ id: "job-1" }),
+    });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "INVOICE_PRICING_POLICY_UNAPPROVED" });
+    expect(mocks.calculatePrice).not.toHaveBeenCalled();
+    expect(mocks.transition).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the assigned technician's fee row lacks verified IRR provenance", async () => {
+    mocks.technicianVerified.mockReturnValueOnce(false);
+    const response = await PATCH(request({ status: "WAITING_APPROVAL" }), {
+      params: Promise.resolve({ id: "job-1" }),
+    });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "TECHNICIAN_FEE_PROVENANCE_UNVERIFIED" });
+    expect(mocks.calculatePrice).not.toHaveBeenCalled();
+    expect(mocks.transition).not.toHaveBeenCalled();
+  });
   it("passes each part row to the provenance gate and blocks an unverified part", async () => {
     mocks.partsVerified.mockReturnValueOnce(false);
 
