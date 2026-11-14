@@ -6,6 +6,7 @@
 # swapping happens inside a temporary build context.
 #
 # Usage:
+#   cp .env.example .env && chmod 600 .env   # replace every placeholder first
 #   bash scripts/deploy.sh
 #
 # Required env vars:
@@ -21,6 +22,21 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_DIR"
+
+# Load an optional protected production .env file. Exported shell variables
+# take precedence because the file is sourced before the caller's exports
+# only when those values are absent.
+if [ -f "$REPO_DIR/.env" ]; then
+  ENV_PERMS="$(stat -c '%a' "$REPO_DIR/.env")"
+  if [ $((8#$ENV_PERMS & 077)) -ne 0 ]; then
+    echo "❌ .env must not be group/world readable; use chmod 600"
+    exit 1
+  fi
+  set -a
+  # shellcheck disable=SC1091
+  source "$REPO_DIR/.env"
+  set +a
+fi
 
 echo "🚀 MEKANIX Production Deployment"
 echo "   Repo: $REPO_DIR"
