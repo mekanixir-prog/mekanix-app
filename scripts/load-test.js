@@ -37,6 +37,8 @@ const smokeStages = [
 ];
 
 export const options = {
+  // Include p(99) in summary-export JSON so the artifact can be validated offline.
+  summaryTrendStats: ["avg", "min", "med", "max", "p(90)", "p(95)", "p(99)"],
   stages: __ENV.K6_SMOKE === "true" ? smokeStages : fullLoadStages,
   thresholds: {
     http_req_duration: ["p(95)<500"],
@@ -74,11 +76,11 @@ export default function loadTest() {
   const otpAccepted = check(otpRes, {
     "OTP is delivered only by a configured provider or rate-limited": (r) =>
       r.status === 200 || r.status === 429 || r.status === 503,
-    "fail-closed OTP never returns a code": (r) => {
-      if (r.status !== 503) return true;
+    "OTP never returns a plaintext code": (r) => {
       try {
         const body = r.json();
-        return body.ok !== true && !("code" in body);
+        if (r.status === 503) return body.ok !== true && !("code" in body);
+        return !("code" in body);
       } catch {
         return false;
       }
