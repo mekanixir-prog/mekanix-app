@@ -33,7 +33,7 @@ These are useful automated checks. They do not prove a live staging deployment, 
 - Playwright is configured for `tests/browser` and contains four browser specs (health, home, login, navigation). The latest #137 Docker E2E workflow now installs Bun/dependencies/Chromium and invokes `bun run test:e2e` against the live isolated Docker stack; its first execution completed successfully on the tested code head.
 - Docker E2E now includes browser smoke tests after container startup, PostgreSQL checks, and the production OTP fail-closed check. The first Playwright run completed successfully on the tested code head. It still does not execute the full customer → service request → dispatch → technician → approval → invoice → warranty journey.
 
-**Gate:** add and run an isolated, repeatable HTTP/API business E2E against a real test database, including customer ownership, technician assignment, status transitions, invoice approval, and warranty. Add browser smoke tests to CI separately.
+**Gate:** add and run an isolated, repeatable HTTP/API business E2E against a real test database, including customer ownership, technician assignment, status transitions, invoice approval, and warranty. The four existing browser smoke specs are now wired into Docker E2E; they do not replace this business journey.
 
 ### Failure and resilience testing
 
@@ -47,7 +47,7 @@ These are useful automated checks. They do not prove a live staging deployment, 
 - CI runs dependency audit, repository hygiene, static security checks, and mocked BOLA/IDOR helper tests.
 - `scripts/security-audit.sh` is a static heuristic gate; its pass is not a route-by-route authorization audit.
 - `scripts/zap-scan.sh` exists, but no staging ZAP report is attached to the current candidate.
-- The Playwright browser specs are not currently part of CI.
+- Four Playwright browser smoke specs (health, home, login, navigation) now run in the Docker E2E workflow. They are not a complete authorization or business-flow security suite.
 
 **Gate:** map every owned-resource and privileged route to positive and negative authorization tests; run the ZAP baseline against isolated staging; triage all Medium findings and block on High findings.
 
