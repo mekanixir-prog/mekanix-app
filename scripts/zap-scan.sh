@@ -27,10 +27,13 @@ else
   DOCKER_ARGS+=(--add-host=host.docker.internal:host-gateway)
 fi
 DOCKER_ARGS+=(-v "$REPORT_DIR:/zap/wrk" ghcr.io/zaproxy/zaproxy:stable)
+
+# Generate the default policy outside the mounted report directory. ZAP runs
+# as an unprivileged user and cannot create /zap/wrk/gen.conf on CI bind mounts.
 docker "${DOCKER_ARGS[@]}" \
   zap-baseline.py \
   -t "$TARGET_URL" \
-  -g gen.conf \
+  -g /tmp/zap-gen.conf \
   -r "zap-report-$TIMESTAMP.html" \
   -J "zap-report-$TIMESTAMP.json" \
   -x "zap-report-$TIMESTAMP.xml" || ZAP_EXIT=$?
@@ -40,7 +43,7 @@ if [ ! -s "$JSON_REPORT" ]; then
   exit 2
 fi
 
-python3 - "$JSON_REPORT" <<'PY'
+if python3 - "$JSON_REPORT" <<'PY'
 import json
 import sys
 
@@ -77,9 +80,10 @@ if medium:
 else:
     print("\n✅ No High/Medium findings")
 PY
-
-PARSE_EXIT=$?
-if [ "$PARSE_EXIT" -ne 0 ]; then
+then
+  :
+else
+  PARSE_EXIT=$?
   exit "$PARSE_EXIT"
 fi
 
