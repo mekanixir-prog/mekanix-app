@@ -11,16 +11,24 @@ if (!jwtSecret || new TextEncoder().encode(jwtSecret).length < 32) {
 const ids = {
   customerUser: randomUUID(),
   technicianUser: randomUUID(),
+  otherCustomerUser: randomUUID(),
+  otherTechnicianUser: randomUUID(),
   customer: randomUUID(),
+  otherCustomer: randomUUID(),
   vehicle: randomUUID(),
   technician: randomUUID(),
+  otherTechnician: randomUUID(),
   specialty: randomUUID(),
   customerSession: randomUUID(),
   technicianSession: randomUUID(),
+  otherCustomerSession: randomUUID(),
+  otherTechnicianSession: randomUUID(),
 };
 const phoneSuffix = String(randomInt(1_000_000, 9_999_999));
 const customerPhone = "+98912" + phoneSuffix;
 const technicianPhone = "+98913" + phoneSuffix;
+const otherCustomerPhone = "+98914" + phoneSuffix;
+const otherTechnicianPhone = "+98915" + phoneSuffix;
 const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
 function sql(value) {
@@ -44,6 +52,8 @@ async function makeSession(userId, role, phone) {
 
 const customerSession = await makeSession(ids.customerUser, "CUSTOMER", customerPhone);
 const technicianSession = await makeSession(ids.technicianUser, "TECHNICIAN", technicianPhone);
+const otherCustomerSession = await makeSession(ids.otherCustomerUser, "CUSTOMER", otherCustomerPhone);
+const otherTechnicianSession = await makeSession(ids.otherTechnicianUser, "TECHNICIAN", otherTechnicianPhone);
 
 const rateCardValue = {
   current: {
@@ -74,17 +84,22 @@ const seedSql = [
   "BEGIN;",
   'INSERT INTO "User" ("id", "phone", "phoneVerified", "name", "role", "status") VALUES',
   "(" + [sql(ids.customerUser), sql(customerPhone), "TRUE", sql("MEKANIX HTTP E2E Customer"), sql("CUSTOMER"), sql("ACTIVE")].join(", ") + "),",
-  "(" + [sql(ids.technicianUser), sql(technicianPhone), "TRUE", sql("MEKANIX HTTP E2E Technician"), sql("TECHNICIAN"), sql("ACTIVE")].join(", ") + ");",
-  'INSERT INTO "Customer" ("id", "userId") VALUES (' + sql(ids.customer) + ", " + sql(ids.customerUser) + ");",
+  "(" + [sql(ids.technicianUser), sql(technicianPhone), "TRUE", sql("MEKANIX HTTP E2E Technician"), sql("TECHNICIAN"), sql("ACTIVE")].join(", ") + "),",
+  "(" + [sql(ids.otherCustomerUser), sql(otherCustomerPhone), "TRUE", sql("MEKANIX HTTP E2E Other Customer"), sql("CUSTOMER"), sql("ACTIVE")].join(", ") + "),",
+  "(" + [sql(ids.otherTechnicianUser), sql(otherTechnicianPhone), "TRUE", sql("MEKANIX HTTP E2E Other Technician"), sql("TECHNICIAN"), sql("ACTIVE")].join(", ") + ");",
+  'INSERT INTO "Customer" ("id", "userId") VALUES (' + sql(ids.customer) + ", " + sql(ids.customerUser) + "), (" + sql(ids.otherCustomer) + ", " + sql(ids.otherCustomerUser) + ");",
   'INSERT INTO "Vehicle" ("id", "customerId", "type", "make", "model", "year") VALUES (' +
     [sql(ids.vehicle), sql(ids.customer), sql("EXCAVATOR"), sql("Caterpillar"), sql("320D E2E"), "2024"].join(", ") + ");",
   'INSERT INTO "Technician" ("id", "userId", "financialUnitStatus", "hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy", "status", "verified", "availableNow", "responseMins") VALUES (' +
-    [sql(ids.technician), sql(ids.technicianUser), sql("VERIFIED_IRR"), "200000", "50000", "20000", "50000", sql("ONLINE"), "TRUE", "TRUE", "5"].join(", ") + ");",
+    [sql(ids.technician), sql(ids.technicianUser), sql("VERIFIED_IRR"), "200000", "50000", "20000", "50000", sql("ONLINE"), "TRUE", "TRUE", "5"].join(", ") + "), (' +
+    [sql(ids.otherTechnician), sql(ids.otherTechnicianUser), sql("VERIFIED_IRR"), "180000", "40000", "15000", "40000", sql("ONLINE"), "TRUE", "TRUE", "5"].join(", ") + ");",
   'INSERT INTO "TechnicianSpecialty" ("id", "technicianId", "category", "label") VALUES (' +
     [sql(ids.specialty), sql(ids.technician), sql("diagnostic"), sql("Heavy machinery diagnostics")].join(", ") + ");",
   'INSERT INTO "Session" ("id", "userId", "tokenHash", "expiresAt") VALUES (' +
     [sql(ids.customerSession), sql(ids.customerUser), sql(customerSession.tokenHash), sql(expiresAt)].join(", ") + "), (" +
-    [sql(ids.technicianSession), sql(ids.technicianUser), sql(technicianSession.tokenHash), sql(expiresAt)].join(", ") + ");",
+    [sql(ids.technicianSession), sql(ids.technicianUser), sql(technicianSession.tokenHash), sql(expiresAt)].join(", ") + "), (" +
+    [sql(ids.otherCustomerSession), sql(ids.otherCustomerUser), sql(otherCustomerSession.tokenHash), sql(expiresAt)].join(", ") + "), (" +
+    [sql(ids.otherTechnicianSession), sql(ids.otherTechnicianUser), sql(otherTechnicianSession.tokenHash), sql(expiresAt)].join(", ") + ");",
   'INSERT INTO "PlatformSetting" ("key", "value", "description", "updatedAt", "updatedBy") VALUES (' +
     [sql("mekanix.pricing.rate-card.v1"), sql(JSON.stringify(rateCardValue)), sql("Isolated HTTP E2E owner-approved rate-card fixture"), "NOW()", sql("MEKANIX_HTTP_E2E")].join(", ") + ");",
   "COMMIT;",
@@ -116,6 +131,8 @@ async function request(path, method, token, body, extraHeaders = {}) {
 
 const customerToken = customerSession.token;
 const technicianToken = technicianSession.token;
+const otherCustomerToken = otherCustomerSession.token;
+const otherTechnicianToken = otherTechnicianSession.token;
 const idempotencyKey = "business-http-e2e-" + randomUUID();
 
 const serviceRequest = await request(
@@ -148,6 +165,25 @@ if (!assignedJob || !assignedJob.id || assignedJob.status !== "REQUESTED") {
   throw new Error("Unexpected assignment response: " + JSON.stringify(assignedJob));
 }
 
+const foreignRequests = await request("/api/service-requests", "GET", otherCustomerToken);
+if (!Array.isArray(foreignRequests) || foreignRequests.length !== 0) {
+  throw new Error("BOLA: a different customer could see another customer's service requests");
+}
+const foreignWallet = await fetch(baseUrl + "/api/wallets", {
+  headers: { Authorization: "Bearer " + customerToken },
+});
+if (foreignWallet.status !== 403) {
+  throw new Error("BOLA: customer access to technician wallet should be denied, got " + foreignWallet.status);
+}
+const foreignTechStatus = await fetch(baseUrl + "/api/jobs/" + assignedJob.id + "/status", {
+  method: "PATCH",
+  headers: { Authorization: "Bearer " + otherTechnicianToken, "Content-Type": "application/json" },
+  body: JSON.stringify({ status: "ACCEPTED" }),
+});
+if (foreignTechStatus.status !== 403) {
+  throw new Error("BOLA: an unassigned technician changed another technician's job, got " + foreignTechStatus.status);
+}
+
 async function transition(status) {
   const result = await request(
     "/api/jobs/" + assignedJob.id + "/status",
@@ -171,6 +207,14 @@ if (!invoiceId || waitingApproval.invoice.currency !== "IRR" ||
   throw new Error("A verified IRR invoice was not atomically created: " + JSON.stringify(waitingApproval.invoice));
 }
 
+const foreignApproval = await fetch(baseUrl + "/api/invoices/" + invoiceId, {
+  method: "PATCH",
+  headers: { Authorization: "Bearer " + otherCustomerToken, "Content-Type": "application/json" },
+  body: JSON.stringify({ customerApproved: true }),
+});
+if (foreignApproval.status !== 403) {
+  throw new Error("BOLA: a different customer approved another customer's invoice, got " + foreignApproval.status);
+}
 const approved = await request(
   "/api/invoices/" + invoiceId,
   "PATCH",
