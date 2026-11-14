@@ -3,9 +3,11 @@
 # Deploys to staging environment (port 3001, separate DB)
 #
 # Required env vars (NO fallbacks — must be set explicitly):
-#   DB_PASSWORD     — PostgreSQL password
-#   JWT_SECRET      — JWT signing secret
-#   REDIS_PASSWORD  — Redis password
+#   DB_PASSWORD       — PostgreSQL password
+#   REDIS_PASSWORD    — Redis password
+#   JWT_SECRET        — user-session JWT signing secret (>=32 bytes)
+#   ADMIN_JWT_SECRET  — dedicated admin JWT signing secret (>=32 bytes)
+#   OTP_HASH_SECRET   — OTP verifier HMAC secret (>=32 bytes)
 #
 # Usage: bash scripts/deploy-staging.sh
 
@@ -33,8 +35,14 @@ fi
 
 # ─── Validate required env vars (NO defaults) ───
 : "${DB_PASSWORD:?DB_PASSWORD is required for staging}"
-: "${JWT_SECRET:?JWT_SECRET is required for staging}"
 : "${REDIS_PASSWORD:?REDIS_PASSWORD is required for staging}"
+: "${JWT_SECRET:?JWT_SECRET is required for staging}"
+: "${ADMIN_JWT_SECRET:?ADMIN_JWT_SECRET is required for staging}"
+: "${OTP_HASH_SECRET:?OTP_HASH_SECRET is required for staging}"
+if [ "${#JWT_SECRET}" -lt 32 ] || [ "${#ADMIN_JWT_SECRET}" -lt 32 ] || [ "${#OTP_HASH_SECRET}" -lt 32 ]; then
+  echo "❌ JWT_SECRET, ADMIN_JWT_SECRET and OTP_HASH_SECRET must each contain at least 32 bytes"
+  exit 1
+fi
 
 PROJECT_NAME="${COMPOSE_PROJECT_NAME:-mekanix-staging}"
 
@@ -66,7 +74,14 @@ docker compose -p "$PROJECT_NAME" -f docker-compose.staging.yml up -d --build
 echo "⏳ Waiting for staging to be healthy..."
 for i in $(seq 1 90); do
   if curl -s http://localhost:3001/api/health | grep -q '"ok":true'; then
-    echo "✅ Staging is healthy!"
+    echo "✅ Staging health checks passed."
+    READY_JSON="$(curl -s http://localhost:3001/api/ready 2>/dev/null || echo '{}')"
+    if echo "$READY_JSON" | grep -q '"ok":true'; then
+      echo "✅ Staging also satisfies production readiness gates."
+    else
+      echo "ℹ️  Staging is healthy but intentionally not production-ready while non-live providers/owner approvals are configured."
+      echo "$READY_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print('\\n'.join(d.get('errors', [])))" 2>/dev/null || true
+    fi
     echo ""
     echo "   URL:    http://localhost:3001"
     echo "   Health: http://localhost:3001/api/health"
