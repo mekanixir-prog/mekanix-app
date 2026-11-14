@@ -98,3 +98,27 @@ describe("GET /api/wallets — atomic escrow release orchestration", () => {
     await expect(GET(makeRequest())).rejects.toThrow("atomic batch failed");
   });
 });
+
+describe("GET /api/wallets — unverified escrow protection", () => {
+  it("does not release a pending transaction whose own IRR provenance is unverified", async () => {
+    mockWalletFindUnique
+      .mockResolvedValueOnce(wallet([
+        { id: "txn-unverified", status: "PENDING", financialUnitStatus: "UNVERIFIED", netAmount: 1000, holdUntil: new Date(Date.now() - 60_000) },
+      ]))
+      .mockResolvedValueOnce(wallet());
+    const response = await GET(makeRequest());
+    expect(response.status).toBe(200);
+    expect(mockReleaseWalletTransaction).not.toHaveBeenCalled();
+  });
+
+  it("does not release transactions from a wallet without verified IRR provenance", async () => {
+    mockWalletFindUnique
+      .mockResolvedValueOnce({ ...wallet([
+        { id: "txn-due", status: "PENDING", financialUnitStatus: "VERIFIED_IRR", netAmount: 1000, holdUntil: new Date(Date.now() - 60_000) },
+      ]), financialUnitStatus: "UNVERIFIED" })
+      .mockResolvedValueOnce(wallet());
+    const response = await GET(makeRequest());
+    expect(response.status).toBe(200);
+    expect(mockReleaseWalletTransaction).not.toHaveBeenCalled();
+  });
+});
