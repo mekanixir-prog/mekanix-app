@@ -211,6 +211,23 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects zero or negative payment amounts even when gateway metadata matches", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockPaymentFindUnique.mockResolvedValue({
+      id: "pay-1", userId: "user-1", status: "SUCCEEDED",
+      financialUnitStatus: "VERIFIED_IRR", amount: -100_000,
+      currency: "IRR", gatewayLogId: "gateway-1",
+    });
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "gateway-1", userId: "user-1", status: "VERIFIED",
+      financialUnitStatus: "VERIFIED_IRR", purpose: "vip",
+      paymentId: "pay-1", amount: -100_000, currency: "IRR",
+    });
+    const response = await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }));
+    expect(response.status).toBe(400);
+    expect(mockCreateVipSubscriptionAtomically).not.toHaveBeenCalled();
+  });
+
   it("rejects an overpayment instead of applying it to a cheaper VIP plan", async () => {
     vi.stubEnv("NODE_ENV", "test");
     mockPaymentFindUnique.mockResolvedValue({
