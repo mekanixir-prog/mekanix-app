@@ -3,10 +3,10 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
-import { areJobPartPriceSourcesVerified } from "@/lib/money/provenance";
+import { areJobPartPriceSourcesVerified, areTechnicianPriceSourcesVerified, isInvoicePricingPolicyApproved } from "@/lib/money/provenance";
 import { calculatePrice } from "@/lib/pricing";
 import { estimateTravelDistanceKm, serviceCodeFromCategory } from "@/lib/job-invoice-pricing";
-import { maskInvoiceFinancialData } from "@/lib/money/financial-read-mask";
+import { maskInvoiceMoney } from "@/lib/money/read-provenance";
 import { assertAtomicInvoiceInput, type AtomicInvoiceInput } from "@/lib/job-status-atomic";
 
 const FULL_INCLUDE = {
@@ -36,7 +36,7 @@ export async function GET(req: Request) {
 
   const db = await getDbForLib();
   const inv = await db.invoice.findUnique({ where: { jobId }, include: FULL_INCLUDE });
-  return NextResponse.json(inv ? maskInvoiceFinancialData(inv as unknown as Record<string, unknown>) : null);
+  return NextResponse.json(inv ? maskInvoiceMoney(inv) : null);
 }
 
 // POST: only the assigned technician or an admin may issue an invoice.
@@ -64,6 +64,12 @@ export async function POST(req: Request) {
   if (access) return access;
 
   const db = await getDbForLib();
+  if (!isInvoicePricingPolicyApproved()) {
+    return NextResponse.json(
+      { error: "سیاست نرخ‌گذاری ریالی هنوز تأیید نشده است؛ صدور فاکتور مسدود است", code: "INVOICE_PRICING_POLICY_UNAPPROVED" },
+      { status: 409 },
+    );
+  }
   if (session.role === "TECHNICIAN") {
     const tech = await getTechnicianFromSession(session);
     const job = await db.job.findUnique({ where: { id: jobId }, select: { technicianId: true } });
@@ -83,7 +89,7 @@ export async function POST(req: Request) {
     where: { jobId },
     include: FULL_INCLUDE,
   });
-  if (existingInvoice) return NextResponse.json(maskInvoiceFinancialData(existingInvoice as unknown as Record<string, unknown>));
+  if (existingInvoice) return NextResponse.json(maskInvoiceMoney(existingInvoice));
 
   const job = await db.job.findUnique({
     where: { id: jobId },
@@ -106,6 +112,13 @@ export async function POST(req: Request) {
   }
   if (!job.technician || !Array.isArray(job.parts) || !job.request?.vehicle) {
     return NextResponse.json({ error: "اطلاعات مکانیک، وسیله یا قطعات کار کامل نیست" }, { status: 409 });
+  }
+
+  if (!areTechnicianPriceSourcesVerified(job.technician)) {
+    return NextResponse.json(
+      { error: "منشأ و واحد ریال هزینه‌های مکانیک تأیید نشده است؛ صدور فاکتور مسدود است", code: "TECHNICIAN_FEE_PROVENANCE_UNVERIFIED" },
+      { status: 409 },
+    );
   }
 
   const partsTotal = job.parts.reduce((sum, part) => {
@@ -204,7 +217,7 @@ export async function POST(req: Request) {
       where: { jobId },
       include: FULL_INCLUDE,
     }).catch(() => null);
-    if (racedInvoice) return NextResponse.json(maskInvoiceFinancialData(racedInvoice as unknown as Record<string, unknown>));
+    if (racedInvoice) return NextResponse.json(maskInvoiceMoney(racedInvoice));
     throw error;
   }
 
@@ -255,5 +268,5 @@ export async function POST(req: Request) {
       console.error("[invoices] invoice notification failed:", error);
     }
   }
-  return NextResponse.json(maskInvoiceFinancialData(invoice as unknown as Record<string, unknown>));
+  return NextResponse.json(maskInvoiceMoney(invoice));
 }
