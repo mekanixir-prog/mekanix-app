@@ -83,7 +83,7 @@ describe("security response headers", () => {
     expect(csp).toContain("base-uri 'self'");
     expect(csp).toContain("form-action 'self'");
     expect(csp).toContain("wss://mekanix.ir");
-    expect(csp).not.toMatch(/connect-src[^;]*\\bwss:\\s*(?:;|$)/);
+    expect(csp).not.toMatch(/connect-src[^;]*\bwss:\\s*(?:;|$)/);
     expect(response.headers.get("Strict-Transport-Security"))
       .toContain("max-age=31536000");
   });
