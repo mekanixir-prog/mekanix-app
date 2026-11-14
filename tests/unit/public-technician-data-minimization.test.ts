@@ -89,6 +89,7 @@ describe("public technician data minimization", () => {
 
     const query = mocks.findMany.mock.calls[0][0];
     expect(query.select.jobsAssigned).toBeUndefined();
+    expect(query.select.reviews).toBeUndefined();
     expect(query.select.lat).toBe(true);
     expect(query.select.lng).toBe(true);
     expect(query.select.serviceAreas.select.lat).toBeUndefined();
@@ -105,6 +106,7 @@ describe("public technician data minimization", () => {
 
     const query = mocks.findUnique.mock.calls[0][0];
     expect(query.select.jobsAssigned).toBeUndefined();
+    expect(query.select.reviews).toBeDefined();
     expect(query.select.lat).toBeUndefined();
     expect(query.select.lng).toBeUndefined();
   });
