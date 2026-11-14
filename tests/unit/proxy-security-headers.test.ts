@@ -77,12 +77,13 @@ describe("security response headers", () => {
     expect(csp).toContain("https://a.tile.openstreetmap.org");
     expect(csp).toContain("https://i.pravatar.cc");
     expect(csp).toContain("https://nominatim.openstreetmap.org");
-    expect(csp).not.toMatch(/(?:img-src|connect-src)[^;]*\\shttps:\\s*(?:;|$)/);
-    expect(csp).not.toMatch(/(?:img-src|connect-src)[^;]*\\shttp:\\s*(?:;|$)/);
+    expect(csp).not.toMatch(/(?:img-src|connect-src)[^;]*\shttps:\s*(?:;|$)/);
+    expect(csp).not.toMatch(/(?:img-src|connect-src)[^;]*\shttp:\s*(?:;|$)/);
     expect(csp).toContain("object-src 'none'");
     expect(csp).toContain("base-uri 'self'");
     expect(csp).toContain("form-action 'self'");
-    expect(csp).not.toContain("connect-src 'self' ws:");
+    expect(csp).toContain("wss://mekanix.ir");
+    expect(csp).not.toMatch(/connect-src[^;]*\\bwss:\\s*(?:;|$)/);
     expect(response.headers.get("Strict-Transport-Security"))
       .toContain("max-age=31536000");
   });
@@ -108,8 +109,9 @@ describe("security response headers", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("MEKANIX_ALLOW_PREVIEW_EMBEDDING", "true");
     const response = proxy(new NextRequest("https://mekanix.ir/"));
-    expect(response.headers.get("Content-Security-Policy"))
-      .toContain("frame-ancestors 'self' https://*.space-z.ai");
+    const csp = response.headers.get("Content-Security-Policy") ?? "";
+    expect(csp).toContain("frame-ancestors 'self' https://*.space-z.ai");
+    expect(csp).toContain("wss://*.space-z.ai");
   });
 
   it("keeps local preview development usable without allowing arbitrary production framing", () => {
