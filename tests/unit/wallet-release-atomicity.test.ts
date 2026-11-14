@@ -11,12 +11,22 @@ describe("wallet escrow release atomicity", () => {
     const netAmount = 1250;
     const tx = {
       walletTransaction: {
-        findFirst: vi.fn().mockResolvedValue({ netAmount, financialUnitStatus: "VERIFIED_IRR" }),
+        findFirst: vi.fn().mockResolvedValue({ netAmount }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       wallet: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-        findUnique: vi.fn().mockResolvedValue({ balance: new Prisma.Decimal(3250), pendingBalance: new Prisma.Decimal(0), financialUnitStatus: "VERIFIED_IRR" }),
+        findUnique: vi.fn()
+          .mockResolvedValueOnce({
+            financialUnitStatus: "VERIFIED_IRR",
+            balance: new Prisma.Decimal(2000),
+            pendingBalance: new Prisma.Decimal(1250),
+          })
+          .mockResolvedValueOnce({
+            financialUnitStatus: "VERIFIED_IRR",
+            balance: new Prisma.Decimal(3250),
+            pendingBalance: new Prisma.Decimal(0),
+          }),
       },
       walletLedger: { create: vi.fn().mockResolvedValue({ id: "ledger-1" }) },
     };
@@ -27,14 +37,19 @@ describe("wallet escrow release atomicity", () => {
     await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-1", new Date())).resolves.toBe(true);
     expect(db.$transaction).toHaveBeenCalledTimes(1);
     expect(tx.walletTransaction.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ netAmount: { gte: 0 } }),
+      where: expect.objectContaining({ netAmount: { gt: 0 }, financialUnitStatus: "VERIFIED_IRR" }),
     }));
     expect(tx.walletTransaction.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ netAmount: { gte: 0 } }),
+      where: expect.objectContaining({ netAmount, financialUnitStatus: "VERIFIED_IRR" }),
     }));
     expect(tx.walletTransaction.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.wallet.updateMany).toHaveBeenCalledWith({
-      where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR", balance: { gte: 0 }, pendingBalance: { gte: netAmount } },
+      where: {
+        id: "wallet-1",
+        financialUnitStatus: "VERIFIED_IRR",
+        balance: new Prisma.Decimal(2000),
+        pendingBalance: new Prisma.Decimal(1250),
+      },
       data: {
         pendingBalance: { decrement: netAmount },
         balance: { increment: netAmount },
@@ -44,6 +59,7 @@ describe("wallet escrow release atomicity", () => {
     const ledgerData = tx.walletLedger.create.mock.calls[0][0].data;
     expect(ledgerData).toMatchObject({
       walletId: "wallet-1",
+      financialUnitStatus: "VERIFIED_IRR",
       type: "RELEASE",
       referenceType: "WalletTransaction",
       referenceId: "txn-1",
@@ -54,36 +70,105 @@ describe("wallet escrow release atomicity", () => {
     expect(Number(ledgerData.balanceAfter)).toBe(3250);
   });
 
-  it("does not touch the wallet or ledger when another request already transitioned the transaction", async () => {
+  it("rejects fractional or unsafe escrow source amounts before any state mutation", async () => {
+    for (const netAmount of [new Prisma.Decimal("100.5"), new Prisma.Decimal("9007199254740992"), new Prisma.Decimal(0)]) {
+      const tx = {
+        walletTransaction: { findFirst: vi.fn().mockResolvedValue({ netAmount }), updateMany: vi.fn() },
+        wallet: { findUnique: vi.fn(), updateMany: vi.fn() },
+        walletLedger: { create: vi.fn() },
+      };
+      const db = { $transaction: vi.fn(async (callback: (tx: any) => Promise<boolean>) => callback(tx)) } as any;
+      await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-invalid", new Date())).resolves.toBe(false);
+      expect(tx.walletTransaction.updateMany).not.toHaveBeenCalled();
+      expect(tx.wallet.updateMany).not.toHaveBeenCalled();
+      expect(tx.walletLedger.create).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rejects fractional, negative, or overflowing wallet aggregates before transition", async () => {
+    for (const wallet of [
+      { financialUnitStatus: "VERIFIED_IRR", balance: new Prisma.Decimal("10.5"), pendingBalance: new Prisma.Decimal(100) },
+      { financialUnitStatus: "VERIFIED_IRR", balance: new Prisma.Decimal(2000), pendingBalance: new Prisma.Decimal("100.5") },
+      { financialUnitStatus: "VERIFIED_IRR", balance: new Prisma.Decimal(Number.MAX_SAFE_INTEGER), pendingBalance: new Prisma.Decimal(100) },
+      { financialUnitStatus: "VERIFIED_IRR", balance: new Prisma.Decimal(-1), pendingBalance: new Prisma.Decimal(100) },
+      { financialUnitStatus: "UNVERIFIED", balance: new Prisma.Decimal(2000), pendingBalance: new Prisma.Decimal(100) },
+    ]) {
+      const tx = {
+        walletTransaction: { findFirst: vi.fn().mockResolvedValue({ netAmount: new Prisma.Decimal(1) }), updateMany: vi.fn() },
+        wallet: { findUnique: vi.fn().mockResolvedValue(wallet), updateMany: vi.fn() },
+        walletLedger: { create: vi.fn() },
+      };
+      const db = { $transaction: vi.fn(async (callback: (tx: any) => Promise<boolean>) => callback(tx)) } as any;
+      await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-invalid-wallet", new Date())).resolves.toBe(false);
+      expect(tx.walletTransaction.updateMany).not.toHaveBeenCalled();
+      expect(tx.wallet.updateMany).not.toHaveBeenCalled();
+      expect(tx.walletLedger.create).not.toHaveBeenCalled();
+    }
+  });
+
+  it("does not mutate wallet state when the transaction lacks verified IRR provenance", async () => {
     const tx = {
-      walletTransaction: {
-        findFirst: vi.fn().mockResolvedValue({ netAmount: 1250, financialUnitStatus: "VERIFIED_IRR" }),
-        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
-      },
+      walletTransaction: { findFirst: vi.fn().mockResolvedValue(null), updateMany: vi.fn() },
       wallet: { updateMany: vi.fn(), findUnique: vi.fn() },
       walletLedger: { create: vi.fn() },
     };
     const db = { $transaction: vi.fn(async (callback: (tx: any) => Promise<boolean>) => callback(tx)) } as any;
 
-    await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-1", new Date())).resolves.toBe(false);
+    await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-unverified", new Date())).resolves.toBe(false);
+    expect(tx.walletTransaction.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ financialUnitStatus: "VERIFIED_IRR" }),
+    }));
+    expect(tx.walletTransaction.updateMany).not.toHaveBeenCalled();
     expect(tx.wallet.updateMany).not.toHaveBeenCalled();
     expect(tx.walletLedger.create).not.toHaveBeenCalled();
   });
 
-  it("throws inside the Prisma transaction when pending balance cannot cover the release", async () => {
+  it("does not touch the wallet or ledger when another request already transitioned the transaction", async () => {
     const tx = {
       walletTransaction: {
-        findFirst: vi.fn().mockResolvedValue({ netAmount: 1250, financialUnitStatus: "VERIFIED_IRR" }),
-        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findFirst: vi.fn().mockResolvedValue({ netAmount: 1250 }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
-      wallet: { updateMany: vi.fn().mockResolvedValue({ count: 0 }), findUnique: vi.fn() },
+      wallet: {
+        findUnique: vi.fn().mockResolvedValue({
+          financialUnitStatus: "VERIFIED_IRR",
+          balance: new Prisma.Decimal(2000),
+          pendingBalance: new Prisma.Decimal(1250),
+        }),
+        updateMany: vi.fn(),
+      },
       walletLedger: { create: vi.fn() },
     };
     const db = { $transaction: vi.fn(async (callback: (tx: any) => Promise<boolean>) => callback(tx)) } as any;
 
-    await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-1", new Date()))
-      .rejects.toThrow("escrow release rolled back");
+    await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-1", new Date())).resolves.toBe(false);
+    expect(tx.walletTransaction.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.wallet.updateMany).not.toHaveBeenCalled();
+    expect(tx.walletLedger.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects an insufficient pending balance before transitioning the transaction", async () => {
+    const tx = {
+      walletTransaction: {
+        findFirst: vi.fn().mockResolvedValue({ netAmount: 1250 }),
+        updateMany: vi.fn(),
+      },
+      wallet: {
+        findUnique: vi.fn().mockResolvedValue({
+          financialUnitStatus: "VERIFIED_IRR",
+          balance: new Prisma.Decimal(2000),
+          pendingBalance: new Prisma.Decimal(200),
+        }),
+        updateMany: vi.fn(),
+      },
+      walletLedger: { create: vi.fn() },
+    };
+    const db = { $transaction: vi.fn(async (callback: (tx: any) => Promise<boolean>) => callback(tx)) } as any;
+
+    await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-1", new Date())).resolves.toBe(false);
     expect(db.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.walletTransaction.updateMany).not.toHaveBeenCalled();
+    expect(tx.wallet.updateMany).not.toHaveBeenCalled();
     expect(tx.walletLedger.create).not.toHaveBeenCalled();
   });
 
@@ -114,6 +199,12 @@ describe("wallet escrow release atomicity", () => {
     expect(statements[0].sql).toContain("'RELEASE'");
     expect(statements[0].sql).toContain('"balanceBefore"');
     expect(statements[0].sql).toContain('"balanceAfter"');
+    expect(statements[0].sql).toContain('"financialUnitStatus"');
+    expect(statements[0].sql).toContain("VERIFIED_IRR");
+    expect(statements[0].sql).toContain('wt."netAmount" = CAST(wt."netAmount" AS INTEGER)');
+    expect(statements[0].sql).toContain('abs(wt."netAmount") <= 9007199254740991');
+    expect(statements[0].sql).toContain('w."balance" = CAST(w."balance" AS INTEGER)');
+    expect(statements[0].sql).toContain('w."pendingBalance" = CAST(w."pendingBalance" AS INTEGER)');
     expect(statements[1].sql).toContain('"pendingBalance"');
     expect(statements[1].sql).toContain('"balanceBefore" = w."balance"');
     expect(statements[2].sql).toContain('"status" = \'PENDING\'');
@@ -148,25 +239,4 @@ describe("wallet escrow release atomicity", () => {
     await expect(releaseWalletTransactionWithD1(d1 as any, "wallet-1", "txn-1", new Date()))
       .rejects.toThrow("unique RELEASE ledger key conflict");
   });
-
-  it("does not release a transaction without verified IRR provenance", async () => {
-    const tx = {
-      walletTransaction: {
-        findFirst: vi.fn().mockResolvedValue(null),
-        updateMany: vi.fn(),
-      },
-      wallet: { updateMany: vi.fn(), findUnique: vi.fn() },
-      walletLedger: { create: vi.fn() },
-    };
-    const db = { $transaction: vi.fn(async (callback: (tx: any) => Promise<boolean>) => callback(tx)) } as any;
-
-    await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-unverified", new Date())).resolves.toBe(false);
-    expect(tx.walletTransaction.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ financialUnitStatus: "VERIFIED_IRR" }),
-    }));
-    expect(tx.walletTransaction.updateMany).not.toHaveBeenCalled();
-    expect(tx.wallet.updateMany).not.toHaveBeenCalled();
-    expect(tx.walletLedger.create).not.toHaveBeenCalled();
-  });
-
 });
