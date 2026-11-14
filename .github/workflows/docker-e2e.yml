@@ -174,6 +174,20 @@ jobs:
           test -s k6-reports/k6-summary.json
           python3 scripts/validate-k6-summary.py k6-reports/k6-summary.json
 
+      - name: Run full 10/50/100 VU load profile for release candidate
+        if: github.event_name == 'pull_request' && github.event.pull_request.number == 191
+        run: |
+          mkdir -p k6-reports
+          docker run --rm --network host --user 0:0 \
+            -e BASE_URL=http://127.0.0.1:3000 \
+            -v "$PWD/k6-reports:/out" \
+            -v "$PWD/scripts/load-test.js:/work/load-test.js:ro" \
+            -w /work grafana/k6:latest run \
+            --summary-export=/out/k6-full-load-summary.json \
+            load-test.js
+          test -s k6-reports/k6-full-load-summary.json
+          python3 scripts/validate-k6-summary.py k6-reports/k6-full-load-summary.json
+
       - name: Run OWASP ZAP baseline against isolated Docker stack
         if: always()
         run: |
