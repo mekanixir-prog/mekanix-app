@@ -20,26 +20,26 @@ INSERT INTO "Technician" ("id", "userId", "createdAt", "updatedAt")
 VALUES ('wallet-release-staging-tech', 'wallet-release-staging-user', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 
 INSERT INTO "Wallet"
-  ("id", "technicianId", "balance", "pendingBalance", "totalEarned", "totalCommission",
-   "totalWithdrawn", "financialUnitStatus", "createdAt", "updatedAt")
+  ("id", "technicianId", "financialUnitStatus", "balance", "pendingBalance", "totalEarned", "totalCommission",
+   "totalWithdrawn", "createdAt", "updatedAt")
 VALUES
-  ('wallet-release-staging-wallet', 'wallet-release-staging-tech', 0, 10000, 10000, 0,
-   0, 'VERIFIED_IRR', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+  ('wallet-release-staging-wallet', 'wallet-release-staging-tech', 'VERIFIED_IRR', 0, 10000, 10000, 0,
+   0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 
 INSERT INTO "WalletTransaction"
-  ("id", "walletId", "kind", "status", "grossAmount", "commissionAmount", "netAmount",
-   "financialUnitStatus", "holdUntil", "description", "idempotencyKey", "createdAt")
+  ("id", "walletId", "financialUnitStatus", "kind", "status", "grossAmount", "commissionAmount", "netAmount",
+   "holdUntil", "description", "idempotencyKey", "createdAt")
 VALUES
-  ('wallet-release-staging-txn', 'wallet-release-staging-wallet', 'PREPAY', 'PENDING',
-   10000, 0, 10000, 'VERIFIED_IRR', strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-2 hours'),
+  ('wallet-release-staging-txn', 'wallet-release-staging-wallet', 'VERIFIED_IRR', 'PREPAY', 'PENDING',
+   10000, 0, 10000, strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-2 hours'),
    'Synthetic staging-only escrow release fixture',
    'wallet-release-staging:wallet-release-staging-txn', CURRENT_TIMESTAMP);
 
 INSERT INTO "WalletLedger"
-  ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
-   "referenceType", "referenceId", "description", "idempotencyKey", "financialUnitStatus", "createdAt")
+  ("id", "walletId", "financialUnitStatus", "type", "amount", "balanceBefore", "balanceAfter",
+   "referenceType", "referenceId", "description", "idempotencyKey", "createdAt")
 VALUES
-  ('wallet-release-staging-hold-ledger', 'wallet-release-staging-wallet', 'HOLD',
+  ('wallet-release-staging-hold-ledger', 'wallet-release-staging-wallet', 'VERIFIED_IRR', 'HOLD',
    10000, 0, 10000, 'WalletTransaction', 'wallet-release-staging-txn',
    'Synthetic staging-only escrow hold',
-   'wallet-release-staging:wallet-release-staging-txn:HOLD', 'VERIFIED_IRR', CURRENT_TIMESTAMP);
+   'wallet-release-staging:wallet-release-staging-txn:HOLD', CURRENT_TIMESTAMP);
