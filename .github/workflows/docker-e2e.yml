@@ -52,7 +52,8 @@ jobs:
       
       - name: Validate staging compose and operational shell scripts
         run: |
-          bash -n scripts/lib/pg-service.sh scripts/backup-db.sh scripts/restore-db.sh scripts/test-backup-restore.sh scripts/deploy-staging.sh scripts/zap-scan.sh
+          bash -n scripts/lib/pg-service.sh scripts/backup-db.sh scripts/restore-db.sh scripts/test-backup-restore.sh scripts/deploy-staging.sh scripts/zap-scan.sh tests/scripts/zap-scan.test.sh
+          bash tests/scripts/zap-scan.test.sh
           DB_PASSWORD=test_password JWT_SECRET=test_jwt_secret REDIS_PASSWORD=test_redis_password \
             docker compose -f docker-compose.staging.yml config --quiet
           echo "✅ Staging Compose and operational shell scripts are syntactically valid"
@@ -171,6 +172,7 @@ jobs:
             --summary-export=/out/k6-summary.json \
             load-test.js
           test -s k6-reports/k6-summary.json
+          python3 scripts/validate-k6-summary.py k6-reports/k6-summary.json
 
       - name: Run OWASP ZAP baseline against isolated Docker stack
         if: always()
