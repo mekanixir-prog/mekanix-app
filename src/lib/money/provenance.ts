@@ -52,8 +52,28 @@ export function toSafeIntegerIrr(value: unknown, allowNegative = false): number 
     return null;
   }
 
-  const integerPattern = allowNegative ? /^-?\d+(?:\\.0+)?$/ : /^\\+?\d+(?:\\.0+)?$/;
+  const integerPattern = allowNegative ? /^-?\d+(?:\.0+)?$/ : /^\\+?\d+(?:\.0+)?$/;
   if (!integerPattern.test(raw)) return null;
   const parsed = Number(raw);
   return Number.isSafeInteger(parsed) && (allowNegative || parsed >= 0) ? parsed : null;
+}
+
+
+/** Commercial pricing policy is a release gate, not row-level provenance. */
+export function isInvoicePricingPolicyApproved(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return env.NODE_ENV !== "production" || env.MEKANIX_PRICING_IRR_APPROVED === "true";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Technician fee sources must carry their own verified IRR attestation. */
+export function areTechnicianPriceSourcesVerified(technician: unknown): boolean {
+  if (!isRecord(technician) || technician.financialUnitStatus !== "VERIFIED_IRR") return false;
+  return ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"].every(
+    (field) => toSafeIntegerIrr(technician[field]) !== null,
+  );
 }
