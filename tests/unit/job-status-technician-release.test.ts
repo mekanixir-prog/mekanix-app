@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   taxFind: vi.fn(),
   calculatePrice: vi.fn(),
   partsVerified: vi.fn(),
+  technicianVerified: vi.fn(),
+  policyApproved: vi.fn(),
   serviceCode: vi.fn(),
   travelDistance: vi.fn(),
 }));
@@ -31,7 +33,11 @@ vi.mock("@/lib/db-access", () => ({
   }),
 }));
 vi.mock("@/lib/pricing", () => ({ calculatePrice: mocks.calculatePrice }));
-vi.mock("@/lib/money/provenance", () => ({ areJobPartPriceSourcesVerified: mocks.partsVerified }));
+vi.mock("@/lib/money/provenance", () => ({
+  areJobPartPriceSourcesVerified: mocks.partsVerified,
+  areTechnicianPriceSourcesVerified: mocks.technicianVerified,
+  isInvoicePricingPolicyApproved: mocks.policyApproved,
+}));
 vi.mock("@/lib/job-invoice-pricing", () => ({
   serviceCodeFromCategory: mocks.serviceCode,
   estimateTravelDistanceKm: mocks.travelDistance,
@@ -87,6 +93,8 @@ beforeEach(() => {
     breakdown: { extraDistanceBillingEnabled: false, billableExtraKm: 0 },
   });
   mocks.partsVerified.mockReturnValue(true);
+  mocks.technicianVerified.mockReturnValue(true);
+  mocks.policyApproved.mockReturnValue(true);
   mocks.serviceCode.mockReturnValue("diagnostic");
   mocks.travelDistance.mockReturnValue(0);
 });
@@ -127,6 +135,11 @@ describe("job status route delegates atomic state changes", () => {
       requestId: "request-1",
       technician: {
         id: "tech-1",
+        financialUnitStatus: "VERIFIED_IRR",
+        hourlyRate: 200_000,
+        travelFeeBase: 50_000,
+        inspectionFee: 20_000,
+        inspectionFeeHeavy: 50_000,
         user: { id: "technician-user", name: "Technician" },
       },
       parts: [{ unitPrice: 1_000_000, quantity: 2 }],
@@ -182,6 +195,11 @@ describe("job status route delegates atomic state changes", () => {
       requestId: "request-1",
       technician: {
         id: "tech-1",
+        financialUnitStatus: "VERIFIED_IRR",
+        hourlyRate: 200_000,
+        travelFeeBase: 50_000,
+        inspectionFee: 20_000,
+        inspectionFeeHeavy: 50_000,
         user: { id: "technician-user", name: "Technician" },
       },
       parts: [{ unitPrice: 1_000_000, quantity: 2 }],
