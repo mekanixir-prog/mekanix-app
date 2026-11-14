@@ -37,6 +37,8 @@ const smokeStages = [
 ];
 
 export const options = {
+  // Include p(99) in summary-export JSON so the artifact can be validated offline.
+  summaryTrendStats: ["avg", "min", "med", "max", "p(90)", "p(95)", "p(99)"],
   stages: __ENV.K6_SMOKE === "true" ? smokeStages : fullLoadStages,
   thresholds: {
     http_req_duration: ["p(95)<500"],
