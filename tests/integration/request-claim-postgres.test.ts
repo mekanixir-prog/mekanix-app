@@ -15,6 +15,7 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
   let userId: string;
   let customerId: string;
   let policyId: string;
+  let vehicleId: string;
 
   beforeAll(async () => {
     vi.stubEnv("NODE_ENV", "test");
@@ -29,6 +30,10 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
     userId = user.id;
     const customer = await db!.customer.create({ data: { userId } });
     customerId = customer.id;
+    const vehicle = await db!.vehicle.create({
+      data: { customerId, type: "EXCAVATOR", make: "CAT", model: "320", year: 2024 },
+    });
+    vehicleId = vehicle.id;
     const policy = await db!.insurancePolicy.create({
       data: {
         code: `POL-PG-${runId}`,
@@ -38,6 +43,7 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
         startDate: new Date("2026-01-01T00:00:00.000Z"),
         endDate: new Date("2027-01-01T00:00:00.000Z"),
         premiumAmount: 1000,
+        financialUnitStatus: "VERIFIED_IRR",
         status: "active",
       },
     });
@@ -49,23 +55,22 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
       await db!.serviceRequest.deleteMany({ where: { idempotencyKey: serviceKey } });
       await db!.insuranceClaim.deleteMany({ where: { idempotencyKey: claimKey } });
       if (policyId) await db!.insurancePolicy.deleteMany({ where: { id: policyId } });
+      if (vehicleId) await db!.vehicle.deleteMany({ where: { id: vehicleId } });
       if (customerId) await db!.customer.deleteMany({ where: { id: customerId } });
       if (userId) await db!.user.deleteMany({ where: { id: userId } });
     }
     vi.unstubAllEnvs();
   });
 
-  it("creates one ad-hoc vehicle and one request for 80 concurrent identical PostgreSQL retries", async () => {
+  it("creates one request for a registered vehicle across 80 concurrent PostgreSQL retries", async () => {
     const input = {
       idempotencyKey: serviceKey,
       requestFingerprint: JSON.stringify({ userId, customerId, title: "engine fault" }),
       code: `SR-PG-${runId}`,
       customerId,
       actorUserId: userId,
-      vehicleId: null,
-      machineType: "EXCAVATOR",
-      make: "CAT",
-      model: "320",
+      actorRole: "CUSTOMER" as const,
+      vehicleId,
       category: "engine",
       urgency: "URGENT" as const,
       title: "Engine fault",
@@ -86,7 +91,7 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
     expect(new Set(results.map((result) => result.id)).size).toBe(1);
     expect(results.filter((result) => result.created)).toHaveLength(1);
     expect(await db!.serviceRequest.count({ where: { idempotencyKey: serviceKey } })).toBe(1);
-    expect(await db!.vehicle.count({ where: { customerId, notes: "Created atomically with service request" } })).toBe(1);
+    expect(await db!.vehicle.count({ where: { id: vehicleId } })).toBe(1);
   });
 
   it("creates one claim and advances its policy once for 80 concurrent PostgreSQL retries", async () => {
@@ -138,10 +143,8 @@ describe.skipIf(!postgresConfigured)("service request and insurance claim Postgr
         code: `SR-PG-FAIL-${suffix}`,
         customerId,
         actorUserId: userId,
-        vehicleId: null,
-        machineType: "EXCAVATOR",
-        make: "CAT",
-        model: "320",
+        actorRole: "CUSTOMER" as const,
+        vehicleId,
         category: "engine",
         urgency: "NORMAL",
         title: "Injected failure",

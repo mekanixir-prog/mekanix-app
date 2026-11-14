@@ -3,6 +3,8 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { getInvoicePaymentAmountError } from "@/lib/money/payment-amount";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { toSafeIntegerIrr } from "@/lib/money/provenance";
 
 // POST /api/payments
 // Records a payment against an invoice.
@@ -96,16 +98,20 @@ export async function POST(req: Request) {
 
   // The invoice is the server-authoritative source, but its amount is payable
   // only when both currency and integer-unit provenance match the IRR contract.
-  const amountError = getInvoicePaymentAmountError(inv.currency, Number(inv.total));
+  if (inv.financialUnitStatus !== "VERIFIED_IRR") {
+    return NextResponse.json({ error: "منشأ مالی فاکتور تأیید نشده است؛ پرداخت تا زمان تطبیق مالی مسدود است", code: "INVOICE_FINANCIAL_PROVENANCE_UNVERIFIED" }, { status: 409 });
+  }
+  const invoiceAmount = toSafeIntegerIrr(inv.total);
+  const amountError = getInvoicePaymentAmountError(inv.currency, invoiceAmount);
   if (amountError === "PAYMENT_CURRENCY_NOT_IRR") {
     return NextResponse.json(
       { error: "واحد پول فاکتور برای پرداخت ریالی معتبر نیست", code: amountError },
       { status: 409 },
     );
   }
-  if (amountError === "PAYMENT_AMOUNT_NOT_INTEGER_IRR") {
+  if (amountError === "PAYMENT_AMOUNT_NOT_INTEGER_IRR" || invoiceAmount === null) {
     return NextResponse.json(
-      { error: "مبلغ فاکتور باید عدد صحیح مثبت به ریال باشد", code: amountError },
+      { error: "مبلغ فاکتور باید عدد صحیح مثبت و امن به ریال باشد", code: "PAYMENT_AMOUNT_NOT_INTEGER_IRR" },
       { status: 409 },
     );
   }
@@ -126,6 +132,20 @@ export async function POST(req: Request) {
   // Check if a payment record already exists for this invoice
   const existing = await db.payment.findUnique({ where: { invoiceId } });
   if (existing) {
+    // Historical payment rows are not upgraded from currency labels alone.
+    const existingAmount = toSafeIntegerIrr(existing.amount);
+    if (
+      existing.financialUnitStatus !== "VERIFIED_IRR" ||
+      existing.currency !== "IRR" ||
+      existingAmount === null ||
+      invoiceAmount === null ||
+      existingAmount !== invoiceAmount
+    ) {
+      return NextResponse.json(
+        { error: "سابقه پرداخت موجود با فاکتور تأییدشده تطبیق ندارد و نیازمند بررسی مالی است", code: "PAYMENT_FINANCIAL_PROVENANCE_UNVERIFIED" },
+        { status: 409 },
+      );
+    }
     // Update existing payment record
     const updated = await db.payment.update({
       where: { id: existing.id },
@@ -156,7 +176,7 @@ export async function POST(req: Request) {
               userId: inv.job.technician.userId,
               type: "job_completed",
               title: "Payment received",
-              body: `Invoice ${inv.code} paid — $${inv.total}`,
+              body: `Invoice ${inv.code} paid.`,
               category: "payment",
               link: "technician/earnings",
             },
@@ -164,7 +184,7 @@ export async function POST(req: Request) {
         }
       }
     }
-    return NextResponse.json(updated);
+    return NextResponse.json(maskFinancialFields(updated as unknown as Record<string, unknown>, ["amount"], "currency"));
   }
 
   // Create new payment record — amount from invoice.total (server-authoritative)
@@ -173,8 +193,9 @@ export async function POST(req: Request) {
       code: `PAY-${Math.floor(5000 + Math.random() * 4000)}`,
       invoiceId,
       userId,
-      amount: inv.total, // server-authoritative — from invoice, NOT client
+      amount: invoiceAmount, // exact safe integer derived from the verified invoice
       currency: inv.currency,
+      financialUnitStatus: "VERIFIED_IRR",
       method: safeMethod,
       status,
     },
@@ -202,7 +223,7 @@ export async function POST(req: Request) {
             userId: inv.job.technician.userId,
             type: "job_completed",
             title: "Payment received",
-            body: `Invoice ${inv.code} paid — $${inv.total}`,
+            body: `Invoice ${inv.code} paid.`,
             category: "payment",
             link: "technician/earnings",
           },
@@ -210,5 +231,5 @@ export async function POST(req: Request) {
       }
     }
   }
-  return NextResponse.json(pay);
+  return NextResponse.json(maskFinancialFields(pay as unknown as Record<string, unknown>, ["amount"], "currency"));
 }

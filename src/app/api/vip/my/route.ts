@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 import { requireAuth } from "@/lib/api-helpers";
 
 // Get the current active VIP subscription — userId derived from JWT session
@@ -23,5 +24,5 @@ export async function GET(req: Request) {
     orderBy: { createdAt: "desc" },
   });
 
-  return NextResponse.json({ subscription });
+  return NextResponse.json({ subscription: subscription ? { ...subscription, plan: maskFinancialFields(subscription.plan, ["priceIrr"]) } : subscription });
 }

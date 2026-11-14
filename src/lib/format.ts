@@ -1,5 +1,7 @@
 // MEKANIX — formatting & utility helpers
 import { CURRENCIES } from "./constants";
+import Decimal from "decimal.js";
+import { formatTomanFromIrr } from "./money/irr";
 
 // Convert digits to Persian.
 function toPersianDigits(s: string | number): string {
@@ -14,16 +16,50 @@ function toPersianDigits(s: string | number): string {
  * Persian Toman presentation is intentionally deferred until read-side
  * provenance masking guarantees that only verified IRR reaches this formatter.
  */
-export function fmtMoney(amount: number, currency = "IRR", lang: "en" | "fa" = "en"): string {
-  const c = CURRENCIES[currency] ?? CURRENCIES.USD;
-  if (typeof amount !== "number" || !Number.isFinite(amount)) return "—";
-  if (currency === "IRR" && !Number.isSafeInteger(amount)) return "—";
+export function fmtMoney(amount: unknown, currency = "IRR", lang: "en" | "fa" = "en"): string {
+  if (!Object.prototype.hasOwnProperty.call(CURRENCIES, currency)) {
+    return lang === "fa" ? "واحد نامشخص" : "Unknown currency";
+  }
+  const c = CURRENCIES[currency];
+  let numericAmount: number;
+  if (currency === "IRR") {
+    // Validate string inputs exactly before converting to Number. Number("1.00000000000000001")
+    // rounds to 1, which would otherwise make a fractional Rial value look valid.
+    if (typeof amount === "string" && amount.trim() !== "") {
+      try {
+        const exactAmount = new Decimal(amount.trim());
+        if (!exactAmount.isFinite() || !exactAmount.isInteger() ||
+            exactAmount.abs().gt(Number.MAX_SAFE_INTEGER)) return "—";
+        numericAmount = exactAmount.toNumber();
+      } catch {
+        return "—";
+      }
+    } else if (typeof amount === "number" && Number.isSafeInteger(amount)) {
+      numericAmount = amount;
+    } else {
+      return "—";
+    }
+  } else {
+    numericAmount = typeof amount === "number"
+      ? amount
+      : typeof amount === "string" && amount.trim() !== ""
+        ? Number(amount)
+        : Number.NaN;
+  }
+  if (!Number.isFinite(numericAmount) || Math.abs(numericAmount) > Number.MAX_SAFE_INTEGER) return "—";
+
+  // Persian Toman is rendered with integer arithmetic (BigInt), not a
+  // floating-point IRR / 10 operation that can lose the final tenth at scale.
+  if (currency === "IRR" && lang === "fa") {
+    const exactToman = formatTomanFromIrr(numericAmount, "en-US");
+    return `${toPersianDigits(exactToman.replace(/,/g, "،"))} تومان`;
+  }
 
   const symbol = currency === "IRR" ? "﷼" : c.symbol;
   const formatted = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 0,
     maximumFractionDigits: currency === "IRR" ? 0 : 2,
-  }).format(amount);
+  }).format(numericAmount);
 
   if (lang === "fa") {
     const persianFormatted = toPersianDigits(formatted.replace(/,/g, "،"));

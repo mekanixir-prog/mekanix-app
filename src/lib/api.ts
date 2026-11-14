@@ -19,6 +19,19 @@ export type ServiceRequest = Prisma.ServiceRequestGetPayload<{
     job: { include: { technician: { include: { user: true } }; invoice: true; reviews: true } };
   };
 }>;
+export type CreateServiceRequestInput = {
+  vehicleId: string;
+  customerId?: string;
+  category: string;
+  urgency: string;
+  title: string;
+  description?: string;
+  mediaUrls?: string[];
+  voiceNote?: string | null;
+  address: string;
+  lat: number;
+  lng: number;
+};
 export type Job = Prisma.JobGetPayload<{
   include: {
     request: { include: { customer: { include: { user: true } }; vehicle: true } };
@@ -84,7 +97,7 @@ export const api = {
     if (technicianId) q.set("technicianId", technicianId);
     return req<{ data: ServiceRequest[]; total: number; page: number; limit: number } | ServiceRequest[]>(`/api/service-requests?${q.toString()}`).then((r: any) => Array.isArray(r) ? r : (r?.data ?? []));
   },
-  createRequest: (data: any, idempotencyKey: string) =>
+  createRequest: (data: CreateServiceRequestInput, idempotencyKey: string) =>
     req<ServiceRequest>(`/api/service-requests`, {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey },

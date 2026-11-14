@@ -4,7 +4,9 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { getCustomerFromSession, getTechnicianFromSession } from "@/lib/auth";
 import { IdempotencyConflictError, readIdempotencyKey, requestFingerprint } from "@/lib/idempotency";
-import { createServiceRequestAtomically } from "@/lib/service-request-atomic";
+import { createServiceRequestAtomically, ServiceRequestVehicleError } from "@/lib/service-request-atomic";
+import { maskFinancialFields, maskJobFinancialData } from "@/lib/money/financial-read-mask";
+import { isVehicleInSupportedScope } from "@/lib/vehicle-scope";
 
 const include = {
   customer: { include: { user: { select: PARTICIPANT_USER_SELECT } } },
@@ -46,11 +48,16 @@ export async function GET(req: Request) {
     orderBy: { createdAt: "desc" },
     include,
   });
-  return NextResponse.json(list);
+  const safeList = list.map((request) => ({
+    ...request,
+    matchedTech: request.matchedTech ? maskFinancialFields(request.matchedTech, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]) : request.matchedTech,
+    job: request.job ? maskJobFinancialData(request.job) : request.job,
+  }));
+  return NextResponse.json(safeList);
 }
 
 // POST /api/service-requests
-// Request + optional ad-hoc vehicle are atomic. Notifications are post-commit.
+// A customer must select a registered, in-scope vehicle before requesting service.
 export async function POST(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
@@ -102,24 +109,24 @@ export async function POST(req: Request) {
   const vehicleId = typeof body.vehicleId === "string" && body.vehicleId.trim()
     ? body.vehicleId.trim()
     : null;
-  if (vehicleId) {
-    const vehicle = await db.vehicle.findUnique({
-      where: { id: vehicleId },
-      select: { customerId: true },
-    });
-    if (!vehicle || vehicle.customerId !== customerId) {
-      return NextResponse.json({ error: "خودرو متعلق به این مشتری نیست" }, { status: 403 });
-    }
+  if (!vehicleId) {
+    return NextResponse.json({ error: "برای ثبت درخواست ابتدا باید وسیله خود را ثبت کنید", code: "VEHICLE_REGISTRATION_REQUIRED" }, { status: 400 });
+  }
+  const vehicle = await db.vehicle.findUnique({
+    where: { id: vehicleId },
+    select: { customerId: true, type: true, make: true, model: true },
+  });
+  if (!vehicle || vehicle.customerId !== customerId) {
+    return NextResponse.json({ error: "وسیله متعلق به این مشتری نیست" }, { status: 403 });
+  }
+  if (!isVehicleInSupportedScope(vehicle.type, vehicle.make)) {
+    return NextResponse.json({ error: "این وسیله یا برند در محدوده خدمات و نرخ‌نامه تأییدشده MEKANIX نیست", code: "VEHICLE_OUT_OF_SCOPE" }, { status: 400 });
   }
 
-  const validMachineTypes = ["CAR", "TRUCK", "BUS", "EXCAVATOR", "LOADER", "BULLDOZER", "GRADER", "AGRI", "INDUSTRIAL", "OTHER"];
   const normalized = {
     actorUserId: session.userId,
     customerId,
     vehicleId,
-    machineType: validMachineTypes.includes(body.machineType) ? body.machineType : "CAR",
-    make: typeof body.make === "string" ? body.make.slice(0, 100) : "Unspecified",
-    model: typeof body.model === "string" ? body.model.slice(0, 100) : "Ad-hoc",
     category: body.category.trim().slice(0, 50),
     urgency: (["NORMAL", "URGENT", "EMERGENCY"].includes(body.urgency) ? body.urgency : "NORMAL") as "NORMAL" | "URGENT" | "EMERGENCY",
     title: body.title.trim().slice(0, 200),
@@ -137,6 +144,7 @@ export async function POST(req: Request) {
   try {
     const result = await createServiceRequestAtomically(db, {
       ...normalized,
+      actorRole: session.role as "CUSTOMER" | "ADMIN",
       idempotencyKey,
       requestFingerprint: fingerprint,
       code: `SR-${crypto.randomUUID().toUpperCase()}`,
@@ -190,8 +198,16 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json(requestRecord, { status: result.created ? 201 : 200 });
+    const safeRequestRecord = {
+      ...requestRecord,
+      matchedTech: requestRecord.matchedTech ? maskFinancialFields(requestRecord.matchedTech, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]) : requestRecord.matchedTech,
+      job: requestRecord.job ? maskJobFinancialData(requestRecord.job) : requestRecord.job,
+    };
+    return NextResponse.json(safeRequestRecord, { status: result.created ? 201 : 200 });
   } catch (error) {
+    if (error instanceof ServiceRequestVehicleError) {
+      return NextResponse.json({ error: "وسیله ثبت‌شده دیگر در دسترس این مشتری نیست", code: "VEHICLE_NOT_AVAILABLE" }, { status: 409 });
+    }
     if (error instanceof IdempotencyConflictError) {
       return NextResponse.json({ error: "این کلید قبلاً برای اطلاعات متفاوتی استفاده شده است" }, { status: 409 });
     }

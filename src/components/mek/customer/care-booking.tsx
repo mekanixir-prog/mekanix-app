@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   ChevronLeft, Loader2, Check, Package, MapPin, Calendar, Clock,
-  ShieldCheck, ChevronRight, FileText,
+  ShieldCheck, FileText,
 } from "lucide-react";
 import type { DemoUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/use-t";
 import { toast } from "sonner";
 import { toPersianDigits } from "@/lib/format";
+import { formatTomanFromIrr } from "@/lib/money/irr";
 
 type Package = {
   id: string; name: string; nameFa: string; description: string;
@@ -19,7 +20,8 @@ type Package = {
 
 export function CareBooking({ customer }: { customer: DemoUser }) {
   const { go, params, back } = useApp();
-  const { t, isFa, money } = useT();
+  const { isFa } = useT();
+  const money = (amountIrr: number) => `${formatTomanFromIrr(amountIrr, isFa ? "fa-IR" : "en-US")} ${isFa ? "تومان" : "Toman"}`;
   const [packages, setPackages] = useState<Package[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPkg, setSelectedPkg] = useState<Package | null>(null);
@@ -29,6 +31,10 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
   const [timeWindow, setTimeWindow] = useState("");
   const [currentMileage, setCurrentMileage] = useState("");
   const [booking, setBooking] = useState(false);
+  const [quote, setQuote] = useState<{ labor: number; travel: number; inspection: number; emergency: number; taxTotal: number; taxRate: number; total: number; currency: string; pricingVersion: string; breakdown: { includedDistanceKm: number } } | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState("");
+  const [quoteReload, setQuoteReload] = useState(0);
   // Persist the pending operation key across remounts and same-payload retries.
   const bookingKeyRef = useRef<{ fingerprint: string; key: string } | null>(null);
 
@@ -42,6 +48,34 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
       .finally(() => setLoading(false));
   }, [vehicleId]);
 
+  useEffect(() => {
+    if (step !== "review" || !selectedPkg || !vehicleId) return;
+    let active = true;
+    setQuote(null);
+    setQuoteError("");
+    setQuoteLoading(true);
+    void (async () => {
+      try {
+        const token = localStorage.getItem("mekanix-token");
+        if (!token) throw new Error(isFa ? "برای دریافت تعرفه وارد حساب شوید." : "Sign in to retrieve the current rate.");
+        const response = await fetch("/api/care/bookings/quote", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ vehicleId, serviceType: "periodic" }),
+          cache: "no-store",
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || (isFa ? "دریافت پیش‌فاکتور ناموفق بود." : "Could not load the quote."));
+        if (active) setQuote(data.pricing);
+      } catch (error) {
+        if (active) setQuoteError(error instanceof Error ? error.message : (isFa ? "دریافت پیش‌فاکتور ناموفق بود." : "Could not load the quote."));
+      } finally {
+        if (active) setQuoteLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [step, selectedPkg?.id, vehicleId, quoteReload, isFa]);
+
   const timeWindows = [
     { value: "09:00-11:00", label: isFa ? "۹:۰۰ - ۱۱:۰۰" : "09:00 - 11:00" },
     { value: "11:00-13:00", label: isFa ? "۱۱:۰۰ - ۱۳:۰۰" : "11:00 - 13:00" },
@@ -54,7 +88,7 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
     try {
       const payload = {
         vehicleId, packageId: selectedPkg?.id,
-        serviceType: "periodic", location,
+        serviceType: "periodic", expectedPricingVersion: quote?.pricingVersion, location,
         date: date || undefined, timeWindow: timeWindow || undefined,
         currentMileage: currentMileage ? parseInt(currentMileage) : undefined,
       };
@@ -160,7 +194,7 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
                     </div>
                   </div>
                   <div className="text-end">
-                    <p className="font-display text-lg font-bold text-amber">{money(pkg.basePrice)}</p>
+                    <p className="text-xs text-muted-foreground">{isFa ? "تعرفه بر اساس نرخ‌نامه" : "Rate-card pricing"}</p>
                   </div>
                 </div>
                 {pkg.items && pkg.items.length > 0 && (
@@ -268,25 +302,33 @@ export function CareBooking({ customer }: { customer: DemoUser }) {
             </div>
 
             <div className="border-t border-border pt-3 space-y-1.5">
-              <PriceRow label={isFa ? "هزینه سرویس" : "Service"} amount={selectedPkg.basePrice} money={money} />
-              <PriceRow label={isFa ? "هزینه مراجعه" : "Visit Fee"} amount={15000} money={money} />
-              <PriceRow label={isFa ? "اجرت" : "Labor"} amount={selectedPkg.basePrice * 0.4} money={money} muted />
-              <PriceRow label={isFa ? "قطعات (تقریبی)" : "Parts (est.)"} amount={selectedPkg.basePrice * 0.5} money={money} muted />
-              <div className="border-t border-border pt-2 flex items-center justify-between">
-                <span className="font-bold">{isFa ? "مبلغ نهایی (تقریبی)" : "Total (estimated)"}</span>
-                <span className="font-display text-xl font-bold text-amber">
-                  {money(selectedPkg.basePrice + 15000 + selectedPkg.basePrice * 0.4 + selectedPkg.basePrice * 0.5 + (selectedPkg.basePrice + 15000 + selectedPkg.basePrice * 0.4 + selectedPkg.basePrice * 0.5) * 0.09)}
-                </span>
-              </div>
+              {quoteLoading && <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />{isFa ? "در حال دریافت تعرفه معتبر…" : "Loading current rate…"}</div>}
+              {quoteError && <div role="alert" className="space-y-2 rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-500"><p>{quoteError}</p><Button type="button" variant="outline" onClick={() => setQuoteReload((n) => n + 1)}>{isFa ? "تلاش دوباره" : "Retry"}</Button></div>}
+              {quote && <>
+                <PriceRow label={isFa ? "دستمزد ثابت سرویس دوره‌ای" : "Fixed periodic-service labor"} amount={quote.labor} money={money} />
+                <PriceRow label={isFa ? "اعزام پایه" : "Base dispatch"} amount={quote.travel} money={money} />
+                <PriceRow label={isFa ? "بازدید و عیب‌یابی" : "Inspection and diagnosis"} amount={quote.inspection} money={money} />
+                {quote.emergency > 0 && <PriceRow label={isFa ? "هزینه فوریت" : "Emergency surcharge"} amount={quote.emergency} money={money} />}
+                <PriceRow label={isFa ? "مالیات" : "Tax"} amount={quote.taxTotal} money={money} muted />
+                <div className="border-t border-border pt-2 flex items-center justify-between">
+                  <span className="font-bold">{isFa ? "جمع پایه پیش‌فاکتور" : "Base quote total"}</span>
+                  <span className="font-display text-xl font-bold text-amber">{money(quote.total)}</span>
+                </div>
+                <p className="pt-2 text-xs leading-6 text-muted-foreground">
+                  {isFa
+                    ? `این مبلغ بر اساس نسخه ${quote.pricingVersion} نرخ‌نامه و بدون قطعات و مسافت اضافه محاسبه شده است. مسافت مشمول اعزام ${toPersianDigits(quote.breakdown.includedDistanceKm)} کیلومتر است؛ در صورت اعمال هزینه مسافت اضافه، برآورد مسافت در فاکتور نهایی جداگانه نمایش داده می‌شود.`
+                    : `Calculated from rate-card ${quote.pricingVersion}; parts and extra distance are excluded. The included dispatch distance is ${quote.breakdown.includedDistanceKm} km. If an extra-distance charge applies, its estimated distance is shown separately on the final invoice.`}
+                </p>
+              </>}
             </div>
 
-            <div className="flex items-center gap-2 rounded-lg border border-emerald-glow/20 bg-emerald-glow/5 p-3 text-[11px] text-muted-foreground">
-              <ShieldCheck className="size-4 text-emerald-glow shrink-0" />
-              {isFa ? "این سرویس با گارانتی ۶ ماهه MEKANIX ارائه می‌شود." : "This service includes a 6-month MEKANIX warranty."}
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 p-3 text-[11px] text-muted-foreground">
+              <ShieldCheck className="size-4 shrink-0" />
+              {isFa ? "شرایط ضمانت، در صورت شمول، در توافق‌نامه همان سفارش مشخص می‌شود." : "Any applicable warranty terms are defined in the service agreement for this order."}
             </div>
           </div>
 
-          <Button onClick={handleBooking} disabled={booking} className="w-full bg-amber text-black hover:bg-amber/90">
+          <Button onClick={handleBooking} disabled={booking || quoteLoading || !quote || Boolean(quoteError)} className="w-full bg-amber text-black hover:bg-amber/90">
             {booking ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Check className="mr-2 size-4" />}
             {isFa ? "تأیید و رزرو" : "Confirm & Book"}
           </Button>

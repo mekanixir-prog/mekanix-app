@@ -29,6 +29,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { NextResponse } from "next/server";
+import Decimal from "decimal.js";
 
 // ──────────────────────────────────────────────────────────────────────────
 // Shared mock state (so a single mock for @/lib/db-access can serve all
@@ -273,6 +274,7 @@ describe("PAY-01 — /api/payments production guard", () => {
       status: "SENT",
       total: 100,
       currency: "IRR",
+      financialUnitStatus: "VERIFIED_IRR",
       jobId: "job-1",
       code: "INV-1",
       job: {
@@ -302,6 +304,33 @@ describe("PAY-01 — /api/payments production guard", () => {
 // 2. /api/payments — BOLA: payment for another user's invoice → 403
 // ──────────────────────────────────────────────────────────────────────────
 describe("/api/payments — BOLA (payment for another user's invoice)", () => {
+  it("rejects a fractional Prisma Decimal amount that Number would round to an integer", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockInvoiceFindUnique.mockResolvedValue({
+      id: "inv-precision",
+      status: "SENT",
+      total: new Decimal("9007199254740991.1"),
+      currency: "IRR",
+      financialUnitStatus: "VERIFIED_IRR",
+      jobId: "job-precision",
+      code: "INV-PRECISION",
+      job: {
+        id: "job-precision",
+        request: { customer: { userId: "user-1" } },
+        technician: { userId: "tech-user-1" },
+      },
+    });
+
+    const res = await paymentsPOST(makePostRequest("http://localhost/api/payments", {
+      invoiceId: "inv-precision",
+      method: "card",
+    }));
+
+    expect(res.status).toBe(409);
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
+    expect(mockInvoiceUpdateMany).not.toHaveBeenCalled();
+  });
+
   it("returns 403 when session.customer does not own the invoice's job's customer record", async () => {
     vi.stubEnv("NODE_ENV", "test");
     mockInvoiceFindUnique.mockResolvedValue({
@@ -309,6 +338,7 @@ describe("/api/payments — BOLA (payment for another user's invoice)", () => {
       status: "SENT",
       total: 100,
       currency: "IRR",
+      financialUnitStatus: "VERIFIED_IRR",
       jobId: "job-1",
       code: "INV-1",
       job: {
@@ -339,6 +369,7 @@ describe("/api/payments — BOLA (payment for another user's invoice)", () => {
       status: "SENT",
       total: 100,
       currency: "IRR",
+      financialUnitStatus: "VERIFIED_IRR",
       jobId: "job-1",
       code: "INV-1",
       job: {
@@ -375,6 +406,7 @@ describe("/api/payments — duplicate POST idempotency (sequential)", () => {
       status: "PAID", // already paid
       total: 100,
       currency: "IRR",
+      financialUnitStatus: "VERIFIED_IRR",
       jobId: "job-1",
       code: "INV-1",
       job: {
@@ -413,6 +445,7 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
     amount: 100_000,
     currency: "IRR",
     status: "SUCCEEDED",
+      financialUnitStatus: "VERIFIED_IRR",
   };
 
   beforeEach(() => {
@@ -428,6 +461,7 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
       userId: "user-1",
       amount: 100_000,
       currency: "IRR",
+      financialUnitStatus: "VERIFIED_IRR",
       status: "REDIRECTED",
       purpose: "vip",
       verifiedAt: null,
@@ -449,6 +483,7 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
       userId: "user-1",
       amount: 100_000,
       status: "SUCCEEDED",
+      financialUnitStatus: "VERIFIED_IRR",
       gatewayLogId: "log-1",
     });
     expect(mockPaymentGatewayLogUpdate).toHaveBeenCalledWith(expect.objectContaining({
@@ -527,6 +562,7 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
       amount: 100_000,
       currency: "IRR",
       status: "VERIFIED",
+      financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip",
       paymentId: "pay-1",
       verifiedAt: new Date("2026-10-30T10:00:00.000Z"),
@@ -554,6 +590,7 @@ describe("GW-03 — /api/gateway/verify durable idempotency", () => {
       amount: 100_000,
       currency: "IRR",
       status: "VERIFIED",
+      financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip",
       paymentId: null,
       verifiedAt: new Date("2026-10-30T10:00:00.000Z"),
@@ -626,7 +663,7 @@ describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
   });
 
   it("returns 400 when the wallet cannot cover the withdrawal", async () => {
-    mockWalletFindUnique.mockResolvedValue({ id: "wallet_1", balance: 100, technicianId: "tech_1" });
+    mockWalletFindUnique.mockResolvedValue({ id: "wallet_1", balance: 100, technicianId: "tech_1", financialUnitStatus: "VERIFIED_IRR" });
     mockCreateWithdrawalAtomically.mockResolvedValue(false);
 
     const res = await withdrawPOST(makeWithdrawalRequest(
@@ -643,10 +680,11 @@ describe("/api/wallets/withdraw — atomic withdrawal guard", () => {
   it("returns the committed request after an atomic withdrawal", async () => {
     const withdrawal = {
       id: "wd_1", code: "WD-123456", walletId: "wallet_1", amount: 500, method: "bank", cardNumber: null, bankName: null, shebaNumber: "IR062960000000100324200001", status: "REQUESTED",
+      financialUnitStatus: "VERIFIED_IRR",
     };
     mockWalletFindUnique
-      .mockResolvedValueOnce({ id: "wallet_1", balance: 1000, technicianId: "tech_1" })
-      .mockResolvedValueOnce({ id: "wallet_1", balance: 500 });
+      .mockResolvedValueOnce({ id: "wallet_1", balance: 1000, technicianId: "tech_1", financialUnitStatus: "VERIFIED_IRR" })
+      .mockResolvedValueOnce({ id: "wallet_1", balance: 500, financialUnitStatus: "VERIFIED_IRR" });
     mockWithdrawalRequestFindUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(withdrawal);
     mockCreateWithdrawalAtomically.mockResolvedValue(true);
 
@@ -689,11 +727,13 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
       priceIrr: 100_000,
       durationDays: 30,
       active: true,
+      financialUnitStatus: "VERIFIED_IRR",
     });
     mockPaymentFindUnique.mockResolvedValue({
       id: "pay-1",
       userId: "user-1",
       status: "SUCCEEDED",
+      financialUnitStatus: "VERIFIED_IRR",
       amount: 100_000,
       currency: "IRR",
       gatewayLogId: "gateway-pay-1",
@@ -702,6 +742,7 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
       id: "gateway-pay-1",
       userId: "user-1",
       status: "VERIFIED",
+      financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip",
       paymentId: "pay-1",
       amount: 100_000,
@@ -801,6 +842,7 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
         id: where.id,
         userId: "user-1",
         status: "SUCCEEDED",
+      financialUnitStatus: "VERIFIED_IRR",
         amount: 100_000,
         currency: "IRR",
         gatewayLogId: `gateway-${where.id}`,
@@ -809,6 +851,7 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
         id: where.id,
         userId: "user-1",
         status: "VERIFIED",
+      financialUnitStatus: "VERIFIED_IRR",
         purpose: "vip",
         paymentId: where.id.replace("gateway-", ""),
         amount: 100_000,
@@ -838,4 +881,62 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
     }
   );
 
+});
+
+
+describe("payment financial provenance quarantine", () => {
+  it("blocks payment when the invoice row has no verified IRR attestation", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockInvoiceFindUnique.mockResolvedValue({
+      id: "inv-unverified",
+      status: "SENT",
+      total: 100,
+      currency: "IRR",
+      financialUnitStatus: "UNVERIFIED",
+      jobId: "job-1",
+      code: "INV-UNVERIFIED",
+      job: { request: { customer: { userId: "user-1" } } },
+    });
+
+    const res = await paymentsPOST(makePostRequest("http://localhost/api/payments", {
+      invoiceId: "inv-unverified",
+      method: "card",
+    }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: "INVOICE_FINANCIAL_PROVENANCE_UNVERIFIED" });
+    expect(mockPaymentFindUnique).not.toHaveBeenCalled();
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
+    expect(mockInvoiceUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not reuse a legacy payment row without matching verified IRR provenance", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockInvoiceFindUnique.mockResolvedValue({
+      id: "inv-1",
+      status: "SENT",
+      total: 100,
+      currency: "IRR",
+      financialUnitStatus: "VERIFIED_IRR",
+      jobId: "job-1",
+      code: "INV-1",
+      job: { request: { customer: { userId: "user-1" } } },
+    });
+    mockPaymentFindUnique.mockResolvedValue({
+      id: "pay-legacy",
+      amount: 100,
+      currency: "IRR",
+      financialUnitStatus: "UNVERIFIED",
+    });
+
+    const res = await paymentsPOST(makePostRequest("http://localhost/api/payments", {
+      invoiceId: "inv-1",
+      method: "card",
+    }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: "PAYMENT_FINANCIAL_PROVENANCE_UNVERIFIED" });
+    expect(mockPaymentUpdate).not.toHaveBeenCalled();
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
+  });
 });

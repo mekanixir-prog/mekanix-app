@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { isSafeNonNegativeStoredIrrAmount } from "@/lib/money/financial-read-mask";
 
 type WithdrawalInput = {
   walletId: string;
@@ -24,24 +25,27 @@ export async function createWithdrawalWithPrisma(
   db: PrismaClient,
   input: WithdrawalInput,
 ): Promise<boolean> {
+  if (!Number.isSafeInteger(input.amount) || input.amount <= 0) return false;
   return db.$transaction(async (tx) => {
     const existing = await tx.withdrawalRequest.findUnique({
       where: { idempotencyKey: input.idempotencyKey },
       select: { id: true },
     });
     if (existing) return false;
+    const walletBefore = await tx.wallet.findUnique({ where: { id: input.walletId }, select: { balance: true, financialUnitStatus: true } });
+    if (!walletBefore || walletBefore.financialUnitStatus !== "VERIFIED_IRR" || !isSafeNonNegativeStoredIrrAmount(walletBefore.balance)) return false;
 
     const debit = await tx.wallet.updateMany({
-      where: { id: input.walletId, balance: { gte: input.amount } },
+      where: { id: input.walletId, financialUnitStatus: "VERIFIED_IRR", balance: { gte: input.amount } },
       data: { balance: { decrement: input.amount } },
     });
     if (debit.count !== 1) return false;
 
     const wallet = await tx.wallet.findUnique({
       where: { id: input.walletId },
-      select: { balance: true },
+      select: { balance: true, financialUnitStatus: true },
     });
-    if (!wallet) throw new Error("Wallet disappeared during withdrawal transaction");
+    if (!wallet || wallet.financialUnitStatus !== "VERIFIED_IRR" || !isSafeNonNegativeStoredIrrAmount(wallet.balance)) throw new Error("Wallet financial provenance is not verified");
 
     const balanceAfter = Number(wallet.balance);
     const balanceBefore = balanceAfter + input.amount;
@@ -57,6 +61,7 @@ export async function createWithdrawalWithPrisma(
         status: "REQUESTED",
         idempotencyKey: input.idempotencyKey,
         requestedAt: input.requestedAt,
+        financialUnitStatus: "VERIFIED_IRR",
       },
     });
     await tx.walletLedger.create({
@@ -70,6 +75,7 @@ export async function createWithdrawalWithPrisma(
         referenceId: withdrawal.id,
         description: `Withdrawal request ${withdrawal.code}`,
         idempotencyKey: `withdrawal:${input.idempotencyKey}:LEDGER`,
+        financialUnitStatus: "VERIFIED_IRR",
       },
     });
     return true;
@@ -85,6 +91,7 @@ export async function createWithdrawalWithD1(
   d1: D1Database,
   input: WithdrawalInput,
 ): Promise<boolean> {
+  if (!Number.isSafeInteger(input.amount) || input.amount <= 0) return false;
   const at = input.requestedAt.toISOString();
   const ledgerKey = `withdrawal:${input.idempotencyKey}:LEDGER`;
   const assertOneChange = () =>
@@ -94,10 +101,11 @@ export async function createWithdrawalWithD1(
     d1.prepare(`
       INSERT INTO "WithdrawalRequest"
         ("id", "code", "walletId", "amount", "method", "cardNumber",
-         "bankName", "shebaNumber", "status", "idempotencyKey", "requestedAt")
-      SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'REQUESTED', ?, ?
+         "bankName", "shebaNumber", "status", "idempotencyKey", "requestedAt", "financialUnitStatus")
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'REQUESTED', ?, ?, 'VERIFIED_IRR'
       FROM "Wallet"
-      WHERE "id" = ? AND "balance" >= ?
+      WHERE "id" = ? AND "financialUnitStatus" = 'VERIFIED_IRR'
+        AND "balance" = CAST("balance" AS INTEGER) AND abs("balance") <= 9007199254740991 AND "balance" >= ?
       ON CONFLICT("idempotencyKey") DO NOTHING
     `).bind(
       crypto.randomUUID(), input.code, input.walletId, input.amount,
@@ -108,15 +116,16 @@ export async function createWithdrawalWithD1(
     d1.prepare(`
       UPDATE "Wallet"
       SET "balance" = "balance" - ?, "updatedAt" = ?
-      WHERE "id" = ? AND "balance" >= ? AND changes() = 1
+      WHERE "id" = ? AND "financialUnitStatus" = 'VERIFIED_IRR'
+        AND "balance" = CAST("balance" AS INTEGER) AND abs("balance") <= 9007199254740991 AND "balance" >= ? AND changes() = 1
     `).bind(input.amount, at, input.walletId, input.amount),
     assertOneChange(),
     d1.prepare(`
       INSERT INTO "WalletLedger"
         ("id", "walletId", "type", "amount", "balanceBefore", "balanceAfter",
-         "referenceType", "referenceId", "description", "idempotencyKey", "createdAt")
+         "referenceType", "referenceId", "description", "idempotencyKey", "createdAt", "financialUnitStatus")
       SELECT ?, w."id", 'WITHDRAWAL', ?, w."balance" + ?, w."balance",
-             'Withdrawal', wr."id", ?, ?, ?
+             'Withdrawal', wr."id", ?, ?, ?, 'VERIFIED_IRR'
       FROM "Wallet" w
       JOIN "WithdrawalRequest" wr ON wr."idempotencyKey" = ?
       WHERE w."id" = ? AND wr."walletId" = w."id"

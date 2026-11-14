@@ -229,24 +229,17 @@ describe("SEC-4 — admin PATCH audit logging", () => {
     );
   });
 
-  // ──────────── 6. payments → UPDATE_PAYMENT ────────────
-  it("PATCH /api/admin/payments/:id creates AuditLog with action UPDATE_PAYMENT", async () => {
-    const before = { id: "pay-1", status: "PENDING" };
-    const after = { id: "pay-1", status: "REFUNDED" };
-    mockPaymentFindUnique.mockResolvedValue(before);
-    mockPaymentUpdate.mockResolvedValue(after);
-
+  // ──────────── 6. payments → explicit reconciliation guard ────────────
+  it("PATCH /api/admin/payments/:id rejects generic status changes before DB access", async () => {
     const req = makePatchRequest("payments", "pay-1", { status: "REFUNDED" });
     const res = await PATCH(req, { params: Promise.resolve({ resource: "payments", id: "pay-1" }) });
+    const payload = await res.json();
 
-    expect(res.status).toBe(200);
-    expect(mockWriteAuditLog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "UPDATE_PAYMENT",
-        entity: "payment",
-        entityId: "pay-1",
-      })
-    );
+    expect(res.status).toBe(409);
+    expect(payload.code).toBe("PAYMENT_STATUS_REQUIRES_RECONCILIATION");
+    expect(mockPaymentFindUnique).not.toHaveBeenCalled();
+    expect(mockPaymentUpdate).not.toHaveBeenCalled();
+    expect(mockWriteAuditLog).not.toHaveBeenCalled();
   });
 
   // ──────────── 7. customers WITHOUT status → UPDATE_CUSTOMER only ────────────

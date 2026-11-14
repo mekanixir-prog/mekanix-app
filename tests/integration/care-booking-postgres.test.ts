@@ -77,6 +77,8 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
       pricing: {
         labor: 50000,
         travel: 15000,
+        inspection: 0,
+        emergency: 0,
         parts: 0,
         discount: 0,
         taxRate: 0.09,
@@ -132,6 +134,8 @@ describe.skipIf(!postgresConfigured)("CARE booking PostgreSQL transaction integr
     expect(booking?.pricingSnapshotId).toBeTruthy();
     bookingIds.push(booking!.id);
     expect(await db!.pricingSnapshot.count({ where: { bookingId: booking!.id } })).toBe(1);
+    const snapshot = await db!.pricingSnapshot.findUnique({ where: { bookingId: booking!.id } });
+    expect(Number(snapshot?.emergencyPrice)).toBe(0);
     expect(await db!.serviceTimelineEvent.count({
       where: { idempotencyKey: `care-booking:${input.idempotencyKey}:created` },
     })).toBe(1);

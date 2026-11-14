@@ -16,7 +16,8 @@ jobs:
     timeout-minutes: 30
     env:
       DB_PASSWORD: test_password
-      JWT_SECRET: test_secret_for_ci
+      JWT_SECRET: mekanix-ci-jwt-secret-with-at-least-32-bytes-2026
+      MEKANIX_PRICING_IRR_APPROVED: "true"
     
     steps:
       - uses: actions/checkout@v7
@@ -134,6 +135,80 @@ jobs:
             psql -U mekanix -d mekanix -Atc 'SELECT COUNT(*) FROM "OtpCode";')
           test "$OTP_ROWS" = "0"
           echo "✅ Production rejects console SMS and persists no OTP when no live provider is configured"
+
+      - name: Install Bun and browser test dependencies
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+
+      - name: Install project dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Chromium for Playwright
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run browser E2E against the live Docker stack
+        run: bun run test:e2e
+        env:
+          CI: "true"
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
+
+      - name: Run real HTTP business flow against isolated PostgreSQL
+        run: bun run scripts/e2e/business-http-flow.mjs
+        env:
+          BASE_URL: http://localhost:3000
+          JWT_SECRET: ${{ env.JWT_SECRET }}
+
+      - name: Run k6 smoke load against isolated Docker stack
+        run: |
+          mkdir -p k6-reports
+          docker run --rm --network host --user 0:0 \
+            -e BASE_URL=http://127.0.0.1:3000 \
+            -e K6_SMOKE=true \
+            -v "$PWD/k6-reports:/out" \
+            -v "$PWD/scripts/load-test.js:/work/load-test.js:ro" \
+            -w /work grafana/k6:latest run \
+            --summary-export=/out/k6-summary.json \
+            load-test.js
+          test -s k6-reports/k6-summary.json
+
+      - name: Run OWASP ZAP baseline against isolated Docker stack
+        if: always()
+        run: |
+          mkdir -p zap-reports
+          ZAP_DOCKER_NETWORK=host REPORT_DIR="$PWD/zap-reports" bash scripts/zap-scan.sh http://127.0.0.1:3000
+
+
+      - name: Inject PostgreSQL outage and verify fail-closed recovery
+        if: always()
+        run: |
+          docker compose -f /tmp/mekanix-build/docker-compose.yml stop db
+          sleep 3
+          DOWN_STATUS=$(curl --max-time 5 -s -o /tmp/health-db-down.json -w "%{http_code}" http://localhost:3000/api/health || true)
+          test "$DOWN_STATUS" = "503"
+          python3 -c "import json; d=json.load(open('/tmp/health-db-down.json')); assert d['ok'] is False and d['services']['database']=='unhealthy'"
+          docker compose -f /tmp/mekanix-build/docker-compose.yml start db
+          for i in $(seq 1 60); do
+            UP_STATUS=$(curl --max-time 5 -s -o /tmp/health-db-up.json -w "%{http_code}" http://localhost:3000/api/health || true)
+            if [ "$UP_STATUS" = "200" ]; then
+              python3 -c "import json; d=json.load(open('/tmp/health-db-up.json')); assert d['ok'] is True and d['services']['database']=='healthy'"
+              echo "PostgreSQL outage was detected fail-closed and service recovered"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "PostgreSQL did not recover within 120 seconds"
+          exit 1
+
+      - name: Upload isolated security and performance reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mekanix-isolated-security-performance-${{ github.run_id }}
+          path: |
+            k6-reports/
+            zap-reports/
+          if-no-files-found: ignore
 
       - name: Container logs (on failure)
         if: always()
