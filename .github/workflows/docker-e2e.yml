@@ -163,12 +163,14 @@ jobs:
         run: |
           mkdir -p k6-reports
           docker run --rm --network host \
-            -e BASE_URL=http://localhost:3000 \
+            -e BASE_URL=http://127.0.0.1:3000 \
             -e K6_SMOKE=true \
-            -v "$PWD:/work" -w /work \
-            grafana/k6:latest run \
-            --summary-export=/work/k6-reports/k6-summary.json \
-            scripts/load-test.js
+            -v "$PWD/k6-reports:/out" \
+            -v "$PWD/scripts/load-test.js:/work/load-test.js:ro" \
+            -w /work grafana/k6:latest run \
+            --summary-export=/out/k6-summary.json \
+            load-test.js
+          test -s k6-reports/k6-summary.json
 
       - name: Run OWASP ZAP baseline against isolated Docker stack
         run: |
