@@ -16,7 +16,8 @@ jobs:
     timeout-minutes: 30
     env:
       DB_PASSWORD: test_password
-      JWT_SECRET: test_secret_for_ci
+      JWT_SECRET: mekanix-ci-jwt-secret-with-at-least-32-bytes-2026
+      MEKANIX_PRICING_IRR_APPROVED: "true"
     
     steps:
       - uses: actions/checkout@v7
@@ -151,6 +152,12 @@ jobs:
         env:
           CI: "true"
           PLAYWRIGHT_BASE_URL: http://localhost:3000
+
+      - name: Run real HTTP business flow against isolated PostgreSQL
+        run: bun run scripts/e2e/business-http-flow.mjs
+        env:
+          BASE_URL: http://localhost:3000
+          JWT_SECRET: ${{ env.JWT_SECRET }}
 
       - name: Container logs (on failure)
         if: always()
