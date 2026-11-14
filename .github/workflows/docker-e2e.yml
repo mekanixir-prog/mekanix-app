@@ -162,7 +162,7 @@ jobs:
       - name: Run k6 smoke load against isolated Docker stack
         run: |
           mkdir -p k6-reports
-          docker run --rm --network host \
+          docker run --rm --network host --user 0:0 \
             -e BASE_URL=http://127.0.0.1:3000 \
             -e K6_SMOKE=true \
             -v "$PWD/k6-reports:/out" \
@@ -173,6 +173,7 @@ jobs:
           test -s k6-reports/k6-summary.json
 
       - name: Run OWASP ZAP baseline against isolated Docker stack
+        if: always()
         run: |
           mkdir -p zap-reports
           ZAP_DOCKER_NETWORK=host REPORT_DIR="$PWD/zap-reports" bash scripts/zap-scan.sh http://127.0.0.1:3000
