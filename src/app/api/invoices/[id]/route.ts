@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant } from "@/lib/auth";
-import { maskInvoiceFinancialData } from "@/lib/money/financial-read-mask";
+import { maskInvoiceMoney } from "@/lib/money/read-provenance";
 import { JobStatusConflictError, transitionJobStatusAtomically } from "@/lib/job-status-atomic";
 
 // PATCH /api/invoices/[id]
@@ -118,7 +118,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       where: { id },
       include: { job: true, payment: true },
     });
-    return NextResponse.json(fresh ? maskInvoiceFinancialData(fresh as unknown as Record<string, unknown>) : null);
+    return NextResponse.json(fresh ? maskInvoiceMoney(fresh) : null);
   }
 
   if (Object.keys(allowedUpdates).length === 0) {
@@ -126,7 +126,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       where: { id },
       include: { job: true, payment: true },
     });
-    return NextResponse.json(fresh ? maskInvoiceFinancialData(fresh as unknown as Record<string, unknown>) : null);
+    return NextResponse.json(fresh ? maskInvoiceMoney(fresh) : null);
   }
 
   if (statusTransitionRequested) {
@@ -144,7 +144,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       where: { id },
       include: { job: true, payment: true },
     });
-    return NextResponse.json(fresh ? maskInvoiceFinancialData(fresh as unknown as Record<string, unknown>) : null);
+    return NextResponse.json(fresh ? maskInvoiceMoney(fresh) : null);
   }
 
   const updated = await db.invoice.update({
@@ -152,5 +152,5 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     data: allowedUpdates,
     include: { job: true, payment: true },
   });
-  return NextResponse.json(maskInvoiceFinancialData(updated as unknown as Record<string, unknown>));
+  return NextResponse.json(maskInvoiceMoney(updated));
 }
