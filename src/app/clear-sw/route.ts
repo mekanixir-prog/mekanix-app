@@ -12,16 +12,20 @@
 //
 // Usage: Visit /clear-sw in your browser, then you'll be redirected to /.
 
-export const dynamic = "force-static";
+export const dynamic = "force-dynamic";
 
-export function GET() {
+export function GET(req: Request) {
+  const nonce = req.headers.get("x-nonce");
+  if (!nonce || !/^[A-Za-z0-9+/=]+$/.test(nonce)) {
+    return new Response("Missing per-request CSP nonce", { status: 503 });
+  }
   const html = `<!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Clearing cache... | MEKANIX</title>
-<style>
+<style nonce="${nonce}">
   body { background: #050607; color: #fff; font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
   .card { text-align: center; padding: 2rem; }
   .spinner { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #F5A524; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
@@ -36,7 +40,7 @@ export function GET() {
     <h1>در حال پاک‌سازی cache...</h1>
     <p>لطفاً صبر کنید، چند ثانیه طول می‌کشد.</p>
   </div>
-  <script>
+  <script nonce="${nonce}">
     (async () => {
       try {
         // 1. Unregister ALL service workers
@@ -70,6 +74,9 @@ export function GET() {
 </body>
 </html>`;
   return new Response(html, {
-    headers: { "Content-Type": "text/html; charset=utf-8" },
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store, max-age=0",
+    },
   });
 }
