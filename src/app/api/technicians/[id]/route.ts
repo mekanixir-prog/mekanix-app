@@ -3,7 +3,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
 import { maskFinancialFields, markFinancialRecordUnverifiedWhenFieldsChanged, TECHNICIAN_FEE_FIELDS } from "@/lib/money/financial-read-mask";
-import { PUBLIC_TECHNICIAN_SELECT, toPublicTechnician } from "@/lib/public-technician";
+import { PUBLIC_TECHNICIAN_DETAIL_SELECT, toPublicTechnician } from "@/lib/public-technician";
 
 const PUBLIC_USER_FIELDS = {
   id: true, name: true, avatar: true, role: true, status: true,
@@ -18,7 +18,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const db = await getDbForLib();
   const tech = await db.technician.findUnique({
     where: { id },
-    select: PUBLIC_TECHNICIAN_SELECT,
+    select: PUBLIC_TECHNICIAN_DETAIL_SELECT,
   });
   if (!tech) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(toPublicTechnician(tech));
