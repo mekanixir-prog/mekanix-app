@@ -159,6 +159,26 @@ jobs:
           BASE_URL: http://localhost:3000
           JWT_SECRET: ${{ env.JWT_SECRET }}
 
+      - name: Inject PostgreSQL outage and verify fail-closed recovery
+        run: |
+          docker compose -f /tmp/mekanix-build/docker-compose.yml stop db
+          sleep 3
+          DOWN_STATUS=$(curl --max-time 5 -s -o /tmp/health-db-down.json -w "%{http_code}" http://localhost:3000/api/health || true)
+          test "$DOWN_STATUS" = "503"
+          python3 -c "import json; d=json.load(open('/tmp/health-db-down.json')); assert d['ok'] is False and d['services']['database']=='unhealthy'"
+          docker compose -f /tmp/mekanix-build/docker-compose.yml start db
+          for i in $(seq 1 60); do
+            UP_STATUS=$(curl --max-time 5 -s -o /tmp/health-db-up.json -w "%{http_code}" http://localhost:3000/api/health || true)
+            if [ "$UP_STATUS" = "200" ]; then
+              python3 -c "import json; d=json.load(open('/tmp/health-db-up.json')); assert d['ok'] is True and d['services']['database']=='healthy'"
+              echo "PostgreSQL outage was detected fail-closed and service recovered"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "PostgreSQL did not recover within 120 seconds"
+          exit 1
+
       - name: Container logs (on failure)
         if: always()
         run: |
