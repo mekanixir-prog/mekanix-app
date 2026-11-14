@@ -81,7 +81,7 @@ const pricingJob = {
   id: "job-1",
   status: "WAITING_APPROVAL",
   parts: [{ financialUnitStatus: "VERIFIED_IRR", unitPrice: 100, quantity: 2 }],
-  technician: { hourlyRate: 200, travelFeeBase: 50, lat: null, lng: null },
+  technician: { financialUnitStatus: "VERIFIED_IRR", hourlyRate: 200, travelFeeBase: 50, inspectionFee: 20, inspectionFeeHeavy: 50, lat: null, lng: null },
   tracking: [],
   request: { category: "diagnostic", urgency: "NORMAL", lat: 35.7, lng: 51.4, vehicle: { type: "CAR" } },
 };
