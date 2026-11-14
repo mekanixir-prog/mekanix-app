@@ -6,7 +6,7 @@ import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
 import { calculatePrice } from "@/lib/pricing";
 import { maskJobFinancialData } from "@/lib/money/financial-read-mask";
-import { areJobPartPriceSourcesVerified } from "@/lib/money/provenance";
+import { areJobPartPriceSourcesVerified, areTechnicianPriceSourcesVerified, isInvoicePricingPolicyApproved } from "@/lib/money/provenance";
 import { estimateTravelDistanceKm, serviceCodeFromCategory } from "@/lib/job-invoice-pricing";
 import {
   isAllowedJobStatusTransition,
@@ -69,6 +69,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       customerApproved: true,
       updatedAt: true,
       technicianId: true,
+      technician: {
+        select: {
+          financialUnitStatus: true,
+          hourlyRate: true,
+          travelFeeBase: true,
+          inspectionFee: true,
+          inspectionFeeHeavy: true,
+        },
+      },
       requestId: true,
       code: true,
       parts: { select: { unitPrice: true, quantity: true, financialUnitStatus: true } },
@@ -184,6 +193,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   let invoiceInput: AtomicInvoiceInput | null = null;
   if (status === "WAITING_APPROVAL" && !existing.invoice) {
+    if (!isInvoicePricingPolicyApproved()) {
+      return NextResponse.json(
+        { error: "سیاست نرخ‌گذاری ریالی هنوز تأیید نشده است؛ صدور پیش‌فاکتور مسدود است", code: "INVOICE_PRICING_POLICY_UNAPPROVED" },
+        { status: 409 },
+      );
+    }
+    if (!areTechnicianPriceSourcesVerified(existing.technician)) {
+      return NextResponse.json(
+        { error: "منشأ و واحد ریال هزینه‌های مکانیک تأیید نشده است؛ صدور پیش‌فاکتور مسدود است", code: "TECHNICIAN_FEE_PROVENANCE_UNVERIFIED" },
+        { status: 409 },
+      );
+    }
     if (!existing.request?.vehicle?.type) {
       return NextResponse.json({ error: "نوع وسیله برای محاسبه تعرفه مشخص نیست", code: "VEHICLE_RATE_CLASS_REQUIRED" }, { status: 409 });
     }
