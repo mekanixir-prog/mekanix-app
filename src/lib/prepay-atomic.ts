@@ -80,7 +80,7 @@ export async function recordPrepayWithPrisma(
     if (!nextAggregates.every(Number.isSafeInteger)) return false;
 
     const jobUpdate = await tx.job.updateMany({
-      where: { id: input.jobId, prepayPaid: false },
+      where: { id: input.jobId, technicianId: input.technicianId, prepayPaid: false },
       data: {
         prepayPaid: true,
         prepayPaidAt: input.paidAt,
@@ -216,8 +216,8 @@ export async function recordPrepayWithD1(
     d1.prepare(
       "UPDATE \"Job\" SET \"prepayPaid\" = 1, \"prepayPaidAt\" = ?, \"inspectionFee\" = ?, " +
       "\"travelFee\" = ?, \"platformCommission\" = ?, \"netEarnings\" = ?, \"holdUntil\" = NULL, " +
-      "\"financialUnitStatus\" = 'VERIFIED_IRR', \"updatedAt\" = ? WHERE \"id\" = ? AND \"prepayPaid\" = 0"
-    ).bind(at, input.inspectionFee, input.travelFee, input.commission, input.net, at, input.jobId),
+      "\"financialUnitStatus\" = 'VERIFIED_IRR', \"updatedAt\" = ? WHERE \"id\" = ? AND \"technicianId\" = ? AND \"prepayPaid\" = 0"
+    ).bind(at, input.inspectionFee, input.travelFee, input.commission, input.net, at, input.jobId, input.technicianId),
     assertOneChange(),
 
     d1.prepare(
@@ -277,19 +277,6 @@ export async function recordPrepayWithD1(
       input.technicianId, input.technicianId, input.jobId, at),
     assertOneChange(),
 
-    d1.prepare(
-      "UPDATE \"Wallet\" SET \"pendingBalance\" = \"pendingBalance\" + ?, " +
-      "\"totalEarned\" = \"totalEarned\" + ?, \"totalCommission\" = \"totalCommission\" + ?, " +
-      "\"updatedAt\" = ? WHERE \"technicianId\" = ? AND \"financialUnitStatus\" = 'VERIFIED_IRR' " +
-      "AND \"balance\" = CAST(\"balance\" AS INTEGER) AND \"balance\" >= 0 AND abs(\"balance\") <= 9007199254740991 " +
-      "AND \"pendingBalance\" = CAST(\"pendingBalance\" AS INTEGER) AND \"pendingBalance\" >= 0 AND abs(\"pendingBalance\") <= 9007199254740991 " +
-      "AND \"totalEarned\" = CAST(\"totalEarned\" AS INTEGER) AND \"totalEarned\" >= 0 AND abs(\"totalEarned\") <= 9007199254740991 " +
-      "AND \"totalCommission\" = CAST(\"totalCommission\" AS INTEGER) AND \"totalCommission\" >= 0 AND abs(\"totalCommission\") <= 9007199254740991 " +
-      "AND \"totalWithdrawn\" = CAST(\"totalWithdrawn\" AS INTEGER) AND \"totalWithdrawn\" >= 0 AND abs(\"totalWithdrawn\") <= 9007199254740991 " +
-      "AND EXISTS (SELECT 1 FROM \"WalletLedger\" WHERE \"idempotencyKey\" = ? AND \"walletId\" = \"Wallet\".\"id\")"
-    ).bind(input.net, input.gross, input.commission, at, input.technicianId, holdLedgerKey),
-    assertOneChange(),
-    assertVerifiedWallet(),
 
     d1.prepare(
       "INSERT INTO \"WalletLedger\" (\"id\", \"walletId\", \"type\", \"amount\", \"balanceBefore\", " +
@@ -304,6 +291,20 @@ export async function recordPrepayWithD1(
       "Platform commission — " + input.jobCode, commissionLedgerKey, at,
       input.technicianId, input.technicianId, input.jobId, at),
     assertOneChange(),
+
+    d1.prepare(
+      "UPDATE \"Wallet\" SET \"pendingBalance\" = \"pendingBalance\" + ?, " +
+      "\"totalEarned\" = \"totalEarned\" + ?, \"totalCommission\" = \"totalCommission\" + ?, " +
+      "\"updatedAt\" = ? WHERE \"technicianId\" = ? AND \"financialUnitStatus\" = 'VERIFIED_IRR' " +
+      "AND \"balance\" = CAST(\"balance\" AS INTEGER) AND \"balance\" >= 0 AND abs(\"balance\") <= 9007199254740991 " +
+      "AND \"pendingBalance\" = CAST(\"pendingBalance\" AS INTEGER) AND \"pendingBalance\" >= 0 AND abs(\"pendingBalance\") <= 9007199254740991 " +
+      "AND \"totalEarned\" = CAST(\"totalEarned\" AS INTEGER) AND \"totalEarned\" >= 0 AND abs(\"totalEarned\") <= 9007199254740991 " +
+      "AND \"totalCommission\" = CAST(\"totalCommission\" AS INTEGER) AND \"totalCommission\" >= 0 AND abs(\"totalCommission\") <= 9007199254740991 " +
+      "AND \"totalWithdrawn\" = CAST(\"totalWithdrawn\" AS INTEGER) AND \"totalWithdrawn\" >= 0 AND abs(\"totalWithdrawn\") <= 9007199254740991 " +
+      "AND EXISTS (SELECT 1 FROM \"WalletLedger\" WHERE \"idempotencyKey\" = ? AND \"walletId\" = \"Wallet\".\"id\") AND changes() = 1"
+    ).bind(input.net, input.gross, input.commission, at, input.technicianId, holdLedgerKey),
+    assertOneChange(),
+    assertVerifiedWallet(),
   ];
 
   try {
