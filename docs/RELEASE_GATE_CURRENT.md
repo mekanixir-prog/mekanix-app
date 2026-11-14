@@ -12,51 +12,56 @@
 | [#184 — financial read provenance and escrow release](https://github.com/mekanixir-prog/mekanix-app/pull/184) | `74e8fb914194f314458a247d38222730d8874fb8` | Open, Draft, not merged | All seven workflows — success |
 | [#182 — reject generic payment status mutation](https://github.com/mekanixir-prog/mekanix-app/pull/182) | `a87b1070d97683a9da7773fdef9b86d533ba8463` | Open, Draft, not merged | All seven workflows — success |
 | [#183 — prepay ownership and D1 ledger parity](https://github.com/mekanixir-prog/mekanix-app/pull/183) | `36e4d9b072592abc71d3c9207d3884be948ba7da` | Open, Draft, not merged | All seven workflows — success |
+| [#186 — clean integrated financial candidate](https://github.com/mekanixir-prog/mekanix-app/pull/186) | Current clean branch `fix/financial-release-candidate-2026-11-14` | Open, Draft, not merged | Seven workflows are running on the latest integration head; no result is claimed until each finishes |
 
 The #137 Docker E2E run on code head `8272400f85ed6eacca2eb457f9b42b18baabbde9` successfully built and started the Compose stack, passed health checks, verified PostgreSQL, verified production OTP fails closed without a real SMS provider, installed Bun/dependencies/Chromium, and completed the four Playwright browser specs (health, home, login, navigation) successfully. The Docker job completed successfully, including its cleanup step. Subsequent commits on the PR branch changed only this release-gate document; comparing the tested code head to the current branch head confirms that no application source or test files changed. PostgreSQL CI has now completed successfully, including migrations, isolated backup/restore rehearsal, TypeScript, tests, and build.
 
-The branches are not a safe merge set. Compared with `main`, the #137 branch contains 161 changed files, #184 is 64 ahead (17 files), #182 is 3 ahead (3 files), and #183 is 5 ahead (2 files). #137 and #184 share 14 changed paths; #137 and #182 share 2; #137 and #183 share 2. All 14 overlapping #137/#184 paths have different final file contents on the two branches; this is a real content conflict, not merely shared path names. The overlap includes invoice routes, payments/wallet APIs, provenance helpers, wallet-release code, staging seed SQL, and financial tests. Do not merge any independently until a single combined candidate is assembled, each overlap is reconciled deliberately, and the complete resulting diff is reviewed and tested.
+A clean integration candidate now exists in [PR #186](https://github.com/mekanixir-prog/mekanix-app/pull/186), based directly on `main`. It contains the #137 rate-card changes plus deliberate reconciliation of #184's per-record financial provenance and escrow controls, #182's admin payment-status guard, and #183's technician ownership CAS / D1 ledger ordering. The candidate preserves the #137 rate-card invoice path rather than replacing it with the older technician-fee-only flow from #184. The 14 #137/#184 overlapping paths and the #137/#182/#183 overlaps have been reconciled in the candidate code and tests. The earlier conflict-probe PRs were closed after GitHub confirmed they were not directly mergeable. PR #186 remains Draft and is not approved for merge; its complete CI and diff review are still required.
 
 No merge, production deployment, remote D1 operation, production migration, production secret change, or provider activation is included in this status update.
 
 ## 2. What exact-head CI proves
 
-The seven workflows above passed independently on each listed head. The PostgreSQL workflow runs migrations, an isolated backup/restore rehearsal, TypeScript, tests, and build. Docker E2E builds and starts the default Compose stack, checks PostgreSQL migration objects and health, and verifies production OTP fails closed when no real SMS provider is configured.
+The seven workflows on #137/#184/#182/#183 passed independently on their listed heads. PR #186 is the first candidate that tests the reconciled code together; its seven workflows must pass on one exact SHA. PostgreSQL CI includes migrations, an isolated backup/restore rehearsal, TypeScript, tests, and build. Docker E2E now includes Playwright browser smoke tests, a real HTTP + PostgreSQL business journey, BOLA checks, an injected transaction rollback, PostgreSQL outage/recovery, a k6 smoke profile, and a ZAP baseline. These new candidate steps are pending their first complete run on the latest #186 head.
 
-These are useful automated checks. They do not prove a live staging deployment, complete browser journey, live SMS/payment round-trip, production D1 parity, or production operational readiness.
+Even a green #186 workflow does not prove a live staging deployment, a real SMS/payment provider round-trip, the full 100-VU staging load target, production D1 parity, or production operational readiness.
 
 ## 3. Confirmed remaining code/test gaps
 
 ### Business E2E
 
-- `tests/e2e/business-flow.test.ts` is a logical state-machine/library test. Its DB, Redis, and rate-limit dependencies are mocked; it is not a full HTTP-server plus real-database business journey.
-- Playwright is configured for `tests/browser` and contains four browser specs (health, home, login, navigation). The latest #137 Docker E2E workflow now installs Bun/dependencies/Chromium and invokes `bun run test:e2e` against the live isolated Docker stack; its first execution completed successfully on the tested code head.
-- Docker E2E now includes browser smoke tests after container startup, PostgreSQL checks, and the production OTP fail-closed check. The first Playwright run completed successfully on the tested code head. It still does not execute the full customer → service request → dispatch → technician → approval → invoice → warranty journey.
+- `tests/e2e/business-flow.test.ts` remains a logical state-machine/library test with mocked DB, Redis, and rate-limit dependencies.
+- New `scripts/e2e/business-http-flow.mjs` seeds real PostgreSQL test users/sessions and drives service request creation, technician assignment, job status transitions, rate-card invoice creation, customer approval, and completion over the live HTTP server.
+- The HTTP flow also tests cross-customer request isolation, foreign invoice approval denial, cross-technician job mutation denial, technician wallet isolation, and production payment-simulator fail-closed behavior with zero Payment/Warranty rows.
+- The workflow now includes four Playwright browser specs (health, home, login, navigation). The full HTTP journey is added but its first run on the candidate is pending.
 
-**Gate:** add and run an isolated, repeatable HTTP/API business E2E against a real test database, including customer ownership, technician assignment, status transitions, invoice approval, and warranty. The four existing browser smoke specs are now wired into Docker E2E; they do not replace this business journey.
+**Gate:** complete the first exact-head run, fix any integration failures, and retain the HTTP test output. Real payment success and warranty creation remain outside this test because no real gateway is configured and the production simulator is intentionally disabled; the unit suite covers the simulated success/warranty path.
 
 ### Failure and resilience testing
 
-- `tests/e2e/failure-scenarios.test.ts` contains useful scenarios, but its Redis and rate-limit modules are mocked. The Redis fallback test explicitly acknowledges that it does not import and execute the real rate-limit implementation.
-- No evidence is attached for a live staging exercise of database interruption, Redis outage, SMS timeout, payment provider timeout, or recovery after partial multi-write failure.
+- `tests/e2e/failure-scenarios.test.ts` still contains mocked Redis/rate-limit scenarios.
+- Docker E2E now injects a real PostgreSQL outage, checks health fails closed, restarts PostgreSQL, and waits for health recovery.
+- The HTTP business flow installs a temporary PostgreSQL trigger that rejects Job insertion after assignment claims, then verifies the transaction rolled back the ServiceRequest claim, technician claim, and Job write. The trigger is removed in a `finally` block.
+- SMS/payment provider timeouts cannot yet be exercised against real adapters because no provider credentials or staging endpoints are configured. Production OTP and payment remain fail-closed.
 
-**Gate:** exercise real adapters against controllable failing test services or fault-injection proxies; verify fail-closed behavior, idempotent retry, and recovery without duplicate writes.
+**Gate:** complete the first candidate run; add provider-timeout fault injection when isolated provider adapters/endpoints are available; retain evidence for idempotent retry and recovery.
 
 ### Security validation
 
 - CI runs dependency audit, repository hygiene, static security checks, and mocked BOLA/IDOR helper tests.
 - `scripts/security-audit.sh` is a static heuristic gate; its pass is not a route-by-route authorization audit.
-- `scripts/zap-scan.sh` exists, but no staging ZAP report is attached to the current candidate.
-- Four Playwright browser smoke specs (health, home, login, navigation) now run in the Docker E2E workflow. They are not a complete authorization or business-flow security suite.
+- The HTTP business flow adds real route-level BOLA checks for customer request isolation, invoice approval ownership, technician job ownership, and wallet role/tenant isolation.
+- The Docker E2E workflow now runs `scripts/zap-scan.sh` using the maintained official ZAP container against the isolated local Docker stack and uploads its report. The first candidate scan is pending; this is not yet a staging ZAP report.
+- Four Playwright browser smoke specs run in the same workflow but do not constitute a full route authorization suite.
 
-**Gate:** map every owned-resource and privileged route to positive and negative authorization tests; run the ZAP baseline against isolated staging; triage all Medium findings and block on High findings.
+**Gate:** complete the route inventory and positive/negative authorization matrix for all owned-resource and privileged endpoints; run and retain the staging ZAP report; triage Medium findings and block on High findings.
 
 ### Performance
 
 - `scripts/load-test.js` exists and defines a staged ramp up to 100 virtual users with p95 < 500 ms, p99 < 1,000 ms, and request failure rate < 1%.
-- No measured k6 run, environment description, resource metrics, or result artifact is attached.
+- The Docker E2E workflow now runs a 40-second, 5-VU k6 smoke profile and uploads `k6-summary.json`. Its first candidate result is pending. This is a smoke check only; the full script still defines the 100-VU staged ramp and p95/p99/failure thresholds.
 
-**Gate:** run k6 against the isolated staging candidate and retain the exact SHA, command, p95/p99, failure rate, CPU, memory, and database metrics. Do not infer performance readiness from the script or CI.
+**Gate:** run the full k6 profile against isolated staging and retain exact SHA, command, p95/p99, failure rate, CPU, memory, and database metrics. Do not treat the short CI smoke as a full load test.
 
 ### Staging, backup, restore, and rollback
 
@@ -69,12 +74,12 @@ These are useful automated checks. They do not prove a live staging deployment, 
 
 ## 4. Release sequence
 
-1. Consolidate #137, #184, #182, and #183 into one reviewed candidate without losing either branch's protections.
+1. Finish reconciliation and review the clean main-based candidate in PR #186.
 2. Review the complete combined diff and both SQLite/D1 and PostgreSQL migration tracks.
-3. Run all CI workflows on the exact combined SHA.
-4. Close route-level authorization and security scan gates.
-5. Run real HTTP business E2E and failure-injection tests.
-6. Run and record the k6 staging performance test.
+3. Run all CI workflows on the exact combined SHA and fix every failure.
+4. Close the route-level authorization matrix and retain the local + staging security scan reports.
+5. Complete the real HTTP business E2E and transactional/DB failure-injection tests; add real provider-timeout tests when test adapters are available.
+6. Run and record the full k6 staging performance test.
 7. Complete isolated staging, encrypted backup/restore, and rollback rehearsal.
 8. Produce a Release Candidate tag tied to the exact approved SHA.
 9. Only near release, configure real host/domain/TLS, SMS, payment, routing credentials, monitoring, and production backup; execute live smoke tests.
@@ -84,6 +89,6 @@ These are useful automated checks. They do not prove a live staging deployment, 
 
 **Current decision: NO-GO for merge-to-release and public launch.**
 
-The independent PR CI matrices for #184, #182, and #183 are green. On #137, all seven workflows, including Docker E2E and its four Playwright browser specs, have passed on the tested code head `8272400f85ed6eacca2eb457f9b42b18baabbde9`. The current branch head is a documentation-only refresh. The financial PRs are not consolidated, and the business E2E, failure-injection, ZAP, measured performance, and real staging evidence gates remain open. Hosting, domain, live SMS, and payment activation are intentionally deferred until the Release Candidate stage; their absence is not a reason to stop code/test work now.
+The four original financial PRs have been consolidated into the clean Draft candidate #186; its latest CI run must complete successfully before it can be considered a valid combined code baseline. The candidate now contains the real HTTP business journey, route-level BOLA checks, transactional rollback injection, PostgreSQL outage/recovery, local ZAP baseline, and k6 smoke steps, but their first exact-head results are pending. Full staging deployment, full 100-VU performance evidence, real SMS/payment provider round-trips, production D1 operations, and final route-by-route authorization review remain open. Hosting, domain, live SMS, and payment activation are intentionally deferred until the Release Candidate stage; their absence does not justify enabling insecure fallbacks.
 
 No historical financial records may be bulk-converted or re-labelled as part of this work. Do not enable production provenance or pricing flags merely to make readiness checks green.
