@@ -39,6 +39,10 @@ fi
 : "${JWT_SECRET:?JWT_SECRET is required for staging}"
 : "${ADMIN_JWT_SECRET:?ADMIN_JWT_SECRET is required for staging}"
 : "${OTP_HASH_SECRET:?OTP_HASH_SECRET is required for staging}"
+if [ "${#DB_PASSWORD}" -lt 16 ] || [ "${#REDIS_PASSWORD}" -lt 16 ]; then
+  echo "❌ DB_PASSWORD and REDIS_PASSWORD must each contain at least 16 bytes"
+  exit 1
+fi
 if [ "${#JWT_SECRET}" -lt 32 ] || [ "${#ADMIN_JWT_SECRET}" -lt 32 ] || [ "${#OTP_HASH_SECRET}" -lt 32 ]; then
   echo "❌ JWT_SECRET, ADMIN_JWT_SECRET and OTP_HASH_SECRET must each contain at least 32 bytes"
   exit 1
