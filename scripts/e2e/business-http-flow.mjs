@@ -91,7 +91,7 @@ const seedSql = [
   'INSERT INTO "Vehicle" ("id", "customerId", "type", "make", "model", "year") VALUES (' +
     [sql(ids.vehicle), sql(ids.customer), sql("EXCAVATOR"), sql("Caterpillar"), sql("320D E2E"), "2024"].join(", ") + ");",
   'INSERT INTO "Technician" ("id", "userId", "financialUnitStatus", "hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy", "status", "verified", "availableNow", "responseMins") VALUES (' +
-    [sql(ids.technician), sql(ids.technicianUser), sql("VERIFIED_IRR"), "200000", "50000", "20000", "50000", sql("ONLINE"), "TRUE", "TRUE", "5"].join(", ") + "), (' +
+    [sql(ids.technician), sql(ids.technicianUser), sql("VERIFIED_IRR"), "200000", "50000", "20000", "50000", sql("ONLINE"), "TRUE", "TRUE", "5"].join(", ") + "), (" +
     [sql(ids.otherTechnician), sql(ids.otherTechnicianUser), sql("VERIFIED_IRR"), "180000", "40000", "15000", "40000", sql("ONLINE"), "TRUE", "TRUE", "5"].join(", ") + ");",
   'INSERT INTO "TechnicianSpecialty" ("id", "technicianId", "category", "label") VALUES (' +
     [sql(ids.specialty), sql(ids.technician), sql("diagnostic"), sql("Heavy machinery diagnostics")].join(", ") + ");",
