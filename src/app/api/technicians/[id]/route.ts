@@ -3,20 +3,14 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
 import { maskFinancialFields, markFinancialRecordUnverifiedWhenFieldsChanged, TECHNICIAN_FEE_FIELDS } from "@/lib/money/financial-read-mask";
+import { PUBLIC_TECHNICIAN_DETAIL_SELECT, toPublicTechnician } from "@/lib/public-technician";
 
-// Public-facing technician fields — never expose sensitive data.
 const PUBLIC_USER_FIELDS = {
-  id: true,
-  name: true,
-  avatar: true,
-  role: true,
-  status: true,
-  country: true,
-  currency: true,
-  language: true,
-  createdAt: true,
+  id: true, name: true, avatar: true, role: true, status: true,
+  country: true, currency: true, language: true, createdAt: true,
 } as const;
 
+// Public-facing technician fields — never expose sensitive data.
 // GET /api/technicians/[id] — public profile (no auth required).
 // Selects only safe fields.
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -24,22 +18,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const db = await getDbForLib();
   const tech = await db.technician.findUnique({
     where: { id },
-    include: {
-      user: { select: PUBLIC_USER_FIELDS },
-      specialties: true,
-      certifications: true,
-      serviceAreas: true,
-      reviews: { include: { fromUser: { select: PUBLIC_USER_FIELDS } }, orderBy: { createdAt: "desc" }, take: 20 },
-      jobsAssigned: {
-        where: { status: "COMPLETED" },
-        take: 8,
-        orderBy: { completedAt: "desc" },
-        include: { request: { include: { vehicle: true } } },
-      },
-    },
+    select: PUBLIC_TECHNICIAN_DETAIL_SELECT,
   });
   if (!tech) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(maskFinancialFields(tech, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]));
+  return NextResponse.json(toPublicTechnician(tech));
 }
 
 // PATCH /api/technicians/[id]
