@@ -1,6 +1,6 @@
 # MEKANIX — Current Release Gate
 
-**Last verified:** 2026-11-11  
+**Last verified:** 2026-11-14  
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Purpose:** Current evidence-based Go/No-Go record. This document does not authorize merge, deployment, migrations, or production provider activation.
 
@@ -8,10 +8,14 @@
 
 | PR | Current head | State | Exact-head workflows |
 |---|---|---|---|
-| [#137 — versioned IRR rate card](https://github.com/mekanixir-prog/mekanix-app/pull/137) | `d36d67e9803438320509ec580e3206582f6a2b9c` | Open, Draft, not merged | CI, Production readiness, PostgreSQL CI, Docker E2E, Cloudflare Build, CodeQL, Secret Scan — all success |
-| [#184 — financial read provenance and escrow release](https://github.com/mekanixir-prog/mekanix-app/pull/184) | `74e8fb914194f314458a247d38222730d8874fb8` | Open, Draft, not merged | CI, Production readiness, PostgreSQL CI, Docker E2E, Cloudflare Build, CodeQL, Secret Scan — all success |
+| [#137 — versioned IRR rate card](https://github.com/mekanix ir-prog/mekanix-app/pull/137) | `8272400f85ed6eacca2eb457f9b42b18baabbde9` | Open, Draft, not merged | CI, Production readiness, PostgreSQL CI, Cloudflare Build, CodeQL, Secret Scan — success; Docker E2E still running (Playwright browser steps not yet reached) |
+| [#184 — financial read provenance and escrow release](https://github.com/mekanixir-prog/mekanix-app/pull/184) | `74e8fb914194f314458a247d38222730d8874fb8` | Open, Draft, not merged | All seven workflows — success |
+| [#182 — reject generic payment status mutation](https://github.com/mekanixir-prog/mekanix-app/pull/182) | `a87b1070d97683a9da7773fdef9b86d533ba8463` | Open, Draft, not merged | All seven workflows — success |
+| [#183 — prepay ownership and D1 ledger parity](https://github.com/mekanixir-prog/mekanix-app/pull/183) | `36e4d9b072592abc71d3c9207d3884be948ba7da` | Open, Draft, not merged | All seven workflows — success |
 
-Both PRs currently report mergeable against `main`. This does **not** establish that they can be merged together. The PR heads have diverged: comparing #137 head to #184 head reports 529 commits behind and 64 commits ahead. They share 14 changed paths, including invoice routes, payment and wallet APIs, provenance helpers, wallet-release code, and financial tests. Do not merge either independently until a single combined candidate is assembled and the combined diff is reviewed and tested.
+The latest #137 Docker E2E run has successfully built and started the Compose stack, passed health checks, verified PostgreSQL, and verified production OTP fails closed without a real SMS provider. Bun setup is complete; dependency installation is in progress. Chromium installation and the four Playwright browser specs (health, home, login, navigation) are still pending. PostgreSQL CI has now completed successfully, including migrations, isolated backup/restore rehearsal, TypeScript, tests, and build.
+
+The branches are not a safe merge set. Compared with `main`, #137 is 532 commits ahead (161 changed files), #184 is 64 ahead (17 files), #182 is 3 ahead (3 files), and #183 is 5 ahead (2 files). #137 and #184 share 14 changed paths; #137 and #182 share 2; #137 and #183 share 2. The #137/#184 overlap includes invoice routes, payments/wallet APIs, provenance helpers, wallet-release code, staging seed SQL, and financial tests. Do not merge any independently until a single combined candidate is assembled, each overlap is reconciled deliberately, and the complete resulting diff is reviewed and tested.
 
 No merge, production deployment, remote D1 operation, production migration, production secret change, or provider activation is included in this status update.
 
@@ -26,8 +30,8 @@ These are useful automated checks. They do not prove a live staging deployment, 
 ### Business E2E
 
 - `tests/e2e/business-flow.test.ts` is a logical state-machine/library test. Its DB, Redis, and rate-limit dependencies are mocked; it is not a full HTTP-server plus real-database business journey.
-- Playwright is configured for `tests/browser` and contains four browser specs (health, home, login, navigation), but none of the current GitHub Actions workflows invokes `bun run test:e2e`.
-- Docker E2E verifies container startup, health, selected PostgreSQL schema objects, and the production OTP fail-closed response. It does not execute the full customer → service request → dispatch → technician → approval → invoice → warranty journey.
+- Playwright is configured for `tests/browser` and contains four browser specs (health, home, login, navigation). The latest #137 Docker E2E workflow now installs Bun/dependencies/Chromium and invokes `bun run test:e2e` against the live isolated Docker stack; its first execution is still pending at the current checkpoint.
+- Docker E2E now includes browser smoke tests after container startup, PostgreSQL checks, and the production OTP fail-closed check. The first Playwright run is not yet complete. It still does not execute the full customer → service request → dispatch → technician → approval → invoice → warranty journey.
 
 **Gate:** add and run an isolated, repeatable HTTP/API business E2E against a real test database, including customer ownership, technician assignment, status transitions, invoice approval, and warranty. Add browser smoke tests to CI separately.
 
@@ -65,7 +69,7 @@ These are useful automated checks. They do not prove a live staging deployment, 
 
 ## 4. Release sequence
 
-1. Consolidate #137 and #184 into one reviewed candidate without losing either branch's protections.
+1. Consolidate #137, #184, #182, and #183 into one reviewed candidate without losing either branch's protections.
 2. Review the complete combined diff and both SQLite/D1 and PostgreSQL migration tracks.
 3. Run all CI workflows on the exact combined SHA.
 4. Close route-level authorization and security scan gates.
@@ -80,6 +84,6 @@ These are useful automated checks. They do not prove a live staging deployment, 
 
 **Current decision: NO-GO for merge-to-release and public launch.**
 
-The independent PR CI matrices are green, but the financial PRs are not consolidated, and the business E2E, failure-injection, ZAP, measured performance, and real staging evidence gates remain open. Hosting, domain, live SMS, and payment activation are intentionally deferred until the Release Candidate stage; their absence is not a reason to stop code/test work now.
+The independent PR CI matrices for #184, #182, and #183 are green. On #137, six workflows are green and Docker E2E is still running; its newly added Playwright execution has not yet produced a result. The financial PRs are not consolidated, and the business E2E, failure-injection, ZAP, measured performance, and real staging evidence gates remain open. Hosting, domain, live SMS, and payment activation are intentionally deferred until the Release Candidate stage; their absence is not a reason to stop code/test work now.
 
 No historical financial records may be bulk-converted or re-labelled as part of this work. Do not enable production provenance or pricing flags merely to make readiness checks green.
