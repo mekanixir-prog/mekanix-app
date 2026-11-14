@@ -27,6 +27,9 @@ export async function PUT(req: Request) {
   if (!hasValidAdminCookieCsrf(req)) return NextResponse.json({ error: "درخواست از مبدأ نامعتبر است" }, { status: 403 });
   const session = await getAdminFromRequest(req);
   if (!session) return NextResponse.json({ error: "احراز هویت مدیر الزامی است" }, { status: 401 });
+  if (session.role !== "SUPER_ADMIN") {
+    return NextResponse.json({ error: "تغییر نرخ‌نامه فقط برای مدیر ارشد مجاز است" }, { status: 403 });
+  }
   let body: unknown;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "بدنه درخواست نامعتبر است" }, { status: 400 }); }
   if (!body || typeof body !== "object" || Array.isArray(body) || !("rateCard" in body) || !("expectedVersion" in body)) return NextResponse.json({ error: "نرخ‌نامه یا نسخه مورد انتظار ارسال نشده است" }, { status: 400 });
