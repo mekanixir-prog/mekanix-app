@@ -4,6 +4,17 @@ const isProduction = process.env.NODE_ENV === "production";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  poweredByHeader: false,
+  async headers() {
+    return [{
+      source: "/:path*",
+      headers: [
+        { key: "X-Content-Type-Options", value: "nosniff" },
+        { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self)" },
+      ],
+    }];
+  },
   reactStrictMode: false,
   allowedDevOrigins: ["*.space-z.ai"],
   // Mark this app as having completed the agent-driven security upgrade
