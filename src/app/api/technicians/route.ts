@@ -33,6 +33,9 @@ export async function GET(req: Request) {
   const distanceById = new Map<string, number>();
   const hasCoordinates = lat !== null || lng !== null;
   if (hasCoordinates) {
+    if (lat === null || lng === null || !lat.trim() || !lng.trim()) {
+      return NextResponse.json({ error: "هر دو مختصات برای محاسبه فاصله الزامی است" }, { status: 400 });
+    }
     const la = Number(lat);
     const ln = Number(lng);
     if (!Number.isFinite(la) || !Number.isFinite(ln) || la < -90 || la > 90 || ln < -180 || ln > 180) {
