@@ -66,7 +66,8 @@ describe("security response headers", () => {
     const response = proxy(new NextRequest("https://mekanix.ir/admin-panel"));
     const csp = response.headers.get("Content-Security-Policy") ?? "";
 
-    expect(csp).toContain("frame-ancestors 'self' https://*.space-z.ai");
+    expect(csp).toContain("frame-ancestors 'self'");
+    expect(csp).not.toContain("https://*.space-z.ai");
     expect(csp).not.toContain("frame-ancestors *");
     expect(csp).not.toContain("'unsafe-eval'");
     expect(csp).toMatch(/script-src[^;]*'nonce-[A-Za-z0-9+/=]+'/);
@@ -96,6 +97,14 @@ describe("security response headers", () => {
     vi.stubEnv("NODE_ENV", "production");
     const response = proxy(new NextRequest("https://mekanix.ir/api/wallets"));
     expect(response.headers.get("Content-Security-Policy")).toBe("default-src 'none'; frame-ancestors 'none'");
+  });
+
+  it("allows the preview gateway only with an explicit production opt-in", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("MEKANIX_ALLOW_PREVIEW_EMBEDDING", "true");
+    const response = proxy(new NextRequest("https://mekanix.ir/"));
+    expect(response.headers.get("Content-Security-Policy"))
+      .toContain("frame-ancestors 'self' https://*.space-z.ai");
   });
 
   it("keeps local preview development usable without allowing arbitrary production framing", () => {
