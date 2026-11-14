@@ -32,6 +32,9 @@ case "${FAKE_ZAP_CASE:-success}" in
   high-finding)
     printf '{"site":[{"alerts":[{"riskcode":"3","alert":"Test High","desc":"fixture"}]}]}' > "$report_dir/$json"
     ;;
+  medium-finding)
+    printf '{"site":[{"alerts":[{"riskcode":"2","alert":"Test Medium","desc":"review fixture"}]}]}' > "$report_dir/$json"
+    ;;
   *)
     printf '{"site":[{"alerts":[]}]}' > "$report_dir/$json"
     ;;
@@ -39,7 +42,9 @@ esac
 if [[ "${FAKE_ZAP_CASE:-success}" != "missing-html" ]]; then
   printf '<html>fixture</html>' > "$report_dir/$html"
 fi
-printf '<report>fixture</report>' > "$report_dir/$xml"
+if [[ "${FAKE_ZAP_CASE:-success}" != "missing-xml" ]]; then
+  printf '<report>fixture</report>' > "$report_dir/$xml"
+fi
 exit "${FAKE_ZAP_EXIT:-0}"
 FAKE_DOCKER
 chmod +x "$TMP/bin/docker"
@@ -71,8 +76,10 @@ run_case() {
 
 run_case success 0 success 0
 run_case high-finding 1 high-finding 0
+run_case medium-warning 0 medium-finding 2
 run_case invalid-json 2 invalid-json 0
 run_case missing-html 2 missing-html 0
+run_case missing-xml 2 missing-xml 0
 run_case scanner-exit-3 3 success 3
 
 echo "ZAP wrapper contract tests passed"
