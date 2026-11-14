@@ -2,7 +2,19 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireRole } from "@/lib/auth";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 import { PUBLIC_TECHNICIAN_SELECT, toPublicTechnician } from "@/lib/public-technician";
+
+const techInclude = {
+  specialties: true,
+  certifications: true,
+  serviceAreas: true,
+} as const;
+
+const PUBLIC_USER_FIELDS = {
+  id: true, name: true, avatar: true, role: true, status: true,
+  country: true, currency: true, language: true, createdAt: true,
+} as const;
 
 // Public-facing technician fields — never expose password or sensitive PII.
 // SEC-22 fix (Agent 1 coordinator, FIX-SEC-22): `phone` removed from the
