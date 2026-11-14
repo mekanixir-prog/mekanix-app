@@ -1,5 +1,7 @@
 # AUDIT — Cloudflare Workers Build Pipeline (Task B-2)
 
+> **Historical snapshot — 2026-10-23.** The old finding about a public `public/mekanix-source.tar.gz` archive is not reproducible in the current repository: the path is absent from both the current `main` tree and the 2026-11-14 financial release-candidate tree. Do not treat the historical finding table below as a current exposure without rechecking the exact commit and build artifact. Current Cloudflare build evidence is tracked in [RELEASE_GATE_CURRENT.md](./RELEASE_GATE_CURRENT.md).
+
 **Agent:** Cloudflare Build Engineer (Agent 2)
 **Task ID:** B-2
 **Date:** 2026-10-23
