@@ -44,6 +44,9 @@ function buildContentSecurityPolicy(nonce: string, isProduction: boolean): strin
   const frameAncestors = isProduction
     ? `frame-ancestors 'self'${allowPreviewEmbedding ? " https://*.space-z.ai" : ""}`
     : "frame-ancestors 'self' https://*.space-z.ai http://localhost:* http://127.0.0.1:*";
+  const websocketOrigins = isProduction
+    ? allowPreviewEmbedding ? "wss://*.space-z.ai" : "wss://mekanix.ir"
+    : "ws: wss:";
 
   // External origins are explicitly allowlisted from actual client-side use:
   // OSM map tiles, seeded/approved profile avatars, and Nominatim search.
@@ -62,9 +65,7 @@ function buildContentSecurityPolicy(nonce: string, isProduction: boolean): strin
     isProduction
       ? "img-src 'self' data: blob: https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://i.pravatar.cc"
       : "img-src 'self' data: blob: http: https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://i.pravatar.cc",
-    isProduction
-      ? "connect-src 'self' wss: https://nominatim.openstreetmap.org"
-      : "connect-src 'self' ws: wss: http: https://nominatim.openstreetmap.org",
+    `connect-src 'self' ${websocketOrigins} https://nominatim.openstreetmap.org`,
     "worker-src 'self' blob:",
     frameAncestors,
   ].join("; ");
