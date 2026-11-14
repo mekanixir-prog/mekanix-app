@@ -74,6 +74,11 @@ describe("security response headers", () => {
     expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
     expect(csp).not.toMatch(/style-src 'self' 'unsafe-inline'/);
     expect(csp).toContain("style-src-attr 'unsafe-inline'");
+    expect(csp).toContain("https://a.tile.openstreetmap.org");
+    expect(csp).toContain("https://i.pravatar.cc");
+    expect(csp).toContain("https://nominatim.openstreetmap.org");
+    expect(csp).not.toMatch(/(?:img-src|connect-src)[^;]*\\shttps:\\s*(?:;|$)/);
+    expect(csp).not.toMatch(/(?:img-src|connect-src)[^;]*\\shttp:\\s*(?:;|$)/);
     expect(csp).toContain("object-src 'none'");
     expect(csp).toContain("base-uri 'self'");
     expect(csp).toContain("form-action 'self'");
