@@ -177,7 +177,21 @@ jobs:
       - name: Run full 10/50/100 VU load profile for release candidate
         if: github.event_name == 'pull_request' && github.event.pull_request.number == 191
         run: |
+          set -euo pipefail
           mkdir -p k6-reports
+          (
+            while true; do
+              echo "=== $(date -u +%FT%TZ) ==="
+              docker stats --no-stream --format '{{.Name}},CPU={{.CPUPerc}},MEM={{.MemUsage}},MEM_PCT={{.MemPerc}},NET={{.NetIO}}' || true
+              docker compose -f /tmp/mekanix-build/docker-compose.yml exec -T db \
+                psql -U mekanix -d mekanix -Atc \
+                "SELECT 'pg_connections=' || count(*) || ',pg_active=' || count(*) FILTER (WHERE state='active') || ',pg_waiting=' || count(*) FILTER (WHERE wait_event IS NOT NULL) FROM pg_stat_activity WHERE datname=current_database();" || true
+              sleep 5
+            done
+          ) > k6-reports/resource-samples.log 2>&1 &
+          SAMPLER_PID=$!
+          cleanup_sampler() { kill "$SAMPLER_PID" 2>/dev/null || true; wait "$SAMPLER_PID" 2>/dev/null || true; }
+          trap cleanup_sampler EXIT
           docker run --rm --network host --user 0:0 \
             -e BASE_URL=http://127.0.0.1:3000 \
             -v "$PWD/k6-reports:/out" \
@@ -185,6 +199,8 @@ jobs:
             -w /work grafana/k6:latest run \
             --summary-export=/out/k6-full-load-summary.json \
             load-test.js
+          cleanup_sampler
+          trap - EXIT
           test -s k6-reports/k6-full-load-summary.json
           python3 scripts/validate-k6-summary.py k6-reports/k6-full-load-summary.json
 
