@@ -84,18 +84,18 @@ const rateCardValue = {
 
 const seedSql = [
   "BEGIN;",
-  'INSERT INTO "User" ("id", "phone", "phoneVerified", "name", "role", "status") VALUES',
-  "(" + [sql(ids.customerUser), sql(customerPhone), "TRUE", sql("MEKANIX HTTP E2E Customer"), sql("CUSTOMER"), sql("ACTIVE")].join(", ") + "),",
-  "(" + [sql(ids.technicianUser), sql(technicianPhone), "TRUE", sql("MEKANIX HTTP E2E Technician"), sql("TECHNICIAN"), sql("ACTIVE")].join(", ") + "),",
-  "(" + [sql(ids.otherCustomerUser), sql(otherCustomerPhone), "TRUE", sql("MEKANIX HTTP E2E Other Customer"), sql("CUSTOMER"), sql("ACTIVE")].join(", ") + "),",
-  "(" + [sql(ids.otherTechnicianUser), sql(otherTechnicianPhone), "TRUE", sql("MEKANIX HTTP E2E Other Technician"), sql("TECHNICIAN"), sql("ACTIVE")].join(", ") + ");",
+  'INSERT INTO "User" ("id", "phone", "phoneVerified", "name", "role", "status", "updatedAt") VALUES',
+  "(" + [sql(ids.customerUser), sql(customerPhone), "TRUE", sql("MEKANIX HTTP E2E Customer"), sql("CUSTOMER"), sql("ACTIVE"), "NOW()"].join(", ") + "),",
+  "(" + [sql(ids.technicianUser), sql(technicianPhone), "TRUE", sql("MEKANIX HTTP E2E Technician"), sql("TECHNICIAN"), sql("ACTIVE"), "NOW()"].join(", ") + "),",
+  "(" + [sql(ids.otherCustomerUser), sql(otherCustomerPhone), "TRUE", sql("MEKANIX HTTP E2E Other Customer"), sql("CUSTOMER"), sql("ACTIVE"), "NOW()"].join(", ") + "),",
+  "(" + [sql(ids.otherTechnicianUser), sql(otherTechnicianPhone), "TRUE", sql("MEKANIX HTTP E2E Other Technician"), sql("TECHNICIAN"), sql("ACTIVE"), "NOW()"].join(", ") + ");",
   'INSERT INTO "Customer" ("id", "userId") VALUES (' + sql(ids.customer) + ", " + sql(ids.customerUser) + "), (" + sql(ids.otherCustomer) + ", " + sql(ids.otherCustomerUser) + ");",
   'INSERT INTO "Vehicle" ("id", "customerId", "type", "make", "model", "year") VALUES (' +
     [sql(ids.vehicle), sql(ids.customer), sql("EXCAVATOR"), sql("Caterpillar"), sql("320D E2E"), "2024"].join(", ") + "), (" +
     [sql(ids.otherVehicle), sql(ids.otherCustomer), sql("EXCAVATOR"), sql("Caterpillar"), sql("320D E2E Foreign"), "2024"].join(", ") + ");",
-  'INSERT INTO "Technician" ("id", "userId", "financialUnitStatus", "hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy", "status", "verified", "availableNow", "responseMins") VALUES (' +
-    [sql(ids.technician), sql(ids.technicianUser), sql("VERIFIED_IRR"), "200000", "50000", "20000", "50000", sql("ONLINE"), "TRUE", "TRUE", "5"].join(", ") + "), (" +
-    [sql(ids.otherTechnician), sql(ids.otherTechnicianUser), sql("VERIFIED_IRR"), "180000", "40000", "15000", "40000", sql("ONLINE"), "TRUE", "TRUE", "5"].join(", ") + ");",
+  'INSERT INTO "Technician" ("id", "userId", "financialUnitStatus", "hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy", "status", "verified", "availableNow", "responseMins", "updatedAt") VALUES (' +
+    [sql(ids.technician), sql(ids.technicianUser), sql("VERIFIED_IRR"), "200000", "50000", "20000", "50000", sql("ONLINE"), "TRUE", "TRUE", "5", "NOW()"].join(", ") + "), (" +
+    [sql(ids.otherTechnician), sql(ids.otherTechnicianUser), sql("VERIFIED_IRR"), "180000", "40000", "15000", "40000", sql("ONLINE"), "TRUE", "TRUE", "5", "NOW()"].join(", ") + ");",
   'INSERT INTO "TechnicianSpecialty" ("id", "technicianId", "category", "label") VALUES (' +
     [sql(ids.specialty), sql(ids.technician), sql("diagnostic"), sql("Heavy machinery diagnostics")].join(", ") + "), (" +
     [sql(ids.otherSpecialty), sql(ids.otherTechnician), sql("diagnostic"), sql("Heavy machinery diagnostics")].join(", ") + ");",
