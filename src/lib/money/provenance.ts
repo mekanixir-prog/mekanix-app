@@ -52,7 +52,7 @@ export function toSafeIntegerIrr(value: unknown, allowNegative = false): number 
     return null;
   }
 
-  const integerPattern = allowNegative ? /^-?\\d+(?:\\.0+)?$/ : /^\\+?\\d+(?:\\.0+)?$/;
+  const integerPattern = allowNegative ? /^-?\d+(?:\\.0+)?$/ : /^\\+?\d+(?:\\.0+)?$/;
   if (!integerPattern.test(raw)) return null;
   const parsed = Number(raw);
   return Number.isSafeInteger(parsed) && (allowNegative || parsed >= 0) ? parsed : null;
