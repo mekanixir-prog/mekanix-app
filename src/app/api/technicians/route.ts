@@ -3,7 +3,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireRole } from "@/lib/auth";
 import { maskFinancialFields } from "@/lib/money/financial-read-mask";
-import { PUBLIC_TECHNICIAN_SELECT, toPublicTechnician } from "@/lib/public-technician";
+import { PUBLIC_TECHNICIAN_LIST_SELECT, toPublicTechnician } from "@/lib/public-technician";
 
 const techInclude = {
   specialties: true,
@@ -37,7 +37,7 @@ export async function GET(req: Request) {
 
   const techs = await (await getDbForLib()).technician.findMany({
     where,
-    select: { ...PUBLIC_TECHNICIAN_SELECT, lat: true, lng: true },
+    select: { ...PUBLIC_TECHNICIAN_LIST_SELECT, lat: true, lng: true },
   });
 
   // Coordinates are used only to calculate an approximate distance for sorting.
