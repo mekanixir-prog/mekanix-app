@@ -251,7 +251,7 @@ describe("admin withdrawal API", () => {
       });
       expect(response.status).toBe(409);
       expect(await response.json()).toMatchObject({
-        code: "PAYMENT_STATUS_REQUIRES_VERIFIED_LIFECYCLE",
+        code: "PAYMENT_STATUS_REQUIRES_RECONCILIATION",
       });
       expect(mocks.paymentUpdate).not.toHaveBeenCalled();
       expect(mocks.audit).not.toHaveBeenCalled();
