@@ -4,7 +4,7 @@ import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
 import { releaseWalletTransaction } from "@/lib/wallet-release";
 import { shouldUseLegacyWalletReleaseFallback } from "@/lib/wallet-release-policy";
-import { maskWalletFinancialData } from "@/lib/money/financial-read-mask";
+import { maskWalletMoney } from "@/lib/money/read-provenance";
 
 // GET /api/wallets
 // Returns the wallet + recent transactions for the authenticated technician.
@@ -72,5 +72,5 @@ export async function GET(req: Request) {
     },
   });
 
-  return NextResponse.json(fresh ? maskWalletFinancialData(fresh as unknown as Record<string, unknown>) : null);
+  return NextResponse.json(fresh ? maskWalletMoney(fresh) : null);
 }
