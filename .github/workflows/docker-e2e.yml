@@ -159,6 +159,23 @@ jobs:
           BASE_URL: http://localhost:3000
           JWT_SECRET: ${{ env.JWT_SECRET }}
 
+      - name: Run k6 smoke load against isolated Docker stack
+        run: |
+          mkdir -p k6-reports
+          docker run --rm --network host \
+            -e BASE_URL=http://localhost:3000 \
+            -e K6_SMOKE=true \
+            -v "$PWD:/work" -w /work \
+            grafana/k6:latest run \
+            --summary-export=/work/k6-reports/k6-summary.json \
+            scripts/load-test.js
+
+      - name: Run OWASP ZAP baseline against isolated Docker stack
+        run: |
+          mkdir -p zap-reports
+          REPORT_DIR="$PWD/zap-reports" bash scripts/zap-scan.sh http://host.docker.internal:3000
+
+
       - name: Inject PostgreSQL outage and verify fail-closed recovery
         run: |
           docker compose -f /tmp/mekanix-build/docker-compose.yml stop db
@@ -178,6 +195,16 @@ jobs:
           done
           echo "PostgreSQL did not recover within 120 seconds"
           exit 1
+
+      - name: Upload isolated security and performance reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mekanix-isolated-security-performance-${{ github.run_id }}
+          path: |
+            k6-reports/
+            zap-reports/
+          if-no-files-found: ignore
 
       - name: Container logs (on failure)
         if: always()
