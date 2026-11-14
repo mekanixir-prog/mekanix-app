@@ -2,8 +2,13 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
-import { markFinancialRecordUnverifiedWhenFieldsChanged, TECHNICIAN_FEE_FIELDS } from "@/lib/money/financial-read-mask";
+import { maskFinancialFields, markFinancialRecordUnverifiedWhenFieldsChanged, TECHNICIAN_FEE_FIELDS } from "@/lib/money/financial-read-mask";
 import { PUBLIC_TECHNICIAN_SELECT, toPublicTechnician } from "@/lib/public-technician";
+
+const PUBLIC_USER_FIELDS = {
+  id: true, name: true, avatar: true, role: true, status: true,
+  country: true, currency: true, language: true, createdAt: true,
+} as const;
 
 // Public-facing technician fields — never expose sensitive data.
 // GET /api/technicians/[id] — public profile (no auth required).
