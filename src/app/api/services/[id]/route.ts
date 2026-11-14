@@ -25,6 +25,7 @@ import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-helpers";
 import { getServiceById } from "@/lib/service-unified";
 import { getTechnicianFromSession } from "@/lib/auth";
+import { maskFinancialFields, maskInvoiceFinancialData } from "@/lib/money/financial-read-mask";
 
 export async function GET(
   req: Request,
@@ -67,5 +68,11 @@ export async function GET(
     }
   }
 
-  return NextResponse.json(service);
+  return NextResponse.json({
+    ...service,
+    invoice: service.invoice ? maskInvoiceFinancialData(service.invoice) : service.invoice,
+    pricing: service.pricing ? maskFinancialFields(service.pricing, ["servicePrice", "visitPrice", "laborPrice", "partsPrice", "discount", "taxTotal", "total"], "currency") : service.pricing,
+    approvals: service.approvals?.map((approval) => maskFinancialFields(approval, ["partPrice", "laborPrice", "totalPrice"])),
+    findings: service.findings?.map((finding: any) => ({ ...finding, approvals: finding.approvals?.map((approval: any) => maskFinancialFields(approval, ["partPrice", "laborPrice", "totalPrice"])) })),
+  });
 }

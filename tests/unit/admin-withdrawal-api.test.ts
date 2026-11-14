@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => ({
   notify: vi.fn(),
   update: vi.fn(),
   audit: vi.fn(),
+  events: [] as string[],
+  paymentFind: vi.fn(),
+  paymentUpdate: vi.fn(),
 }));
 vi.mock("@/lib/admin-auth", () => ({
   getAdminFromRequest: mocks.admin,
@@ -31,6 +34,7 @@ vi.mock("@/lib/db-access", () => ({
       findUnique: mocks.find,
     },
     notification: { create: mocks.notify },
+    payment: { findUnique: mocks.paymentFind, update: mocks.paymentUpdate },
   }),
 }));
 vi.mock("@/lib/withdrawal-admin-atomic", () => ({
@@ -43,8 +47,8 @@ import { PATCH } from "@/app/api/admin/[resource]/[id]/route";
 
 const admin = { adminId: "admin-1", username: "operator", role: "ADMIN" };
 const before = {
-  id: "wd-1", walletId: "wallet-1", amount: 500, method: "bank", shebaNumber: "IR123456789012345678901234", status: "REQUESTED",
-  wallet: { technician: { userId: "tech-user-1", user: { name: "Technician" } } },
+  id: "wd-1", walletId: "wallet-1", amount: 500, financialUnitStatus: "VERIFIED_IRR", method: "bank", shebaNumber: "IR123456789012345678901234", status: "REQUESTED",
+  wallet: { financialUnitStatus: "VERIFIED_IRR", technician: { userId: "tech-user-1", user: { name: "Technician" } } },
 };
 const after = { ...before, status: "APPROVED" };
 
@@ -63,7 +67,9 @@ beforeEach(() => {
   mocks.find.mockResolvedValueOnce(before).mockResolvedValue(after);
   mocks.update.mockResolvedValue(true);
   mocks.notify.mockResolvedValue({});
-  mocks.audit.mockResolvedValue(undefined);
+  mocks.events.length = 0;
+  mocks.audit.mockImplementation(async () => { mocks.events.push("audit"); });
+  mocks.update.mockImplementation(async () => { mocks.events.push("update"); return true; });
 });
 
 describe("admin withdrawal API", () => {
@@ -106,7 +112,7 @@ describe("admin withdrawal API", () => {
     expect(mocks.list).toHaveBeenCalledTimes(1);
   });
 
-  it("approves a request and writes audit/notification after the transition", async () => {
+  it("durably audits before approval and records the committed transition", async () => {
     const response = await PATCH(request({ status: "APPROVED" }), {
       params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
     });
@@ -114,7 +120,12 @@ describe("admin withdrawal API", () => {
     expect(mocks.update).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       withdrawalId: "wd-1", action: "APPROVED", adminId: "admin-1",
     }));
-    expect(mocks.audit).toHaveBeenCalledTimes(1);
+    expect(mocks.audit).toHaveBeenCalledTimes(2);
+    expect(mocks.audit.mock.calls[0][0]).toMatchObject({
+      action: "ATTEMPT_WITHDRAWAL_APPROVED",
+      strict: true,
+    });
+    expect(mocks.events.indexOf("audit")).toBeLessThan(mocks.events.indexOf("update"));
     expect(mocks.notify).toHaveBeenCalledTimes(1);
   });
 
@@ -151,7 +162,12 @@ describe("admin withdrawal API", () => {
     expect(mocks.update).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       withdrawalId: "wd-1", action: "PAID", adminId: "admin-1", payoutReference: "BANK-TRX-2026-0001",
     }));
-    expect(mocks.audit).toHaveBeenCalledTimes(1);
+    expect(mocks.audit).toHaveBeenCalledTimes(2);
+    expect(mocks.audit.mock.calls[0][0]).toMatchObject({
+      action: "ATTEMPT_WITHDRAWAL_PAID",
+      strict: true,
+    });
+    expect(mocks.events.indexOf("audit")).toBeLessThan(mocks.events.indexOf("update"));
     expect(mocks.notify).toHaveBeenCalledTimes(1);
   });
 
@@ -194,7 +210,19 @@ describe("admin withdrawal API", () => {
     });
     expect(response.status).toBe(200);
     expect(mocks.update).toHaveBeenCalledTimes(1);
+    expect(mocks.audit).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not mutate a withdrawal when durable audit persistence fails", async () => {
+    mocks.audit.mockRejectedValueOnce(new Error("audit database unavailable"));
+    const response = await PATCH(request({ status: "APPROVED" }), {
+      params: Promise.resolve({ resource: "withdrawals", id: "wd-1" }),
+    });
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({ code: "WITHDRAWAL_AUDIT_UNAVAILABLE" });
     expect(mocks.audit).toHaveBeenCalledTimes(1);
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.notify).not.toHaveBeenCalled();
   });
 
   it("returns conflict when another administrator already changed the state", async () => {
@@ -208,4 +236,26 @@ describe("admin withdrawal API", () => {
     expect(response.status).toBe(409);
     expect(mocks.notify).not.toHaveBeenCalled();
   });
+  it.each(["PENDING", "SUCCEEDED", "FAILED", "REFUNDED"])(
+    "does not allow generic admin PATCH to force a verified payment into %s",
+    async (status) => {
+      mocks.paymentFind.mockResolvedValue({
+        id: "pay-1",
+        amount: 500,
+        currency: "IRR",
+        financialUnitStatus: "VERIFIED_IRR",
+        status: "PENDING",
+      });
+      const response = await PATCH(request({ status }), {
+        params: Promise.resolve({ resource: "payments", id: "pay-1" }),
+      });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        code: "PAYMENT_STATUS_REQUIRES_VERIFIED_LIFECYCLE",
+      });
+      expect(mocks.paymentUpdate).not.toHaveBeenCalled();
+      expect(mocks.audit).not.toHaveBeenCalled();
+    },
+  );
+
 });

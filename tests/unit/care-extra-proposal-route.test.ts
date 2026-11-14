@@ -30,7 +30,14 @@ vi.mock("@/lib/care-extra-proposal-atomic", () => ({
 
 import { POST } from "@/app/api/care/bookings/[id]/extra-proposal/route";
 
-const approval = { id: "approval-1", status: "PROPOSED" };
+const approval = {
+  id: "approval-1",
+  status: "PROPOSED",
+  financialUnitStatus: "VERIFIED_IRR",
+  partPrice: 1_200_000,
+  laborPrice: 800_000,
+  totalPrice: 3_200_000,
+};
 
 function makeRequest(body: string) {
   return new Request("https://mekanix.test/api/care/bookings/booking-1/extra-proposal", {
@@ -90,9 +97,9 @@ describe("CARE extra proposal route", () => {
       actorTechnicianId: "technician-profile-1",
       proposal: expect.objectContaining({
         proposedItem: validBody.proposedItem,
-        partPrice: 120_000,
+        partPrice: 1_200_000,
         quantity: 2,
-        laborPrice: 80_000,
+        laborPrice: 800_000,
         findingId: null,
       }),
       details: {
@@ -109,7 +116,7 @@ describe("CARE extra proposal route", () => {
     expect(mocks.notificationCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({
         userId: "customer-user",
-        body: expect.stringContaining("320000 تومان"),
+        body: expect.stringContaining("پیشنهاد هزینه ثبت شد و پس از تأیید واحد مالی قابل بررسی است"),
       }),
     });
   });

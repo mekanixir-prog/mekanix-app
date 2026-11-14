@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   invoiceUpdateMany: vi.fn(),
   jobFindUnique: vi.fn(),
   jobUpdateMany: vi.fn(),
+  transition: vi.fn(),
   taxFindUnique: vi.fn(),
   notificationCreate: vi.fn(),
   messageCreate: vi.fn(),
@@ -21,6 +22,13 @@ vi.mock("@/lib/auth", () => ({
   requireJobParticipant: mocks.participant,
   getTechnicianFromSession: mocks.technician,
 }));
+vi.mock("@/lib/job-status-atomic", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/job-status-atomic")>();
+  return {
+    ...actual,
+    transitionJobStatusAtomically: mocks.transition,
+  };
+});
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: vi.fn(async () => ({
     invoice: {
@@ -33,13 +41,14 @@ vi.mock("@/lib/db-access", () => ({
       findUnique: mocks.jobFindUnique,
       updateMany: mocks.jobUpdateMany,
     },
-    platformSetting: { findUnique: mocks.taxFindUnique },
+    platformSetting: { findUnique: vi.fn().mockResolvedValue(null) },
+    servicePackage: { findUnique: vi.fn().mockResolvedValue(null) },
     notification: { create: mocks.notificationCreate },
     message: { create: mocks.messageCreate },
   })),
 }));
 
-import { POST as createInvoice } from "@/app/api/invoices/route";
+import { GET as getInvoice, POST as createInvoice } from "@/app/api/invoices/route";
 import { PATCH as patchInvoice } from "@/app/api/invoices/[id]/route";
 
 function postRequest(body: unknown) {
@@ -65,13 +74,16 @@ const existingInvoice = {
   status: "SENT",
   total: 1200,
   currency: "IRR",
+  financialUnitStatus: "VERIFIED_IRR",
 };
 
 const pricingJob = {
   id: "job-1",
   status: "WAITING_APPROVAL",
-  parts: [{ unitPrice: 100, quantity: 2 }],
-  technician: { hourlyRate: 200, travelFeeBase: 50 },
+  parts: [{ financialUnitStatus: "VERIFIED_IRR", unitPrice: 100, quantity: 2 }],
+  technician: { hourlyRate: 200, travelFeeBase: 50, lat: null, lng: null },
+  tracking: [],
+  request: { category: "diagnostic", urgency: "NORMAL", lat: 35.7, lng: 51.4, vehicle: { type: "CAR" } },
 };
 
 const refreshedJob = {
@@ -91,7 +103,8 @@ beforeEach(() => {
   mocks.invoiceUpdateMany.mockResolvedValue({ count: 1 });
   mocks.jobFindUnique.mockResolvedValue(pricingJob);
   mocks.jobUpdateMany.mockResolvedValue({ count: 1 });
-  mocks.taxFindUnique.mockResolvedValue({ value: "0.09" });
+  mocks.transition.mockResolvedValue(undefined);
+  mocks.taxFindUnique.mockResolvedValue(null);
   mocks.notificationCreate.mockResolvedValue({});
   mocks.messageCreate.mockResolvedValue({});
 });
@@ -124,15 +137,84 @@ describe("POST /api/invoices lifecycle", () => {
     expect(mocks.notificationCreate).not.toHaveBeenCalled();
   });
 
-  it("rejects malformed tax settings instead of persisting a corrupt invoice total", async () => {
+  it("rejects invoice issuance when any persisted part lacks row-level IRR provenance", async () => {
     mocks.invoiceFindUnique.mockResolvedValueOnce(null);
-    mocks.taxFindUnique.mockResolvedValueOnce({ value: "0.09garbage" });
+    mocks.jobFindUnique.mockResolvedValueOnce({
+      ...pricingJob,
+      parts: [{ financialUnitStatus: "UNVERIFIED", unitPrice: 100, quantity: 2 }],
+    });
 
     const response = await createInvoice(postRequest({ jobId: "job-1" }));
-    expect(mocks.jobFindUnique).toHaveBeenCalledTimes(1);
-    expect(mocks.taxFindUnique).toHaveBeenCalledTimes(1);
-    expect(await response.json()).toMatchObject({ error: "تنظیمات مالیات نامعتبر است" });
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "JOB_PART_CURRENCY_UNVERIFIED" });
+    expect(mocks.invoiceCreate).not.toHaveBeenCalled();
+  });
+
+  it("creates an invoice using fixed IRR labor, dispatch, and inspection rates", async () => {
+    mocks.invoiceFindUnique.mockResolvedValueOnce(null);
+    mocks.jobFindUnique.mockResolvedValueOnce(pricingJob).mockResolvedValueOnce(refreshedJob);
+
+    const response = await createInvoice(postRequest({ jobId: "job-1" }));
+    expect(response.status).toBe(200);
+    const payload = mocks.invoiceCreate.mock.calls[0][0].data;
+    expect(payload).toMatchObject({
+      laborHours: 1,
+      laborRate: 8_000_000,
+      laborTotal: 8_000_000,
+      partsTotal: 200,
+      travelFee: 5_000_000,
+      inspectionFee: 6_000_000,
+      emergencyFee: 0,
+      subtotal: 19_000_200,
+      taxRate: 0,
+      taxTotal: 0,
+      total: 19_000_200,
+      currency: "IRR",
+      pricingVersion: "rate-card-1",
+      financialUnitStatus: "VERIFIED_IRR",
+    });
+  });
+
+  it("persists and exposes emergency surcharge separately from fixed labor", async () => {
+    mocks.invoiceFindUnique.mockResolvedValueOnce(null);
+    mocks.jobFindUnique.mockResolvedValueOnce({
+      ...pricingJob,
+      request: { ...pricingJob.request, urgency: "EMERGENCY" },
+    }).mockResolvedValueOnce(refreshedJob);
+
+    const response = await createInvoice(postRequest({ jobId: "job-1" }));
+    expect(response.status).toBe(200);
+    expect(mocks.invoiceCreate.mock.calls[0][0].data).toMatchObject({
+      laborTotal: 8_000_000,
+      emergencyFee: 2_400_000,
+      subtotal: 21_400_200,
+      total: 21_400_200,
+    });
+  });
+
+  it("fails closed when a service category has no tariff mapping", async () => {
+    mocks.invoiceFindUnique.mockResolvedValueOnce(null);
+    mocks.jobFindUnique.mockResolvedValueOnce({
+      ...pricingJob,
+      request: { ...pricingJob.request, category: "unknown-service" },
+    });
+
+    const response = await createInvoice(postRequest({ jobId: "job-1" }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "SERVICE_RATE_MAPPING_REQUIRED" });
+    expect(mocks.invoiceCreate).not.toHaveBeenCalled();
+  });
+
+  it("requires explicit minor or major classification for engine repairs", async () => {
+    mocks.invoiceFindUnique.mockResolvedValueOnce(null);
+    mocks.jobFindUnique.mockResolvedValueOnce({
+      ...pricingJob,
+      request: { ...pricingJob.request, category: "engine repair" },
+    });
+
+    const response = await createInvoice(postRequest({ jobId: "job-1" }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "SERVICE_RATE_MAPPING_REQUIRED" });
     expect(mocks.invoiceCreate).not.toHaveBeenCalled();
   });
 
@@ -145,16 +227,76 @@ describe("POST /api/invoices lifecycle", () => {
     expect(mocks.invoiceCreate).not.toHaveBeenCalled();
   });
 
-  it("rejects non-finite or out-of-range labor hours", async () => {
+  it("ignores client-supplied hourly values and keeps the server fixed-fee tariff", async () => {
     mocks.invoiceFindUnique.mockResolvedValueOnce(null);
+    mocks.jobFindUnique.mockResolvedValueOnce(pricingJob).mockResolvedValueOnce(refreshedJob);
 
-    const response = await createInvoice(postRequest({ jobId: "job-1", laborHours: "2" }));
-    expect(response.status).toBe(400);
-    expect(mocks.invoiceCreate).not.toHaveBeenCalled();
+    const response = await createInvoice(postRequest({ jobId: "job-1", laborHours: 22, laborRate: 1 }));
+    expect(response.status).toBe(200);
+    expect(mocks.invoiceCreate.mock.calls[0][0].data.laborHours).toBe(1);
+    expect(mocks.invoiceCreate.mock.calls[0][0].data.laborTotal).toBe(8_000_000);
   });
+
 });
 
 describe("PATCH /api/invoices/[id] status transitions", () => {
+  it("records customer estimate approval through the atomic job-status writer", async () => {
+    mocks.auth.mockResolvedValue({ userId: "customer-1", role: "CUSTOMER" });
+    const updatedAt = new Date("2026-11-07T10:00:00.000Z");
+    const invoiceWithJob = {
+      ...existingInvoice,
+      job: {
+        status: "WAITING_APPROVAL",
+        customerApproved: false,
+        updatedAt,
+        technicianId: "tech-1",
+        requestId: "request-1",
+      },
+    };
+    mocks.invoiceFindUnique
+      .mockResolvedValueOnce(invoiceWithJob)
+      .mockResolvedValueOnce({ ...invoiceWithJob, job: { ...invoiceWithJob.job, customerApproved: true }, payment: null });
+
+    const response = await patchInvoice(patchRequest({ customerApproved: true }), {
+      params: Promise.resolve({ id: "inv-1" }),
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.transition).toHaveBeenCalledWith(expect.any(Object), {
+      jobId: "job-1",
+      requestId: "request-1",
+      technicianId: "tech-1",
+      actorRole: "CUSTOMER",
+      actorTechnicianId: null,
+      currentStatus: "WAITING_APPROVAL",
+      expectedUpdatedAt: updatedAt,
+      nextStatus: "WAITING_APPROVAL",
+      updates: { customerApproved: true },
+    });
+    expect(mocks.jobUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects customer approval for an unverified invoice without writing the job", async () => {
+    mocks.auth.mockResolvedValue({ userId: "customer-1", role: "CUSTOMER" });
+    mocks.invoiceFindUnique.mockResolvedValueOnce({
+      ...existingInvoice,
+      financialUnitStatus: "UNVERIFIED",
+      job: {
+        status: "WAITING_APPROVAL",
+        customerApproved: false,
+        updatedAt: new Date("2026-11-07T10:00:00.000Z"),
+        technicianId: "tech-1",
+        requestId: "request-1",
+      },
+    });
+
+    const response = await patchInvoice(patchRequest({ customerApproved: true }), {
+      params: Promise.resolve({ id: "inv-1" }),
+    });
+    expect(response.status).toBe(409);
+    expect(mocks.transition).not.toHaveBeenCalled();
+    expect(mocks.jobUpdateMany).not.toHaveBeenCalled();
+  });
+
   it("rejects CANCELLED because it is not a supported InvoiceStatus", async () => {
     mocks.invoiceFindUnique.mockResolvedValueOnce({ ...existingInvoice, status: "SENT" });
 
@@ -202,5 +344,112 @@ describe("PATCH /api/invoices/[id] status transitions", () => {
     expect(response.status).toBe(200);
     expect(mocks.invoiceUpdateMany).toHaveBeenCalledTimes(1);
     expect(await response.json()).toMatchObject({ status: "SENT" });
+  });
+});
+
+
+describe("GET /api/invoices financial provenance", () => {
+  it("quarantines claimed verified invoice trees with fractional or negative amounts", async () => {
+    mocks.auth.mockResolvedValue({ userId: "customer-1", role: "CUSTOMER" });
+    mocks.invoiceFindUnique.mockResolvedValueOnce({
+      ...existingInvoice,
+      financialUnitStatus: "VERIFIED_IRR",
+      currency: "IRR",
+      laborTotal: 100,
+      partsTotal: 0,
+      subtotal: 100,
+      total: 100.5,
+      payment: {
+        id: "payment-invalid",
+        financialUnitStatus: "VERIFIED_IRR",
+        currency: "IRR",
+        amount: 100.5,
+      },
+      job: {
+        id: "job-invalid",
+        financialUnitStatus: "VERIFIED_IRR",
+        travelFee: -1,
+        technician: {
+          id: "tech-invalid",
+          financialUnitStatus: "VERIFIED_IRR",
+          hourlyRate: -1,
+          travelFeeBase: 0,
+          inspectionFee: 0,
+          inspectionFeeHeavy: 0,
+        },
+        parts: [{
+          id: "part-invalid",
+          financialUnitStatus: "VERIFIED_IRR",
+          unitPrice: -1,
+        }],
+      },
+    });
+
+    const response = await getInvoice(new Request("https://mekanix.test/api/invoices?jobId=job-1"));
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload).toMatchObject({
+      financialUnitStatus: "QUARANTINED",
+      total: null,
+      payment: { financialUnitStatus: "QUARANTINED", amount: null },
+      job: {
+        financialUnitStatus: "QUARANTINED",
+        travelFee: null,
+        technician: { financialUnitStatus: "QUARANTINED", hourlyRate: null },
+        parts: [{ financialUnitStatus: "QUARANTINED", unitPrice: null }],
+      },
+    });
+  });
+
+  it("masks unverified invoice, payment, job, technician, and part amounts", async () => {
+    mocks.auth.mockResolvedValue({ userId: "customer-1", role: "CUSTOMER" });
+    mocks.invoiceFindUnique.mockResolvedValueOnce({
+      ...existingInvoice,
+      financialUnitStatus: "UNVERIFIED",
+      laborTotal: 8000,
+      partsTotal: 2000,
+      subtotal: 10000,
+      total: 10000,
+      payment: {
+        id: "payment-1",
+        financialUnitStatus: "UNVERIFIED",
+        currency: "IRR",
+        amount: 10000,
+      },
+      job: {
+        id: "job-1",
+        financialUnitStatus: "UNVERIFIED",
+        travelFee: 500,
+        technician: {
+          id: "tech-1",
+          financialUnitStatus: "UNVERIFIED",
+          hourlyRate: 300,
+        },
+        parts: [{
+          id: "part-1",
+          financialUnitStatus: "UNVERIFIED",
+          unitPrice: 2000,
+        }],
+      },
+    });
+
+    const response = await getInvoice(new Request(
+      "https://mekanix.test/api/invoices?jobId=job-1",
+    ));
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload).toMatchObject({
+      financialUnitStatus: "UNVERIFIED",
+      laborTotal: null,
+      partsTotal: null,
+      total: null,
+      payment: { amount: null, financialUnitStatus: "UNVERIFIED" },
+      job: {
+        travelFee: null,
+        technician: { hourlyRate: null },
+        parts: [{ unitPrice: null }],
+      },
+    });
+    expect(mocks.participant).toHaveBeenCalledWith(expect.any(Object), "job-1");
   });
 });

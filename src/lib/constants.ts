@@ -34,7 +34,7 @@ export const MACHINE_MODES = [
     desc: "Trucks, buses, excavators, loaders, tractors, industrial",
     icon: "Truck",
     tone: "emerald",
-    types: ["TRUCK", "BUS", "EXCAVATOR", "LOADER", "BULLDOZER", "GRADER", "AGRI", "INDUSTRIAL", "OTHER"],
+    types: ["TRUCK", "BUS", "EXCAVATOR", "LOADER", "BULLDOZER", "GRADER", "AGRI", "INDUSTRIAL"],
   },
 ] as const;
 

@@ -1,5 +1,6 @@
 import type { JobStatus, PrismaClient } from "@prisma/client";
 import { getD1Binding } from "@/lib/idempotency";
+import { multiplyRatioIrr } from "@/lib/money/irr";
 
 export class JobStatusConflictError extends Error {
   constructor() {
@@ -25,12 +26,16 @@ export type AtomicInvoiceInput = {
   laborTotal: number;
   partsTotal: number;
   travelFee: number;
+  inspectionFee: number;
+  emergencyFee: number;
   subtotal: number;
   taxRate: number;
   taxTotal: number;
   discount: number;
   total: number;
   currency: string;
+  pricingVersion: string;
+  financialUnitStatus: "VERIFIED_IRR";
   status: "SENT";
   notes: string;
 };
@@ -42,11 +47,52 @@ export type AtomicJobStatusInput = {
   actorRole: "TECHNICIAN" | "ADMIN" | "CUSTOMER" | "FLEET_MANAGER";
   actorTechnicianId: string | null;
   currentStatus: JobStatus;
+  expectedUpdatedAt: Date;
   nextStatus: JobStatus;
   updates: JobStatusScalarUpdates;
   invoice?: AtomicInvoiceInput | null;
   holdUntil?: Date | null;
 };
+
+export type JobStatusActorRole = AtomicJobStatusInput["actorRole"] | "PARTNER";
+
+const TECHNICIAN_TRANSITIONS: Readonly<Record<string, readonly string[]>> = {
+  ACCEPTED: ["REQUESTED"],
+  EN_ROUTE: ["ACCEPTED"],
+  ARRIVED: ["EN_ROUTE", "ACCEPTED"],
+  DIAGNOSING: ["ARRIVED", "EN_ROUTE", "ACCEPTED"],
+  REPAIRING: ["DIAGNOSING", "WAITING_APPROVAL"],
+  WAITING_APPROVAL: ["REPAIRING"],
+  COMPLETED: ["REPAIRING"],
+  REJECTED: ["REQUESTED"],
+};
+
+const CUSTOMER_CANCEL_FROM = ["REQUESTED", "ACCEPTED", "EN_ROUTE"] as const;
+
+/**
+ * Shared role matrix for both the HTTP route and the final Prisma/D1 write
+ * boundary. ADMIN bypasses role-specific transitions deliberately, but the
+ * atomic writer still enforces universal repair/estimate invariants.
+ */
+export function isAllowedJobStatusTransition(
+  role: JobStatusActorRole,
+  currentStatus: string,
+  nextStatus: string,
+  customerApproved: boolean | undefined,
+): boolean {
+  if (role === "ADMIN") return true;
+  if (role === "PARTNER") return false;
+
+  if (role === "CUSTOMER" || role === "FLEET_MANAGER") {
+    if (customerApproved === true) {
+      return currentStatus === "WAITING_APPROVAL" && nextStatus === currentStatus;
+    }
+    return nextStatus === "CANCELLED" &&
+      CUSTOMER_CANCEL_FROM.includes(currentStatus as (typeof CUSTOMER_CANCEL_FROM)[number]);
+  }
+
+  return TECHNICIAN_TRANSITIONS[nextStatus]?.includes(currentStatus) ?? false;
+}
 
 function isRequestTerminalTransition(status: string) {
   return status === "CANCELLED" || status === "REJECTED";
@@ -56,16 +102,132 @@ function isTechnicianReleaseTransition(status: string) {
   return status === "COMPLETED" || isRequestTerminalTransition(status);
 }
 
+export function assertAtomicInvoiceInput(invoice: AtomicInvoiceInput, jobId: string): void {
+  const moneyFields = [
+    invoice.laborRate,
+    invoice.laborTotal,
+    invoice.partsTotal,
+    invoice.travelFee,
+    invoice.inspectionFee,
+    invoice.emergencyFee,
+    invoice.subtotal,
+    invoice.taxTotal,
+    invoice.discount,
+    invoice.total,
+  ];
+  if (invoice.jobId !== jobId ||
+      invoice.currency !== "IRR" ||
+      invoice.financialUnitStatus !== "VERIFIED_IRR" ||
+      invoice.status !== "SENT" ||
+      !/^rate-card-\d+$/.test(invoice.pricingVersion) ||
+      typeof invoice.notes !== "string" ||
+      !Number.isSafeInteger(invoice.laborHours) ||
+      invoice.laborHours <= 0 ||
+      !Number.isFinite(invoice.taxRate) ||
+      invoice.taxRate < 0 || invoice.taxRate > 1 ||
+      !Number.isSafeInteger(invoice.taxRate * 10_000) ||
+      invoice.discount !== 0 ||
+      moneyFields.some((value) => !Number.isSafeInteger(value) || value < 0)) {
+    throw new JobStatusConflictError();
+  }
+
+  const [laborRate, laborTotal, partsTotal, travelFee, inspectionFee, emergencyFee,
+    subtotal, taxTotal, discount, total] = moneyFields;
+  const max = BigInt(Number.MAX_SAFE_INTEGER);
+  const expectedLabor = BigInt(laborRate) * BigInt(invoice.laborHours);
+  const expectedSubtotal = BigInt(laborTotal) + BigInt(partsTotal) +
+    BigInt(travelFee) + BigInt(inspectionFee) + BigInt(emergencyFee);
+  const expectedTotal = BigInt(subtotal) + BigInt(taxTotal) - BigInt(discount);
+  const taxRateBps = invoice.taxRate * 10_000;
+
+  if (expectedLabor > max || expectedSubtotal > max || expectedTotal > max ||
+      expectedLabor !== BigInt(laborTotal) ||
+      expectedSubtotal !== BigInt(subtotal) ||
+      expectedTotal !== BigInt(total)) {
+    throw new JobStatusConflictError();
+  }
+
+  // The persisted tax rate is an exact basis-point ratio. Tax remains disabled
+  // by default; if enabled later, the writer still verifies the rounded IRR total.
+  const expectedTax = multiplyRatioIrr(subtotal, taxRateBps, 10_000, "half-up");
+  if (expectedTax !== taxTotal) {
+    throw new JobStatusConflictError();
+  }
+}
+
+function assertRoleTransition(input: AtomicJobStatusInput) {
+  const estimateTransition = input.currentStatus === "REPAIRING" && input.nextStatus === "WAITING_APPROVAL";
+  if (estimateTransition !== Boolean(input.invoice)) throw new JobStatusConflictError();
+  if (input.invoice) assertAtomicInvoiceInput(input.invoice, input.jobId);
+  const isCustomerActor = input.actorRole === "CUSTOMER" || input.actorRole === "FLEET_MANAGER";
+  if (input.actorRole === "TECHNICIAN" &&
+      (!input.actorTechnicianId || input.actorTechnicianId !== input.technicianId)) {
+    throw new JobStatusConflictError();
+  }
+  if (input.updates.customerApproved !== undefined &&
+      (!isCustomerActor || input.updates.customerApproved !== true)) {
+    throw new JobStatusConflictError();
+  }
+
+  const updateKeys = Object.keys(input.updates);
+  const approvalOnly =
+    isCustomerActor &&
+    input.currentStatus === "WAITING_APPROVAL" &&
+    input.nextStatus === input.currentStatus &&
+    input.updates.customerApproved === true &&
+    updateKeys.every((key) => key === "customerApproved");
+
+  if (!isAllowedJobStatusTransition(
+    input.actorRole,
+    input.currentStatus,
+    input.nextStatus,
+    input.updates.customerApproved,
+  )) {
+    throw new JobStatusConflictError();
+  }
+
+  if (input.actorRole === "TECHNICIAN" || input.actorRole === "ADMIN") {
+    const allowedUpdates = new Set<string>(["technicianNotes"]);
+    if (input.nextStatus === "ACCEPTED") allowedUpdates.add("startedAt");
+    if (input.nextStatus === "ARRIVED") allowedUpdates.add("arrivedAt");
+    if (input.nextStatus === "COMPLETED") allowedUpdates.add("completedAt");
+    if (updateKeys.some((key) => !allowedUpdates.has(key))) {
+      throw new JobStatusConflictError();
+    }
+  }
+
+  // Universal lifecycle invariants apply even to ADMIN. The admin bypass is
+  // limited to the role matrix; it cannot skip diagnosis, repair, or consent.
+  if (input.nextStatus === "COMPLETED" && input.currentStatus !== "REPAIRING") {
+    throw new JobStatusConflictError();
+  }
+  // REPAIRING without an invoice is the pre-estimate parts-preparation stage;
+  // REPAIRING after customer approval is the actual repair stage.
+  if (input.nextStatus === "REPAIRING" && !["DIAGNOSING", "WAITING_APPROVAL"].includes(input.currentStatus)) {
+    throw new JobStatusConflictError();
+  }
+  if (input.nextStatus === "WAITING_APPROVAL" && input.currentStatus !== "REPAIRING" && !approvalOnly) {
+    throw new JobStatusConflictError();
+  }
+  if (isCustomerActor && input.nextStatus === "CANCELLED" && updateKeys.length !== 0) {
+    throw new JobStatusConflictError();
+  }
+}
+
 async function transitionWithPrisma(db: PrismaClient, input: AtomicJobStatusInput) {
   await db.$transaction(async (tx) => {
     const requestTransition = isRequestTerminalTransition(input.nextStatus);
     const jobWhere: any = {
       id: input.jobId,
       status: input.currentStatus,
+      updatedAt: input.expectedUpdatedAt,
     };
     if (input.actorRole === "TECHNICIAN") {
       if (!input.actorTechnicianId) throw new JobStatusConflictError();
       jobWhere.technicianId = input.actorTechnicianId;
+    }
+    if (input.currentStatus === "WAITING_APPROVAL" && input.nextStatus === "REPAIRING") {
+      jobWhere.customerApproved = true;
     }
     if (requestTransition) {
       jobWhere.request = {
@@ -73,9 +235,16 @@ async function transitionWithPrisma(db: PrismaClient, input: AtomicJobStatusInpu
       };
     }
 
+    const jobData = {
+      status: input.nextStatus,
+      ...(input.nextStatus === "WAITING_APPROVAL" && input.currentStatus !== "WAITING_APPROVAL"
+        ? { customerApproved: false }
+        : {}),
+      ...input.updates,
+    };
     const jobUpdate = await tx.job.updateMany({
       where: jobWhere,
-      data: { status: input.nextStatus, ...input.updates },
+      data: jobData,
     });
     if (jobUpdate.count !== 1) throw new JobStatusConflictError();
 
@@ -129,6 +298,10 @@ async function transitionWithD1(
   const assignments = ['"status" = ?', '"updatedAt" = ?'];
   const values: unknown[] = [input.nextStatus, now];
 
+  if (input.nextStatus === "WAITING_APPROVAL" && input.currentStatus !== "WAITING_APPROVAL") {
+    assignments.push('"customerApproved" = ?');
+    values.push(0);
+  }
   if (input.updates.startedAt) {
     assignments.push('"startedAt" = ?');
     values.push(input.updates.startedAt.toISOString());
@@ -152,11 +325,15 @@ async function transitionWithD1(
 
   let technicianGuard = "";
   let requestGuard = "";
-  values.push(input.jobId, input.currentStatus);
+  let approvalGuard = "";
+  values.push(input.jobId, input.currentStatus, input.expectedUpdatedAt.toISOString());
   if (input.actorRole === "TECHNICIAN") {
     if (!input.actorTechnicianId) throw new JobStatusConflictError();
     technicianGuard = ' AND "technicianId" = ?';
     values.push(input.actorTechnicianId);
+  }
+  if (input.currentStatus === "WAITING_APPROVAL" && input.nextStatus === "REPAIRING") {
+    approvalGuard = ' AND "customerApproved" = 1';
   }
   if (isRequestTerminalTransition(input.nextStatus)) {
     requestGuard = ' AND EXISTS (SELECT 1 FROM "ServiceRequest" r WHERE r."id" = ? AND r."matchedTechId" = ?)';
@@ -171,7 +348,7 @@ async function transitionWithD1(
   const statements = [
     d1.prepare(
       'UPDATE "Job" SET ' + assignments.join(", ") +
-      ' WHERE "id" = ? AND "status" = ?' + technicianGuard + requestGuard
+      ' WHERE "id" = ? AND "status" = ? AND "updatedAt" = ?' + technicianGuard + approvalGuard + requestGuard
     ).bind(...values),
     assertOneChange(),
   ];
@@ -188,9 +365,9 @@ async function transitionWithD1(
       d1.prepare(
         'INSERT INTO "Invoice"' +
         ' ("id", "code", "jobId", "laborHours", "laborRate", "laborTotal", "partsTotal",' +
-        ' "travelFee", "subtotal", "taxRate", "taxTotal", "discount", "total", "currency",' +
-        ' "status", "notes", "createdAt", "updatedAt")' +
-        ' SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?' +
+        ' "travelFee", "inspectionFee", "emergencyFee", "subtotal", "taxRate", "taxTotal", "discount", "total", "currency",' +
+        ' "pricingVersion", "financialUnitStatus", "status", "notes", "createdAt", "updatedAt")' +
+        ' SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?' +
         ' WHERE EXISTS (SELECT 1 FROM "Job" j WHERE j."id" = ? AND j."status" = ?)' +
         ' AND NOT EXISTS (SELECT 1 FROM "Invoice" i WHERE i."jobId" = ?)'
       ).bind(
@@ -202,12 +379,16 @@ async function transitionWithD1(
         invoice.laborTotal,
         invoice.partsTotal,
         invoice.travelFee,
+        invoice.inspectionFee,
+        invoice.emergencyFee,
         invoice.subtotal,
         invoice.taxRate,
         invoice.taxTotal,
         invoice.discount,
         invoice.total,
         invoice.currency,
+        invoice.pricingVersion,
+        invoice.financialUnitStatus,
         invoice.status,
         invoice.notes,
         now,
@@ -263,6 +444,7 @@ export async function transitionJobStatusAtomically(
   db: PrismaClient,
   input: AtomicJobStatusInput,
 ): Promise<void> {
+  assertRoleTransition(input);
   const d1 = await getD1Binding();
   if (d1) return transitionWithD1(d1, input);
   return transitionWithPrisma(db, input);

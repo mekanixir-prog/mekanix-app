@@ -6,6 +6,7 @@ import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { otpVerifySchema } from "@/lib/schemas";
 import { hashOtpCode, hashOtpPhone } from "@/lib/otp-crypto";
 import { AUTH_USER_SELECT } from "@/lib/user-select";
+import { maskTechnicianFinancialData } from "@/lib/money/financial-read-mask";
 
 const TECHNICIAN_INCLUDE = {
   specialties: true,
@@ -253,7 +254,10 @@ export async function POST(req: Request) {
   // The session JWT is NEVER exposed to client-side JS: it lives only in the
   // HttpOnly cookie, which `fetch(..., { credentials: "include" })` sends
   // automatically on every same-origin API call.
-  const response = NextResponse.json({ user, created });
+  const safeUser = user?.technician
+    ? { ...user, technician: maskTechnicianFinancialData(user.technician) }
+    : user;
+  const response = NextResponse.json({ user: safeUser, created });
   response.cookies.set("mekanix-token", token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant } from "@/lib/auth";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { validatePrepayRecordSet } from "@/lib/prepay-reconciliation";
 
 // Read-only reconciliation lookup. It verifies the job marker and all
 // four financial records written by recordPrepayAtomically().
@@ -33,29 +35,63 @@ export async function GET(req: Request) {
       travelFee: true,
       platformCommission: true,
       netEarnings: true,
+      financialUnitStatus: true,
     },
   });
   if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
 
+  const safeJob = maskFinancialFields(job as unknown as Record<string, unknown>, [
+    "inspectionFee", "travelFee", "platformCommission", "netEarnings",
+  ]);
+
   const [prepayTxn, commissionTxn, holdLedger, commissionLedger] = await Promise.all([
-    db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${job.id}:PREPAY` }, select: { id: true } }),
-    db.walletTransaction.findUnique({ where: { idempotencyKey: `prepay:${job.id}:COMMISSION` }, select: { id: true } }),
-    db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_HOLD` }, select: { id: true } }),
-    db.walletLedger.findUnique({ where: { idempotencyKey: `prepay:${job.id}:LEDGER_COMMISSION` }, select: { id: true } }),
+    db.walletTransaction.findUnique({
+      where: { idempotencyKey: `prepay:${job.id}:PREPAY` },
+      select: { id: true, walletId: true, jobId: true, kind: true, status: true, grossAmount: true, commissionAmount: true, netAmount: true, idempotencyKey: true, financialUnitStatus: true },
+    }),
+    db.walletTransaction.findUnique({
+      where: { idempotencyKey: `prepay:${job.id}:COMMISSION` },
+      select: { id: true, walletId: true, jobId: true, kind: true, status: true, grossAmount: true, commissionAmount: true, netAmount: true, idempotencyKey: true, financialUnitStatus: true },
+    }),
+    db.walletLedger.findUnique({
+      where: { idempotencyKey: `prepay:${job.id}:LEDGER_HOLD` },
+      select: { id: true, walletId: true, type: true, amount: true, balanceBefore: true, balanceAfter: true, referenceType: true, referenceId: true, idempotencyKey: true, financialUnitStatus: true },
+    }),
+    db.walletLedger.findUnique({
+      where: { idempotencyKey: `prepay:${job.id}:LEDGER_COMMISSION` },
+      select: { id: true, walletId: true, type: true, amount: true, balanceBefore: true, balanceAfter: true, referenceType: true, referenceId: true, idempotencyKey: true, financialUnitStatus: true },
+    }),
   ]);
 
   const recordCount = [prepayTxn, commissionTxn, holdLedger, commissionLedger].filter(Boolean).length;
   if (job.prepayPaid && recordCount === 4) {
+    const reconciliation = validatePrepayRecordSet({
+      job,
+      prepayTransaction: prepayTxn,
+      commissionTransaction: commissionTxn,
+      holdLedger,
+      commissionLedger,
+    });
+    if (!reconciliation.ok) {
+      return NextResponse.json({
+        state: "RECONCILIATION_REQUIRED",
+        jobId: job.id,
+        recordedFinancialRows: recordCount,
+        expectedFinancialRows: 4,
+        reason: reconciliation.reason,
+      }, { status: 409 });
+    }
     return NextResponse.json({
       state: "COMMITTED",
       prepay: {
         jobId: job.id,
         jobCode: job.code,
         paidAt: job.prepayPaidAt,
-        inspectionFee: String(job.inspectionFee ?? 0),
-        travelFee: String(job.travelFee ?? 0),
-        commission: String(job.platformCommission ?? 0),
-        net: String(job.netEarnings ?? 0),
+        inspectionFee: safeJob.inspectionFee == null ? null : String(safeJob.inspectionFee),
+        travelFee: safeJob.travelFee == null ? null : String(safeJob.travelFee),
+        commission: safeJob.platformCommission == null ? null : String(safeJob.platformCommission),
+        net: safeJob.netEarnings == null ? null : String(safeJob.netEarnings),
+        financialUnitStatus: safeJob.financialUnitStatus,
       },
     });
   }
@@ -74,5 +110,6 @@ export async function GET(req: Request) {
     jobId: job.id,
     recordedFinancialRows: recordCount,
     expectedFinancialRows: 4,
+    reason: job.prepayPaid ? "FINANCIAL_RECORD_MISSING" : "ORPHAN_FINANCIAL_RECORDS",
   }, { status: 409 });
 }

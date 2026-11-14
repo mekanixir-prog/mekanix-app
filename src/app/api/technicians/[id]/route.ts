@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS } from "@/lib/auth";
+import { maskFinancialFields, markFinancialRecordUnverifiedWhenFieldsChanged, TECHNICIAN_FEE_FIELDS } from "@/lib/money/financial-read-mask";
 
 // Public-facing technician fields — never expose sensitive data.
 const PUBLIC_USER_FIELDS = {
@@ -38,7 +39,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     },
   });
   if (!tech) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(tech);
+  return NextResponse.json(maskFinancialFields(tech, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]));
 }
 
 // PATCH /api/technicians/[id]
@@ -96,11 +97,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const updated = await (await getDbForLib()).technician.update({
     where: { id },
-    data: safe as any,
+    data: markFinancialRecordUnverifiedWhenFieldsChanged(safe, TECHNICIAN_FEE_FIELDS) as any,
     include: {
       user: { select: PUBLIC_USER_FIELDS },
       specialties: true,
     },
   });
-  return NextResponse.json(updated);
+  return NextResponse.json(maskFinancialFields(updated, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]));
 }

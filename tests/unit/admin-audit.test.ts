@@ -230,7 +230,7 @@ describe("SEC-4 — admin PATCH audit logging", () => {
   });
 
   // ──────────── 6. payments → UPDATE_PAYMENT ────────────
-  it("PATCH /api/admin/payments/:id creates AuditLog with action UPDATE_PAYMENT", async () => {
+  it("rejects direct payment status mutation outside the verified payment lifecycle", async () => {
     const before = { id: "pay-1", status: "PENDING" };
     const after = { id: "pay-1", status: "REFUNDED" };
     mockPaymentFindUnique.mockResolvedValue(before);
@@ -239,14 +239,10 @@ describe("SEC-4 — admin PATCH audit logging", () => {
     const req = makePatchRequest("payments", "pay-1", { status: "REFUNDED" });
     const res = await PATCH(req, { params: Promise.resolve({ resource: "payments", id: "pay-1" }) });
 
-    expect(res.status).toBe(200);
-    expect(mockWriteAuditLog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "UPDATE_PAYMENT",
-        entity: "payment",
-        entityId: "pay-1",
-      })
-    );
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toMatchObject({ code: "PAYMENT_STATUS_REQUIRES_VERIFIED_LIFECYCLE" });
+    expect(mockPaymentUpdate).not.toHaveBeenCalled();
+    expect(mockWriteAuditLog).not.toHaveBeenCalled();
   });
 
   // ──────────── 7. customers WITHOUT status → UPDATE_CUSTOMER only ────────────

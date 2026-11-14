@@ -4,7 +4,12 @@ import type { JobStatus as PrismaJobStatus } from "@prisma/client";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
+import { calculatePrice } from "@/lib/pricing";
+import { maskJobFinancialData } from "@/lib/money/financial-read-mask";
+import { areJobPartPriceSourcesVerified } from "@/lib/money/provenance";
+import { estimateTravelDistanceKm, serviceCodeFromCategory } from "@/lib/job-invoice-pricing";
 import {
+  isAllowedJobStatusTransition,
   type AtomicInvoiceInput,
   JobStatusConflictError,
   transitionJobStatusAtomically,
@@ -24,62 +29,7 @@ const include = {
 // 12-hour hold from job completion before funds become withdrawable
 const HOLD_HOURS = 12;
 
-// ──────────── Job State Machine ────────────
-// Per-role allowed transitions. The current job status must be one of
-// `from[]` for the transition into `to` to be valid for that role.
-
-type Status =
-  | "REQUESTED" | "ACCEPTED" | "EN_ROUTE" | "ARRIVED" | "DIAGNOSING"
-  | "REPAIRING" | "WAITING_APPROVAL" | "COMPLETED" | "CANCELLED" | "REJECTED";
-
-const TECH_TRANSITIONS: { to: Status; from: Status[] }[] = [
-  { to: "ACCEPTED", from: ["REQUESTED"] },
-  { to: "EN_ROUTE", from: ["ACCEPTED"] },
-  { to: "ARRIVED", from: ["EN_ROUTE", "ACCEPTED"] },
-  { to: "DIAGNOSING", from: ["ARRIVED", "EN_ROUTE", "ACCEPTED"] },
-  { to: "REPAIRING", from: ["DIAGNOSING", "ARRIVED", "WAITING_APPROVAL"] },
-  { to: "WAITING_APPROVAL", from: ["REPAIRING", "DIAGNOSING"] },
-  { to: "COMPLETED", from: ["REPAIRING", "WAITING_APPROVAL"] },
-  { to: "REJECTED", from: ["REQUESTED"] },
-];
-
-// Customer transitions:
-//  - CANCEL only before technician arrives (REQUESTED, ACCEPTED, EN_ROUTE)
-//  - APPROVE_REPAIR (customerApproved=true) only when WAITING_APPROVAL
-const CUSTOMER_CANCEL_FROM: Status[] = ["REQUESTED", "ACCEPTED", "EN_ROUTE"];
-
-function isAllowedTransition(
-  role: "CUSTOMER" | "TECHNICIAN" | "ADMIN" | "FLEET_MANAGER" | "PARTNER",
-  currentStatus: string,
-  nextStatus: string,
-  customerApproved: boolean | undefined
-): boolean {
-  if (role === "ADMIN") return true;
-
-  // FLEET_MANAGER behaves like a customer for the job-status state machine
-  // (can cancel pre-service and approve repair estimates for fleet vehicles).
-  // PARTNER is read-only and cannot transition anything.
-  const actsAsCustomer = role === "CUSTOMER" || role === "FLEET_MANAGER";
-  if (role === "PARTNER") return false;
-
-  // Special: customer setting customerApproved=true (approve repair)
-  if (actsAsCustomer) {
-    if (customerApproved === true) {
-      return currentStatus === "WAITING_APPROVAL";
-    }
-    if (nextStatus === "CANCELLED") {
-      return CUSTOMER_CANCEL_FROM.includes(currentStatus as Status);
-    }
-    return false;
-  }
-
-  if (role === "TECHNICIAN") {
-    const rule = TECH_TRANSITIONS.find((t) => t.to === (nextStatus as Status));
-    if (!rule) return false;
-    return rule.from.includes(currentStatus as Status);
-  }
-  return false;
-}
+// The role transition matrix is shared with the atomic Prisma/D1 write boundary.
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await requireAuth(req);
@@ -98,7 +48,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "بدنه درخواست نامعتبر است" }, { status: 400 });
+  }
   const { status, ...extra } = body;
+  const hasCustomerApproval = Object.prototype.hasOwnProperty.call(extra, "customerApproved");
+  if (hasCustomerApproval && extra.customerApproved !== true) {
+    return NextResponse.json(
+      { error: "تأیید مشتری باید با مقدار Boolean واقعی true ارسال شود", code: "CUSTOMER_APPROVAL_INVALID" },
+      { status: 400 },
+    );
+  }
 
   // Load the current job so we can validate the transition
   const db = await getDbForLib();
@@ -106,12 +66,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     where: { id },
     select: {
       status: true,
+      customerApproved: true,
+      updatedAt: true,
       technicianId: true,
       requestId: true,
       code: true,
-      parts: { select: { unitPrice: true, quantity: true } },
-      technician: { select: { hourlyRate: true, travelFeeBase: true } },
-      invoice: { select: { id: true } },
+      parts: { select: { unitPrice: true, quantity: true, financialUnitStatus: true } },
+      request: { select: { category: true, urgency: true, lat: true, lng: true, vehicle: { select: { type: true } } } },
+      tracking: { orderBy: { ts: "asc" }, take: 1, select: { lat: true, lng: true } },
+      invoice: { select: { id: true, currency: true, financialUnitStatus: true } },
     },
   });
   if (!existing) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
@@ -119,7 +82,78 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // For technicians, ensure they are the ASSIGNED technician (requireJobParticipant already checked)
   // For customers, ensure they own the request (requireJobParticipant already checked)
 
-  const customerApproved = extra.customerApproved != null ? Boolean(extra.customerApproved) : undefined;
+  if (hasCustomerApproval && session.role !== "CUSTOMER" && session.role !== "FLEET_MANAGER") {
+    return NextResponse.json(
+      { error: "فقط مشتری یا مدیر ناوگان می‌تواند برآورد تعمیر را تأیید کند", code: "CUSTOMER_APPROVAL_FORBIDDEN" },
+      { status: 403 },
+    );
+  }
+
+  const customerApproved = hasCustomerApproval ? true : undefined;
+
+  // The estimate is a hard consent gate: no actor may start or complete work
+  // from WAITING_APPROVAL until the customer has accepted the estimate.
+  const targetStatus = status ?? existing.status;
+  if (targetStatus === "WAITING_APPROVAL" && existing.status === "REPAIRING" && existing.invoice) {
+    return NextResponse.json(
+      { error: "این پیش‌فاکتور قبلاً صادر شده است؛ برای ارسال مجدد از مسیر اطلاع‌رسانی فاکتور استفاده کنید", code: "ESTIMATE_ALREADY_ISSUED" },
+      { status: 409 },
+    );
+  }
+
+  if (targetStatus === "REPAIRING" && !["DIAGNOSING", "WAITING_APPROVAL"].includes(existing.status)) {
+    return NextResponse.json(
+      { error: "برای ورود به مرحله تعمیر، ابتدا باید عیب‌یابی انجام شود و پیش‌فاکتور در مسیر مجاز بررسی شود", code: "REPAIR_ESTIMATE_REQUIRED" },
+      { status: 409 },
+    );
+  }
+  const hasVerifiedEstimate = existing.invoice?.currency === "IRR" &&
+    existing.invoice.financialUnitStatus === "VERIFIED_IRR";
+
+  if (targetStatus === "REPAIRING" && existing.status === "WAITING_APPROVAL" && !hasVerifiedEstimate) {
+    return NextResponse.json(
+      { error: "پیش‌فاکتور معتبر با واحد ریال تأییدشده برای این کار یافت نشد", code: "REPAIR_ESTIMATE_REQUIRED" },
+      { status: 409 },
+    );
+  }
+  if (targetStatus === "REPAIRING" && existing.status === "DIAGNOSING" && existing.invoice) {
+    return NextResponse.json(
+      { error: "این کار پیش‌فاکتور صادرشده دارد؛ تأیید مشتری باید از مسیر بررسی برآورد ثبت شود", code: "CUSTOMER_APPROVAL_REQUIRED" },
+      { status: 409 },
+    );
+  }
+  if (targetStatus === "REPAIRING" && existing.status === "WAITING_APPROVAL" && existing.customerApproved !== true) {
+    return NextResponse.json(
+      { error: "شروع تعمیر تا زمان تأیید پیش‌فاکتور توسط مشتری مجاز نیست", code: "CUSTOMER_APPROVAL_REQUIRED" },
+      { status: 409 },
+    );
+  }
+  if (existing.status === "WAITING_APPROVAL" && targetStatus === "COMPLETED") {
+    return NextResponse.json(
+      { error: "کار نمی‌تواند پیش از شروع و تأیید برآورد تکمیل شود", code: "REPAIR_NOT_STARTED" },
+      { status: 409 },
+    );
+  }
+
+  if (targetStatus === "COMPLETED" && existing.status === "REPAIRING" && !hasVerifiedEstimate) {
+    return NextResponse.json(
+      { error: "تکمیل کار بدون پیش‌فاکتور معتبر و تأییدشده مجاز نیست", code: "REPAIR_ESTIMATE_REQUIRED" },
+      { status: 409 },
+    );
+  }
+  if (targetStatus === "COMPLETED" && existing.status === "REPAIRING" && existing.customerApproved !== true) {
+    return NextResponse.json(
+      { error: "تکمیل کار پیش از تأیید پیش‌فاکتور توسط مشتری مجاز نیست", code: "CUSTOMER_APPROVAL_REQUIRED" },
+      { status: 409 },
+    );
+  }
+
+  if (hasCustomerApproval && !hasVerifiedEstimate) {
+    return NextResponse.json(
+      { error: "برای تأیید مشتری، پیش‌فاکتور معتبر باید صادر شده باشد", code: "REPAIR_ESTIMATE_REQUIRED" },
+      { status: 409 },
+    );
+  }
 
   // If neither status nor customerApproved is provided, nothing to do
   if (!status && customerApproved === undefined) {
@@ -127,8 +161,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   // Validate state-machine transition
-  const targetStatus = status ?? existing.status;
-  const allowed = isAllowedTransition(session.role, existing.status, targetStatus, customerApproved);
+  const allowed = isAllowedJobStatusTransition(session.role, existing.status, targetStatus, customerApproved);
   if (!allowed) {
     return NextResponse.json(
       { error: `انتقال مجاز نیست: ${existing.status} → ${targetStatus} برای نقش ${session.role}` },
@@ -147,62 +180,88 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "فقط مکانیک مسئول این کار مجاز است" }, { status: 403 });
   }
 
-  if (status === "WAITING_APPROVAL" && extra.laborHours !== undefined &&
-      (typeof extra.laborHours !== "number" || !Number.isFinite(extra.laborHours) ||
-       extra.laborHours <= 0 || extra.laborHours > 24)) {
-    return NextResponse.json({ error: "مدت کار باید عددی بین ۰ تا ۲۴ ساعت باشد" }, { status: 400 });
-  }
+  // Legacy laborHours input is ignored: labor is priced as a fixed service unit.
 
   let invoiceInput: AtomicInvoiceInput | null = null;
   if (status === "WAITING_APPROVAL" && !existing.invoice) {
-    const laborHours = extra.laborHours ?? 1.5;
-    const laborRate = Number(existing.technician.hourlyRate);
-    const travelFee = Number(existing.technician.travelFeeBase);
+    if (!existing.request?.vehicle?.type) {
+      return NextResponse.json({ error: "نوع وسیله برای محاسبه تعرفه مشخص نیست", code: "VEHICLE_RATE_CLASS_REQUIRED" }, { status: 409 });
+    }
+    if (!areJobPartPriceSourcesVerified(existing.parts)) {
+      return NextResponse.json(
+        { error: "واحد قیمت قطعات هنوز به ریال تطبیق داده نشده است؛ صدور پیش‌فاکتور پس از تأیید سوابق قطعات فعال می‌شود", code: "JOB_PART_CURRENCY_UNVERIFIED" },
+        { status: 409 },
+      );
+    }
     const partsTotal = existing.parts.reduce((sum, part) => {
       const unitPrice = Number(part.unitPrice);
       const quantity = Number(part.quantity);
-      if (!Number.isFinite(unitPrice) || unitPrice < 0 ||
-          !Number.isSafeInteger(quantity) || quantity < 0) {
-        return Number.NaN;
-      }
-      return sum + unitPrice * quantity;
+      if (!Number.isSafeInteger(unitPrice) || unitPrice < 0 ||
+          !Number.isSafeInteger(quantity) || quantity <= 0) return Number.NaN;
+      const next = sum + unitPrice * quantity;
+      return Number.isSafeInteger(next) ? next : Number.NaN;
     }, 0);
-
-    if (!Number.isFinite(laborRate) || laborRate < 0 ||
-        !Number.isFinite(travelFee) || travelFee < 0 ||
-        !Number.isFinite(partsTotal) || partsTotal < 0) {
-      return NextResponse.json({ error: "اطلاعات قیمت‌گذاری کار نامعتبر است" }, { status: 409 });
+    if (!Number.isSafeInteger(partsTotal) || partsTotal < 0) {
+      return NextResponse.json({ error: "مبلغ قطعات باید ریال صحیح و تأییدشده باشد", code: "PART_AMOUNT_UNVERIFIED" }, { status: 409 });
     }
 
-    const subtotal = laborHours * laborRate + partsTotal + travelFee;
-    const taxSetting = await db.platformSetting.findUnique({ where: { key: "tax_rate" } });
-    const taxRate = taxSetting?.value == null ? 0.09 : (taxSetting.value.trim() ? Number(taxSetting.value) : Number.NaN);
-    if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 1) {
-      return NextResponse.json({ error: "تنظیمات مالیات نامعتبر است" }, { status: 503 });
+    const serviceCode = serviceCodeFromCategory(existing.request.category);
+    if (!serviceCode) {
+      return NextResponse.json(
+        { error: "دسته خدمت در نرخ‌نامه تعریف نشده است؛ پیش از تأیید برآورد باید خدمت به کد تعرفه متصل شود", code: "SERVICE_RATE_MAPPING_REQUIRED" },
+        { status: 409 },
+      );
     }
-    const taxTotal = subtotal * taxRate;
-    const total = subtotal + taxTotal;
-    if (![subtotal, taxTotal, total].every(Number.isFinite)) {
-      return NextResponse.json({ error: "محاسبه مبلغ فاکتور نامعتبر است" }, { status: 409 });
+    const dispatchOrigin = existing.tracking[0];
+    const travelDistanceKm = dispatchOrigin
+      ? estimateTravelDistanceKm(
+          { lat: dispatchOrigin.lat, lng: dispatchOrigin.lng },
+          { lat: existing.request.lat, lng: existing.request.lng },
+        )
+      : 0;
+
+    let pricing: Awaited<ReturnType<typeof calculatePrice>>;
+    try {
+      pricing = await calculatePrice({
+        vehicleType: existing.request.vehicle.type,
+        serviceCode,
+        laborHours: 0,
+        partsCost: partsTotal,
+        travelDistanceKm,
+        isEmergency: existing.request.urgency === "EMERGENCY",
+      });
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "محاسبه تعرفه ممکن نیست", code: "PRICING_NOT_AVAILABLE" },
+        { status: 409 },
+      );
     }
+
+    const travelBillingNote = pricing.breakdown.extraDistanceBillingEnabled
+      ? `مسافت تقریبی حرکت تکنسین ${travelDistanceKm} کیلومتر است و هزینه رفت‌وآمد بر اساس نرخ‌نامه محاسبه شده است.`
+      : `مسافت تقریبی حرکت تکنسین ${travelDistanceKm} کیلومتر است؛ هزینه رفت‌وآمد پایه محاسبه شده و هزینه کیلومتر اضافی تا تأیید روش مسافت‌یابی فعال نیست.`;
 
     invoiceInput = {
       id: crypto.randomUUID(),
       code: `INV-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`,
       jobId: id,
-      laborHours,
-      laborRate,
-      laborTotal: laborHours * laborRate,
+      laborHours: 1,
+      laborRate: pricing.labor,
+      laborTotal: pricing.labor,
       partsTotal,
-      travelFee,
-      subtotal,
-      taxRate,
-      taxTotal,
-      discount: 0,
-      total,
+      travelFee: pricing.travel,
+      inspectionFee: pricing.inspection,
+      emergencyFee: pricing.emergency,
+      subtotal: pricing.subtotal,
+      taxRate: pricing.taxRate,
+      taxTotal: pricing.taxTotal,
+      discount: pricing.discount,
+      total: pricing.total,
       currency: "IRR",
+      pricingVersion: pricing.pricingVersion,
+      financialUnitStatus: "VERIFIED_IRR",
       status: "SENT" as const,
-      notes: "Parts covered by 6-month warranty.",
+      notes: `پیش‌فاکتور بر اساس نرخ‌نامه ثابت نسخه ${pricing.pricingVersion} و کد خدمت ${serviceCode} صادر شده است. ${travelBillingNote} انجام تعمیر و دریافت وجه منوط به تأیید این پیش‌فاکتور توسط مشتری است. شرایط ضمانت تابع توافق‌نامه جداگانه و تأییدشده خدمت است.`,
     };
   }
   const holdUntil = status === "COMPLETED"
@@ -234,6 +293,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       invoice: invoiceInput,
       holdUntil,
       currentStatus: existing.status as PrismaJobStatus,
+      expectedUpdatedAt: existing.updatedAt,
       nextStatus: (status ?? existing.status) as PrismaJobStatus,
       updates,
     });
@@ -312,7 +372,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     WAITING_APPROVAL: {
       type: "estimate_ready",
       title: "Estimate ready for approval",
-      body: `Review and approve your repair estimate for ${job.code}`,
+      body: `پیش‌فاکتور تعمیر ${job.code} آماده بررسی و تأیید شماست. انجام تعمیر پس از تأیید شما آغاز می‌شود.`,
       category: "job",
       link: "customer/invoice",
     },
@@ -359,5 +419,5 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   }
 
-  return NextResponse.json(job);
+  return NextResponse.json(maskJobFinancialData(job as unknown as Record<string, unknown>));
 }

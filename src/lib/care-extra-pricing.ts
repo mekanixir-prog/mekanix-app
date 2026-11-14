@@ -1,3 +1,4 @@
+/** Canonical IRR values returned by the validator for persistence. */
 export type ExtraProposalInput = {
   proposedItem: string;
   partPrice: number;
@@ -22,8 +23,8 @@ export function validateExtraProposalInput(body: unknown):
   const laborPrice = input.laborPrice === undefined ? 0 : input.laborPrice;
   const quantity = input.quantity === undefined ? 1 : input.quantity;
 
-  // All prices are integer toman amounts; reject coercion, fractions, negatives,
-  // infinities, and values outside JavaScript's exact integer range.
+  // The customer-facing API accepts integer Toman inputs. Convert once at this
+  // boundary to canonical IRR for storage; never label raw Toman as VERIFIED_IRR.
   if (typeof partPrice !== "number" || !Number.isSafeInteger(partPrice) || partPrice < 0) {
     return { ok: false, error: "قیمت قطعه باید عدد صحیح و نامنفی به تومان باشد" };
   }
@@ -34,9 +35,15 @@ export function validateExtraProposalInput(body: unknown):
     return { ok: false, error: "تعداد باید عدد صحیح بین ۱ تا ۱۰۰ باشد" };
   }
 
-  const totalPrice = partPrice * quantity + laborPrice;
-  if (!Number.isSafeInteger(totalPrice)) {
-    return { ok: false, error: "مبلغ کل خارج از محدوده مجاز است" };
+  const partPriceIrr = partPrice * 10;
+  const laborPriceIrr = laborPrice * 10;
+  const totalPriceIrr = partPriceIrr * quantity + laborPriceIrr;
+  if (
+    !Number.isSafeInteger(partPriceIrr) ||
+    !Number.isSafeInteger(laborPriceIrr) ||
+    !Number.isSafeInteger(totalPriceIrr)
+  ) {
+    return { ok: false, error: "مبلغ پس از تبدیل دقیق به ریال خارج از محدوده مجاز است" };
   }
 
   const findingId = input.findingId === undefined || input.findingId === null || input.findingId === ""
@@ -48,6 +55,6 @@ export function validateExtraProposalInput(body: unknown):
 
   return {
     ok: true,
-    value: { proposedItem: input.proposedItem.trim(), partPrice, quantity, laborPrice, findingId },
+    value: { proposedItem: input.proposedItem.trim(), partPrice: partPriceIrr, quantity, laborPrice: laborPriceIrr, findingId },
   };
 }

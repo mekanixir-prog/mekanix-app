@@ -9,6 +9,7 @@ import {
   JobStatusConflictError,
   transitionJobStatusAtomically,
 } from "@/lib/job-status-atomic";
+import { addJobPartBeforeInvoice } from "@/lib/job-parts-atomic";
 
 function makeD1() {
   const sqlite = new DatabaseSync(":memory:");
@@ -42,6 +43,16 @@ function makeD1() {
       "status" TEXT NOT NULL,
       "holdUntil" TEXT
     );
+    CREATE TABLE "Part" (
+      "id" TEXT PRIMARY KEY NOT NULL,
+      "jobId" TEXT NOT NULL,
+      "name" TEXT NOT NULL,
+      "sku" TEXT,
+      "quantity" INTEGER NOT NULL,
+      "unitPrice" REAL NOT NULL,
+      "financialUnitStatus" TEXT NOT NULL,
+      "createdAt" TEXT NOT NULL
+    );
     CREATE TABLE "Invoice" (
       "id" TEXT PRIMARY KEY NOT NULL,
       "code" TEXT NOT NULL UNIQUE,
@@ -51,12 +62,16 @@ function makeD1() {
       "laborTotal" REAL NOT NULL,
       "partsTotal" REAL NOT NULL,
       "travelFee" REAL NOT NULL,
+      "inspectionFee" REAL NOT NULL DEFAULT 0,
+      "emergencyFee" REAL NOT NULL DEFAULT 0,
       "subtotal" REAL NOT NULL,
       "taxRate" REAL NOT NULL,
       "taxTotal" REAL NOT NULL,
       "discount" REAL NOT NULL,
       "total" REAL NOT NULL,
       "currency" TEXT NOT NULL,
+      "pricingVersion" TEXT,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "status" TEXT NOT NULL,
       "notes" TEXT NOT NULL,
       "createdAt" TEXT NOT NULL,
@@ -92,6 +107,7 @@ const baseInput = {
   actorRole: "TECHNICIAN" as const,
   actorTechnicianId: "tech-1",
   currentStatus: "REPAIRING" as const,
+  expectedUpdatedAt: new Date("2026-11-02T10:00:00.000Z"),
   nextStatus: "COMPLETED" as const,
   updates: { completedAt: new Date("2026-11-02T10:00:00.000Z") },
 };
@@ -100,19 +116,23 @@ const invoice = {
   id: "invoice-1",
   code: "INV-123456789ABC",
   jobId: "job-1",
-  laborHours: 1.5,
-  laborRate: 15,
-  laborTotal: 22.5,
-  partsTotal: 10,
-  travelFee: 3,
-  subtotal: 35.5,
-  taxRate: 0.09,
-  taxTotal: 3.195,
+  laborHours: 1,
+  laborRate: 18_000_000,
+  laborTotal: 18_000_000,
+  partsTotal: 10_000_000,
+  travelFee: 5_000_000,
+  inspectionFee: 6_000_000,
+  emergencyFee: 0,
+  subtotal: 39_000_000,
+  taxRate: 0,
+  taxTotal: 0,
   discount: 0,
-  total: 38.695,
+  total: 39_000_000,
   currency: "IRR",
+  pricingVersion: "rate-card-2",
+  financialUnitStatus: "VERIFIED_IRR" as const,
   status: "SENT" as const,
-  notes: "Parts covered by 6-month warranty.",
+  notes: "Fixed-fee rate card rate-card-2; warranty terms follow the approved service agreement.",
 };
 
 describe("job status D1 SQLite transaction", () => {
@@ -123,8 +143,8 @@ describe("job status D1 SQLite transaction", () => {
     const instance = makeD1();
     sqlite = instance.sqlite;
     d1 = instance.d1;
-    sqlite.prepare('INSERT INTO "Job" ("id", "requestId", "technicianId", "status") VALUES (?, ?, ?, ?)')
-      .run("job-1", "request-1", "tech-1", "REPAIRING");
+    sqlite.prepare('INSERT INTO "Job" ("id", "requestId", "technicianId", "status", "updatedAt") VALUES (?, ?, ?, ?, ?)')
+      .run("job-1", "request-1", "tech-1", "REPAIRING", "2026-11-02T10:00:00.000Z");
     sqlite.prepare('INSERT INTO "ServiceRequest" ("id", "status", "matchedTechId") VALUES (?, ?, ?)')
       .run("request-1", "ASSIGNED", "tech-1");
     sqlite.prepare('INSERT INTO "Technician" ("id", "status") VALUES (?, ?)')
@@ -154,6 +174,89 @@ describe("job status D1 SQLite transaction", () => {
       .toEqual({ status: "ONLINE" });
   });
 
+  it("rejects a technician transition outside the role matrix before touching D1", async () => {
+    const batch = vi.spyOn(d1, "batch");
+    await expect(transitionJobStatusAtomically({} as any, {
+      ...baseInput,
+      currentStatus: "REQUESTED",
+      nextStatus: "EN_ROUTE",
+      updates: {},
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+
+    expect(batch).not.toHaveBeenCalled();
+    expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
+      .toEqual({ status: "REPAIRING" });
+  });
+
+  it("requires customer approval before a technician can start repair", async () => {
+    sqlite.prepare('UPDATE "Job" SET "status" = ?, "customerApproved" = 0 WHERE "id" = ?')
+      .run("WAITING_APPROVAL", "job-1");
+    const startRepair = {
+      ...baseInput,
+      currentStatus: "WAITING_APPROVAL" as const,
+      nextStatus: "REPAIRING" as const,
+      updates: {},
+    };
+
+    await expect(transitionJobStatusAtomically({} as any, startRepair))
+      .rejects.toBeInstanceOf(JobStatusConflictError);
+    expect(sqlite.prepare('SELECT "status", "customerApproved" FROM "Job" WHERE "id" = ?').get("job-1"))
+      .toEqual({ status: "WAITING_APPROVAL", customerApproved: 0 });
+
+    sqlite.prepare('UPDATE "Job" SET "customerApproved" = 1 WHERE "id" = ?').run("job-1");
+    await expect(transitionJobStatusAtomically({} as any, startRepair)).resolves.toBeUndefined();
+    expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
+      .toEqual({ status: "REPAIRING" });
+  });
+
+  it("serializes a D1 part edit against the status transition and prevents a stale invoice", async () => {
+    const oldRevision = baseInput.expectedUpdatedAt.toISOString();
+    const db = {
+      job: {
+        findUnique: async () => sqlite.prepare('SELECT "status", "updatedAt" FROM "Job" WHERE "id" = ?').get("job-1"),
+      },
+      part: {
+        findUnique: async ({ where }: { where: { id: string } }) =>
+          sqlite.prepare('SELECT * FROM "Part" WHERE "id" = ?').get(where.id),
+      },
+    } as any;
+
+    const part = await addJobPartBeforeInvoice(db, {
+      jobId: "job-1",
+      name: "Oil filter",
+      sku: "OF-1",
+      quantity: 1,
+      unitPrice: 1_000_000,
+    });
+    expect(part).toMatchObject({ jobId: "job-1", financialUnitStatus: "VERIFIED_IRR" });
+    const revised = sqlite.prepare('SELECT "updatedAt" FROM "Job" WHERE "id" = ?').get("job-1") as { updatedAt: string };
+    expect(new Date(revised.updatedAt).getTime()).toBeGreaterThan(new Date(oldRevision).getTime());
+
+    await expect(transitionJobStatusAtomically(db, {
+      ...baseInput,
+      invoice,
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+    expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
+      .toEqual({ status: "REPAIRING" });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "Invoice" WHERE "jobId" = ?').get("job-1"))
+      .toEqual({ count: 0 });
+  });
+
+  it("rejects a stale job revision when parts changed after the estimate was read", async () => {
+    sqlite.prepare('UPDATE "Job" SET "updatedAt" = ? WHERE "id" = ?')
+      .run("2026-11-02T10:05:00.000Z", "job-1");
+
+    await expect(transitionJobStatusAtomically({} as any, {
+      ...baseInput,
+      invoice,
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+
+    expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
+      .toEqual({ status: "REPAIRING" });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "Invoice" WHERE "jobId" = ?').get("job-1"))
+      .toEqual({ count: 0 });
+  });
+
   it("rolls back job status when the authenticated technician is no longer assigned", async () => {
     sqlite.prepare('UPDATE "Job" SET "technicianId" = ? WHERE "id" = ?').run("tech-2", "job-1");
 
@@ -166,28 +269,40 @@ describe("job status D1 SQLite transaction", () => {
   });
 
   it("creates the approval invoice in the same D1 transaction as WAITING_APPROVAL", async () => {
+    sqlite.prepare('UPDATE "Job" SET "status" = ? WHERE "id" = ?').run("REPAIRING", "job-1");
     await expect(transitionJobStatusAtomically({} as any, {
       ...baseInput,
+      currentStatus: "REPAIRING",
       nextStatus: "WAITING_APPROVAL",
       updates: {},
       invoice,
     })).resolves.toBeUndefined();
 
-    expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
-      .toEqual({ status: "WAITING_APPROVAL" });
-    expect(sqlite.prepare('SELECT "id", "jobId", "status" FROM "Invoice" WHERE "jobId" = ?').get("job-1"))
-      .toEqual({ id: "invoice-1", jobId: "job-1", status: "SENT" });
+    expect(sqlite.prepare('SELECT "status", "customerApproved" FROM "Job" WHERE "id" = ?').get("job-1"))
+      .toEqual({ status: "WAITING_APPROVAL", customerApproved: 0 });
+    expect(sqlite.prepare('SELECT "id", "jobId", "status", "inspectionFee", "emergencyFee", "pricingVersion", "financialUnitStatus" FROM "Invoice" WHERE "jobId" = ?').get("job-1"))
+      .toEqual({
+        id: "invoice-1",
+        jobId: "job-1",
+        status: "SENT",
+        inspectionFee: 6_000_000,
+        emergencyFee: 0,
+        pricingVersion: "rate-card-2",
+        financialUnitStatus: "VERIFIED_IRR",
+      });
   });
 
   it("rolls back WAITING_APPROVAL when a job invoice already exists", async () => {
+    sqlite.prepare('UPDATE "Job" SET "status" = ? WHERE "id" = ?').run("REPAIRING", "job-1");
     sqlite.prepare(
-      'INSERT INTO "Invoice" ("id", "code", "jobId", "laborHours", "laborRate", "laborTotal", "partsTotal", "travelFee", "subtotal", "taxRate", "taxTotal", "discount", "total", "currency", "status", "notes", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO "Invoice" ("id", "code", "jobId", "laborHours", "laborRate", "laborTotal", "partsTotal", "travelFee", "inspectionFee", "emergencyFee", "subtotal", "taxRate", "taxTotal", "discount", "total", "currency", "pricingVersion", "financialUnitStatus", "status", "notes", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(
-      "old-invoice", "INV-OLD", "job-1", 1, 15, 15, 0, 3, 18, 0.09, 1.62, 0, 19.62, "IRR", "SENT", "existing", "2026-11-01T00:00:00.000Z", "2026-11-01T00:00:00.000Z",
+      "old-invoice", "INV-OLD", "job-1", 1, 1_500_000, 1_500_000, 0, 3_000_000, 600_000, 0, 5_100_000, 0, 0, 0, 5_100_000, "IRR", "rate-card-1", "VERIFIED_IRR", "SENT", "existing", "2026-11-01T00:00:00.000Z", "2026-11-01T00:00:00.000Z",
     );
 
     await expect(transitionJobStatusAtomically({} as any, {
       ...baseInput,
+      currentStatus: "REPAIRING",
       nextStatus: "WAITING_APPROVAL",
       updates: {},
       invoice,
