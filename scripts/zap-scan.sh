@@ -20,10 +20,14 @@ echo "   Target: $TARGET_URL"
 echo "   Reports: $REPORT_DIR/zap-report-$TIMESTAMP.*"
 
 ZAP_EXIT=0
-docker run -t --rm \
-  --add-host=host.docker.internal:host-gateway \
-  -v "$REPORT_DIR:/zap/wrk" \
-  ghcr.io/zaproxy/zaproxy:stable \
+DOCKER_ARGS=(run -t --rm)
+if [ "${ZAP_DOCKER_NETWORK:-bridge}" = "host" ]; then
+  DOCKER_ARGS+=(--network host)
+else
+  DOCKER_ARGS+=(--add-host=host.docker.internal:host-gateway)
+fi
+DOCKER_ARGS+=(-v "$REPORT_DIR:/zap/wrk" ghcr.io/zaproxy/zaproxy:stable)
+docker "${DOCKER_ARGS[@]}" \
   zap-baseline.py \
   -t "$TARGET_URL" \
   -g gen.conf \
