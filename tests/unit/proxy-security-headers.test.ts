@@ -61,7 +61,7 @@ describe("security response headers", () => {
   });
 
 
-  it("restricts production framing to the application and approved preview gateway", () => {
+  it("restricts production framing to same-origin by default", () => {
     vi.stubEnv("NODE_ENV", "production");
     const response = proxy(new NextRequest("https://mekanix.ir/admin-panel"));
     const csp = response.headers.get("Content-Security-Policy") ?? "";
