@@ -45,6 +45,31 @@ async function makeSession(userId, role, phone) {
 const customerSession = await makeSession(ids.customerUser, "CUSTOMER", customerPhone);
 const technicianSession = await makeSession(ids.technicianUser, "TECHNICIAN", technicianPhone);
 
+const rateCardValue = {
+  current: {
+    schemaVersion: 1,
+    version: 1,
+    currency: "IRR",
+    displayCurrency: "TOMAN",
+    effectiveAt: "2026-11-14T00:00:00.000Z",
+    updatedAt: "2026-11-14T00:00:00.000Z",
+    updatedBy: "MEKANIX_HTTP_E2E_APPROVED_FIXTURE",
+    fees: {
+      passenger: { visitBaseIrr: 5000000, inspectionIrr: 6000000, includedKm: 10, perKmIrr: 100000 },
+      heavy: { visitBaseIrr: 20000000, inspectionIrr: 20000000, includedKm: 10, perKmIrr: 300000 },
+    },
+    serviceFeesIrr: {
+      passenger: { diagnostic: 8000000, electrical: 12000000, cooling: 12000000, brakes: 15000000, periodic: 18000000, engine_minor: 25000000, engine_major: 80000000, transmission: 60000000, hydraulic: null, undercarriage: null },
+      heavy: { diagnostic: 35000000, electrical: 30000000, cooling: 40000000, brakes: 50000000, periodic: 50000000, engine_minor: 60000000, engine_major: 180000000, transmission: 120000000, hydraulic: 80000000, undercarriage: 90000000 },
+    },
+    emergencySurchargeBps: 3000,
+    tax: { enabled: false, rateBps: 0 },
+    commission: { enabled: false, rateBps: 0, appliesTo: "LABOR_ONLY" },
+    vip: { enabled: false, annualPassengerPriceIrr: 18000000, annualHeavyPriceIrr: 60000000, freePeriodicVisitsPerYear: 4, coversVisitAndInspection: true, excludesRepairsAndParts: true },
+    discounts: { maxManualDiscountBps: 1000 },
+  },
+};
+
 const seedSql = [
   "BEGIN;",
   'INSERT INTO "User" ("id", "phone", "phoneVerified", "name", "role", "status") VALUES',
@@ -60,6 +85,8 @@ const seedSql = [
   'INSERT INTO "Session" ("id", "userId", "tokenHash", "expiresAt") VALUES (' +
     [sql(ids.customerSession), sql(ids.customerUser), sql(customerSession.tokenHash), sql(expiresAt)].join(", ") + "), (" +
     [sql(ids.technicianSession), sql(ids.technicianUser), sql(technicianSession.tokenHash), sql(expiresAt)].join(", ") + ");",
+  'INSERT INTO "PlatformSetting" ("key", "value", "description", "updatedAt", "updatedBy") VALUES (' +
+    [sql("mekanix.pricing.rate-card.v1"), sql(JSON.stringify(rateCardValue)), sql("Isolated HTTP E2E owner-approved rate-card fixture"), "NOW()", sql("MEKANIX_HTTP_E2E")].join(", ") + ");",
   "COMMIT;",
 ].join("\n");
 
