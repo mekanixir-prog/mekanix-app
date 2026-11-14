@@ -45,23 +45,26 @@ function buildContentSecurityPolicy(nonce: string, isProduction: boolean): strin
     ? `frame-ancestors 'self'${allowPreviewEmbedding ? " https://*.space-z.ai" : ""}`
     : "frame-ancestors 'self' https://*.space-z.ai http://localhost:* http://127.0.0.1:*";
 
+  // External origins are explicitly allowlisted from actual client-side use:
+  // OSM map tiles, seeded/approved profile avatars, and Nominatim search.
+  // ETA providers are server-side and do not belong in the browser CSP.
   return [
     "default-src 'self'",
     "base-uri 'self'",
     "object-src 'none'",
     "form-action 'self'",
     isProduction
-      ? `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://cdn.socket.io`
-      : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-eval' https://cdn.socket.io`,
-    `style-src 'self' 'nonce-${nonce}' https://fonts.googleapis.com`,
+      ? `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`
+      : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-eval'`,
+    `style-src 'self' 'nonce-${nonce}'`,
     "style-src-attr 'unsafe-inline'",
-    "font-src 'self' https://fonts.gstatic.com data:",
+    "font-src 'self' data:",
     isProduction
-      ? "img-src 'self' data: blob: https:"
-      : "img-src 'self' data: blob: https: http:",
+      ? "img-src 'self' data: blob: https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://i.pravatar.cc"
+      : "img-src 'self' data: blob: http: https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://i.pravatar.cc",
     isProduction
-      ? "connect-src 'self' wss: https:"
-      : "connect-src 'self' ws: wss: https: http:",
+      ? "connect-src 'self' wss: https://nominatim.openstreetmap.org"
+      : "connect-src 'self' ws: wss: http: https://nominatim.openstreetmap.org",
     "worker-src 'self' blob:",
     frameAncestors,
   ].join("; ");
