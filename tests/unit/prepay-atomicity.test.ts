@@ -53,6 +53,9 @@ describe("atomic prepay recording", () => {
     expect(db.$transaction).toHaveBeenCalledTimes(1);
     expect(tx.walletTransaction.create).toHaveBeenCalledTimes(2);
     expect(tx.walletLedger.create).toHaveBeenCalledTimes(2);
+    expect(tx.job.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: input.jobId, technicianId: input.technicianId, prepayPaid: false },
+    }));
     expect(tx.walletLedger.create).toHaveBeenNthCalledWith(2, {
       data: expect.objectContaining({
         amount: -100,
@@ -249,9 +252,13 @@ describe("atomic prepay recording", () => {
     await expect(recordPrepayWithD1(d1 as any, input)).resolves.toBe(true);
     expect(d1.batch).toHaveBeenCalledTimes(1);
     expect(d1.batch.mock.calls[0][0]).toHaveLength(16);
-    expect(statements[6].sql).toContain("changes() = 1");
+    expect(statements[0].sql).toContain('"technicianId" = ?');
+    expect(statements[0].values).toContain(input.technicianId);
     expect(statements[5].sql).toContain('"idempotencyKey"');
     expect(statements[9].sql).toContain("'HOLD'");
+    expect(statements[11].sql).toContain("'COMMISSION'");
+    expect(statements[13].sql).toContain('UPDATE "Wallet"');
+    expect(statements[13].sql).toContain("changes() = 1");
     expect(statements.some((statement) => statement.sql.includes("totalWithdrawn") && statement.sql.includes(">= 0"))).toBe(true);
   });
 
