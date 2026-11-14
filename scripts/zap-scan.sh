@@ -23,7 +23,7 @@ ZAP_EXIT=0
 docker run -t --rm \
   --add-host=host.docker.internal:host-gateway \
   -v "$REPORT_DIR:/zap/wrk" \
-  owasp/zap2docker-stable \
+  ghcr.io/zaproxy/zaproxy:stable \
   zap-baseline.py \
   -t "$TARGET_URL" \
   -g gen.conf \
