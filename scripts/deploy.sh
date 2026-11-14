@@ -6,11 +6,16 @@
 # swapping happens inside a temporary build context.
 #
 # Usage:
+#   cp .env.example .env && chmod 600 .env   # replace every placeholder first
 #   bash scripts/deploy.sh
 #
 # Required env vars:
-#   DB_PASSWORD     — PostgreSQL password
-#   JWT_SECRET      — JWT signing secret
+#   DB_PASSWORD       — PostgreSQL password
+#   REDIS_PASSWORD    — Redis password
+#   JWT_SECRET        — user-session JWT signing secret (>=32 bytes)
+#   ADMIN_JWT_SECRET  — dedicated admin JWT signing secret (>=32 bytes)
+#   OTP_HASH_SECRET   — OTP verifier HMAC secret (>=32 bytes)
+#   ADMIN_BOOTSTRAP_PASSWORD — optional if a valid admin is already provisioned
 
 set -euo pipefail
 
@@ -18,27 +23,63 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_DIR"
 
+# Load an optional protected production .env file. Values in this file become
+# the deployment environment; keep it private and review it before running.
+if [ -f "$REPO_DIR/.env" ]; then
+  ENV_PERMS="$(stat -c '%a' "$REPO_DIR/.env")"
+  if [ $((8#$ENV_PERMS & 077)) -ne 0 ]; then
+    echo "❌ .env must not be group/world readable; use chmod 600"
+    exit 1
+  fi
+  set -a
+  # shellcheck disable=SC1091
+  source "$REPO_DIR/.env"
+  set +a
+fi
+
 echo "🚀 MEKANIX Production Deployment"
 echo "   Repo: $REPO_DIR"
 echo ""
 
 # ─── Validate required env vars ───
 MISSING=0
-if [ -z "${DB_PASSWORD:-}" ]; then
-  echo "❌ DB_PASSWORD not set"
+for VAR_NAME in DB_PASSWORD REDIS_PASSWORD JWT_SECRET ADMIN_JWT_SECRET OTP_HASH_SECRET; do
+  case "$VAR_NAME" in
+    DB_PASSWORD) VALUE="${DB_PASSWORD:-}" ;;
+    REDIS_PASSWORD) VALUE="${REDIS_PASSWORD:-}" ;;
+    JWT_SECRET) VALUE="${JWT_SECRET:-}" ;;
+    ADMIN_JWT_SECRET) VALUE="${ADMIN_JWT_SECRET:-}" ;;
+    OTP_HASH_SECRET) VALUE="${OTP_HASH_SECRET:-}" ;;
+  esac
+  if [ -z "$VALUE" ]; then
+    echo "❌ $VAR_NAME not set"
+    MISSING=1
+  fi
+done
+if [ -n "${DB_PASSWORD:-}" ] && [ "${#DB_PASSWORD}" -lt 16 ]; then
+  echo "❌ DB_PASSWORD must contain at least 16 bytes"
   MISSING=1
 fi
-if [ -z "${JWT_SECRET:-}" ]; then
-  echo "❌ JWT_SECRET not set"
+if [ -n "${REDIS_PASSWORD:-}" ] && [ "${#REDIS_PASSWORD}" -lt 16 ]; then
+  echo "❌ REDIS_PASSWORD must contain at least 16 bytes"
   MISSING=1
-  echo "❌ JWT_SECRET not set"
+fi
+if [ -n "${JWT_SECRET:-}" ] && [ "${#JWT_SECRET}" -lt 32 ]; then
+  echo "❌ JWT_SECRET must contain at least 32 bytes"
+  MISSING=1
+fi
+if [ -n "${ADMIN_JWT_SECRET:-}" ] && [ "${#ADMIN_JWT_SECRET}" -lt 32 ]; then
+  echo "❌ ADMIN_JWT_SECRET must contain at least 32 bytes"
+  MISSING=1
+fi
+if [ -n "${OTP_HASH_SECRET:-}" ] && [ "${#OTP_HASH_SECRET}" -lt 32 ]; then
+  echo "❌ OTP_HASH_SECRET must contain at least 32 bytes"
   MISSING=1
 fi
 if [ "$MISSING" = "1" ]; then
   echo ""
-  echo "Set required env vars:"
-  echo "  export DB_PASSWORD=your_secure_password"
-  echo "  export JWT_SECRET=your_secure_secret"
+  echo "Set the required environment variables before deploying."
+  echo "If no ADMIN_BOOTSTRAP_PASSWORD is provided, a valid admin must already exist."
   exit 1
 fi
 
@@ -69,19 +110,12 @@ cd "$BUILD_CTX"
 docker compose up -d --build
 
 # ─── Wait for health ───
-echo "⏳ Waiting for app to be healthy..."
+echo "⏳ Waiting for app health..."
 HEALTH_URL="http://localhost:3000/api/health"
 for i in $(seq 1 60); do
   HEALTH_JSON="$(curl -s "$HEALTH_URL" 2>/dev/null || echo '{}')"
   if echo "$HEALTH_JSON" | grep -q '"ok":true'; then
-    echo "✅ App is healthy!"
-    echo ""
-    echo "$HEALTH_JSON" | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-print(f'  Database: {d[\"services\"][\"database\"]}')
-print(f'  Redis: {d[\"services\"][\"redis\"]}')
-" 2>/dev/null || true
+    echo "✅ App health checks passed."
     break
   fi
   if [ "$i" = "60" ]; then
@@ -93,14 +127,36 @@ print(f'  Redis: {d[\"services\"][\"redis\"]}')
   sleep 2
 done
 
+# Health is not release readiness. Production deployment succeeds only when
+# every owner/provider/financial/worker gate in /api/ready is green.
+echo "⏳ Waiting for production readiness gates..."
+READY_URL="http://localhost:3000/api/ready"
+READY_JSON="{}"
+for i in $(seq 1 60); do
+  READY_JSON="$(curl -s "$READY_URL" 2>/dev/null || echo '{}')"
+  if echo "$READY_JSON" | grep -q '"ok":true'; then
+    echo "✅ Production readiness gates passed."
+    break
+  fi
+  if [ "$i" = "60" ]; then
+    echo "❌ App is healthy but NOT production-ready. Release is blocked."
+    echo "$READY_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print('\\n'.join(d.get('errors', [])))" 2>/dev/null || echo "$READY_JSON"
+    echo "   Check logs: docker compose logs"
+    exit 1
+  fi
+  echo "   Readiness gates pending... ($i/60)"
+  sleep 2
+done
+
 echo ""
 echo "╔══════════════════════════════════════════════════════════╗"
 echo "║  ✅ Deployment complete!                                ║"
 echo "║                                                          ║"
 echo "║  App:    http://localhost:3000                           ║"
 echo "║  Health: http://localhost:3000/api/health               ║"
-echo "║  DB:     localhost:5432 (PostgreSQL 16)                ║"
-echo "║  Redis:  localhost:6379 (Redis 7)                      ║"
+echo "║  DB:     internal Docker network (PostgreSQL 16)       ║"
+echo "║  Redis:  internal Docker network (Redis 7)             ║"
+echo "║  Public access: configured HTTPS reverse proxy only   ║"
 echo "║                                                          ║"
 echo "║  Logs:   docker compose logs -f                         ║"
 echo "║  Stop:   docker compose down                            ║"

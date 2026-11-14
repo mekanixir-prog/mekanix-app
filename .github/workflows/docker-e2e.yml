@@ -18,6 +18,8 @@ jobs:
       DB_PASSWORD: test_password
       REDIS_PASSWORD: test_redis_password
       JWT_SECRET: mekanix-ci-jwt-secret-with-at-least-32-bytes-2026
+      ADMIN_JWT_SECRET: mekanix-ci-admin-jwt-secret-with-at-least-32-bytes-2026
+      OTP_HASH_SECRET: mekanix-ci-otp-hash-secret-with-at-least-32-bytes-2026
       MEKANIX_PRICING_IRR_APPROVED: "true"
     
     steps:
@@ -53,11 +55,10 @@ jobs:
       
       - name: Validate staging compose and operational shell scripts
         run: |
-          bash -n scripts/lib/pg-service.sh scripts/backup-db.sh scripts/restore-db.sh scripts/test-backup-restore.sh scripts/deploy-staging.sh scripts/zap-scan.sh tests/scripts/zap-scan.test.sh
+          bash -n scripts/lib/pg-service.sh scripts/backup-db.sh scripts/restore-db.sh scripts/test-backup-restore.sh scripts/deploy.sh scripts/deploy-staging.sh scripts/zap-scan.sh tests/scripts/zap-scan.test.sh tests/scripts/compose-secrets.test.sh
           bash tests/scripts/zap-scan.test.sh
-          DB_PASSWORD=test_password JWT_SECRET=test_jwt_secret REDIS_PASSWORD=test_redis_password \
-            docker compose -f docker-compose.staging.yml config --quiet
-          echo "✅ Staging Compose and operational shell scripts are syntactically valid"
+          bash tests/scripts/compose-secrets.test.sh
+          echo "✅ Production/staging Compose and operational shell scripts pass fail-closed checks"
 
       - name: Build and start Docker Compose stack
         run: |
