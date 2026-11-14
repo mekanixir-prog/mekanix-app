@@ -76,11 +76,11 @@ export default function loadTest() {
   const otpAccepted = check(otpRes, {
     "OTP is delivered only by a configured provider or rate-limited": (r) =>
       r.status === 200 || r.status === 429 || r.status === 503,
-    "fail-closed OTP never returns a code": (r) => {
-      if (r.status !== 503) return true;
+    "OTP never returns a plaintext code": (r) => {
       try {
         const body = r.json();
-        return body.ok !== true && !("code" in body);
+        if (r.status === 503) return body.ok !== true && !("code" in body);
+        return !("code" in body);
       } catch {
         return false;
       }
