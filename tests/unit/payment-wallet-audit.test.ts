@@ -882,3 +882,61 @@ describe("VIP-01 — /api/vip/subscribe race condition (TOCTOU on paymentId)", (
   );
 
 });
+
+
+describe("payment financial provenance quarantine", () => {
+  it("blocks payment when the invoice row has no verified IRR attestation", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockInvoiceFindUnique.mockResolvedValue({
+      id: "inv-unverified",
+      status: "SENT",
+      total: 100,
+      currency: "IRR",
+      financialUnitStatus: "UNVERIFIED",
+      jobId: "job-1",
+      code: "INV-UNVERIFIED",
+      job: { request: { customer: { userId: "user-1" } } },
+    });
+
+    const res = await paymentsPOST(makePostRequest("http://localhost/api/payments", {
+      invoiceId: "inv-unverified",
+      method: "card",
+    }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: "INVOICE_FINANCIAL_PROVENANCE_UNVERIFIED" });
+    expect(mockPaymentFindUnique).not.toHaveBeenCalled();
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
+    expect(mockInvoiceUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not reuse a legacy payment row without matching verified IRR provenance", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    mockInvoiceFindUnique.mockResolvedValue({
+      id: "inv-1",
+      status: "SENT",
+      total: 100,
+      currency: "IRR",
+      financialUnitStatus: "VERIFIED_IRR",
+      jobId: "job-1",
+      code: "INV-1",
+      job: { request: { customer: { userId: "user-1" } } },
+    });
+    mockPaymentFindUnique.mockResolvedValue({
+      id: "pay-legacy",
+      amount: 100,
+      currency: "IRR",
+      financialUnitStatus: "UNVERIFIED",
+    });
+
+    const res = await paymentsPOST(makePostRequest("http://localhost/api/payments", {
+      invoiceId: "inv-1",
+      method: "card",
+    }));
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: "PAYMENT_FINANCIAL_PROVENANCE_UNVERIFIED" });
+    expect(mockPaymentUpdate).not.toHaveBeenCalled();
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
+  });
+});
