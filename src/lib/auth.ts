@@ -88,12 +88,23 @@ function getDeviceFromRequest(req?: Request): string | null {
 /** Extract the client IP, preferring X-Forwarded-For (first hop). */
 function getIpFromRequest(req?: Request): string | null {
   if (!req) return null;
-  const xff = req.headers.get("x-forwarded-for");
-  if (xff) {
-    const first = xff.split(",")[0]?.trim();
-    if (first) return first;
+
+  // Cloudflare overwrites this header at the edge, making it authoritative
+  // for Worker deployments. Never prefer a client-supplied X-Forwarded-For
+  // value over the trusted edge address.
+  const cloudflareIp = req.headers.get("cf-connecting-ip")?.trim();
+  if (cloudflareIp) return cloudflareIp;
+
+  // Reverse proxies append their trusted hop on the right. Use the last
+  // non-empty entry rather than the spoofable left-most client value.
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (forwarded) {
+    const hops = forwarded.split(",").map((value) => value.trim()).filter(Boolean);
+    const trustedHop = hops[hops.length - 1];
+    if (trustedHop) return trustedHop;
   }
-  return req.headers.get("x-real-ip") ?? null;
+
+  return req.headers.get("x-real-ip")?.trim() || null;
 }
 
 export async function createSession(payload: Session, req?: Request): Promise<string> {
