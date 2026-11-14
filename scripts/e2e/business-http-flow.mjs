@@ -175,6 +175,10 @@ const foreignWallet = await fetch(baseUrl + "/api/wallets", {
 if (foreignWallet.status !== 403) {
   throw new Error("BOLA: customer access to technician wallet should be denied, got " + foreignWallet.status);
 }
+const ownWallet = await request("/api/wallets", "GET", otherTechnicianToken);
+if (ownWallet.technicianId !== ids.otherTechnician) {
+  throw new Error("BOLA: technician wallet endpoint returned a wallet not owned by the authenticated technician");
+}
 const foreignTechStatus = await fetch(baseUrl + "/api/jobs/" + assignedJob.id + "/status", {
   method: "PATCH",
   headers: { Authorization: "Bearer " + otherTechnicianToken, "Content-Type": "application/json" },
