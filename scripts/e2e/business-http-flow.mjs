@@ -16,6 +16,7 @@ const ids = {
   customer: randomUUID(),
   otherCustomer: randomUUID(),
   vehicle: randomUUID(),
+  rollbackVehicle: randomUUID(),
   technician: randomUUID(),
   otherTechnician: randomUUID(),
   specialty: randomUUID(),
@@ -89,7 +90,8 @@ const seedSql = [
   "(" + [sql(ids.otherTechnicianUser), sql(otherTechnicianPhone), "TRUE", sql("MEKANIX HTTP E2E Other Technician"), sql("TECHNICIAN"), sql("ACTIVE")].join(", ") + ");",
   'INSERT INTO "Customer" ("id", "userId") VALUES (' + sql(ids.customer) + ", " + sql(ids.customerUser) + "), (" + sql(ids.otherCustomer) + ", " + sql(ids.otherCustomerUser) + ");",
   'INSERT INTO "Vehicle" ("id", "customerId", "type", "make", "model", "year") VALUES (' +
-    [sql(ids.vehicle), sql(ids.customer), sql("EXCAVATOR"), sql("Caterpillar"), sql("320D E2E"), "2024"].join(", ") + ");",
+    [sql(ids.vehicle), sql(ids.customer), sql("EXCAVATOR"), sql("Caterpillar"), sql("320D E2E"), "2024"].join(", ") + "), (" +
+    [sql(ids.rollbackVehicle), sql(ids.customer), sql("EXCAVATOR"), sql("Caterpillar"), sql("320D E2E Rollback"), "2024"].join(", ") + ");",
   'INSERT INTO "Technician" ("id", "userId", "financialUnitStatus", "hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy", "status", "verified", "availableNow", "responseMins") VALUES (' +
     [sql(ids.technician), sql(ids.technicianUser), sql("VERIFIED_IRR"), "200000", "50000", "20000", "50000", sql("ONLINE"), "TRUE", "TRUE", "5"].join(", ") + "), (" +
     [sql(ids.otherTechnician), sql(ids.otherTechnicianUser), sql("VERIFIED_IRR"), "180000", "40000", "15000", "40000", sql("ONLINE"), "TRUE", "TRUE", "5"].join(", ") + ");",
@@ -239,7 +241,7 @@ const rollbackRequest = await request(
   "POST",
   customerToken,
   {
-    vehicleId: ids.vehicle,
+    vehicleId: ids.rollbackVehicle,
     category: "diagnostic",
     urgency: "NORMAL",
     title: "Atomic assignment rollback verification",
