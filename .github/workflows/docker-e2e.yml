@@ -173,10 +173,11 @@ jobs:
       - name: Run OWASP ZAP baseline against isolated Docker stack
         run: |
           mkdir -p zap-reports
-          REPORT_DIR="$PWD/zap-reports" bash scripts/zap-scan.sh http://host.docker.internal:3000
+          ZAP_DOCKER_NETWORK=host REPORT_DIR="$PWD/zap-reports" bash scripts/zap-scan.sh http://127.0.0.1:3000
 
 
       - name: Inject PostgreSQL outage and verify fail-closed recovery
+        if: always()
         run: |
           docker compose -f /tmp/mekanix-build/docker-compose.yml stop db
           sleep 3
