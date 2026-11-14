@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import Decimal from "decimal.js";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { rateLimitAsync, getClientId, RATE_LIMITS } from "@/lib/rate-limit";
 import { getInvoicePaymentAmountError } from "@/lib/money/payment-amount";
-import { isSafeStoredIrrAmount, maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { toSafeIntegerIrr } from "@/lib/money/provenance";
 
 // POST /api/payments
 // Records a payment against an invoice.
@@ -101,16 +101,17 @@ export async function POST(req: Request) {
   if (inv.financialUnitStatus !== "VERIFIED_IRR") {
     return NextResponse.json({ error: "منشأ مالی فاکتور تأیید نشده است؛ پرداخت تا زمان تطبیق مالی مسدود است", code: "INVOICE_FINANCIAL_PROVENANCE_UNVERIFIED" }, { status: 409 });
   }
-  const amountError = getInvoicePaymentAmountError(inv.currency, inv.total);
+  const invoiceAmount = toSafeIntegerIrr(inv.total);
+  const amountError = getInvoicePaymentAmountError(inv.currency, invoiceAmount);
   if (amountError === "PAYMENT_CURRENCY_NOT_IRR") {
     return NextResponse.json(
       { error: "واحد پول فاکتور برای پرداخت ریالی معتبر نیست", code: amountError },
       { status: 409 },
     );
   }
-  if (amountError === "PAYMENT_AMOUNT_NOT_INTEGER_IRR") {
+  if (amountError === "PAYMENT_AMOUNT_NOT_INTEGER_IRR" || invoiceAmount === null) {
     return NextResponse.json(
-      { error: "مبلغ فاکتور باید عدد صحیح مثبت به ریال باشد", code: amountError },
+      { error: "مبلغ فاکتور باید عدد صحیح مثبت و امن به ریال باشد", code: "PAYMENT_AMOUNT_NOT_INTEGER_IRR" },
       { status: 409 },
     );
   }
@@ -132,8 +133,18 @@ export async function POST(req: Request) {
   const existing = await db.payment.findUnique({ where: { invoiceId } });
   if (existing) {
     // Historical payment rows are not upgraded from currency labels alone.
-    if (existing.financialUnitStatus !== "VERIFIED_IRR" || existing.currency !== "IRR" || existing.amount === null || existing.amount === undefined || !isSafeStoredIrrAmount(existing.amount) || !isSafeStoredIrrAmount(inv.total) || !new Decimal(existing.amount.toString()).equals(new Decimal(inv.total.toString()))) {
-      return NextResponse.json({ error: "سوابق پرداخت موجود نیازمند تطبیق مالی است", code: "PAYMENT_FINANCIAL_PROVENANCE_UNVERIFIED" }, { status: 409 });
+    const existingAmount = toSafeIntegerIrr(existing.amount);
+    if (
+      existing.financialUnitStatus !== "VERIFIED_IRR" ||
+      existing.currency !== "IRR" ||
+      existingAmount === null ||
+      invoiceAmount === null ||
+      existingAmount !== invoiceAmount
+    ) {
+      return NextResponse.json(
+        { error: "سابقه پرداخت موجود با فاکتور تأییدشده تطبیق ندارد و نیازمند بررسی مالی است", code: "PAYMENT_FINANCIAL_PROVENANCE_UNVERIFIED" },
+        { status: 409 },
+      );
     }
     // Update existing payment record
     const updated = await db.payment.update({
@@ -182,7 +193,7 @@ export async function POST(req: Request) {
       code: `PAY-${Math.floor(5000 + Math.random() * 4000)}`,
       invoiceId,
       userId,
-      amount: inv.total, // server-authoritative — from invoice, NOT client
+      amount: invoiceAmount, // exact safe integer derived from the verified invoice
       currency: inv.currency,
       financialUnitStatus: "VERIFIED_IRR",
       method: safeMethod,
