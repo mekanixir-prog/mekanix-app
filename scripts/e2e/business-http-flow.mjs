@@ -16,7 +16,6 @@ const ids = {
   customer: randomUUID(),
   otherCustomer: randomUUID(),
   vehicle: randomUUID(),
-  rollbackVehicle: randomUUID(),
   otherVehicle: randomUUID(),
   technician: randomUUID(),
   otherTechnician: randomUUID(),
@@ -93,7 +92,6 @@ const seedSql = [
   'INSERT INTO "Customer" ("id", "userId") VALUES (' + sql(ids.customer) + ", " + sql(ids.customerUser) + "), (" + sql(ids.otherCustomer) + ", " + sql(ids.otherCustomerUser) + ");",
   'INSERT INTO "Vehicle" ("id", "customerId", "type", "make", "model", "year") VALUES (' +
     [sql(ids.vehicle), sql(ids.customer), sql("EXCAVATOR"), sql("Caterpillar"), sql("320D E2E"), "2024"].join(", ") + "), (" +
-    [sql(ids.rollbackVehicle), sql(ids.customer), sql("EXCAVATOR"), sql("Caterpillar"), sql("320D E2E Rollback"), "2024"].join(", ") + "), (" +
     [sql(ids.otherVehicle), sql(ids.otherCustomer), sql("EXCAVATOR"), sql("Caterpillar"), sql("320D E2E Foreign"), "2024"].join(", ") + ");",
   'INSERT INTO "Technician" ("id", "userId", "financialUnitStatus", "hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy", "status", "verified", "availableNow", "responseMins") VALUES (' +
     [sql(ids.technician), sql(ids.technicianUser), sql("VERIFIED_IRR"), "200000", "50000", "20000", "50000", sql("ONLINE"), "TRUE", "TRUE", "5"].join(", ") + "), (" +
@@ -294,7 +292,7 @@ try {
     "exec", "-T", "db", "psql", "-U", "mekanix", "-d", "mekanix", "-Atc",
     'SELECT "status"::text || ' + sql(",") + ' || COALESCE("matchedTechId", ' + sql("NULL") + ') || ' + sql(",") +
       ' || (SELECT COUNT(*) FROM "Job" WHERE "requestId" = ' + sql(rollbackRequest.id) + ')::text || ' + sql(",") +
-      ' || (SELECT "status"::text FROM "Technician" WHERE "id" = ' + sql(ids.technician) + ') || ' + sql(",") +
+      ' || (SELECT "status"::text FROM "Technician" WHERE "id" = ' + sql(ids.otherTechnician) + ') || ' + sql(",") +
       ' || (SELECT "availableNow"::text FROM "Technician" WHERE "id" = ' + sql(ids.otherTechnician) + ') FROM "ServiceRequest" WHERE "id" = ' + sql(rollbackRequest.id) + ";",
   ], { encoding: "utf8" }).trim();
   if (rollbackState !== "OPEN,NULL,0,ONLINE,true") {
