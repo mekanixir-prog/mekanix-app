@@ -16,8 +16,8 @@ function makeD1() {
     );
     CREATE TABLE "WalletTransaction" (
       "id" TEXT PRIMARY KEY,
-      "walletId" TEXT NOT NULL REFERENCES "Wallet"("id"),
       "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
+      "walletId" TEXT NOT NULL REFERENCES "Wallet"("id"),
       "netAmount" REAL NOT NULL,
       "status" TEXT NOT NULL,
       "holdUntil" TEXT,
@@ -25,6 +25,7 @@ function makeD1() {
     );
     CREATE TABLE "WalletLedger" (
       "id" TEXT PRIMARY KEY,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "walletId" TEXT NOT NULL REFERENCES "Wallet"("id"),
       "type" TEXT NOT NULL,
       "amount" REAL NOT NULL,
@@ -34,7 +35,6 @@ function makeD1() {
       "referenceId" TEXT,
       "description" TEXT,
       "idempotencyKey" TEXT UNIQUE,
-      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "createdAt" TEXT NOT NULL
     );
     CREATE TABLE "WalletReleaseGuard" (
@@ -75,9 +75,9 @@ function makeD1() {
 }
 
 function seed(sqlite: DatabaseSync, pendingBalance = 1000) {
-  sqlite.prepare(`INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "pendingBalance") VALUES (?, 'VERIFIED_IRR', ?, ?)`).run("wallet-1", 2000, pendingBalance);
-  sqlite.prepare(`INSERT INTO "WalletTransaction" ("id", "walletId", "financialUnitStatus", "netAmount", "status", "holdUntil") VALUES (?, ?, 'VERIFIED_IRR', ?, ?, ?)`).run(
-    "txn-1", "wallet-1", 1000, "PENDING", "2026-10-30T09:00:00.000Z"
+  sqlite.prepare('INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "pendingBalance") VALUES (?, ?, ?, ?)').run("wallet-1", "VERIFIED_IRR", 2000, pendingBalance);
+  sqlite.prepare('INSERT INTO "WalletTransaction" ("id", "financialUnitStatus", "walletId", "netAmount", "status", "holdUntil") VALUES (?, ?, ?, ?, ?, ?)').run(
+    "txn-1", "VERIFIED_IRR", "wallet-1", 1000, "PENDING", "2026-10-30T09:00:00.000Z"
   );
 }
 
@@ -95,7 +95,8 @@ describe("atomic escrow release D1 SQLite integration", () => {
     expect(sqlite.prepare('SELECT "status", "releasedAt" FROM "WalletTransaction" WHERE "id" = ?').get("txn-1")).toEqual({
       status: "AVAILABLE", releasedAt: now.toISOString(),
     });
-    expect(sqlite.prepare('SELECT "type", "amount", "balanceBefore", "balanceAfter", "referenceType", "referenceId", "idempotencyKey" FROM "WalletLedger"').get()).toEqual({
+    expect(sqlite.prepare('SELECT "financialUnitStatus", "type", "amount", "balanceBefore", "balanceAfter", "referenceType", "referenceId", "idempotencyKey" FROM "WalletLedger"').get()).toEqual({
+      financialUnitStatus: "VERIFIED_IRR",
       type: "RELEASE",
       amount: 1000,
       balanceBefore: 2000,
@@ -123,28 +124,102 @@ describe("atomic escrow release D1 SQLite integration", () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletReleaseGuard"').get()).toEqual({ count: 0 });
   });
 
-  it("does not release against a negative wallet balance", async () => {
-    const { sqlite, d1 } = makeD1();
-    databases.push(sqlite);
-    seed(sqlite);
-    sqlite.prepare('UPDATE "Wallet" SET "balance" = -1 WHERE "id" = ?').run("wallet-1");
-
-    await expect(
-      releaseWalletTransactionWithD1(d1 as never, "wallet-1", "txn-1", new Date("2026-10-30T10:00:00.000Z"))
-    ).rejects.toThrow();
-
-    expect(sqlite.prepare('SELECT "balance", "pendingBalance" FROM "Wallet" WHERE "id" = ?').get("wallet-1"))
-      .toEqual({ balance: -1, pendingBalance: 1000 });
-    expect(sqlite.prepare('SELECT "status" FROM "WalletTransaction" WHERE "id" = ?').get("txn-1"))
-      .toEqual({ status: "PENDING" });
+  it("does not release a transaction whose IRR provenance is unverified", async () => {
+    const { sqlite, d1 } = makeD1(); databases.push(sqlite);
+    sqlite.prepare('INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "pendingBalance") VALUES (?, ?, ?, ?)').run("wallet-1", "VERIFIED_IRR", 2000, 1000);
+    sqlite.prepare('INSERT INTO "WalletTransaction" ("id", "financialUnitStatus", "walletId", "netAmount", "status", "holdUntil") VALUES (?, ?, ?, ?, ?, ?)').run(
+      "txn-unverified", "UNVERIFIED", "wallet-1", 1000, "PENDING", "2026-10-30T09:00:00.000Z"
+    );
+    expect(await releaseWalletTransactionWithD1(d1 as never, "wallet-1", "txn-unverified", new Date("2026-10-30T10:00:00.000Z"))).toBe(false);
+    expect(sqlite.prepare('SELECT "balance", "pendingBalance" FROM "Wallet" WHERE "id" = ?').get("wallet-1")).toEqual({ balance: 2000, pendingBalance: 1000 });
+    expect(sqlite.prepare('SELECT "status" FROM "WalletTransaction" WHERE "id" = ?').get("txn-unverified")).toEqual({ status: "PENDING" });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
+  });
+
+  it("does not release into a wallet whose IRR provenance is unverified", async () => {
+    const { sqlite, d1 } = makeD1(); databases.push(sqlite);
+    sqlite.prepare('INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "pendingBalance") VALUES (?, ?, ?, ?)').run("wallet-1", "UNVERIFIED", 2000, 1000);
+    sqlite.prepare('INSERT INTO "WalletTransaction" ("id", "financialUnitStatus", "walletId", "netAmount", "status", "holdUntil") VALUES (?, ?, ?, ?, ?, ?)').run(
+      "txn-verified", "VERIFIED_IRR", "wallet-1", 1000, "PENDING", "2026-10-30T09:00:00.000Z"
+    );
+    expect(await releaseWalletTransactionWithD1(d1 as never, "wallet-1", "txn-verified", new Date("2026-10-30T10:00:00.000Z"))).toBe(false);
+    expect(sqlite.prepare('SELECT "balance", "pendingBalance" FROM "Wallet" WHERE "id" = ?').get("wallet-1")).toEqual({ balance: 2000, pendingBalance: 1000 });
+    expect(sqlite.prepare('SELECT "status" FROM "WalletTransaction" WHERE "id" = ?').get("txn-verified")).toEqual({ status: "PENDING" });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
+  });
+
+  it("rolls back releases for fractional, unsafe, or overflowing source amounts and balances", async () => {
+    const cases = [
+      {
+        name: "fractional net amount",
+        sql: 'UPDATE "WalletTransaction" SET "netAmount" = 1000.5 WHERE "id" = ?',
+      },
+      {
+        name: "unsafe net amount",
+        sql: 'UPDATE "WalletTransaction" SET "netAmount" = 9007199254740992 WHERE "id" = ?',
+      },
+      {
+        name: "zero net amount",
+        sql: 'UPDATE "WalletTransaction" SET "netAmount" = 0 WHERE "id" = ?',
+      },
+      {
+        name: "fractional wallet balance",
+        sql: 'UPDATE "Wallet" SET "balance" = 2000.5 WHERE "id" = ?',
+      },
+      {
+        name: "fractional pending balance",
+        sql: 'UPDATE "Wallet" SET "pendingBalance" = 1000.5 WHERE "id" = ?',
+      },
+      {
+        name: "negative wallet balance",
+        sql: 'UPDATE "Wallet" SET "balance" = -1 WHERE "id" = ?',
+      },
+      {
+        name: "unsafe wallet balance",
+        sql: 'UPDATE "Wallet" SET "balance" = 9007199254740992 WHERE "id" = ?',
+      },
+      {
+        name: "unsafe pending balance",
+        sql: 'UPDATE "Wallet" SET "pendingBalance" = 9007199254740992 WHERE "id" = ?',
+      },
+      {
+        name: "balance overflow after release",
+        sql: 'UPDATE "Wallet" SET "balance" = 9007199254740991 WHERE "id" = ?',
+      },
+    ];
+
+    for (const scenario of cases) {
+      const { sqlite, d1 } = makeD1();
+      databases.push(sqlite);
+      seed(sqlite);
+      if (scenario.name === "balance overflow after release") {
+        sqlite.prepare(scenario.sql).run("wallet-1");
+      } else {
+        sqlite.prepare(scenario.sql).run(scenario.name.includes("net amount") ? "txn-1" : "wallet-1");
+      }
+      if (scenario.name === "fractional net amount") {
+        sqlite.prepare('UPDATE "Wallet" SET "pendingBalance" = 2000 WHERE "id" = ?').run("wallet-1");
+      }
+      const walletBefore = sqlite.prepare('SELECT "balance", "pendingBalance" FROM "Wallet" WHERE "id" = ?').get("wallet-1");
+
+      await expect(
+        releaseWalletTransactionWithD1(d1 as never, "wallet-1", "txn-1", new Date("2026-10-30T10:00:00.000Z"))
+      ).rejects.toThrow();
+
+      expect(sqlite.prepare('SELECT "balance", "pendingBalance" FROM "Wallet" WHERE "id" = ?').get("wallet-1"))
+        .toEqual(walletBefore);
+      expect(sqlite.prepare('SELECT "status" FROM "WalletTransaction" WHERE "id" = ?').get("txn-1"))
+        .toEqual({ status: "PENDING" });
+      expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
+      expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletReleaseGuard"').get()).toEqual({ count: 0 });
+    }
   });
 
   it("does not release a negative net amount", async () => {
     const { sqlite, d1 } = makeD1(); databases.push(sqlite);
-    sqlite.prepare(`INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "pendingBalance") VALUES (?, 'VERIFIED_IRR', ?, ?)`).run("wallet-1", 2000, 1000);
-    sqlite.prepare(`INSERT INTO "WalletTransaction" ("id", "walletId", "financialUnitStatus", "netAmount", "status", "holdUntil") VALUES (?, ?, 'VERIFIED_IRR', ?, ?, ?)`).run(
-      "txn-negative", "wallet-1", -100, "PENDING", "2026-10-30T09:00:00.000Z"
+    sqlite.prepare('INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "pendingBalance") VALUES (?, ?, ?, ?)').run("wallet-1", "VERIFIED_IRR", 2000, 1000);
+    sqlite.prepare('INSERT INTO "WalletTransaction" ("id", "financialUnitStatus", "walletId", "netAmount", "status", "holdUntil") VALUES (?, ?, ?, ?, ?, ?)').run(
+      "txn-negative", "VERIFIED_IRR", "wallet-1", -100, "PENDING", "2026-10-30T09:00:00.000Z"
     );
     await expect(releaseWalletTransactionWithD1(d1 as never, "wallet-1", "txn-negative", new Date("2026-10-30T10:00:00.000Z"))).rejects.toThrow();
     expect(sqlite.prepare('SELECT "balance", "pendingBalance" FROM "Wallet" WHERE "id" = ?').get("wallet-1")).toEqual({
@@ -244,23 +319,4 @@ describe("atomic escrow release D1 SQLite integration", () => {
     expect(sqlite.prepare('SELECT "status" FROM "WalletTransaction" WHERE "id" = ?').get("txn-1")).toEqual({ status: "PENDING" });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
   });
-
-  it("does not release a pending transaction without verified IRR provenance", async () => {
-    const { sqlite, d1 } = makeD1(); databases.push(sqlite);
-    sqlite.prepare('INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "pendingBalance") VALUES (?, ?, ?, ?)').run(
-      "wallet-1", "VERIFIED_IRR", 2000, 1000
-    );
-    sqlite.prepare('INSERT INTO "WalletTransaction" ("id", "walletId", "financialUnitStatus", "netAmount", "status", "holdUntil") VALUES (?, ?, ?, ?, ?, ?)').run(
-      "txn-unverified", "wallet-1", "UNVERIFIED", 1000, "PENDING", "2026-10-30T09:00:00.000Z"
-    );
-
-    await expect(releaseWalletTransactionWithD1(
-      d1 as never, "wallet-1", "txn-unverified", new Date("2026-10-30T10:00:00.000Z")
-    )).rejects.toThrow();
-    expect(sqlite.prepare('SELECT "status" FROM "WalletTransaction" WHERE "id" = ?').get("txn-unverified")).toEqual({
-      status: "PENDING",
-    });
-    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
-  });
-
 });
