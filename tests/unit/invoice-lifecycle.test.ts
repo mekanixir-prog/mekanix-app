@@ -137,6 +137,19 @@ describe("POST /api/invoices lifecycle", () => {
     expect(mocks.notificationCreate).not.toHaveBeenCalled();
   });
 
+  it("rejects invoice issuance when technician fee provenance is not independently verified", async () => {
+    mocks.invoiceFindUnique.mockResolvedValueOnce(null);
+    mocks.jobFindUnique.mockResolvedValueOnce({
+      ...pricingJob,
+      technician: { ...pricingJob.technician, financialUnitStatus: "UNVERIFIED" },
+    });
+
+    const response = await createInvoice(postRequest({ jobId: "job-1" }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "TECHNICIAN_FEE_PROVENANCE_UNVERIFIED" });
+    expect(mocks.invoiceCreate).not.toHaveBeenCalled();
+  });
+
   it("rejects invoice issuance when any persisted part lacks row-level IRR provenance", async () => {
     mocks.invoiceFindUnique.mockResolvedValueOnce(null);
     mocks.jobFindUnique.mockResolvedValueOnce({
