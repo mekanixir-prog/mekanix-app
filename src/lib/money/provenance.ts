@@ -32,3 +32,28 @@ export function areJobPartPriceSourcesVerified(parts: readonly unknown[]): boole
     return BigInt(unitPrice) * BigInt(quantity) <= BigInt(Number.MAX_SAFE_INTEGER);
   });
 }
+
+/**
+ * Parse a persisted IRR amount without accepting fractional, unsafe, or
+ * negative values. Prisma Decimal instances are supported via toString().
+ */
+export function toSafeIntegerIrr(value: unknown, allowNegative = false): number | null {
+  let raw: string;
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && (allowNegative || value >= 0) ? value : null;
+  }
+  if (typeof value === "string") {
+    raw = value.trim();
+  } else if (typeof value === "bigint") {
+    raw = value.toString();
+  } else if (typeof value === "object" && value !== null && "toString" in value) {
+    raw = String(value);
+  } else {
+    return null;
+  }
+
+  const integerPattern = allowNegative ? /^-?\\d+(?:\\.0+)?$/ : /^\\+?\\d+(?:\\.0+)?$/;
+  if (!integerPattern.test(raw)) return null;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && (allowNegative || parsed >= 0) ? parsed : null;
+}
