@@ -8,7 +8,7 @@
 
 | PR | Current head | State | Exact-head workflows |
 |---|---|---|---|
-| [#137 — versioned IRR rate card](https://github.com/mekanix ir-prog/mekanix-app/pull/137) | `8272400f85ed6eacca2eb457f9b42b18baabbde9` | Open, Draft, not merged | CI, Production readiness, PostgreSQL CI, Cloudflare Build, CodeQL, Secret Scan — success; Docker E2E still running (Playwright browser steps not yet reached) |
+| [#137 — versioned IRR rate card](https://github.com/mekanixir-prog/mekanix-app/pull/137) | `8272400f85ed6eacca2eb457f9b42b18baabbde9` | Open, Draft, not merged | CI, Production readiness, PostgreSQL CI, Cloudflare Build, CodeQL, Secret Scan — success; Docker E2E still running (Playwright browser steps not yet reached) |
 | [#184 — financial read provenance and escrow release](https://github.com/mekanixir-prog/mekanix-app/pull/184) | `74e8fb914194f314458a247d38222730d8874fb8` | Open, Draft, not merged | All seven workflows — success |
 | [#182 — reject generic payment status mutation](https://github.com/mekanixir-prog/mekanix-app/pull/182) | `a87b1070d97683a9da7773fdef9b86d533ba8463` | Open, Draft, not merged | All seven workflows — success |
 | [#183 — prepay ownership and D1 ledger parity](https://github.com/mekanixir-prog/mekanix-app/pull/183) | `36e4d9b072592abc71d3c9207d3884be948ba7da` | Open, Draft, not merged | All seven workflows — success |
