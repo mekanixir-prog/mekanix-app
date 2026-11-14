@@ -60,6 +60,9 @@ export async function GET(req: Request) {
       (t) => t.status === "PENDING" && t.holdUntil && t.holdUntil.getTime() <= now.getTime()
     );
     for (const transaction of releasable) {
+      // A GET request must never promote or release legacy/unverified money.
+      if (wallet.financialUnitStatus !== "VERIFIED_IRR" ||
+          transaction.financialUnitStatus !== "VERIFIED_IRR") continue;
       await releaseWalletTransaction(db, wallet.id, transaction.id, now);
     }
   }
