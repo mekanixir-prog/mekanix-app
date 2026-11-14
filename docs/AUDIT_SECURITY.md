@@ -1,5 +1,7 @@
 # MEKANIX — Backend Security Audit Report (B-4)
 
+> **Historical snapshot — 2026-10-14; not the current release gate.** A source re-check on 2026-11-14 found that SEC-21's dedicated admin-auth boundary is present in the current candidate, and the dashboard endpoint has an explicit ADMIN guard. SEC-22's public technician-list data exposure is being addressed in Draft PR #194 and is not considered closed until that PR passes exact-head CI and is reviewed. The historical findings and counts below must not be represented as current without revalidation. See [RELEASE_GATE_CURRENT.md](./RELEASE_GATE_CURRENT.md) for current release evidence.
+
 **Date:** 2026-10-14
 **Auditor:** Agent 4 — Backend Security Auditor
 **Branch audited:** `feature/cloudflare-d1-validation @ 1cf59e7` (working tree = main `@ 23b71d2`, code-identical)
