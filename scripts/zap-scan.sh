@@ -12,7 +12,6 @@ REPORT_DIR="${REPORT_DIR:-./zap-reports}"
 mkdir -p "$REPORT_DIR"
 REPORT_DIR="$(cd "$REPORT_DIR" && pwd)"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
-mkdir -p "$REPORT_DIR"
 
 JSON_REPORT="$REPORT_DIR/zap-report-$TIMESTAMP.json"
 HTML_REPORT="$REPORT_DIR/zap-report-$TIMESTAMP.html"
