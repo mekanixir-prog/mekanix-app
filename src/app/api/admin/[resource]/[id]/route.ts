@@ -65,6 +65,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ resour
 
   const { resource, id } = await params;
 
+  // Payment status requires the verified provider/refund and ledger lifecycle.
+  // This generic CRUD endpoint cannot safely perform that reconciliation.
+  if (resource === "payments") {
+    return NextResponse.json(
+      {
+        error: "تغییر وضعیت پرداخت از این مسیر پشتیبانی نمی‌شود؛ ابتدا باید گردش بازپرداخت و تطبیق درگاه پیاده‌سازی شود",
+        code: "PAYMENT_STATUS_REQUIRES_RECONCILIATION",
+      },
+      { status: 409 },
+    );
+  }
+
   let body: Record<string, any>;
   try {
     const parsed: unknown = await req.json();
