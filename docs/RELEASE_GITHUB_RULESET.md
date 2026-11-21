@@ -1,14 +1,14 @@
 # GitHub main-branch release protection
 
-**Status checked:** 2026-11-07  
+**Status checked:** 2026-11-21  
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Target branch:** `main`
 
 ## Current repository state
 
-A repository ruleset named `main` exists (ID `24984093`), but it is currently **disabled**. Its ref filter does not explicitly target `refs/heads/main`, its required status-check list is empty, required approvals are zero, stale approvals are not dismissed, and review-thread resolution is not required.
+A repository ruleset named `main` exists (ID `24984093`), but it is currently **disabled**. Its `ref_name.include` and `exclude` lists are both empty, so it does not target `refs/heads/main`. The required status-check list is empty, required approvals are zero, stale approvals are not dismissed, review-thread resolution is not required, and strict required checks are disabled. The linear-history rule is configured but is not enforced while the ruleset is disabled. The bypass list is empty.
 
-The GitHub integration available to this workflow can read the ruleset but does not have permission to activate or edit it. A repository administrator must apply the settings below in GitHub.
+The repository owner account currently has admin permission, but the connected GitHub workflow interface exposes ruleset reads and no ruleset-write operation. No settings have been changed. An administrator must apply the settings below in GitHub Settings (or through an authorized GitHub admin API client) and then re-read the ruleset to verify the result.
 
 ## Required configuration before merge to main
 

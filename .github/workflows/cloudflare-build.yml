@@ -86,6 +86,14 @@ jobs:
         # build-cloudflare.sh handles: schema engineType swap, next.config.worker swap,
         # db.worker.ts swap, prisma generate, OpenNext build, and trap-based restore.
 
+      - name: Reject private archives and environment files from public assets
+        shell: bash
+        run: |
+          if find .open-next/assets -type f \( -iname '*.tar.gz' -o -iname '*.tgz' -o -iname '*.zip' -o -name '.env' -o -name '.env.*' \) -print -quit | grep -q .; then
+            echo "Private archive or environment file found in public Worker assets"
+            exit 1
+          fi
+
       - name: Verify Worker artifact
         run: |
           test -f .open-next/worker.js         || { echo 'worker.js missing'; exit 1; }
