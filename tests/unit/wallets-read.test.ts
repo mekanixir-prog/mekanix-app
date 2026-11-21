@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   technician: vi.fn(),
+  walletUpsert: vi.fn(),
   walletFindUnique: vi.fn(),
-  walletCreate: vi.fn(),
   release: vi.fn(),
   legacyFallback: vi.fn(),
 }));
@@ -15,8 +15,8 @@ vi.mock("@/lib/auth", () => ({ getTechnicianFromSession: mocks.technician }));
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: vi.fn(async () => ({
     wallet: {
+      upsert: mocks.walletUpsert,
       findUnique: mocks.walletFindUnique,
-      create: mocks.walletCreate,
     },
   })),
 }));
@@ -48,7 +48,7 @@ describe("GET /api/wallets financial provenance", () => {
         transactions: [],
         withdrawals: [],
       };
-      mocks.walletFindUnique.mockResolvedValue(wallet);
+      mocks.walletUpsert.mockResolvedValueOnce(wallet);
 
       const response = await GET(new Request("https://mekanix.test/api/wallets"));
       expect(response.status).toBe(200);
@@ -81,7 +81,7 @@ describe("GET /api/wallets financial provenance", () => {
         amount: "5000",
       }],
     };
-    mocks.walletFindUnique.mockResolvedValue(wallet);
+    mocks.walletUpsert.mockResolvedValueOnce(wallet);
 
     const response = await GET(new Request("https://mekanix.test/api/wallets"));
     expect(response.status).toBe(200);
@@ -116,7 +116,7 @@ describe("GET /api/wallets financial provenance", () => {
         amount: "5000",
       }],
     };
-    mocks.walletFindUnique.mockResolvedValueOnce(wallet).mockResolvedValueOnce(wallet);
+    mocks.walletUpsert.mockResolvedValueOnce(wallet);
 
     const response = await GET(new Request("https://mekanix.test/api/wallets"));
     expect(response.status).toBe(200);
