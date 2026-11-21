@@ -15,10 +15,14 @@ export async function GET(req: Request) {
   const referrals = await db.referral.findMany({
     where: { referrerId: userId },
     orderBy: { createdAt: "desc" },
-    include: { referredUser: true },
+    include: { referredUser: { select: { name: true, avatar: true } } },
   });
   const allRewardsVerified = referrals.every((referral) => referral.financialUnitStatus === "VERIFIED_IRR" && referral.rewardAmount !== null && referral.rewardAmount !== undefined && isSafeStoredIrrAmount(referral.rewardAmount) && Number(referral.rewardAmount) >= 0);
-  const safeReferrals = referrals.map((referral) => maskFinancialFields(referral, ["rewardAmount"]));
+  const safeReferrals = referrals.map((referral) => ({
+    ...maskFinancialFields(referral, ["rewardAmount"]),
+    // Defense-in-depth: never serialize the full referred User ORM record.
+    referredUser: referral.referredUser ? { name: referral.referredUser.name, avatar: referral.referredUser.avatar } : null,
+  }));
   const stats = {
     total: referrals.length,
     signedUp: referrals.filter((r) => r.status === "signed_up" || r.status === "first_job" || r.status === "rewarded").length,
