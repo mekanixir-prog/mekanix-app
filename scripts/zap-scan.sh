@@ -41,11 +41,9 @@ restore_report_permissions() {
 }
 trap restore_report_permissions EXIT
 
-# Generate the default policy outside the mounted report directory.
 docker "${DOCKER_ARGS[@]}" \
   zap-baseline.py \
   -t "$TARGET_URL" \
-  -g /tmp/zap-gen.conf \
   -r "zap-report-$TIMESTAMP.html" \
   -J "zap-report-$TIMESTAMP.json" \
   -x "zap-report-$TIMESTAMP.xml" || ZAP_EXIT=$?
