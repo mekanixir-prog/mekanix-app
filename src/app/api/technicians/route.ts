@@ -103,7 +103,7 @@ export async function GET(req: Request) {
     })
     .map(({ tech, distanceKm }) => {
       const { lat: _lat, lng: _lng, heading: _heading, userId: _userId, serviceAreas, user, ...safeTech } = tech;
-      return maskFinancialFields({
+      const masked = maskFinancialFields({
         ...safeTech,
         user: { name: user.name, avatar: user.avatar },
         lat: null,
@@ -111,6 +111,8 @@ export async function GET(req: Request) {
         serviceAreas: serviceAreas.map(({ name, radiusKm }) => ({ name, radiusKm })),
         distanceKm,
       }, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]);
+      const { financialUnitStatus: _financialUnitStatus, ...publicTech } = masked;
+      return publicTech;
     });
 
   return NextResponse.json(safeTechs);
