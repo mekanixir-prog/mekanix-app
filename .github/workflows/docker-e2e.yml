@@ -122,20 +122,17 @@ jobs:
           REDIS_CONTAINER=$(docker compose -f /tmp/mekanix-build/docker-compose.yml ps -q redis)
           test -n "$REDIS_CONTAINER"
 
-          # Inspect the effective ACL rule without printing its secret.
+          # Verify the effective server command requires a password without exposing it.
           docker inspect "$REDIS_CONTAINER" --format '{{json .Config.Cmd}}' | python3 -c "
           import json, sys
           command = json.load(sys.stdin)
-          assert '--user' in command, 'Redis server was not started with an explicit ACL user'
-          index = command.index('--user')
-          assert index + 1 < len(command), 'Redis ACL rule is missing'
-          rule = command[index + 1]
-          assert rule.startswith('default on >'), 'Redis default user must require a password'
-          assert '~*' in rule and '&*' in rule and '+@all' in rule, 'Redis default user ACL rule is incomplete'
-          print('Redis default ACL user is explicitly password-protected (value redacted)')
+          assert '--requirepass' in command, 'Redis server is missing password authentication'
+          index = command.index('--requirepass')
+          assert index + 1 < len(command) and command[index + 1], 'Redis password argument is missing'
+          print('Redis server is configured with a non-empty requirepass argument (value redacted)')
           "
 
-          # Confirm the default ACL user has a password and is not marked nopass.
+          # Redis requirepass is represented by a password on the default ACL user.
           ACL_USER=$(docker compose -f /tmp/mekanix-build/docker-compose.yml exec -T \
             -e REDISCLI_AUTH="$REDIS_PASSWORD" redis redis-cli --raw ACL GETUSER default)
           printf '%s\n' "$ACL_USER" | grep -qx "on"
@@ -149,10 +146,9 @@ jobs:
           AUTH_PING=$(docker compose -f /tmp/mekanix-build/docker-compose.yml exec -T \
             -e REDISCLI_AUTH="$REDIS_PASSWORD" redis redis-cli ping)
           test "$AUTH_PING" = "PONG"
-          echo "Redis ACL password is configured and authenticated PING succeeds (secret redacted)"
+          echo "Redis password authentication succeeds (secret redacted)"
 
-          # Connect to the exact Redis container IP from a fresh client with no
-          # REDISCLI_AUTH or password environment inherited.
+          # A fresh client with no inherited password must be rejected.
           REDIS_NETWORK=$(docker inspect "$REDIS_CONTAINER" --format '{{range $name, $network := .NetworkSettings.Networks}}{{println $name}}{{end}}' | head -n1)
           REDIS_IP=$(docker inspect "$REDIS_CONTAINER" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
           test -n "$REDIS_NETWORK"
@@ -163,7 +159,7 @@ jobs:
             exit 1
           fi
           grep -q "NOAUTH" /tmp/redis-noauth.out
-          echo "Fresh unauthenticated client received NOAUTH; Redis ACL enforcement is verified"
+          echo "Fresh unauthenticated client received NOAUTH; password enforcement is verified"
 
       - name: Verify production OTP fails closed without a real SMS provider
         run: |
