@@ -121,12 +121,13 @@ if [ "$ZAP_EXIT" -ge 3 ]; then
   echo "ZAP scanner execution failed (exit $ZAP_EXIT)"
   exit "$ZAP_EXIT"
 fi
-if [ "$ZAP_EXIT" -eq 2 ] && [ "$MEDIUM_FINDINGS" != "true" ]; then
-  echo "ZAP returned exit 2 without a Medium finding explaining the threshold result"
-  exit 2
-fi
 if [ "$ZAP_EXIT" -eq 2 ] && [ "$MEDIUM_FINDINGS" = "true" ]; then
   echo "ZAP exit 2 is attributable to Medium findings; no High findings were reported. Human review remains mandatory."
+elif [ "$ZAP_EXIT" -eq 2 ]; then
+  # ZAP exit 2 means at least one WARN, not necessarily a Medium-risk alert.
+  # The parsed report is authoritative for High/Medium release gates; Low and
+  # Informational findings remain visible in the JSON/HTML/XML artifacts.
+  echo "ZAP exit 2 indicates WARN-level findings; no High/Medium findings were reported. Review Low/Info alerts in the reports."
 elif [ "$ZAP_EXIT" -eq 1 ]; then
   echo "ZAP reported warnings; review the JSON/HTML reports before release"
 fi
