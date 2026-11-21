@@ -119,6 +119,7 @@ describe("GET /api/wallets financial provenance", () => {
       }],
     };
     mocks.walletUpsert.mockResolvedValueOnce(wallet);
+    mocks.walletFindUnique.mockResolvedValueOnce(wallet);
 
     const response = await GET(new Request("https://mekanix.test/api/wallets"));
     expect(response.status).toBe(200);
