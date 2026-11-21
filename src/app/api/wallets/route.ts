@@ -31,24 +31,18 @@ export async function GET(req: Request) {
     technicianId = tech.id;
   }
 
-  // Find or create wallet
+  // Atomically initialize a missing wallet. A find-then-create sequence can
+  // race with prepay initialization or another first-time wallet read.
   const db = await getDbForLib();
-  let wallet = await db.wallet.findUnique({
+  const wallet = await db.wallet.upsert({
     where: { technicianId },
+    create: { technicianId, financialUnitStatus: "UNVERIFIED" },
+    update: {},
     include: {
       transactions: { orderBy: { createdAt: "desc" }, take: 50 },
       withdrawals: { orderBy: { requestedAt: "desc" }, take: 20 },
     },
   });
-  if (!wallet) {
-    wallet = await db.wallet.create({
-      data: { technicianId, financialUnitStatus: "UNVERIFIED" },
-      include: {
-        transactions: { orderBy: { createdAt: "desc" }, take: 50 },
-        withdrawals: { orderBy: { requestedAt: "desc" }, take: 20 },
-      },
-    });
-  }
 
   // Transitional fallback: keep the legacy GET-triggered release until the
   // dedicated scheduled Worker has been deployed and verified. Once
