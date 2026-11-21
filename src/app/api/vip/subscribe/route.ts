@@ -44,7 +44,7 @@ export async function POST(req: Request) {
   if (!plan || !plan.active) {
     return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
   }
-  if (plan.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(plan.priceIrr)) {
+  if (plan.financialUnitStatus !== "VERIFIED_IRR" || !isSafeStoredIrrAmount(plan.priceIrr) || Number(plan.priceIrr) <= 0 || !Number.isSafeInteger(plan.durationDays) || plan.durationDays <= 0) {
     return NextResponse.json({ error: "قیمت طرح VIP هنوز از نظر منشأ مالی تأیید نشده است", code: "VIP_PLAN_PRICE_UNVERIFIED" }, { status: 409 });
   }
 
@@ -61,9 +61,10 @@ export async function POST(req: Request) {
     payment.status !== "SUCCEEDED" ||
     payment.financialUnitStatus !== "VERIFIED_IRR" ||
     !isSafeStoredIrrAmount(payment.amount) ||
+    Number(payment.amount) <= 0 ||
     payment.currency !== "IRR" ||
     !payment.gatewayLogId ||
-    Number(payment.amount) < Number(plan.priceIrr)
+    Number(payment.amount) !== Number(plan.priceIrr)
   ) {
     return NextResponse.json({ error: "Invalid or insufficient payment" }, { status: 400 });
   }
@@ -80,6 +81,7 @@ export async function POST(req: Request) {
     gatewayLog.status !== "VERIFIED" ||
     gatewayLog.financialUnitStatus !== "VERIFIED_IRR" ||
     !isSafeStoredIrrAmount(gatewayLog.amount) ||
+    Number(gatewayLog.amount) <= 0 ||
     gatewayLog.purpose !== "vip" ||
     gatewayLog.paymentId !== payment.id ||
     gatewayLog.currency !== payment.currency ||
