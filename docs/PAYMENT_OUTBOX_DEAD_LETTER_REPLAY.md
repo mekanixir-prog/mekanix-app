@@ -9,7 +9,7 @@ Allow a tightly authorized operator to request one new processing cycle for a te
 ## Non-negotiable invariants
 
 1. **The payment remains the source of truth.** Replay is not proof of payment and cannot change `Payment`, `PaymentGatewayLog`, amount, currency, gateway status, financial provenance, target plan, or purchase-time duration.
-2. **The Worker remains the sole fulfiller.** The replay action only makes a validated event eligible for a fresh Worker claim.
+2. **Replay is never a fulfiller.** The replay action only makes a validated event eligible for a fresh Worker claim. In the current simulator-only preview, the API may perform the initial subscription through the same atomic paymentId-unique primitive while the scheduled Worker is the retry/reconciliation consumer. Before live-provider activation, the fulfillment ownership must be made single-writer (recommended: Worker-only) or equivalently proven with the same atomic uniqueness and recovery guarantees.
 3. **No payload editing.** The persisted server-authored JSON payload and `idempotencyKey` are immutable during replay.
 4. **No duplicate entitlement.** `UserVipSubscription.paymentId` remains the fulfillment idempotency key. An exact existing subscription may be reconciled by the Worker; a conflicting binding blocks replay.
 5. **Auditing and queue transition are atomic.** The durable audit record and `DEAD → PENDING` transition must commit together. If the active SQLite/D1 adapter cannot guarantee this transaction, do not ship the mutation endpoint.
@@ -55,7 +55,7 @@ Any unsupported event type, unknown purpose, malformed payload, missing record, 
 - Do not alter `payload`, `idempotencyKey`, `eventType`, `aggregateType`, or `aggregateId`.
 - Use a conditional update and require exactly one affected row. A zero-row result is a `409` conflict.
 - Return `202 Accepted` with a replay-request identifier and the new queue state. Do not claim that the VIP subscription is active; only the Worker can establish that.
-- The Worker then revalidates all payment facts and performs its existing atomic fulfillment batch. A subsequent `DEAD` outcome is possible and must remain visible.
+- The Worker then revalidates all payment facts and performs its existing atomic fulfillment/reconciliation batch. It must never create a second subscription for a payment already fulfilled by the simulator API path. A subsequent `DEAD` outcome is possible and must remain visible.
 
 ## API response and error behavior
 
