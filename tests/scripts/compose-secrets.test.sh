@@ -24,7 +24,15 @@ for compose_file in "${COMPOSE_FILES[@]}"; do
     fi
   done
   docker compose -f "$compose_file" config --quiet
-  echo "✅ $compose_file fails closed for every required secret and validates when all are present"
+  if ! grep -q 'default on >${REDIS_PASSWORD' "$compose_file"; then
+    echo "❌ $compose_file does not configure a password-protected Redis default ACL user"
+    exit 1
+  fi
+  if grep -q -- '--requirepass' "$compose_file"; then
+    echo "❌ $compose_file still relies on legacy requirepass instead of explicit Redis ACL"
+    exit 1
+  fi
+  echo "✅ $compose_file fails closed for every required secret and configures explicit Redis ACL auth"
 done
 
 if env -u DB_PASSWORD -u REDIS_PASSWORD -u JWT_SECRET -u ADMIN_JWT_SECRET -u OTP_HASH_SECRET \
