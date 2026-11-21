@@ -120,7 +120,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       { status: 409 },
     );
   }
-  const hasVerifiedEstimate = existing.invoice?.currency === "IRR" &&
+  const hasVerifiedEstimate = existing.invoice?.status === "SENT" &&
+    existing.invoice.currency === "IRR" &&
     existing.invoice.financialUnitStatus === "VERIFIED_IRR";
 
   if (targetStatus === "REPAIRING" && existing.status === "WAITING_APPROVAL" && !hasVerifiedEstimate) {
