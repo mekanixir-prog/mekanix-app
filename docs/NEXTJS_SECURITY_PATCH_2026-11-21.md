@@ -9,3 +9,6 @@
 - Required validation after lock refresh: CI, Production readiness, PostgreSQL CI, Docker E2E, Cloudflare Build, CodeQL and Secret Scan on the same exact commit.
 
 This document records the dependency remediation intent; it does not claim that the upgrade or validation is complete.
+
+
+Lockfile refresh status: `bun.lock` now resolves Next.js 16.4.6, @next/env 16.4.6, and Effect 3.22.1. The dependency audit must still be rerun on the committed lockfile before this patch is accepted.
