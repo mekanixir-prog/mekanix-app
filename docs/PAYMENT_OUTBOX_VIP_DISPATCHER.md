@@ -18,7 +18,7 @@
 - The D1 fulfillment batch includes previous-subscription cancellation, the guarded subscription insert, deterministic activation notice, event completion, and a SQL assertion. A failed insert/assertion rolls the entire batch back.
 - If a worker crashes after claiming, another run may reclaim the row after lease expiry.
 - If a worker crashes after successful fulfillment, the event and subscription are already committed together. A retry recognizes the existing exact payment binding and does not create a second subscription.
-- The existing `/api/vip/subscribe` endpoint remains compatible: it returns the same subscription on exact replay. Whichever path fulfills first wins through the unique `paymentId` constraint; the other path recovers the same result.
+- The existing `/api/vip/subscribe` endpoint remains compatible and can perform the initial simulator-only fulfillment. The scheduled Worker is the durable retry/reconciliation consumer. Whichever path fulfills first wins through the unique `paymentId` constraint; the other path recovers the same result. Before live-provider activation, move to a single Worker-owned fulfillment path or document and independently verify an equivalent single-writer guarantee.
 - The Worker explicitly excludes the current `paymentId` when retiring previous active subscriptions. This prevents a subscription created by `/api/vip/subscribe` between the Worker's initial lookup and its D1 batch from being cancelled by that same batch.
 - An integration test injects that API-created subscription at the read/batch boundary and verifies that it remains ACTIVE, the older subscription is cancelled, and the outbox event is processed exactly once.
 
@@ -45,7 +45,7 @@
 - This is a staging implementation for the current VIP simulator event only. It is not a live payment provider integration.
 - It does not send email/SMS/push notifications or make external financial transfers.
 - No production Worker, production D1 binding, provider credentials, real settlement, refund, or payout is configured or deployed.
-- Operational alerting, operator-driven dead-letter replay UI, and reconciliation dashboards remain future work.
+- The read-only admin outbox monitor is included in this release-candidate integration. Operational alerting and operator-driven dead-letter replay remain future work; no replay mutation endpoint is enabled.
 
 
 CI uses synthetic UUID idempotency fixtures only; no provider credentials or real payment tokens are stored in the repository.
