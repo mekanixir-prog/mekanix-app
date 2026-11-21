@@ -9,6 +9,12 @@ export async function GET(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
+  // Fail closed for roles without a persisted maintenance-resource scope.
+  // FLEET_MANAGER/PARTNER access is not supported by the current data model.
+  if (session.role !== "CUSTOMER" && session.role !== "TECHNICIAN" && session.role !== "ADMIN") {
+    return NextResponse.json({ error: "دسترسی به سوابق سرویس مجاز نیست" }, { status: 403 });
+  }
+
   const url = new URL(req.url);
   const vehicleId = url.searchParams.get("vehicleId");
   const db = await getDbForLib();
