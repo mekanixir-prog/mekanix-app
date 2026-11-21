@@ -152,3 +152,23 @@ No commission percentage, release hold, refund policy, VIP entitlement, or price
 - No weakening or removal of production 404/fail-closed guards to make a demo work.
 
 **Decision:** design ready for technical review; implementation remains blocked by the monetary-unit decision and purpose-specific settlement approval.
+
+
+## 10. Owner-approved unit decision and updated gates — 2026-11-21
+The owner-approved monetary-unit decision recorded on 2026-11-03 resolves the unit-selection dependency described in section 8:
+
+- Persisted/accounting unit: integer IRR.
+- Persian display convention: Toman only, exact `10 IRR = 1 Toman`.
+- No FX rate, USD base, hidden multiplier, or implicit conversion is allowed.
+
+This approval does **not** classify legacy records and does not approve business prices or settlement policy. Issue #81 remains open for per-record provenance, writer validation, wallet/ledger reconciliation, and a reversible migration/quarantine plan. Issue #99 remains open for service rates (especially heavy machinery), tax, commission, escrow, VIP pricing/benefits/refunds, and withdrawal limits.
+
+### Implementation consequences
+1. Every new PaymentAttempt source amount must be an integer IRR copied from an authoritative business record whose own row-level provenance is verified. Unknown or legacy amounts must be rejected or moved to manual review; do not infer units from magnitude or a currency label alone.
+2. Provider-facing amounts must equal the persisted integer IRR amount exactly. No USD/Toman conversion is permitted at the gateway boundary.
+3. Keep Zarinpal/IDPay adapters sandbox-only until initiation, persisted attempt, callback reconciliation, server-side verification, and purpose-specific fulfillment are connected and tested.
+4. Keep production payment, VIP activation, prepay settlement, wallet top-up, withdrawal and payout fail-closed. The current production routes still return 404 for simulator checkout, and adapter readiness remains `integrationWired: false`.
+5. Do not create or backfill historical amount fields until source provenance and migration treatment are reviewed. Schema additions for new, explicitly verified IRR attempts can be considered separately from any historical conversion.
+6. Require equivalent uniqueness, idempotency and atomicity evidence for PostgreSQL and Cloudflare D1. A local Cloudflare build is not remote D1 certification.
+
+The payment design remains a safety contract, not approval to activate live money movement.

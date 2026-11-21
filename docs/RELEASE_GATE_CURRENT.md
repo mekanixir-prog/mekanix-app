@@ -92,3 +92,44 @@ Even a green #186 workflow does not prove a live staging deployment, a real SMS/
 The four original financial PRs have been consolidated into the clean Draft candidate #186; its latest CI run must complete successfully before it can be considered a valid combined code baseline. The candidate now contains the real HTTP business journey, route-level BOLA checks, transactional rollback injection, PostgreSQL outage/recovery, local ZAP baseline, and k6 smoke steps, but their first exact-head results are pending. Full staging deployment, full 100-VU performance evidence, real SMS/payment provider round-trips, production D1 operations, and final route-by-route authorization review remain open. Hosting, domain, live SMS, and payment activation are intentionally deferred until the Release Candidate stage; their absence does not justify enabling insecure fallbacks.
 
 No historical financial records may be bulk-converted or re-labelled as part of this work. Do not enable production provenance or pricing flags merely to make readiness checks green.
+
+
+## 6. Superseding status update — 2026-11-21
+This section supersedes the historical PR table and readiness snapshot above where they differ. The older sections remain as the 2026-11-14 audit record.
+
+### Current main baseline
+- Repository: `mekanixir-prog/mekanix-app`
+- Current main after the latest merged fixes: `86af27b8d424edae8a328b53553bcb71d25aecb4`
+- PR #180 merged: wallet lazy initialization now uses an atomic Prisma `upsert`.
+- PR #201 merged: Next.js 16.4.6 and Effect 3.22.1; Bun lockfile regenerated with Bun 1.4.4. All eight required workflows passed on the merge candidate, including Dependency Security Audit (1,272 packages; no vulnerabilities).
+
+### Active stacked release candidate
+| PR | Purpose | Latest reviewed head | Status at this update |
+|---|---|---|---|
+| [#186](https://github.com/mekanixir-prog/mekanix-app/pull/186) | Integrated financial candidate (#137/#184/#182/#183) | `86f238f9e28b12cc29de8975c079772221d20f30` | Draft; exact-head checks not yet returned |
+| [#190](https://github.com/mekanixir-prog/mekanix-app/pull/190) | ZAP report handling/permissions | `b84a1d5d99a1adc2a39625a45f9dca2af73367c6` | Draft; Production readiness and PostgreSQL CI passed; CI, Cloudflare Build and Docker E2E running |
+| [#191](https://github.com/mekanixir-prog/mekanix-app/pull/191) | ZAP/k6 validation and regression tests | `54d9cd4a05571beb5ee57b4ec5dadf876cc82ebf` | Draft; workflows queued/running |
+| [#195](https://github.com/mekanixir-prog/mekanix-app/pull/195) | CSP nonce and security headers | `49b29cc3f294579ea3a1f51c7628983871b433f0` | Draft; Docker E2E running, other checks queued |
+| [#197](https://github.com/mekanixir-prog/mekanix-app/pull/197) | Staging Compose, secrets and Redis authentication | `dde427bdfaba0450cf18ecbc4d4a6b4f4a0bdd4c` | Draft; Cloudflare Build passed, PostgreSQL CI running, other checks queued |
+
+The stack order is main → #186 → #190 → #191 → (#195 and #197). Do not merge child PRs independently into main or merge overlapping financial changes separately. Review and integrate in dependency order, retaining exact-SHA evidence.
+
+### New hardening performed
+- The financial candidate's wallet GET path now uses atomic `upsert` while preserving `UNVERIFIED` provenance and read-side masking.
+- The ZAP wrapper now treats exit code 2 as a WARN-level result, not automatically as a Medium finding. High findings remain blocking; Medium findings require explicit human review; Low/Info alerts remain in the reports. Regression coverage includes WARN-only/Low findings.
+- Removed an unused ZAP generated-config path outside the mounted work directory.
+- Redis negative authentication testing now uses a fresh credential-free client container on the same Docker network. The previous in-container `redis-cli` test returned PONG despite the server command showing `--requirepass`; the new test must pass before Redis authentication is considered verified.
+
+### Current release blockers
+1. **Financial provenance:** issue #81 remains open for historical row classification, writer validation, wallet/ledger reconciliation, and reversible migration/quarantine. No blanket conversions.
+2. **Commercial policy:** issue #99 remains open for approved rate card (heavy machinery separately), tax, commission/escrow, VIP pricing/benefits/refunds and withdrawal limits. Do not enable pricing/settlement flags.
+3. **Payment lifecycle:** issue #24 remains open. Zarinpal/IDPay adapter code exists, but production routes do not call it; simulator payment, gateway initiation/verification and VIP/prepay simulator paths remain unavailable in production. Readiness correctly reports the integration as unwired.
+4. **Persian money display:** main no longer uses FX conversion, but the shared money helper still displays the IRR symbol rather than the approved Toman-only presentation. Do not wire Toman display until every financial read path applies provenance masking.
+5. **Security/CI:** complete ZAP report triage, Redis authentication, route-by-route BOLA/IDOR matrix, and all exact-head workflows on the integrated candidate.
+6. **Cloudflare D1:** Cloudflare Build/local D1 tests do not prove a remote D1 staging deployment, migrations, concurrency or rollback. No remote D1 operation has been performed.
+7. **Operations:** real SMS phone test, payment sandbox round-trip, encrypted backup/restore in isolated staging, rollback rehearsal, monitoring and final launch review remain outstanding.
+
+### Deployment boundary
+The selected direction remains Cloudflare Free/Workers + D1 for the app path. Do not introduce paid VPS/domain or live provider credentials in this engineering phase. Cloudflare Build success is not a deployment. No production database, secret, DNS, SMS, payment, payout or public deployment has been changed.
+
+**Decision: NO-GO for public production.** Keep all live money movement and production provider activation fail-closed until the financial provenance, commercial policy, payment lifecycle, D1 staging and operational evidence above are complete, followed by explicit owner Go/No-Go approval.
