@@ -74,6 +74,27 @@ GROUP BY "type", COALESCE("valueUnitStatus", '<NULL>'), COALESCE("minAmountUnitS
 ORDER BY discount_type, value_unit_status, min_amount_unit_status;
 
 
+WITH financial_rows(table_name, record_id, financial_unit_status) AS (
+  SELECT 'Technician', id, "financialUnitStatus" FROM "Technician"
+  UNION ALL SELECT 'Job', id, "financialUnitStatus" FROM "Job"
+  UNION ALL SELECT 'Part', id, "financialUnitStatus" FROM "Part"
+  UNION ALL SELECT 'Invoice', id, "financialUnitStatus" FROM "Invoice"
+  UNION ALL SELECT 'Payment', id, "financialUnitStatus" FROM "Payment"
+  UNION ALL SELECT 'ServiceCategory', id, "financialUnitStatus" FROM "ServiceCategory"
+  UNION ALL SELECT 'Referral', id, "financialUnitStatus" FROM "Referral"
+  UNION ALL SELECT 'InsurancePolicy', id, "financialUnitStatus" FROM "InsurancePolicy"
+  UNION ALL SELECT 'InsuranceClaim', id, "financialUnitStatus" FROM "InsuranceClaim"
+  UNION ALL SELECT 'Wallet', id, "financialUnitStatus" FROM "Wallet"
+  UNION ALL SELECT 'WalletTransaction', id, "financialUnitStatus" FROM "WalletTransaction"
+  UNION ALL SELECT 'WithdrawalRequest', id, "financialUnitStatus" FROM "WithdrawalRequest"
+  UNION ALL SELECT 'VipPlan', id, "financialUnitStatus" FROM "VipPlan"
+  UNION ALL SELECT 'PaymentGatewayLog', id, "financialUnitStatus" FROM "PaymentGatewayLog"
+  UNION ALL SELECT 'WalletLedger', id, "financialUnitStatus" FROM "WalletLedger"
+  UNION ALL SELECT 'ServicePackage', id, "financialUnitStatus" FROM "ServicePackage"
+  UNION ALL SELECT 'CustomerApproval', id, "financialUnitStatus" FROM "CustomerApproval"
+  UNION ALL SELECT 'PartUsage', id, "financialUnitStatus" FROM "PartUsage"
+  UNION ALL SELECT 'PricingSnapshot', id, "financialUnitStatus" FROM "PricingSnapshot"
+)
 -- Capped, non-PII reconciliation worklist. IDs only; no monetary values or
 -- customer/technician attributes are emitted. Run a separately approved,
 -- access-controlled row-level evidence review for each returned identifier.
