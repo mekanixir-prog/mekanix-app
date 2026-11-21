@@ -1,16 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-// MEKANIX — Next.js 16 Proxy (formerly `middleware.ts`)
-//
-// Next.js 16 renamed the `middleware.ts` convention to `proxy.ts`.
-// The exported handler must be named `proxy` (or use a default export).
-// See: node_modules/next/dist/build/templates/middleware.js
-//   const handlerUserland = (isProxy ? mod.proxy : mod.middleware) || mod.default;
-//
-// Everything else (config.matcher, request shape, NextResponse API) is
-// unchanged from the previous middleware convention.
-
+// Next.js Proxy is an early request filter, not the authorization boundary.
+// Route handlers continue to enforce authentication and resource ownership.
 const SESSION_COOKIE_NAMES = new Set(["mekanix-token", "mekanix_admin_session"]);
 
 function hasBrowserSessionCookie(req: Request): boolean {
@@ -46,48 +38,66 @@ function isSameOriginMutation(req: Request): boolean {
   return !fetchSite || fetchSite === "same-origin";
 }
 
-function applySecurityHeaders(res: NextResponse): NextResponse {
-  res.headers.set("X-Content-Type-Options", "nosniff");
-  res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(self)");
+function buildContentSecurityPolicy(nonce: string, isProduction: boolean): string {
+  const allowPreviewEmbedding =
+    isProduction && process.env.MEKANIX_ALLOW_PREVIEW_EMBEDDING === "true";
+  const frameAncestors = isProduction
+    ? `frame-ancestors 'self'${allowPreviewEmbedding ? " https://*.space-z.ai" : ""}`
+    : "frame-ancestors 'self' https://*.space-z.ai http://localhost:* http://127.0.0.1:*";
+  const websocketOrigins = isProduction
+    ? allowPreviewEmbedding ? "wss://*.space-z.ai" : "wss://mekanix.ir"
+    : "ws: wss:";
 
-  const isProduction = process.env.NODE_ENV === "production";
-  if (isProduction) {
-    res.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
-  }
-
-  // Restrict production embedding to our own origin and the known preview
-  // gateway. A wildcard frame-ancestors policy allows arbitrary sites to
-  // frame authenticated pages and creates a clickjacking surface.
-  const csp = [
+  // External origins are explicitly allowlisted from actual client-side use:
+  // OSM map tiles, seeded/approved profile avatars, and Nominatim search.
+  // ETA providers are server-side and do not belong in the browser CSP.
+  return [
     "default-src 'self'",
     "base-uri 'self'",
     "object-src 'none'",
     "form-action 'self'",
     isProduction
-      ? "script-src 'self' 'unsafe-inline' https://cdn.socket.io"
-      : "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.socket.io",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com data:",
+      ? `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`
+      : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-eval'`,
+    `style-src 'self' 'nonce-${nonce}'`,
+    "style-src-attr 'unsafe-inline'",
+    "font-src 'self' data:",
     isProduction
-      ? "img-src 'self' data: blob: https:"
-      : "img-src 'self' data: blob: https: http:",
-    isProduction
-      ? "connect-src 'self' wss: https:"
-      : "connect-src 'self' ws: wss: https: http:",
+      ? "img-src 'self' data: blob: https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://i.pravatar.cc"
+      : "img-src 'self' data: blob: http: https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org https://i.pravatar.cc",
+    `connect-src 'self' ${websocketOrigins} https://nominatim.openstreetmap.org`,
     "worker-src 'self' blob:",
-    isProduction
-      ? "frame-ancestors 'self' https://*.space-z.ai"
-      : "frame-ancestors 'self' https://*.space-z.ai http://localhost:* http://127.0.0.1:*",
+    frameAncestors,
   ].join("; ");
-  res.headers.set("Content-Security-Policy", csp);
-  return res;
+}
+
+function applySecurityHeaders(
+  response: NextResponse,
+  contentSecurityPolicy: string,
+  isProduction: boolean,
+): NextResponse {
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(self)");
+  if (isProduction) {
+    response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+  }
+  response.headers.set("Content-Security-Policy", contentSecurityPolicy);
+  return response;
 }
 
 export function proxy(req: NextRequest) {
-  // Central CSRF defense for every browser-cookie-authenticated API mutation.
-  // Bearer-only native/API clients are not affected because browsers do not
-  // attach Authorization headers cross-site automatically.
+  const isProduction = process.env.NODE_ENV === "production";
+  const isApiRequest = req.nextUrl.pathname.startsWith("/api/");
+
+  // Nonce-based CSP is applied to rendered document requests. The CSP request
+  // header is forwarded so Next.js can attach the nonce to framework scripts
+  // and inline styles during SSR. API responses do not render executable HTML.
+  const nonce = isApiRequest ? null : btoa(crypto.randomUUID());
+  const contentSecurityPolicy = nonce
+    ? buildContentSecurityPolicy(nonce, isProduction)
+    : "default-src 'none'; frame-ancestors 'none'";
+
   const method = req.method.toUpperCase();
   const isUnsafeMethod = !["GET", "HEAD", "OPTIONS"].includes(method);
   if (
@@ -95,13 +105,27 @@ export function proxy(req: NextRequest) {
     hasBrowserSessionCookie(req) &&
     !isSameOriginMutation(req)
   ) {
-    return applySecurityHeaders(NextResponse.json(
-      { error: "درخواست از مبدأ نامعتبر است" },
-      { status: 403 },
-    ));
+    return applySecurityHeaders(
+      NextResponse.json(
+        { error: "درخواست از مبدأ نامعتبر است" },
+        { status: 403 },
+      ),
+      contentSecurityPolicy,
+      isProduction,
+    );
   }
 
-  return applySecurityHeaders(NextResponse.next());
+  let response: NextResponse;
+  if (nonce) {
+    const requestHeaders = new Headers(req.headers);
+    requestHeaders.set("x-nonce", nonce);
+    requestHeaders.set("Content-Security-Policy", contentSecurityPolicy);
+    response = NextResponse.next({ request: { headers: requestHeaders } });
+  } else {
+    response = NextResponse.next();
+  }
+
+  return applySecurityHeaders(response, contentSecurityPolicy, isProduction);
 }
 
 export const config = {

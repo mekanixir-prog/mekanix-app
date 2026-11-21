@@ -8,6 +8,9 @@ import { ThemeProvider } from "@/components/mek/theme-provider";
 import { AccentThemeProvider } from "@/components/mek/accent-theme-provider";
 import { ServiceWorkerRegistrar } from "@/components/mek/service-worker-registrar";
 
+// Per-request CSP nonces require dynamic rendering; this app shell is an authenticated SPA.
+export const dynamic = "force-dynamic";
+
 const vazirmatn = Vazirmatn({
   subsets: ["arabic", "latin"],
   display: "swap",
