@@ -119,16 +119,40 @@ jobs:
       
       - name: Verify Redis password authentication
         run: |
+          REDIS_CONTAINER=$(docker compose -f /tmp/mekanix-build/docker-compose.yml ps -q redis)
+          test -n "$REDIS_CONTAINER"
+
+          # Inspect the effective server command without printing the secret.
+          docker inspect "$REDIS_CONTAINER" --format '{{json .Config.Cmd}}' | python3 -c "
+          import json, sys
+          command = json.load(sys.stdin)
+          assert '--requirepass' in command, 'Redis server was not started with --requirepass'
+          index = command.index('--requirepass')
+          assert index + 1 < len(command) and command[index + 1], 'Redis requirepass is empty'
+          print('Redis server command contains a non-empty requirepass (value redacted)')
+          "
+
+          # Verify the server accepts the configured credential and has a
+          # non-empty requirepass setting; never print the returned secret.
           AUTH_PING=$(docker compose -f /tmp/mekanix-build/docker-compose.yml exec -T \
             -e REDISCLI_AUTH="$REDIS_PASSWORD" redis redis-cli ping)
           test "$AUTH_PING" = "PONG"
-          if docker compose -f /tmp/mekanix-build/docker-compose.yml exec -T redis redis-cli ping \
+          REQUIREPASS=$(docker compose -f /tmp/mekanix-build/docker-compose.yml exec -T \
+            -e REDISCLI_AUTH="$REDIS_PASSWORD" redis redis-cli --raw CONFIG GET requirepass | tail -n1)
+          test -n "$REQUIREPASS"
+          echo "Redis accepted authenticated PING and reports a non-empty requirepass (value redacted)"
+
+          # Use a fresh client container on the same Docker network. It has no
+          # Redis credentials or inherited REDISCLI_AUTH, so PONG is a failure.
+          REDIS_NETWORK=$(docker inspect "$REDIS_CONTAINER" --format '{{range $name, $network := .NetworkSettings.Networks}}{{println $name}}{{end}}' | head -n1)
+          test -n "$REDIS_NETWORK"
+          if docker run --rm --network "$REDIS_NETWORK" redis:7-alpine redis-cli -h redis ping \
             >/tmp/redis-noauth.out 2>&1; then
             echo "Redis accepted an unauthenticated command"
             exit 1
           fi
           grep -q "NOAUTH" /tmp/redis-noauth.out
-          echo "Redis requires authentication and the application uses the configured password"
+          echo "Fresh unauthenticated client received NOAUTH; Redis password enforcement is verified"
 
       - name: Verify production OTP fails closed without a real SMS provider
         run: |
