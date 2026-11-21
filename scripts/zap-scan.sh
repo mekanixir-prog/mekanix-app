@@ -33,7 +33,6 @@ DOCKER_ARGS+=(-v "$REPORT_DIR:/zap/wrk" ghcr.io/zaproxy/zaproxy:stable)
 docker "${DOCKER_ARGS[@]}" \
   zap-baseline.py \
   -t "$TARGET_URL" \
-  -g /tmp/zap-gen.conf \
   -r "zap-report-$TIMESTAMP.html" \
   -J "zap-report-$TIMESTAMP.json" \
   -x "zap-report-$TIMESTAMP.xml" || ZAP_EXIT=$?
