@@ -147,3 +147,6 @@ Stack sync complete: this branch now includes the latest ZAP/k6 parent and the f
 
 ### 2026-11-21 stack synchronization
 The financial candidate now descends from current main and includes the validated ZAP report-hardening child PR #190. The wallet GET path uses atomic upsert while retaining per-record provenance masking. The wallet-read unit tests were updated to mock and assert the upsert contract. Exact-head CI evidence is required before this draft can be marked ready.
+
+
+Validation rerun requested after inheriting the wallet-read test correction and latest ZAP/k6 base. CSP, Docker E2E, PostgreSQL CI and Cloudflare Build must pass on the same head.
