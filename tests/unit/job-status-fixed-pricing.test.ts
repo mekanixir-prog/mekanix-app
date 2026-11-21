@@ -425,7 +425,7 @@ describe("job status role and invoice lifecycle boundaries", () => {
   it.each(["DRAFT", "PAID", "CANCELLED"])(
     "does not treat invoice status %s as an approvable repair estimate",
     async (invoiceStatus) => {
-      mocks.jobFindUnique.mockReset().mockResolvedValueOnce({
+      mocks.jobFindUnique.mockReset().mockResolvedValue({
         ...beforeJob,
         status: "WAITING_APPROVAL",
         customerApproved: true,
