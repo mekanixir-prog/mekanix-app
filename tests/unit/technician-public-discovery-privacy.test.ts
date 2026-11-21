@@ -85,6 +85,7 @@ describe("public technician discovery privacy", () => {
       }),
     }));
     expect(payload).not.toHaveProperty("userId");
+    expect(payload).not.toHaveProperty("financialUnitStatus");
     expect(payload.user).toEqual({ name: "Technician", avatar: null });
     expect(payload.lat).toBeNull();
     expect(payload.lng).toBeNull();
@@ -117,6 +118,7 @@ describe("public technician discovery privacy", () => {
     }));
     expect(payload).not.toHaveProperty("jobsAssigned");
     expect(payload).not.toHaveProperty("userId");
+    expect(payload).not.toHaveProperty("financialUnitStatus");
     expect(payload.user).toEqual({ name: "Technician", avatar: null });
     expect(payload.lat).toBeNull();
     expect(payload.lng).toBeNull();
