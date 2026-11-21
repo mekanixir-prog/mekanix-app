@@ -35,6 +35,9 @@ case "${FAKE_ZAP_CASE:-success}" in
   medium-finding)
     printf '{"site":[{"alerts":[{"riskcode":"2","alert":"Test Medium","desc":"review fixture"}]}]}' > "$report_dir/$json"
     ;;
+  low-finding)
+    printf '{"site":[{"alerts":[{"riskcode":"1","alert":"Test Low","desc":"review fixture"}]}]}' > "$report_dir/$json"
+    ;;
   *)
     printf '{"site":[{"alerts":[]}]}' > "$report_dir/$json"
     ;;
@@ -77,6 +80,7 @@ run_case() {
 run_case success 0 success 0
 run_case high-finding 1 high-finding 0
 run_case medium-warning 0 medium-finding 2
+run_case low-warning 0 low-finding 2
 run_case invalid-json 2 invalid-json 0
 run_case missing-html 2 missing-html 0
 run_case missing-xml 2 missing-xml 0
