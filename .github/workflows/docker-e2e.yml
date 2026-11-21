@@ -122,7 +122,6 @@ jobs:
         run: |
           REDIS_CONTAINER=$(docker compose -f /tmp/mekanix-build/docker-compose.yml ps -q redis)
           test -n "$REDIS_CONTAINER"
-
           docker inspect "$REDIS_CONTAINER" --format '{{json .Config.Cmd}}' | python3 -c "
           import json, sys
           command = json.load(sys.stdin)
@@ -131,7 +130,6 @@ jobs:
           assert index + 1 < len(command) and command[index + 1], 'Redis password argument is missing'
           print('Redis server has a non-empty password argument (value redacted)')
           "
-
           ACL_USER=$(docker compose -f /tmp/mekanix-build/docker-compose.yml exec -T \
             -e REDISCLI_AUTH="$REDIS_PASSWORD" redis redis-cli --raw ACL GETUSER default)
           printf '%s\n' "$ACL_USER" | grep -qx "on"
@@ -141,12 +139,10 @@ jobs:
           fi
           PASSWORD_HASH=$(printf '%s\n' "$ACL_USER" | awk 'p { print; exit } $0 == "passwords" { p=1 }')
           test -n "$PASSWORD_HASH"
-
           AUTH_PING=$(docker compose -f /tmp/mekanix-build/docker-compose.yml exec -T \
             -e REDISCLI_AUTH="$REDIS_PASSWORD" redis redis-cli ping)
           test "$AUTH_PING" = "PONG"
           echo "Redis password authentication succeeds (secret redacted)"
-
           REDIS_NETWORK=$(docker inspect "$REDIS_CONTAINER" --format '{{range $name, $network := .NetworkSettings.Networks}}{{println $name}}{{end}}' | head -n1)
           REDIS_IP=$(docker inspect "$REDIS_CONTAINER" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
           test -n "$REDIS_NETWORK"
