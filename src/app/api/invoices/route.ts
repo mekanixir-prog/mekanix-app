@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant, getTechnicianFromSession } from "@/lib/auth";
-import { areInvoicePriceSourcesVerified, areJobPartPriceSourcesVerified } from "@/lib/money/provenance";
+import { areInvoicePriceSourcesVerified, areJobPartPriceSourcesVerified, isInvoicePricingPolicyApproved } from "@/lib/money/provenance";
+import { maskInvoiceMoney } from "@/lib/money/read-provenance";
 
 const FULL_INCLUDE = {
   job: {
@@ -31,7 +32,7 @@ export async function GET(req: Request) {
 
   const db = await getDbForLib();
   const inv = await db.invoice.findUnique({ where: { jobId }, include: FULL_INCLUDE });
-  return NextResponse.json(inv);
+  return NextResponse.json(inv ? maskInvoiceMoney(inv) : null);
 }
 
 // POST: only the assigned technician or an admin may issue an invoice.
@@ -59,6 +60,12 @@ export async function POST(req: Request) {
   if (access) return access;
 
   const db = await getDbForLib();
+  if (!isInvoicePricingPolicyApproved()) {
+    return NextResponse.json(
+      { error: "سیاست نرخ‌گذاری ریالی هنوز تأیید نشده است؛ صدور فاکتور مسدود است", code: "INVOICE_PRICING_POLICY_UNAPPROVED" },
+      { status: 409 },
+    );
+  }
   if (session.role === "TECHNICIAN") {
     const tech = await getTechnicianFromSession(session);
     const job = await db.job.findUnique({ where: { id: jobId }, select: { technicianId: true } });
@@ -73,39 +80,35 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
   }
 
-  // Production invoice totals currently depend on technician profile fees.
-  // Do not interpret legacy values as IRR until the rate card and fee units
-  // have both been independently reconciled and explicitly approved.
-  if (!areInvoicePriceSourcesVerified()) {
-    return NextResponse.json(
-      { error: "تعرفه یا واحد هزینه‌های مکانیک هنوز به‌عنوان ریال تأیید نشده است؛ صدور فاکتور پس از تطبیق مالی فعال می‌شود", code: "INVOICE_PRICE_PROVENANCE_UNVERIFIED" },
-      { status: 409 },
-    );
-  }
-
   // Idempotent retry: the job-status flow may already have created this invoice.
   const existingInvoice = await db.invoice.findUnique({
     where: { jobId },
     include: FULL_INCLUDE,
   });
-  if (existingInvoice) return NextResponse.json(existingInvoice);
+  if (existingInvoice) return NextResponse.json(maskInvoiceMoney(existingInvoice));
 
   const job = await db.job.findUnique({
     where: { id: jobId },
     include: { parts: true, technician: true },
   });
   if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
-  if (!areJobPartPriceSourcesVerified(job.parts.length > 0)) {
+  if (!job.technician || !Array.isArray(job.parts)) {
+    return NextResponse.json({ error: "اطلاعات مکانیک یا قطعات کار کامل نیست" }, { status: 409 });
+  }
+  if (!areInvoicePriceSourcesVerified(job.technician)) {
     return NextResponse.json(
-      { error: "واحد قیمت قطعات قدیمی هنوز به ریال تطبیق داده نشده است؛ صدور فاکتور پس از تأیید سوابق قطعات فعال می‌شود", code: "JOB_PART_CURRENCY_UNVERIFIED" },
+      { error: "منشأ و واحد ریال هزینه‌های مکانیک تأیید نشده است؛ صدور فاکتور مسدود است", code: "TECHNICIAN_FEE_PROVENANCE_UNVERIFIED" },
+      { status: 409 },
+    );
+  }
+  if (!areJobPartPriceSourcesVerified(job.parts)) {
+    return NextResponse.json(
+      { error: "حداقل یک قطعه فاقد تأیید مستقل واحد ریال یا مبلغ صحیح امن است؛ صدور فاکتور مسدود است", code: "JOB_PART_CURRENCY_UNVERIFIED" },
       { status: 409 },
     );
   }
   if (job.status !== "WAITING_APPROVAL" && job.status !== "COMPLETED") {
     return NextResponse.json({ error: "فاکتور فقط پس از پایان عملیات تعمیر قابل صدور است" }, { status: 409 });
-  }
-  if (!job.technician || !Array.isArray(job.parts)) {
-    return NextResponse.json({ error: "اطلاعات مکانیک یا قطعات کار کامل نیست" }, { status: 409 });
   }
 
   const laborHoursRaw = body.laborHours === undefined ? 1.5 : body.laborHours;
@@ -123,17 +126,21 @@ export async function POST(req: Request) {
   const partsTotal = job.parts.reduce((sum, part) => {
     const unitPrice = Number(part.unitPrice);
     const quantity = Number(part.quantity);
-    if (!Number.isFinite(unitPrice) || unitPrice < 0 ||
-        !Number.isSafeInteger(quantity) || quantity < 0) {
+    if (!Number.isSafeInteger(unitPrice) || unitPrice < 0 ||
+        !Number.isSafeInteger(quantity) || quantity <= 0) {
       return Number.NaN;
     }
-    return sum + unitPrice * quantity;
+    const lineTotal = unitPrice * quantity;
+    const nextTotal = sum + lineTotal;
+    return Number.isSafeInteger(lineTotal) && Number.isSafeInteger(nextTotal)
+      ? nextTotal
+      : Number.NaN;
   }, 0);
 
-  if (!Number.isFinite(laborRate) || laborRate < 0 ||
-      !Number.isFinite(travelFee) || travelFee < 0 ||
-      !Number.isFinite(partsTotal) || partsTotal < 0) {
-    return NextResponse.json({ error: "اطلاعات قیمت‌گذاری کار نامعتبر است" }, { status: 409 });
+  if (!Number.isSafeInteger(laborRate) || laborRate < 0 ||
+      !Number.isSafeInteger(travelFee) || travelFee < 0 ||
+      !Number.isSafeInteger(partsTotal) || partsTotal < 0) {
+    return NextResponse.json({ error: "مبالغ قیمت‌گذاری باید اعداد صحیح امن ریالی باشند" }, { status: 409 });
   }
 
   const laborTotal = laborHours * laborRate;
@@ -146,8 +153,12 @@ export async function POST(req: Request) {
   }
   const taxTotal = subtotal * taxRate;
   const total = subtotal + taxTotal;
-  if (![laborTotal, subtotal, taxTotal, total].every(Number.isFinite)) {
-    return NextResponse.json({ error: "محاسبه مبلغ فاکتور نامعتبر است" }, { status: 409 });
+  if (![laborTotal, subtotal, taxTotal, total].every(Number.isSafeInteger) ||
+      [laborTotal, subtotal, taxTotal, total].some((amount) => amount < 0)) {
+    return NextResponse.json(
+      { error: "تمام اجزای فاکتور و جمع نهایی باید اعداد صحیح امن ریالی باشند؛ گردکردن خودکار انجام نمی‌شود", code: "INVOICE_AMOUNT_NOT_INTEGER_IRR" },
+      { status: 409 },
+    );
   }
 
   const code = `INV-${crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`;
@@ -168,8 +179,9 @@ export async function POST(req: Request) {
         taxTotal,
         total,
         currency: "IRR",
+        financialUnitStatus: "VERIFIED_IRR",
         status: "SENT",
-        notes: "Parts & labor covered by 6-month MEKANIX warranty.",
+        notes: "Invoice generated from independently verified IRR pricing sources.",
       },
       include: FULL_INCLUDE,
     });
@@ -180,7 +192,7 @@ export async function POST(req: Request) {
       where: { jobId },
       include: FULL_INCLUDE,
     }).catch(() => null);
-    if (racedInvoice) return NextResponse.json(racedInvoice);
+    if (racedInvoice) return NextResponse.json(maskInvoiceMoney(racedInvoice));
     throw error;
   }
 
@@ -202,7 +214,7 @@ export async function POST(req: Request) {
           userId: cust.id,
           type: "invoice_issued",
           title: `Invoice ${invoice.code} issued`,
-          body: `${tech?.name ?? "Mechanic"} issued invoice for ${Number(invoice.total)}. Review and pay to complete the job.`,
+          body: `${tech?.name ?? "Mechanic"} issued an invoice. Review it to see the verified amount and payment details.`,
           category: "payment",
           link: "customer/invoice",
         },
@@ -213,7 +225,7 @@ export async function POST(req: Request) {
             userId: tech.id,
             type: "invoice_issued",
             title: `Invoice ${invoice.code} sent to customer`,
-            body: `${invoice.code} for ${Number(invoice.total)} was sent to ${cust.name} for review & payment.`,
+            body: `${invoice.code} was sent to ${cust.name} for review & payment.`,
             category: "payment",
             link: "technician/earnings",
           },
@@ -224,12 +236,12 @@ export async function POST(req: Request) {
           jobId: refreshed.id,
           fromUserId: tech?.id ?? cust.id,
           kind: "system",
-          body: `Invoice ${invoice.code} issued — total ${Number(invoice.total)} ${invoice.currency}.`,
+          body: `Invoice ${invoice.code} issued.`,
         },
       });
     } catch (error) {
       console.error("[invoices] invoice notification failed:", error);
     }
   }
-  return NextResponse.json(invoice);
+  return NextResponse.json(maskInvoiceMoney(invoice));
 }

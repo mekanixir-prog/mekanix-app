@@ -65,13 +65,14 @@ const existingInvoice = {
   status: "SENT",
   total: 1200,
   currency: "IRR",
+  financialUnitStatus: "VERIFIED_IRR",
 };
 
 const pricingJob = {
   id: "job-1",
   status: "WAITING_APPROVAL",
-  parts: [{ unitPrice: 100, quantity: 2 }],
-  technician: { hourlyRate: 200, travelFeeBase: 50 },
+  parts: [{ financialUnitStatus: "VERIFIED_IRR", unitPrice: 100, quantity: 2 }],
+  technician: { financialUnitStatus: "VERIFIED_IRR", hourlyRate: 500, travelFeeBase: 50, inspectionFee: 20, inspectionFeeHeavy: 50 },
 };
 
 const refreshedJob = {
@@ -143,6 +144,55 @@ describe("POST /api/invoices lifecycle", () => {
     const response = await createInvoice(postRequest({ jobId: "job-1" }));
     expect(response.status).toBe(409);
     expect(mocks.invoiceCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a part whose own row-level IRR provenance is unverified", async () => {
+    mocks.invoiceFindUnique.mockResolvedValueOnce(null);
+    mocks.jobFindUnique.mockResolvedValueOnce({
+      ...pricingJob,
+      parts: [{ financialUnitStatus: "UNVERIFIED", unitPrice: 100, quantity: 2 }],
+    });
+
+    const response = await createInvoice(postRequest({ jobId: "job-1" }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "JOB_PART_CURRENCY_UNVERIFIED" });
+    expect(mocks.taxFindUnique).not.toHaveBeenCalled();
+    expect(mocks.invoiceCreate).not.toHaveBeenCalled();
+  });
+
+  it("does not persist fractional or unsafe derived invoice amounts", async () => {
+    mocks.invoiceFindUnique.mockResolvedValueOnce(null);
+    mocks.jobFindUnique.mockResolvedValueOnce({
+      ...pricingJob,
+      technician: { ...pricingJob.technician, hourlyRate: 501 },
+    });
+
+    const response = await createInvoice(postRequest({ jobId: "job-1" }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "INVOICE_AMOUNT_NOT_INTEGER_IRR" });
+    expect(mocks.invoiceCreate).not.toHaveBeenCalled();
+  });
+
+  it("attests a new invoice only after every source and derived amount is verified", async () => {
+    mocks.invoiceFindUnique.mockResolvedValueOnce(null);
+    mocks.jobFindUnique
+      .mockResolvedValueOnce(pricingJob)
+      .mockResolvedValueOnce(refreshedJob);
+
+    const response = await createInvoice(postRequest({ jobId: "job-1" }));
+    expect(response.status).toBe(200);
+    expect(mocks.invoiceCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        currency: "IRR",
+        financialUnitStatus: "VERIFIED_IRR",
+        laborTotal: 750,
+        partsTotal: 200,
+        travelFee: 50,
+        subtotal: 1000,
+        taxTotal: 90,
+        total: 1090,
+      }),
+    }));
   });
 
   it("rejects non-finite or out-of-range labor hours", async () => {

@@ -36,9 +36,10 @@ function wallet(transactions: any[] = []) {
   return {
     id: "wallet-1",
     technicianId: "tech-1",
+    financialUnitStatus: "VERIFIED_IRR",
     balance: 5000,
     pendingBalance: 1000,
-    transactions,
+    transactions: transactions.map((transaction) => ({ financialUnitStatus: "VERIFIED_IRR", ...transaction })),
     withdrawals: [],
   };
 }
