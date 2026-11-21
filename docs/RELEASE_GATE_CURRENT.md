@@ -136,3 +136,7 @@ The selected direction remains Cloudflare Free/Workers + D1 for the app path. Do
 
 ### 2026-11-21 stack synchronization
 This CSP branch now includes the latest ZAP/k6 base, financial provenance route/test updates, current dependency security patch, and explicit Redis ACL negative-auth test. The CSP and full-stack checks must pass on this exact head before merge.
+
+
+### 2026-11-21 stack synchronization
+This branch now includes the latest financial candidate and wallet-read test fix. ZAP exit code 2 is interpreted as WARN-level (not automatically Medium); High remains blocking and Medium requires human review. Redis E2E now configures an explicit password-protected default ACL user and tests unauthenticated access from a fresh client.
