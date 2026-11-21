@@ -9,3 +9,6 @@
 - Required validation after lock refresh: CI, Production readiness, PostgreSQL CI, Docker E2E, Cloudflare Build, CodeQL and Secret Scan on the same exact commit.
 
 This document records the dependency remediation intent; it does not claim that the upgrade or validation is complete.
+
+
+The lockfile refresh workflow is now supplied by the PR target branch and will write the regenerated lockfile back to this PR head. It is temporary and must be removed after the lockfile is committed.
