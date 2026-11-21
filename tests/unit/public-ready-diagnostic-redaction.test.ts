@@ -58,6 +58,10 @@ describe("GET /api/ready production diagnostic boundary", () => {
 
     expect(payload.ok).toBe(false);
     expect(payload.errors).toEqual(["One or more readiness checks failed"]);
+    expect(payload.checks).toEqual({ database: true });
+    expect(JSON.stringify(payload)).not.toContain("productionGates");
+    expect(JSON.stringify(payload)).not.toContain("sharedRateLimitStore");
+    expect(JSON.stringify(payload)).not.toContain("adminProvisioning");
     expect(JSON.stringify(payload)).not.toContain("JWT_SECRET");
     expect(JSON.stringify(payload)).not.toContain("OTP_HASH_SECRET");
     expect(JSON.stringify(payload)).not.toContain("KAVENEGAR_API_KEY");
