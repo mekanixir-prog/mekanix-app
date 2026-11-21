@@ -136,3 +136,7 @@ The selected direction remains Cloudflare Free/Workers + D1 for the app path. Do
 
 ### 2026-11-21 stack synchronization
 This staging branch now includes the latest ZAP/k6 and financial candidate base. Both standard and staging Compose Redis services configure the default ACL user with a required password; the E2E suite checks authenticated PING and requires a fresh credential-free client to receive NOAUTH. Remote D1 and real staging restore remain unverified.
+
+
+### 2026-11-21 stack synchronization
+This branch now includes the latest financial candidate and wallet-read test fix. ZAP exit code 2 is interpreted as WARN-level (not automatically Medium); High remains blocking and Medium requires human review. Redis E2E now configures an explicit password-protected default ACL user and tests unauthenticated access from a fresh client.
