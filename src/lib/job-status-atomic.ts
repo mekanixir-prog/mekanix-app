@@ -90,6 +90,7 @@ export function isAllowedJobStatusTransition(
     return nextStatus === "CANCELLED" &&
       CUSTOMER_CANCEL_FROM.includes(currentStatus as (typeof CUSTOMER_CANCEL_FROM)[number]);
   }
+  if (role !== "TECHNICIAN") return false;
 
   return TECHNICIAN_TRANSITIONS[nextStatus]?.includes(currentStatus) ?? false;
 }
