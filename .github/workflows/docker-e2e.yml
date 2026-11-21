@@ -122,37 +122,48 @@ jobs:
           REDIS_CONTAINER=$(docker compose -f /tmp/mekanix-build/docker-compose.yml ps -q redis)
           test -n "$REDIS_CONTAINER"
 
-          # Inspect the effective server command without printing the secret.
+          # Inspect the effective ACL rule without printing its secret.
           docker inspect "$REDIS_CONTAINER" --format '{{json .Config.Cmd}}' | python3 -c "
           import json, sys
           command = json.load(sys.stdin)
-          assert '--requirepass' in command, 'Redis server was not started with --requirepass'
-          index = command.index('--requirepass')
-          assert index + 1 < len(command) and command[index + 1], 'Redis requirepass is empty'
-          print('Redis server command contains a non-empty requirepass (value redacted)')
+          assert '--user' in command, 'Redis server was not started with an explicit ACL user'
+          index = command.index('--user')
+          assert index + 1 < len(command), 'Redis ACL rule is missing'
+          rule = command[index + 1]
+          assert rule.startswith('default on >'), 'Redis default user must require a password'
+          assert '~*' in rule and '&*' in rule and '+@all' in rule, 'Redis default user ACL rule is incomplete'
+          print('Redis default ACL user is explicitly password-protected (value redacted)')
           "
 
-          # Verify the server accepts the configured credential and has a
-          # non-empty requirepass setting; never print the returned secret.
+          # Confirm the default ACL user has a password and is not marked nopass.
+          ACL_USER=$(docker compose -f /tmp/mekanix-build/docker-compose.yml exec -T \
+            -e REDISCLI_AUTH="$REDIS_PASSWORD" redis redis-cli --raw ACL GETUSER default)
+          printf '%s\n' "$ACL_USER" | grep -qx "on"
+          if printf '%s\n' "$ACL_USER" | grep -qx "nopass"; then
+            echo "Redis default user is still configured with nopass"
+            exit 1
+          fi
+          PASSWORD_HASH=$(printf '%s\n' "$ACL_USER" | awk 'p { print; exit } $0 == "passwords" { p=1 }')
+          test -n "$PASSWORD_HASH"
+
           AUTH_PING=$(docker compose -f /tmp/mekanix-build/docker-compose.yml exec -T \
             -e REDISCLI_AUTH="$REDIS_PASSWORD" redis redis-cli ping)
           test "$AUTH_PING" = "PONG"
-          REQUIREPASS=$(docker compose -f /tmp/mekanix-build/docker-compose.yml exec -T \
-            -e REDISCLI_AUTH="$REDIS_PASSWORD" redis redis-cli --raw CONFIG GET requirepass | tail -n1)
-          test -n "$REQUIREPASS"
-          echo "Redis accepted authenticated PING and reports a non-empty requirepass (value redacted)"
+          echo "Redis ACL password is configured and authenticated PING succeeds (secret redacted)"
 
-          # Use a fresh client container on the same Docker network. It has no
-          # Redis credentials or inherited REDISCLI_AUTH, so PONG is a failure.
+          # Connect to the exact Redis container IP from a fresh client with no
+          # REDISCLI_AUTH or password environment inherited.
           REDIS_NETWORK=$(docker inspect "$REDIS_CONTAINER" --format '{{range $name, $network := .NetworkSettings.Networks}}{{println $name}}{{end}}' | head -n1)
+          REDIS_IP=$(docker inspect "$REDIS_CONTAINER" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
           test -n "$REDIS_NETWORK"
-          if docker run --rm --network "$REDIS_NETWORK" redis:7-alpine redis-cli -h redis ping \
+          test -n "$REDIS_IP"
+          if docker run --rm --network "$REDIS_NETWORK" redis:7-alpine redis-cli -h "$REDIS_IP" ping \
             >/tmp/redis-noauth.out 2>&1; then
             echo "Redis accepted an unauthenticated command"
             exit 1
           fi
           grep -q "NOAUTH" /tmp/redis-noauth.out
-          echo "Fresh unauthenticated client received NOAUTH; Redis password enforcement is verified"
+          echo "Fresh unauthenticated client received NOAUTH; Redis ACL enforcement is verified"
 
       - name: Verify production OTP fails closed without a real SMS provider
         run: |
