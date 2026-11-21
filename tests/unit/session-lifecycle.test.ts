@@ -133,8 +133,21 @@ describe("createSession — DB record creation", () => {
     await createSession(PAYLOAD, req);
     const args = mockSessionCreate.mock.calls[0][0];
     expect(args.data.device).toBe("Mozilla/5.0 (Test Browser)");
-    // X-Forwarded-For: first hop only, trimmed
-    expect(args.data.ip).toBe("203.0.113.7");
+    // The right-most proxy hop is trusted; never take a spoofable left-most value.
+    expect(args.data.ip).toBe("10.0.0.1");
+  });
+
+  it("prefers Cloudflare's authoritative client IP over spoofable forwarded headers", async () => {
+    const req = new Request("https://mekanix.test/api/auth/otp/verify", {
+      method: "POST",
+      headers: {
+        "cf-connecting-ip": "198.51.100.9",
+        "x-forwarded-for": "203.0.113.7, 10.0.0.1",
+        "x-real-ip": "192.0.2.4",
+      },
+    });
+    await createSession(PAYLOAD, req);
+    expect(mockSessionCreate.mock.calls[0][0].data.ip).toBe("198.51.100.9");
   });
 
   it("falls back to x-real-ip when x-forwarded-for is absent", async () => {
