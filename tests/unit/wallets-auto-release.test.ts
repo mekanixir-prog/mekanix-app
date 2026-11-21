@@ -67,6 +67,12 @@ describe("GET /api/wallets — atomic escrow release orchestration", () => {
 
     const response = await GET(makeRequest());
     expect(response.status).toBe(200);
+    expect(mockWalletUpsert).toHaveBeenCalledTimes(1);
+    expect(mockWalletUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { technicianId: "tech-1" },
+      create: { technicianId: "tech-1", financialUnitStatus: "UNVERIFIED" },
+      update: {},
+    }));
     expect(mockReleaseWalletTransaction).toHaveBeenCalledTimes(1);
     const [db, walletId, transactionId, now] = mockReleaseWalletTransaction.mock.calls[0];
     expect(walletId).toBe("wallet-1");
