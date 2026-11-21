@@ -216,7 +216,7 @@ jobs:
           python3 scripts/validate-k6-summary.py k6-reports/k6-summary.json
 
       - name: Run full 10/50/100 VU load profile for release candidate
-        if: github.event_name == 'pull_request' && github.event.pull_request.number == 191
+        if: github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'fix/financial-release-candidate-2026-11-14'
         run: |
           set -euo pipefail
           mkdir -p k6-reports
