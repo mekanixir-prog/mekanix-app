@@ -139,3 +139,37 @@ The financial candidate now descends from current main and includes the validate
 
 
 Validation rerun requested after the wallet-read test was corrected to mock both the atomic upsert and the refreshed read. Do not mark ready until CI, PostgreSQL CI, Docker E2E, Production readiness, CodeQL and Secret Scan pass on the same head.
+
+
+## 2026-11-21 verification addendum — supersedes older pending-run statements above
+
+This addendum records the exact GitHub state checked on 2026-11-21. It does not change the release decision or authorize a merge/deployment.
+
+### Exact-head workflow evidence
+
+| PR | Exact head checked | Workflow result | Additional evidence / qualification |
+|---|---|---|---|
+| #186 | `2a0a7993294b5a0680de12426e16e7310603587f` | 7/7 success: CI, PostgreSQL CI, Production readiness, Docker E2E, Cloudflare Build, CodeQL, Secret Scan | Docker E2E passed real HTTP business flow, k6 smoke, ZAP baseline, PostgreSQL outage/recovery and artifact upload. |
+| #191 | `540c1f66f43112eb55d52dc5757ec0dbaab06a68` | 4/4 success: CI, PostgreSQL CI, Production readiness, Docker E2E | Docker E2E additionally passed full 10/50/100-VU load profile, ZAP baseline, real HTTP business flow, Redis password/NOAUTH checks and PostgreSQL outage/recovery. This is a CI isolated Docker run, not a staging-host load test. |
+| #195 | `19fde9e29e0b157dfa9ceebda20b7c29ed45d3e9` | 5/5 success: CI, PostgreSQL CI, Production readiness, Docker E2E, Cloudflare Build | CSP/security-header branch; full 10/50/100-VU step was skipped by the workflow condition on this child PR. |
+| #197 | `dffe4877cb7982001cc3bd335a1bbd9ae978d965` | 4/4 success: CI, PostgreSQL CI, Production readiness, Docker E2E | Required-secret/Compose checks and authenticated Redis tests passed; full 10/50/100-VU step was skipped by the workflow condition on this child PR. |
+| #192, #193, #194, #196 | Current PR heads as of 2026-11-21 | Their recorded CI, PostgreSQL CI, Production readiness, Docker E2E and Cloudflare Build runs succeeded on their listed heads | These runs are older than the latest #186/#191/#195/#197 runs. Re-run after rebasing/retargeting onto the final integration base. |
+
+The #191 Docker E2E job explicitly completed the full-load step successfully; the #195 and #197 child-PR Docker jobs explicitly skipped that step. Do not describe the child PRs as independently re-running the full-load profile.
+
+### Open PR inventory and merge eligibility
+
+At this check, the repository has 38 open PRs; all 38 are Draft and none is marked Ready for review. The four main release-train PRs (#186, #191, #195, #197) also have no submitted review approvals or unresolved review threads recorded by GitHub. Therefore no open PR is currently merge-ready, even where its visible checks are green.
+
+PR #190 is already merged into the financial candidate branch, not directly into `main`. PR #191 is stacked on the PR #190 head branch; PRs #192–#197 are stacked on the #191 branch. The dependency order must be preserved. After an owner-reviewed #186 merge, retarget/rebase #191 onto `main`, validate it on its exact new head, then retarget/rebase each dependent child PR onto the validated base and rerun checks. Do not merge the children against an obsolete branch base or treat the green parent run as proof for changed child code.
+
+### Remaining release blockers
+
+1. The PRs remain Draft and have no human approval; complete full-diff review and obtain owner approval before marking any PR ready.
+2. #186's exact-head CI is green, but its documented release gates remain: complete route-by-route BOLA/IDOR matrix; review both SQLite/D1 and PostgreSQL migration tracks; staging-host deployment; encrypted staging backup/restore and rollback rehearsal; real SMS/payment sandbox round-trips; provider timeout/failure injection; production D1 parity and operational sign-off.
+3. #191's CI full-load profile is useful evidence, but does not replace a measured isolated-staging run with CPU, memory, database and latency/failure metrics.
+4. #195 and #197 have green child-branch checks, but their full-load step was skipped. Their exact final combined head must be revalidated after stack integration.
+5. #192, #193, #194 and #196 must be revalidated on the final base. In particular, verify the trusted-proxy deployment boundary for session IP headers before treating the #196 change as a security control.
+6. No production deployment, production migration, remote D1 operation, production secret change, real SMS/payment activation, DNS change or public launch has been performed.
+
+**Decision remains NO-GO for production release.** Green CI is evidence of automated checks only; it is not merge approval, staging evidence, production readiness or owner Go authorization.
