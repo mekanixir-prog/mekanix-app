@@ -143,3 +143,7 @@ This branch now includes the latest financial candidate and wallet-read test fix
 
 
 Stack sync complete: this branch now includes the latest ZAP/k6 parent and the financial wallet-read test correction. Re-run the full PR checks on the current head.
+
+
+### 2026-11-21 stack synchronization
+The financial candidate now descends from current main and includes the validated ZAP report-hardening child PR #190. The wallet GET path uses atomic upsert while retaining per-record provenance masking. The wallet-read unit tests were updated to mock and assert the upsert contract. Exact-head CI evidence is required before this draft can be marked ready.
