@@ -61,52 +61,19 @@ services:
       migrate:
         condition: service_completed_successfully
       redis:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-
-  db:
-    image: postgres:16-alpine
-    ports:
-      - "127.0.0.1:5433:5432"
-    environment:
-      - POSTGRES_USER=mekanix
-      - POSTGRES_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
-      - POSTGRES_DB=mekanix_staging
-    volumes:
-      - staging_pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mekanix -d mekanix_staging"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  redis:
     image: redis:7-alpine
     environment:
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD is required}
-    command:
-      - redis-server
-      - --appendonly
-      - "yes"
-      - --user
-      - "default on >${REDIS_PASSWORD:?REDIS_PASSWORD is required} ~* &* +@all"
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
     volumes:
       - staging_redisdata:/data
     healthcheck:
-      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 5s
     restart: unless-stopped
-
 volumes:
   staging_pgdata:
   staging_redisdata:
