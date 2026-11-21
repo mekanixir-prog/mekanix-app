@@ -1,10 +1,9 @@
 # MEKANIX — Isolated Staging Environment
 #
-# Same security boundaries as production:
 # - PostgreSQL is published only on loopback; Redis is internal only.
-# - Database, Redis, user JWT, admin JWT and OTP hash secrets are required.
-# - Redis health is verified with authenticated PING before the app starts.
-# - Project-scoped volumes and a separate database keep staging isolated.
+# - All authentication secrets are required; there are no insecure defaults.
+# - Redis health is verified with an authenticated PING before the app starts.
+# - Separate project-scoped volumes and database keep staging isolated.
 # - SMS/payment defaults remain non-live; /api/ready is expected to fail closed.
 
 services:
@@ -61,6 +60,34 @@ services:
       migrate:
         condition: service_completed_successfully
       redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "127.0.0.1:5433:5432"
+    environment:
+      - POSTGRES_USER=mekanix
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
+      - POSTGRES_DB=mekanix_staging
+    volumes:
+      - pgdata_staging:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mekanix"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    # Published only on loopback; never bind to a public interface
+
+  redis:
     image: redis:7-alpine
     environment:
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD is required}
@@ -68,12 +95,14 @@ services:
     volumes:
       - staging_redisdata:/data
     healthcheck:
-      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 5s
     restart: unless-stopped
+    # No ports: Redis is internal only
+
 volumes:
-  staging_pgdata:
+  pgdata_staging:
   staging_redisdata:
