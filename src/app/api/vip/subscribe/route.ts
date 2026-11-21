@@ -125,6 +125,10 @@ export async function POST(req: Request) {
   const startedAt = new Date();
   const expiresAt = new Date(startedAt.getTime() + durationDays * 24 * 60 * 60 * 1000);
 
+  // Simulator-preview initial fulfillment only. The scheduled outbox Worker
+  // independently retries/reconciles this same payment; both paths share the
+  // unique paymentId binding and atomic entitlement checks. Before live-provider
+  // activation, move to a single Worker-owned fulfillment path.
   // Replace the previous active subscription and consume this payment in one
   // database transaction (Prisma) or one transactional D1 batch. If creation
   // fails, the prior ACTIVE subscription remains intact.
