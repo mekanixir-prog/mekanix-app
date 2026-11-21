@@ -136,3 +136,7 @@ The selected direction remains Cloudflare Free/Workers + D1 for the app path. Do
 
 ### 2026-11-21 stack synchronization
 This branch now includes the latest financial candidate and wallet-read test fix. ZAP exit code 2 is interpreted as WARN-level (not automatically Medium); High remains blocking and Medium requires human review. Redis E2E now configures an explicit password-protected default ACL user and tests unauthenticated access from a fresh client.
+
+
+### 2026-11-21 stack synchronization
+The financial candidate now descends from current main and includes the validated ZAP report-hardening child PR #190. The wallet GET path uses atomic upsert while retaining per-record provenance masking. The wallet-read unit tests were updated to mock and assert the upsert contract. Exact-head CI evidence is required before this draft can be marked ready.
