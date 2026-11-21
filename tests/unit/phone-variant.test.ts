@@ -10,10 +10,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mock db — we intercept all findUnique calls to record what phone values
 // are being looked up, without needing a real database.
 const findUniqueCalls: string[] = [];
+let legacyUser: any = null;
+const mockUserUpdate = vi.fn(async (args: any) => ({ ...legacyUser, ...args.data }));
 const mockUserFindUnique = vi.fn((args: any) => {
   const phone = args?.where?.phone;
   if (phone) findUniqueCalls.push(phone);
-  return null; // never found — so all variants are tried
+  return legacyUser?.phone === phone ? legacyUser : null;
 });
 
 vi.mock("@/lib/db-access", () => ({
@@ -21,7 +23,7 @@ vi.mock("@/lib/db-access", () => ({
     user: {
       findUnique: (args: any) => mockUserFindUnique(args),
       create: vi.fn().mockResolvedValue({ id: "new", phone: "test", role: "CUSTOMER", phoneVerified: true, customer: { id: "cust_new", userId: "new" }, technician: null }),
-      update: vi.fn().mockResolvedValue(null),
+      update: mockUserUpdate,
     },
     otpCode: {
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -56,7 +58,9 @@ function makeReq(phone: string, code = "123456") {
 describe("D1-02 — phone variant lookups for Iranian and international formats", () => {
   beforeEach(() => {
     findUniqueCalls.length = 0;
+    legacyUser = null;
     mockUserFindUnique.mockClear();
+    mockUserUpdate.mockClear();
   });
 
   it("generates correct variants for Iranian +98 format", async () => {
@@ -98,6 +102,30 @@ describe("D1-02 — phone variant lookups for Iranian and international formats"
     expect(phones).toContain("+1-415-224-1180");
     // +1 415 224 1180
     expect(phones).toContain("+1 415 224 1180");
+  });
+
+
+  it("looks up the canonical Iranian identity first when the user enters domestic format", async () => {
+    await otpVerifyPOST(makeReq("09123456789"));
+    expect(findUniqueCalls[0]).toBe("+989123456789");
+  });
+
+  it("finds a legacy Iranian account through bounded phone variants", async () => {
+    legacyUser = {
+      id: "legacy-user",
+      phone: "09123456789",
+      phoneVerified: true,
+      role: "CUSTOMER",
+      customer: { id: "customer-1" },
+      technician: null,
+    };
+    const response = await otpVerifyPOST(makeReq("09123456789"));
+    expect(response.status).toBe(200);
+    expect(findUniqueCalls[0]).toBe("+989123456789");
+    expect(findUniqueCalls).toContain("09123456789");
+    expect(mockUserUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      data: { phone: "+989123456789" },
+    }));
   });
 
   it("does NOT generate broken variants like +9-891-234-56789", async () => {

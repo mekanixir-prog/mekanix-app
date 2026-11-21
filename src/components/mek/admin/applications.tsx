@@ -33,11 +33,7 @@ export function AdminApplications() {
   const approve = async (app: Application) => {
     setActing(app.id);
     try {
-      await fetch(`/api/mechanic-applications/${app.id}/approve`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes }),
-      });
+      await api.approveMechanicApplication(app.id, notes);
       toast.success(t("admin.applications.approved").replace("{name}", app.fullName));
       setSelected(null);
       setNotes("");
@@ -52,11 +48,7 @@ export function AdminApplications() {
   const reject = async (app: Application) => {
     setActing(app.id);
     try {
-      await fetch(`/api/mechanic-applications/${app.id}/reject`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes }),
-      });
+      await api.rejectMechanicApplication(app.id, notes);
       toast.success(t("admin.applications.rejected").replace("{name}", app.fullName));
       setSelected(null);
       setNotes("");
@@ -68,8 +60,8 @@ export function AdminApplications() {
     }
   };
 
-  const pending = (rows ?? []).filter((r) => r.status === "PENDING");
-  const reviewed = (rows ?? []).filter((r) => r.status !== "PENDING");
+  const pending = (rows ?? []).filter((r) => ["PENDING", "APPROVING", "REJECTING"].includes(r.status));
+  const reviewed = (rows ?? []).filter((r) => !["PENDING", "APPROVING", "REJECTING"].includes(r.status));
 
   return (
     <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
@@ -186,15 +178,20 @@ export function AdminApplications() {
                   <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("admin.applications.adminNotes")} rows={2} />
                 </div>
 
-                {selected.status === "PENDING" && (
+                {["PENDING", "APPROVING", "REJECTING"].includes(selected.status) && (
                   <DialogFooter>
-                    <Button variant="outline" className="text-destructive hover:bg-destructive/10" disabled={acting === selected.id} onClick={() => reject(selected)}>
-                      <XCircle className="mr-1.5 size-4" /> {t("admin.applications.reject")}
-                    </Button>
-                    <Button className="bg-emerald-glow text-black hover:bg-emerald-glow/90" disabled={acting === selected.id} onClick={() => approve(selected)}>
-                      {acting === selected.id ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <CheckCircle2 className="mr-1.5 size-4" />}
-                      {t("admin.applications.approve")}
-                    </Button>
+                    {(selected.status === "PENDING" || selected.status === "REJECTING") && (
+                      <Button variant="outline" className="text-destructive hover:bg-destructive/10" disabled={acting === selected.id} onClick={() => reject(selected)}>
+                        <XCircle className="mr-1.5 size-4" />
+                        {selected.status === "REJECTING" ? t("admin.applications.resumeReject") : t("admin.applications.reject")}
+                      </Button>
+                    )}
+                    {(selected.status === "PENDING" || selected.status === "APPROVING") && (
+                      <Button className="bg-emerald-glow text-black hover:bg-emerald-glow/90" disabled={acting === selected.id} onClick={() => approve(selected)}>
+                        {acting === selected.id ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <CheckCircle2 className="mr-1.5 size-4" />}
+                        {selected.status === "APPROVING" ? t("admin.applications.resumeApprove") : t("admin.applications.approve")}
+                      </Button>
+                    )}
                   </DialogFooter>
                 )}
               </div>

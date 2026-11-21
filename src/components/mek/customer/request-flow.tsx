@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import type { DemoUser } from "@/lib/use-active-user";
 import { useApp } from "@/lib/store";
-import { api, type Vehicle, type Technician, type ServiceRequest } from "@/lib/api";
+import { api, type Vehicle, type PublicTechnician } from "@/lib/api";
 import { MACHINE_TYPES, SERVICE_CATEGORIES, URGENCY, typesForMode } from "@/lib/constants";
 import { MekIcon, iconForMachineType, iconForCategory } from "@/components/mek/shared/icons";
 import { VehicleCard } from "@/components/mek/shared/vehicle-card";
@@ -16,7 +16,7 @@ import { TechnicianCard } from "@/components/mek/shared/technician-card";
 import { StarRating, EmptyState, SectionHeader } from "@/components/mek/shared/primitives";
 import { UrgencyBadge } from "@/components/mek/shared/status-badge";
 import { VoiceRecorder } from "@/components/mek/shared/voice-recorder";
-import { fmtDuration, haversine, toPersianDigits } from "@/lib/format";
+import { fmtDuration, toPersianDigits } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -482,36 +482,74 @@ export function Matching({ customer }: { customer: DemoUser }) {
   const { go, params } = useApp();
   const { t, isFa, money } = useT();
   const lang = isFa ? "fa" : "en";
-  const [techs, setTechs] = useState<Technician[] | null>(null);
+  const [techs, setTechs] = useState<PublicTechnician[] | null>(null);
   const [phase, setPhase] = useState<"searching" | "results">("searching");
   const [selected, setSelected] = useState<string | null>(null);
   const [showOtherRegions, setShowOtherRegions] = useState(false);
 
   useEffect(() => {
-    const lat = 35.6892, lng = 51.3890; // Tehran center
-    api.listTechnicians({ lat, lng }).then((tList) => {
-      // simulate searching delay
-      setTimeout(() => {
-        setTechs(tList);
-        setPhase("results");
-      }, 1900);
-    });
-  }, []);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const loadMatches = async () => {
+      try {
+        const requests = await api.listRequests();
+        const currentRequest = requests.find((item) => item.id === params.requestId);
+        const requestLocation = currentRequest &&
+          Number.isFinite(currentRequest.lat) &&
+          Number.isFinite(currentRequest.lng)
+          ? { lat: currentRequest.lat, lng: currentRequest.lng }
+          : undefined;
+        const tList = await api.listTechnicians(requestLocation);
+        if (cancelled) return;
+        timer = setTimeout(() => {
+          if (!cancelled) {
+            setTechs(tList);
+            setPhase("results");
+          }
+        }, 1900);
+      } catch {
+        if (!cancelled) {
+          setTechs([]);
+          setPhase("results");
+        }
+      }
+    };
+
+    void loadMatches();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [params.requestId]);
 
   const allRanked = (techs ?? []).map((tk) => {
-    const km = tk.lat && tk.lng ? haversine({ lat: 35.6892, lng: 51.3890 }, { lat: tk.lat, lng: tk.lng }) : 99;
-    const eta = Math.max(5, Math.round((km / 35) * 60) + tk.responseMins);
+    const distanceKnown = tk.distanceKm != null;
+    const km = tk.distanceKm ?? 99;
+    const eta = distanceKnown ? Math.max(5, Math.round((km / 35) * 60) + tk.responseMins) : undefined;
     // Score: weighted combination of rating, distance, verified, completed jobs.
     const rating = Number(tk.rating ?? 0);
-    const hourlyRate = Number(tk.hourlyRate ?? 0);
-    const proximityScore = rating * 20 - km * 0.4 + (tk.verified ? 5 : 0) + tk.completedJobs * 0.02;
-    // Value score: rating/cost ratio — higher rating + lower total cost = better value.
-    const inspectionFee = tk.inspectionFee != null ? Number(tk.inspectionFee) : hourlyRate * 0.5;
-    const inspectionFeeHeavy = tk.inspectionFeeHeavy != null ? Number(tk.inspectionFeeHeavy) : hourlyRate * 1.5;
-    const travelFee = (tk.travelFeeBase != null ? Number(tk.travelFeeBase) : 0) + km * 0.5;
-    const totalCost = inspectionFee + travelFee;
-    const valueScore = (rating * 30) / Math.max(1, totalCost / 10) + tk.completedJobs * 0.05 + (tk.verified ? 8 : 0);
-    return { tech: tk, km, eta, score: proximityScore, valueScore, inspectionFee, inspectionFeeHeavy, travelFee };
+    const priceKnown =
+      tk.financialUnitStatus === "VERIFIED_IRR" &&
+      tk.hourlyRate != null &&
+      tk.travelFeeBase != null;
+    const hourlyRate = priceKnown ? Number(tk.hourlyRate) : 0;
+    const proximityScore = rating * 20 - (distanceKnown ? km * 0.4 : 40) + (tk.verified ? 5 : 0) + tk.completedJobs * 0.02;
+    // Unknown/unverified prices must never be interpreted as zero or "free".
+    const inspectionFee = priceKnown
+      ? (tk.inspectionFee != null ? Number(tk.inspectionFee) : hourlyRate * 0.5)
+      : undefined;
+    const inspectionFeeHeavy = priceKnown
+      ? (tk.inspectionFeeHeavy != null ? Number(tk.inspectionFeeHeavy) : hourlyRate * 1.5)
+      : undefined;
+    const travelFee = priceKnown
+      ? Number(tk.travelFeeBase) + (distanceKnown ? km * 0.5 : 0)
+      : undefined;
+    const totalCost = priceKnown ? (inspectionFee ?? 0) + (travelFee ?? 0) : Infinity;
+    const valueScore = priceKnown
+      ? (rating * 30) / Math.max(1, totalCost / 10) + tk.completedJobs * 0.05 + (tk.verified ? 8 : 0)
+      : rating * 0.1 + tk.completedJobs * 0.05 + (tk.verified ? 8 : 0);
+    return { tech: tk, km, distanceKnown, eta, score: proximityScore, valueScore, priceKnown, inspectionFee, inspectionFeeHeavy, travelFee };
   });
 
   // Nearest & fastest: top 3 by proximity score (closest + fastest).
@@ -587,7 +625,7 @@ export function Matching({ customer }: { customer: DemoUser }) {
                       <TechnicianCard
                         key={r.tech.id}
                         tech={r.tech}
-                        distanceKm={r.km}
+                        distanceKm={r.distanceKnown ? r.km : undefined}
                         etaMins={r.eta}
                         rank={i + 1}
                         inspectionFee={r.inspectionFee}
@@ -636,7 +674,7 @@ export function Matching({ customer }: { customer: DemoUser }) {
                             <TechnicianCard
                               key={r.tech.id}
                               tech={r.tech}
-                              distanceKm={r.km}
+                              distanceKm={r.distanceKnown ? r.km : undefined}
                               etaMins={r.eta}
                               rank={undefined}
                               inspectionFee={r.inspectionFee}
@@ -664,25 +702,32 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
   const { go, params, back } = useApp();
   const { t, isFa, money, cat } = useT();
   const lang = isFa ? "fa" : "en";
-  const [tech, setTech] = useState<Technician | null>(null);
+  const [tech, setTech] = useState<PublicTechnician | null>(null);
   const [requesting, setRequesting] = useState(false);
+  const [profileUnavailable, setProfileUnavailable] = useState(false);
 
   useEffect(() => {
-    if (params.technicianId) api.getTechnician(params.technicianId).then(setTech);
+    let active = true;
+    setTech(null);
+    setProfileUnavailable(false);
+    if (!params.technicianId) {
+      setProfileUnavailable(true);
+      return () => { active = false; };
+    }
+    api.getTechnician(params.technicianId)
+      .then((profile) => { if (active) setTech(profile); })
+      .catch(() => { if (active) setProfileUnavailable(true); });
+    return () => { active = false; };
   }, [params.technicianId]);
 
   const request = async () => {
     setRequesting(true);
     try {
       // assign the technician to the request + create a job in REQUESTED state
-      const sr = await fetch(`/api/service-requests`).then((r) => r.json()).then((list: ServiceRequest[]) => list.find((x) => x.id === params.requestId));
+      const requests = await api.listRequests();
+      const sr = requests.find((item) => item.id === params.requestId);
       if (!sr) throw new Error(t("req.techProfile.requestNotFound"));
-      const jobRes = await fetch(`/api/service-requests/${sr.id}/assign`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ technicianId: params.technicianId }),
-      });
-      const job = await jobRes.json();
+      const job = await api.assignServiceRequest(sr.id, String(params.technicianId ?? ""));
       if (!job?.id) throw new Error(t("req.techProfile.assignFailed"));
       toast.success(t("req.techProfile.notified").replace("{name}", tech?.user.name ?? ""));
       go("track", { jobId: job.id });
@@ -693,6 +738,19 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
     }
   };
 
+  if (profileUnavailable) {
+    return (
+      <div className="space-y-5" dir={isFa ? "rtl" : "ltr"}>
+        <button onClick={back} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="size-4" /> {t("req.backToResults")}
+        </button>
+        <div className="rounded-xl border border-border bg-card p-6 text-center">
+          <p className="font-semibold">{t("req.techProfile.unavailable")}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{t("req.techProfile.unavailableDesc")}</p>
+        </div>
+      </div>
+    );
+  }
   if (!tech) return <div className="h-64 rounded-xl bg-muted/60 mk-shimmer" />;
 
   return (
@@ -724,7 +782,7 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
             <p className="mt-1 text-sm text-muted-foreground">{tech.bio}</p>
           </div>
           <div className="flex flex-col items-end gap-1">
-            <div className="font-display text-2xl font-bold text-amber">{money(Number(tech.hourlyRate))}<span className="text-xs text-muted-foreground">/{t("common.hr")}</span></div>
+            <div className="font-display text-2xl font-bold text-amber">{tech.financialUnitStatus === "VERIFIED_IRR" && tech.hourlyRate != null ? <>{money(Number(tech.hourlyRate))}<span className="text-xs text-muted-foreground">/{t("common.hr")}</span></> : <span className="text-base">{t("fees.quoteRequired")}</span>}</div>
             <div className="text-[11px] text-muted-foreground">{fmtDuration(tech.responseMins, lang)} · {t("req.techProfile.estArrival")}</div>
           </div>
         </div>
@@ -791,12 +849,12 @@ export function TechnicianProfileView({ customer }: { customer: DemoUser }) {
           <div className="sticky top-20 rounded-xl border border-border bg-card p-4">
             <h3 className="font-display text-sm font-semibold">{t("req.techProfile.request")}</h3>
             <div className="mt-3 space-y-2 text-sm">
-              <Row label={t("req.techProfile.hourlyRate")} value={`${money(Number(tech.hourlyRate))}/${t("common.hr")}`} />
-              <Row label={t("req.techProfile.travelFee")} value={money(Number(tech.travelFeeBase))} />
+              <Row label={t("req.techProfile.hourlyRate")} value={tech.financialUnitStatus === "VERIFIED_IRR" && tech.hourlyRate != null ? `${money(Number(tech.hourlyRate))}/${t("common.hr")}` : t("fees.quoteRequired")} />
+              <Row label={t("req.techProfile.travelFee")} value={tech.financialUnitStatus === "VERIFIED_IRR" && tech.travelFeeBase != null ? money(Number(tech.travelFeeBase)) : t("fees.quoteRequired")} />
               <Row label={t("req.techProfile.estArrival")} value={fmtDuration(tech.responseMins, lang)} />
               <Row label={t("req.techProfile.experience")} value={`${isFa ? toPersianDigits(tech.experienceYears) : tech.experienceYears} ${t("common.yrs")}`} />
               <Row label={t("req.techProfile.level")} value={tech.level} />
-              <Row label={t("fees.totalEstimate")} value={money(Number(tech.hourlyRate) * 0.5 + Number(tech.travelFeeBase))} />
+              <Row label={t("fees.totalEstimate")} value={tech.financialUnitStatus === "VERIFIED_IRR" && tech.hourlyRate != null && tech.travelFeeBase != null ? money(Number(tech.hourlyRate) * 0.5 + Number(tech.travelFeeBase)) : t("fees.quoteRequired")} />
             </div>
             <div className="mt-3 rounded-lg border border-amber/30 bg-amber/5 p-3 text-[11px] text-muted-foreground">
               <ShieldCheck className="mr-1 inline size-3.5 text-amber" />

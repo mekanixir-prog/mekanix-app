@@ -551,9 +551,12 @@ const DICT: Record<Lang, Record<string, string>> = {
     "req.techProfile.notified": "{name} has been notified",
     "req.techProfile.assignFailed": "Could not assign technician",
     "req.techProfile.requestNotFound": "Request not found",
+    "req.techProfile.unavailable": "This technician is no longer available",
+    "req.techProfile.unavailableDesc": "They may have gone offline or their profile is temporarily unavailable. Return to the list to choose another technician.",
 
     // ── Fees (inline display on technician cards / booking summary) ──
     "fees.inspectionFee": "Inspection fee",
+    "fees.quoteRequired": "Price to be confirmed",
     "fees.travelFee": "Travel fee",
     "fees.totalEstimate": "Total estimate",
     "fees.inspectionFeeHeavy": "Heavy inspection fee",
@@ -958,6 +961,9 @@ const DICT: Record<Lang, Record<string, string>> = {
     "tech.dashboard.onlineNow": "You're now online",
     "tech.dashboard.offlineNow": "You're offline",
     "tech.dashboard.statusUpdateFail": "Could not update status",
+    "tech.dashboard.locationRequired": "Allow location access to go online",
+    "tech.dashboard.onJob": "On an active job",
+    "tech.dashboard.finishCurrentJob": "Availability is locked until the active job is finished",
     "tech.dashboard.today": "Today",
     "tech.dashboard.thisWeek": "This Week",
     "tech.dashboard.rating": "Rating",
@@ -1490,8 +1496,10 @@ const DICT: Record<Lang, Record<string, string>> = {
     "admin.applications.col.status": "Status",
     "admin.applications.col.submitted": "Submitted",
     "admin.applications.approve": "Approve & Create Account",
+    "admin.applications.resumeApprove": "Resume approval",
     "admin.applications.reject": "Reject",
-    "admin.applications.approved": "{name} approved — technician account created",
+    "admin.applications.resumeReject": "Resume rejection",
+    "admin.applications.approved": "{name} approved — onboarding is required before dispatch",
     "admin.applications.rejected": "{name} rejected",
     "admin.applications.hasVehicle": "Has own service vehicle",
     "admin.applications.techAccount": "Technician account created",
@@ -1604,6 +1612,8 @@ const DICT: Record<Lang, Record<string, string>> = {
 
     // ── Application statuses ──
     "appst.PENDING": "Pending",
+    "appst.APPROVING": "Approval in progress",
+    "appst.REJECTING": "Rejection in progress",
     "appst.APPROVED": "Approved",
     "appst.REJECTED": "Rejected",
 
@@ -2173,9 +2183,12 @@ const DICT: Record<Lang, Record<string, string>> = {
     "req.techProfile.notified": "به {name} اطلاع داده شد",
     "req.techProfile.assignFailed": "اختصاص مکانیک ناموفق بود",
     "req.techProfile.requestNotFound": "درخواست یافت نشد",
+    "req.techProfile.unavailable": "این تعمیرکار دیگر در دسترس نیست",
+    "req.techProfile.unavailableDesc": "ممکن است آفلاین شده باشد یا پروفایلش موقتاً در دسترس نباشد. به فهرست برگردید و تعمیرکار دیگری انتخاب کنید.",
 
     // ── Fees (inline display on technician cards / booking summary) ──
     "fees.inspectionFee": "هزینه عیب‌یابی",
+    "fees.quoteRequired": "استعلام قیمت پس از بررسی",
     "fees.travelFee": "هزینه سفر",
     "fees.totalEstimate": "مجموع تخمینی",
     "fees.inspectionFeeHeavy": "هزینه عیب‌یابی ماشین سنگین",
@@ -2580,6 +2593,9 @@ const DICT: Record<Lang, Record<string, string>> = {
     "tech.dashboard.onlineNow": "شما آنلاین شدید",
     "tech.dashboard.offlineNow": "شما آفلاین شدید",
     "tech.dashboard.statusUpdateFail": "به‌روزرسانی وضعیت ناموفق بود",
+    "tech.dashboard.locationRequired": "برای آنلاین شدن، دسترسی موقعیت مکانی را فعال کنید",
+    "tech.dashboard.onJob": "در حال انجام سفارش فعال",
+    "tech.dashboard.finishCurrentJob": "تا پایان سفارش فعال امکان تغییر وضعیت حضور وجود ندارد",
     "tech.dashboard.today": "امروز",
     "tech.dashboard.thisWeek": "این هفته",
     "tech.dashboard.rating": "امتیاز",
@@ -3113,7 +3129,9 @@ const DICT: Record<Lang, Record<string, string>> = {
     "admin.applications.col.submitted": "تاریخ ارسال",
     "admin.applications.approve": "تأیید و ایجاد حساب",
     "admin.applications.reject": "رد",
-    "admin.applications.approved": "{name} تأیید شد — حساب مکانیک ایجاد شد",
+    "admin.applications.resumeApprove": "ادامه فرایند تأیید",
+    "admin.applications.resumeReject": "ادامه فرایند رد",
+    "admin.applications.approved": "{name} تأیید شد — تکمیل پروفایل پیش از دریافت سفارش الزامی است",
     "admin.applications.rejected": "{name} رد شد",
     "admin.applications.hasVehicle": "خودروی خدمت دارد",
     "admin.applications.techAccount": "حساب مکانیک ایجاد شد",
@@ -3226,6 +3244,8 @@ const DICT: Record<Lang, Record<string, string>> = {
 
     // ── Application statuses ──
     "appst.PENDING": "در انتظار",
+    "appst.APPROVING": "در حال تأیید",
+    "appst.REJECTING": "در حال رد",
     "appst.APPROVED": "تأیید شده",
     "appst.REJECTED": "رد شده",
 

@@ -54,7 +54,10 @@ describe("OTP verification phone rate limit", () => {
     };
     mocks.getDbForLib.mockResolvedValue({
       otpCode: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-      user: { findUnique: vi.fn().mockResolvedValue(technicianUser) },
+      user: {
+        findUnique: vi.fn().mockResolvedValue(technicianUser),
+        update: vi.fn(async ({ data }) => ({ ...technicianUser, ...data })),
+      },
       customer: { create: vi.fn() },
     });
     mocks.createSession.mockResolvedValue("test-session-token");
