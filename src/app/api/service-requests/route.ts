@@ -27,6 +27,10 @@ export async function GET(req: Request) {
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
+  if (!["CUSTOMER", "TECHNICIAN", "ADMIN"].includes(session.role)) {
+    return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
+  }
+
   const url = new URL(req.url);
   const status = url.searchParams.get("status");
   const where: any = {};
