@@ -140,3 +140,6 @@ This staging branch now includes the latest ZAP/k6 and financial candidate base.
 
 ### 2026-11-21 stack synchronization
 This branch now includes the latest financial candidate and wallet-read test fix. ZAP exit code 2 is interpreted as WARN-level (not automatically Medium); High remains blocking and Medium requires human review. Redis E2E now configures an explicit password-protected default ACL user and tests unauthenticated access from a fresh client.
+
+
+Stack sync complete: this branch now includes the latest ZAP/k6 parent and the financial wallet-read test correction. Re-run the full PR checks on the current head.
