@@ -81,7 +81,7 @@
     "leaflet": "^1.9.4",
     "lru-cache": "^11.5.3",
     "lucide-react": "^0.525.0",
-    "next": "16.4.3",
+    "next": "16.4.6",
     "next-auth": "^4.24.11",
     "next-intl": "^4.3.4",
     "prisma": "^6.11.1",
@@ -123,6 +123,7 @@
     "vitest": "^5.0.1"
   },
   "overrides": {
+    "effect": "3.22.1",
     "deepmerge-ts": "^8.0.1",
     "glob": "^14.0.2",
     "js-yaml": "^4.3.2",
