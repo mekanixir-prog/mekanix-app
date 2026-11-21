@@ -133,3 +133,6 @@ The stack order is main → #186 → #190 → #191 → (#195 and #197). Do not m
 The selected direction remains Cloudflare Free/Workers + D1 for the app path. Do not introduce paid VPS/domain or live provider credentials in this engineering phase. Cloudflare Build success is not a deployment. No production database, secret, DNS, SMS, payment, payout or public deployment has been changed.
 
 **Decision: NO-GO for public production.** Keep all live money movement and production provider activation fail-closed until the financial provenance, commercial policy, payment lifecycle, D1 staging and operational evidence above are complete, followed by explicit owner Go/No-Go approval.
+
+### 2026-11-21 stack synchronization
+This branch now includes the latest financial candidate and wallet-read test fix. ZAP exit code 2 is interpreted as WARN-level (not automatically Medium); High remains blocking and Medium requires human review. Redis E2E now configures an explicit password-protected default ACL user and tests unauthenticated access from a fresh client.
