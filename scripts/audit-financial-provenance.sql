@@ -73,6 +73,32 @@ FROM "DiscountCode"
 GROUP BY "type", COALESCE("valueUnitStatus", '<NULL>'), COALESCE("minAmountUnitStatus", '<NULL>')
 ORDER BY discount_type, value_unit_status, min_amount_unit_status;
 
+
+-- Capped, non-PII reconciliation worklist. IDs only; no monetary values or
+-- customer/technician attributes are emitted. Run a separately approved,
+-- access-controlled row-level evidence review for each returned identifier.
+SELECT
+  table_name,
+  record_id,
+  COALESCE(financial_unit_status, '<NULL>') AS financial_unit_status
+FROM financial_rows
+WHERE financial_unit_status IS NULL OR financial_unit_status <> 'VERIFIED_IRR'
+ORDER BY table_name, record_id
+LIMIT 1000;
+
+-- Discount-code reconciliation worklist. Percentage and fixed-amount codes
+-- must be interpreted by type; neither unit status is inferred here.
+SELECT
+  id,
+  "type" AS discount_type,
+  COALESCE("valueUnitStatus", '<NULL>') AS value_unit_status,
+  COALESCE("minAmountUnitStatus", '<NULL>') AS min_amount_unit_status
+FROM "DiscountCode"
+WHERE "valueUnitStatus" IS NULL OR "valueUnitStatus" <> 'VERIFIED_IRR'
+   OR "minAmountUnitStatus" IS NULL OR "minAmountUnitStatus" <> 'VERIFIED_IRR'
+ORDER BY id
+LIMIT 1000;
+
 -- Do not use this inventory alone to promote records to VERIFIED_IRR.
 -- Promotion requires row-level source evidence, exact unit, safe integer
 -- validation, owner-approved policy where relevant, and reviewed reconciliation.
