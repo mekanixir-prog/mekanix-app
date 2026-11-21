@@ -133,3 +133,6 @@ The stack order is main → #186 → #190 → #191 → (#195 and #197). Do not m
 The selected direction remains Cloudflare Free/Workers + D1 for the app path. Do not introduce paid VPS/domain or live provider credentials in this engineering phase. Cloudflare Build success is not a deployment. No production database, secret, DNS, SMS, payment, payout or public deployment has been changed.
 
 **Decision: NO-GO for public production.** Keep all live money movement and production provider activation fail-closed until the financial provenance, commercial policy, payment lifecycle, D1 staging and operational evidence above are complete, followed by explicit owner Go/No-Go approval.
+
+### 2026-11-21 stack synchronization
+This staging branch now includes the latest ZAP/k6 and financial candidate base. Both standard and staging Compose Redis services configure the default ACL user with a required password; the E2E suite checks authenticated PING and requires a fresh credential-free client to receive NOAUTH. Remote D1 and real staging restore remain unverified.
