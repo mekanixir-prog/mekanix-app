@@ -60,6 +60,19 @@ WHERE financial_unit_status = 'VERIFIED_IRR'
 GROUP BY table_name
 ORDER BY table_name;
 
+
+-- DiscountCode uses two independent unit attestations rather than the shared
+-- financialUnitStatus field. Report them separately; do not infer that a
+-- percentage discount (type=PERCENT) is an IRR amount.
+SELECT
+  "type" AS discount_type,
+  COALESCE("valueUnitStatus", '<NULL>') AS value_unit_status,
+  COALESCE("minAmountUnitStatus", '<NULL>') AS min_amount_unit_status,
+  COUNT(*) AS record_count
+FROM "DiscountCode"
+GROUP BY "type", COALESCE("valueUnitStatus", '<NULL>'), COALESCE("minAmountUnitStatus", '<NULL>')
+ORDER BY discount_type, value_unit_status, min_amount_unit_status;
+
 -- Do not use this inventory alone to promote records to VERIFIED_IRR.
 -- Promotion requires row-level source evidence, exact unit, safe integer
 -- validation, owner-approved policy where relevant, and reviewed reconciliation.
