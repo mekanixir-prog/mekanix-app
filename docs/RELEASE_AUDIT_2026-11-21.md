@@ -124,3 +124,28 @@ This is the immediate engineering blocker. Do not mark Docker E2E green until Re
 - No production deployment, remote D1 migration/write, real SMS, real payment, payout, production secret creation or domain activation was performed in this audit.
 - No historical financial row was changed, relabelled or converted.
 - A branch may be created for isolated work, but it is not a merge or release approval.
+
+
+## Follow-up execution — 2026-11-21
+
+### Redis authentication test hardening
+
+- PR #197 head branch: `fix/staging-compose-and-redis-auth-2026-11-14`.
+- Updated exact head: `3eea6cc6f1738ea9dcd8646056a2ad3590209032`.
+- Updated `.github/workflows/docker-e2e.yml` to inspect the effective Redis server command without printing the password, perform an authenticated PING from inside the container, explicitly unset inherited `REDISCLI_AUTH` for the negative PING, and require a `NOAUTH` response.
+- CI started for the updated head: CI success; Production readiness failed at dependency audit; PostgreSQL CI and Docker E2E were still in progress at the time of this update.
+- The previous Redis test failure was `Redis accepted an unauthenticated command`. The new test result is pending; do not mark Redis fixed until the new Docker E2E run completes.
+
+### Newly discovered dependency security blocker
+
+- The updated Production readiness run executes `bun audit --audit-level=moderate` and fails.
+- The audit output identifies eight Next.js advisories against the locked `next@16.4.3` dependency (one reported High and seven Moderate by Bun).
+- Next.js upstream tag `v16.4.5` exists and is the published patch line for the November advisories; upstream tag `v16.4.6` also exists. The repository should move to the latest verified stable patch and regenerate `bun.lock` with the pinned Bun 1.4.4 runtime.
+- Do not weaken the audit threshold to make CI green. Upgrade the dependency, regenerate the lockfile, then require the full CI matrix on the new exact SHA.
+- Upstream evidence: Next.js tags `v16.4.5` and `v16.4.6`; the November advisories list affected Next.js versions through 16.4.4 and patched 16.4.5. See the upstream advisory index: https://github.com/vercel/next.js/security/advisories.
+
+### Current follow-up gates
+
+1. Finish the in-progress Docker E2E and PostgreSQL CI for PR #197 head `3eea6cc6f1738ea9dcd8646056a2ad3590209032`.
+2. Fix the Next.js dependency audit by updating Next.js and regenerating `bun.lock`; do not bypass audit.
+3. Re-run CI, Production readiness, PostgreSQL CI, Docker E2E, Cloudflare Build, CodeQL and Secret Scan on the exact same integrated candidate SHA.
