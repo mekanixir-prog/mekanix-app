@@ -360,3 +360,28 @@ The product owner has approved **canonical integer IRR (Rial) for persisted acco
 Approval does not certify existing rows, seed values, prices, or ledger balances as IRR. The source-level conflicts documented in this audit remain unresolved until each writer and historical record cohort has traceable provenance. Do not bulk-convert, relabel, or expose ambiguous legacy values as trusted withdrawable funds. USD/IRR reference-rate endpoints remain display/reference-only and must not be used as a settlement source. Any genuine foreign-currency conversion requires a validated immutable rate snapshot and explicit rounding policy.
 
 Next work is implementation and reconciliation: integer-safe IRR validation at every write boundary; a single tested Toman-to-IRR adapter only where a Toman API is intentionally retained (currently CARE proposal); exact amount/currency equality through invoice, payment attempt, provider verification, ledger and payout; and a migration preflight that classifies records, quarantines unknown units, and reports before/after reconciliation. Live payment, wallet credit, withdrawal and payout remain disabled until the relevant end-to-end and remote-staging gates pass.
+
+
+## 2026-11-21 correction — owner decision and current source state
+The earlier statements in this audit that integer IRR approval is pending are superseded by the owner decision recorded on 2026-11-03 and tracked in issues #81 and #99.
+
+### Approved monetary contract
+- Canonical persisted/accounting unit: **integer IRR**.
+- Persian presentation: **Toman only**, exact conversion `10 IRR = 1 Toman`.
+- No FX lookup, USD/IRR multiplier, inferred currency conversion, or Toman API/storage unit.
+- The decision resolves the choice of unit only. It does not approve legacy-row provenance, historical migration, tariffs, tax, commission, VIP prices, or withdrawal limits.
+
+### Current main source correction
+- `src/lib/format.ts::fmtMoney` no longer multiplies IRR by `USD_TO_IRR`; it formats the declared IRR value directly and rejects non-integer IRR.
+- `src/lib/use-t.ts` no longer fetches an exchange rate. Language affects number presentation only.
+- `src/lib/money/irr.ts::formatTomanFromIrr` exists, but the shared `useT().money` path still displays the IRR symbol rather than the approved Toman-only Persian presentation. This is a remaining UI integration gate, not an FX conversion bug.
+- Main's `GET /api/wallets` and `GET /api/invoices` still expose financial fields without the candidate's full read-side provenance masking. PR #186 adds fail-closed masking for wallet and invoice reads; the final route inventory must verify every financial read endpoint, including invoice detail, withdrawals, payment history, VIP and admin views.
+- Seeded technician fees, parts, service prices, and VIP plan amounts remain legacy/demo values with USD-like or ambiguous provenance. They are not production IRR prices. No blanket conversion or relabelling is permitted.
+
+### Remaining financial blockers
+- Issue #81 remains open for row-level source provenance, strict integer-IRR validation at every writer, reconciliation across invoice/payment/wallet/withdrawal/ledger records, and a reversible migration/quarantine plan.
+- Issue #99 remains open for commercial policy: heavy-equipment and passenger-vehicle rate card, inspection/travel/per-km fees, tax, commission, escrow release/hold, VIP pricing/benefits/refunds, and withdrawal limits.
+- Keep `MEKANIX_PRICING_IRR_APPROVED`, technician-fee provenance flags, payment, wallet credit, withdrawal, and payout disabled until their independent evidence is approved.
+- PR #180 (atomic wallet initialization) and PR #201 (Next.js/Effect dependency security patch) are merged to main. PR #186 remains the integrated financial candidate and is still Draft.
+
+Do not interpret this correction as approval for production money movement.
