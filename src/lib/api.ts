@@ -135,6 +135,10 @@ export const api = {
   markAllRead: (userId: string) =>
     req<{ ok: boolean }>(`/api/notifications?userId=${userId}`, { method: "PATCH", body: JSON.stringify({ read: true }) }),
   adminList: (resource: string) => req<any[]>(`/api/admin/${resource}`),
+  approveMechanicApplication: (id: string, notes?: string) =>
+    req<any>(`/api/mechanic-applications/${id}/approve`, { method: "POST", body: JSON.stringify({ notes }) }),
+  rejectMechanicApplication: (id: string, notes?: string) =>
+    req<any>(`/api/mechanic-applications/${id}/reject`, { method: "POST", body: JSON.stringify({ notes }) }),
   adminUpdate: (resource: string, id: string, data: any) =>
     req<any>(`/api/admin/${resource}/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   getProfile: () => req<User>("/api/profile"),
