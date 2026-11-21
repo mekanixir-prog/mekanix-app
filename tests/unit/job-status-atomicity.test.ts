@@ -579,4 +579,20 @@ describe("atomic job status writer", () => {
       .rejects.toBeInstanceOf(JobStatusConflictError);
     expect(db.$transaction).not.toHaveBeenCalled();
   });
+  it("rejects FLEET_MANAGER job transitions before any database write", async () => {
+    const db = { $transaction: vi.fn() } as any;
+    const fleetInput = {
+      ...input,
+      actorRole: "FLEET_MANAGER" as any,
+      actorTechnicianId: null,
+      currentStatus: "WAITING_APPROVAL" as const,
+      nextStatus: "REPAIRING" as const,
+      updates: {},
+    };
+
+    await expect(transitionJobStatusAtomically(db, fleetInput))
+      .rejects.toBeInstanceOf(JobStatusConflictError);
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
 });

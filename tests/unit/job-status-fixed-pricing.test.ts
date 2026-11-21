@@ -204,7 +204,7 @@ describe("job status approval estimate uses the fixed rate card", () => {
     mocks.jobFindUnique.mockReset().mockResolvedValueOnce({
       ...beforeJob,
       status: "REPAIRING",
-      invoice: { id: "invoice-1", currency: "IRR", financialUnitStatus: "VERIFIED_IRR" },
+      invoice: { id: "invoice-1", status: "SENT", currency: "IRR", financialUnitStatus: "VERIFIED_IRR" },
       customerApproved: true,
     });
     const response = await PATCH(request({ status: "WAITING_APPROVAL" }), {
@@ -239,7 +239,7 @@ describe("job status approval estimate uses the fixed rate card", () => {
 
   it("allows a customer to approve an estimate without changing the job status", async () => {
     mocks.auth.mockResolvedValue({ userId: "customer-user-1", role: "CUSTOMER" });
-    const waitingApproval = { ...beforeJob, status: "WAITING_APPROVAL", invoice: { id: "invoice-1", currency: "IRR", financialUnitStatus: "VERIFIED_IRR" } };
+    const waitingApproval = { ...beforeJob, status: "WAITING_APPROVAL", invoice: { id: "invoice-1", status: "SENT", currency: "IRR", financialUnitStatus: "VERIFIED_IRR" } };
     const updated = { ...updatedJob, status: "WAITING_APPROVAL" };
     mocks.jobFindUnique.mockReset().mockResolvedValueOnce(waitingApproval).mockResolvedValueOnce(updated);
 
@@ -334,7 +334,7 @@ describe("job status approval estimate uses the fixed rate card", () => {
       ...beforeJob,
       status: "REPAIRING",
       customerApproved: false,
-      invoice: { id: "invoice-1", currency: "IRR", financialUnitStatus: "VERIFIED_IRR" },
+      invoice: { id: "invoice-1", status: "SENT", currency: "IRR", financialUnitStatus: "VERIFIED_IRR" },
     });
     const response = await PATCH(request({ status: "COMPLETED" }), {
       params: Promise.resolve({ id: "job-1" }),
@@ -349,7 +349,7 @@ describe("job status approval estimate uses the fixed rate card", () => {
       ...beforeJob,
       status: "REPAIRING",
       customerApproved: true,
-      invoice: { id: "invoice-1", currency: "IRR", financialUnitStatus: "VERIFIED_IRR" },
+      invoice: { id: "invoice-1", status: "SENT", currency: "IRR", financialUnitStatus: "VERIFIED_IRR" },
     }).mockResolvedValueOnce({ ...updatedJob, status: "COMPLETED" });
     const response = await PATCH(request({ status: "COMPLETED" }), {
       params: Promise.resolve({ id: "job-1" }),
@@ -363,7 +363,7 @@ describe("job status approval estimate uses the fixed rate card", () => {
   });
 
   it("allows a technician to start repair after stored customer approval", async () => {
-    const waitingApproval = { ...beforeJob, status: "WAITING_APPROVAL", customerApproved: true, invoice: { id: "invoice-1", currency: "IRR", financialUnitStatus: "VERIFIED_IRR" } };
+    const waitingApproval = { ...beforeJob, status: "WAITING_APPROVAL", customerApproved: true, invoice: { id: "invoice-1", status: "SENT", currency: "IRR", financialUnitStatus: "VERIFIED_IRR" } };
     const repairing = { ...updatedJob, status: "REPAIRING" };
     mocks.jobFindUnique.mockReset().mockResolvedValueOnce(waitingApproval).mockResolvedValueOnce(repairing);
 
@@ -396,7 +396,7 @@ describe("job status approval estimate uses the fixed rate card", () => {
       ...beforeJob,
       status: "WAITING_APPROVAL",
       customerApproved: false,
-      invoice: { id: "invoice-1", currency: "IRR", financialUnitStatus: "VERIFIED_IRR" },
+      invoice: { id: "invoice-1", status: "SENT", currency: "IRR", financialUnitStatus: "VERIFIED_IRR" },
     });
 
     const response = await PATCH(request({ status: "REPAIRING" }), {
@@ -407,4 +407,41 @@ describe("job status approval estimate uses the fixed rate card", () => {
     expect(await response.json()).toMatchObject({ code: "CUSTOMER_APPROVAL_REQUIRED" });
     expect(mocks.transition).not.toHaveBeenCalled();
   });
+});
+
+
+describe("job status role and invoice lifecycle boundaries", () => {
+  it("denies FLEET_MANAGER before participant or job lookup", async () => {
+    mocks.auth.mockResolvedValue({ userId: "fleet-user-1", role: "FLEET_MANAGER" });
+    const response = await PATCH(request({ status: "REPAIRING" }), {
+      params: Promise.resolve({ id: "job-1" }),
+    });
+    expect(response.status).toBe(403);
+    expect(mocks.participant).not.toHaveBeenCalled();
+    expect(mocks.jobFindUnique).not.toHaveBeenCalled();
+    expect(mocks.transition).not.toHaveBeenCalled();
+  });
+
+  it.each(["DRAFT", "PAID", "CANCELLED"])(
+    "does not treat invoice status %s as an approvable repair estimate",
+    async (invoiceStatus) => {
+      mocks.jobFindUnique.mockReset().mockResolvedValue({
+        ...beforeJob,
+        status: "WAITING_APPROVAL",
+        customerApproved: true,
+        invoice: {
+          id: "invoice-1",
+          status: invoiceStatus,
+          currency: "IRR",
+          financialUnitStatus: "VERIFIED_IRR",
+        },
+      });
+      const response = await PATCH(request({ status: "REPAIRING" }), {
+        params: Promise.resolve({ id: "job-1" }),
+      });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code: "REPAIR_ESTIMATE_REQUIRED" });
+      expect(mocks.transition).not.toHaveBeenCalled();
+    },
+  );
 });

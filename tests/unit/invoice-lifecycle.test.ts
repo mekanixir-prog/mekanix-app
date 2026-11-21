@@ -466,3 +466,27 @@ describe("GET /api/invoices financial provenance", () => {
     expect(mocks.participant).toHaveBeenCalledWith(expect.any(Object), "job-1");
   });
 });
+
+
+describe("PATCH /api/invoices/[id] customer approval role boundary", () => {
+  it("rejects ADMIN approval because only the owning customer may approve", async () => {
+    mocks.auth.mockResolvedValue({ userId: "admin-user-1", role: "ADMIN" });
+    const invoiceWithJob = {
+      ...existingInvoice,
+      job: {
+        status: "WAITING_APPROVAL",
+        customerApproved: false,
+        updatedAt: new Date("2026-11-07T10:00:00.000Z"),
+        technicianId: "tech-1",
+        requestId: "request-1",
+      },
+    };
+    mocks.invoiceFindUnique.mockResolvedValueOnce(invoiceWithJob);
+    const response = await patchInvoice(patchRequest({ customerApproved: true }), {
+      params: Promise.resolve({ id: "inv-1" }),
+    });
+    expect(response.status).toBe(403);
+    expect(mocks.transition).not.toHaveBeenCalled();
+    expect(mocks.jobUpdateMany).not.toHaveBeenCalled();
+  });
+});
