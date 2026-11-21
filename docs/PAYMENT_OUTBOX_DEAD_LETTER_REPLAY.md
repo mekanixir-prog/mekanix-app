@@ -4,7 +4,7 @@
 
 ## Objective
 
-Allow a tightly authorized operator to request one new processing cycle for a terminal `DEAD` VIP payment event after the underlying cause has been investigated and corrected. The scheduled Worker remains the only component that fulfills the entitlement. The admin API must never create a subscription, mark an event processed, alter the payload, or call the fulfillment routine directly.
+Allow a tightly authorized operator to request one new processing cycle for a terminal `DEAD` VIP payment event after the underlying cause has been investigated and corrected. The replay API must never create a subscription, mark an event processed, alter the payload, or call the fulfillment routine directly. In the current simulator-only preview, the subscription API may perform initial fulfillment; the scheduled Worker is the durable retry/reconciliation consumer. Before live-provider activation, the implementation must converge on one fulfillment owner (recommended: Worker-only).
 
 ## Non-negotiable invariants
 
