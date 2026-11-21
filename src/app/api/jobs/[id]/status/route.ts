@@ -312,8 +312,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       requestId: existing.requestId,
       technicianId: existing.technicianId,
       actorRole: session.role === "ADMIN" ? "ADMIN"
-        : session.role === "TECHNICIAN" ? "TECHNICIAN"
-        : session.role === "FLEET_MANAGER" ? "FLEET_MANAGER" : "CUSTOMER",
+        : session.role === "TECHNICIAN" ? "TECHNICIAN" : "CUSTOMER",
       actorTechnicianId: actorTechnician?.id ?? null,
       invoice: invoiceInput,
       holdUntil,
