@@ -136,3 +136,6 @@ The selected direction remains Cloudflare Free/Workers + D1 for the app path. Do
 
 ### 2026-11-21 stack synchronization
 The financial candidate now descends from current main and includes the validated ZAP report-hardening child PR #190. The wallet GET path uses atomic upsert while retaining per-record provenance masking. The wallet-read unit tests were updated to mock and assert the upsert contract. Exact-head CI evidence is required before this draft can be marked ready.
+
+
+Validation rerun requested after the wallet-read test was corrected to mock both the atomic upsert and the refreshed read. Do not mark ready until CI, PostgreSQL CI, Docker E2E, Production readiness, CodeQL and Secret Scan pass on the same head.
