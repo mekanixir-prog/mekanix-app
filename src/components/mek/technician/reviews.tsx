@@ -3,14 +3,14 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Star, Loader2 } from "lucide-react";
 import type { DemoUser } from "@/lib/use-active-user";
-import { api, type Technician } from "@/lib/api";
+import { api, type PublicTechnician } from "@/lib/api";
 import { SectionHeader, EmptyState, StarRating } from "@/components/mek/shared/primitives";
 import { fmtRelative, toPersianDigits } from "@/lib/format";
 import { useT } from "@/lib/use-t";
 
 export function TechnicianReviews({ user }: { user: DemoUser }) {
   const { t, isFa } = useT();
-  const [tech, setTech] = useState<Technician | null>(null);
+  const [tech, setTech] = useState<PublicTechnician | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
