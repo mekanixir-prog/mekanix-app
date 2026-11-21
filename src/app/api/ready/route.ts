@@ -183,10 +183,14 @@ export async function GET() {
     process.env.NODE_ENV === "production" && errors.length > 0
       ? ["One or more readiness checks failed"]
       : errors;
+
+  const publicChecks = process.env.NODE_ENV === "production"
+    ? { database: checks.database }
+    : checks;
   return NextResponse.json(
     {
       ok,
-      checks,
+      checks: publicChecks,
       errors: publicErrors,
       timestamp: new Date().toISOString(),
     },

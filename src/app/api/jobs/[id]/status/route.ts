@@ -35,6 +35,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
 
+  if (session.role !== "CUSTOMER" && session.role !== "TECHNICIAN" && session.role !== "ADMIN") {
+    return NextResponse.json({ error: "دسترسی به تغییر وضعیت این کار مجاز نیست" }, { status: 403 });
+  }
+
   const { id } = await params;
 
   // BOLA: must be a job participant (or admin)
@@ -83,7 +87,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       parts: { select: { unitPrice: true, quantity: true, financialUnitStatus: true } },
       request: { select: { category: true, urgency: true, lat: true, lng: true, vehicle: { select: { type: true } } } },
       tracking: { orderBy: { ts: "asc" }, take: 1, select: { lat: true, lng: true } },
-      invoice: { select: { id: true, currency: true, financialUnitStatus: true } },
+      invoice: { select: { id: true, status: true, currency: true, financialUnitStatus: true } },
     },
   });
   if (!existing) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
@@ -91,7 +95,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // For technicians, ensure they are the ASSIGNED technician (requireJobParticipant already checked)
   // For customers, ensure they own the request (requireJobParticipant already checked)
 
-  if (hasCustomerApproval && session.role !== "CUSTOMER" && session.role !== "FLEET_MANAGER") {
+  if (hasCustomerApproval && session.role !== "CUSTOMER") {
     return NextResponse.json(
       { error: "فقط مشتری یا مدیر ناوگان می‌تواند برآورد تعمیر را تأیید کند", code: "CUSTOMER_APPROVAL_FORBIDDEN" },
       { status: 403 },

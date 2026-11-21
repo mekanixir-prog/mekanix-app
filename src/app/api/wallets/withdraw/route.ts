@@ -191,7 +191,10 @@ export async function POST(req: Request) {
         idempotent: true,
       });
     }
-    const message = error instanceof Error ? error.message : "خطا در پردازش برداشت";
-    return NextResponse.json({ error: message }, { status: 400 });
+    console.error("[wallets/withdraw] Unexpected withdrawal processing failure", error);
+    return NextResponse.json(
+      { error: "پردازش درخواست برداشت در حال حاضر ممکن نیست", code: "WITHDRAWAL_PROCESSING_FAILED" },
+      { status: 503 },
+    );
   }
 }

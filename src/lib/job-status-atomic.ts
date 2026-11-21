@@ -44,7 +44,7 @@ export type AtomicJobStatusInput = {
   jobId: string;
   requestId: string;
   technicianId: string;
-  actorRole: "TECHNICIAN" | "ADMIN" | "CUSTOMER" | "FLEET_MANAGER";
+  actorRole: "TECHNICIAN" | "ADMIN" | "CUSTOMER";
   actorTechnicianId: string | null;
   currentStatus: JobStatus;
   expectedUpdatedAt: Date;
@@ -83,7 +83,7 @@ export function isAllowedJobStatusTransition(
   if (role === "ADMIN") return true;
   if (role === "PARTNER") return false;
 
-  if (role === "CUSTOMER" || role === "FLEET_MANAGER") {
+  if (role === "CUSTOMER") {
     if (customerApproved === true) {
       return currentStatus === "WAITING_APPROVAL" && nextStatus === currentStatus;
     }
@@ -159,7 +159,7 @@ function assertRoleTransition(input: AtomicJobStatusInput) {
   const estimateTransition = input.currentStatus === "REPAIRING" && input.nextStatus === "WAITING_APPROVAL";
   if (estimateTransition !== Boolean(input.invoice)) throw new JobStatusConflictError();
   if (input.invoice) assertAtomicInvoiceInput(input.invoice, input.jobId);
-  const isCustomerActor = input.actorRole === "CUSTOMER" || input.actorRole === "FLEET_MANAGER";
+  const isCustomerActor = input.actorRole === "CUSTOMER";
   if (input.actorRole === "TECHNICIAN" &&
       (!input.actorTechnicianId || input.actorTechnicianId !== input.technicianId)) {
     throw new JobStatusConflictError();
