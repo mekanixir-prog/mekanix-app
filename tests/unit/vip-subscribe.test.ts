@@ -101,6 +101,8 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
       status: "VERIFIED",
       financialUnitStatus: "VERIFIED_IRR",
       purpose: "vip",
+      targetPlanId: "plan-1",
+      targetPlanDurationDays: 30,
       paymentId: "pay-1",
       amount: 100_000,
       currency: "IRR",
@@ -245,20 +247,25 @@ describe("SEC-7 — /api/vip/subscribe route", () => {
     expect(mockCreateVipSubscriptionAtomically).not.toHaveBeenCalled();
   });
 
-  it("rejects non-positive VIP plan prices and invalid durations", async () => {
+  it("rejects missing or invalid purchase-time VIP duration snapshots", async () => {
     vi.stubEnv("NODE_ENV", "test");
-    mockVipPlanFindUnique.mockResolvedValue({
-      id: "plan-1", name: "Gold", priceIrr: 0, durationDays: 30,
-      active: true, financialUnitStatus: "VERIFIED_IRR",
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "gateway-1", userId: "user-1", status: "VERIFIED",
+      financialUnitStatus: "VERIFIED_IRR", purpose: "vip",
+      targetPlanId: "plan-1", targetPlanDurationDays: null,
+      paymentId: "pay-1", amount: 100_000, currency: "IRR",
     });
     expect((await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }))).status).toBe(409);
-    expect(mockPaymentFindUnique).not.toHaveBeenCalled();
-    mockVipPlanFindUnique.mockResolvedValue({
-      id: "plan-1", name: "Gold", priceIrr: 100_000, durationDays: 0,
-      active: true, financialUnitStatus: "VERIFIED_IRR",
+    expect(mockCreateVipSubscriptionAtomically).not.toHaveBeenCalled();
+
+    mockPaymentGatewayLogFindUnique.mockResolvedValue({
+      id: "gateway-1", userId: "user-1", status: "VERIFIED",
+      financialUnitStatus: "VERIFIED_IRR", purpose: "vip",
+      targetPlanId: "plan-1", targetPlanDurationDays: 36501,
+      paymentId: "pay-1", amount: 100_000, currency: "IRR",
     });
     expect((await POST(makePostRequest({ planId: "plan-1", paymentId: "pay-1" }))).status).toBe(409);
-    expect(mockPaymentFindUnique).not.toHaveBeenCalled();
+    expect(mockCreateVipSubscriptionAtomically).not.toHaveBeenCalled();
   });
 
   // ──────────── 8. Valid payment → 200 + subscription created ────────────
