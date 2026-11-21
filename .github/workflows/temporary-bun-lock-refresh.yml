@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix/nextjs-security-patch-2026-11-21
+  pull_request:
+    branches:
+      - fix/staging-compose-and-redis-auth-2026-11-14
 
 permissions:
   contents: write
