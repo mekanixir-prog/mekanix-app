@@ -120,16 +120,35 @@ jobs:
       
       - name: Verify Redis password authentication
         run: |
-          AUTH_PING=$(docker compose -f /tmp/mekanix-build/docker-compose.yml exec -T \
-            -e REDISCLI_AUTH="$REDIS_PASSWORD" redis redis-cli ping)
+          REDIS_CONTAINER=$(docker compose -f /tmp/mekanix-build/docker-compose.yml ps -q redis)
+          test -n "$REDIS_CONTAINER"
+
+          # Inspect the effective server command without printing the secret.
+          docker inspect "$REDIS_CONTAINER" --format '{{json .Config.Cmd}}' | python3 -c "
+          import json, sys
+          command = json.load(sys.stdin)
+          assert '--requirepass' in command, 'Redis server was not started with --requirepass'
+          index = command.index('--requirepass')
+          assert index + 1 < len(command) and command[index + 1], 'Redis requirepass is empty'
+          print('Redis server command contains a non-empty requirepass (value redacted)')
+          "
+
+          # Test authentication from inside the Redis container so the CLI uses
+          # the same configured secret source, not a host-side inherited value.
+          AUTH_PING=$(docker compose -f /tmp/mekanix-build/docker-compose.yml exec -T redis \
+            sh -lc 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping')
           test "$AUTH_PING" = "PONG"
-          if docker compose -f /tmp/mekanix-build/docker-compose.yml exec -T redis redis-cli ping \
-            >/tmp/redis-noauth.out 2>&1; then
+
+          # Explicitly clear any inherited CLI authentication variable. Without
+          # this, redis-cli could authenticate silently and make the negative
+          # test pass for the wrong reason.
+          if docker compose -f /tmp/mekanix-build/docker-compose.yml exec -T redis \
+            sh -lc 'unset REDISCLI_AUTH; redis-cli ping' >/tmp/redis-noauth.out 2>&1; then
             echo "Redis accepted an unauthenticated command"
             exit 1
           fi
           grep -q "NOAUTH" /tmp/redis-noauth.out
-          echo "Redis requires authentication and the application uses the configured password"
+          echo "Redis rejects unauthenticated PING and accepts authenticated PING; secret value was not logged"
 
       - name: Verify production OTP fails closed without a real SMS provider
         run: |
