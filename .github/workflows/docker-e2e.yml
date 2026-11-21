@@ -147,12 +147,9 @@ jobs:
           REDIS_IP=$(docker inspect "$REDIS_CONTAINER" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
           test -n "$REDIS_NETWORK"
           test -n "$REDIS_IP"
-          if docker run --rm --network "$REDIS_NETWORK" --entrypoint sh redis:7-alpine \
+          docker run --rm --network "$REDIS_NETWORK" --entrypoint sh redis:7-alpine \
             -c 'unset REDISCLI_AUTH; exec redis-cli -h "$1" ping' sh "$REDIS_IP" \
-            >/tmp/redis-noauth.out 2>&1; then
-            echo "Redis accepted an unauthenticated command"
-            exit 1
-          fi
+            >/tmp/redis-noauth.out 2>&1 || true
           if ! grep -q "NOAUTH" /tmp/redis-noauth.out; then
             echo "Unauthenticated Redis probe failed for a reason other than NOAUTH"
             cat /tmp/redis-noauth.out
