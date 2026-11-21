@@ -1,0 +1,470 @@
+// MEKANIX — Centralized Authentication & Authorization System
+// Based on OWASP API Security Top 10 — implements:
+// - API1: Broken Object Level Authorization (BOLA)
+// - API2: Broken Authentication
+// - API3: Broken Object Property Level Authorization (Mass Assignment)
+// - API5: Broken Function Level Authorization
+//
+// NOTE: The User model has a `password` field for legacy compatibility,
+// but MEKANIX uses OTP-only authentication (per ARCHITECTURE.md §6).
+// The password field is NOT used for login and should be ignored.
+
+import { SignJWT, jwtVerify } from "jose";
+import { createHash } from "node:crypto";
+import { NextResponse } from "next/server";
+import { getDbForLib } from "./db-access";
+
+// ──────────── JWT ────────────
+
+const encoder = new TextEncoder();
+
+/**
+ * Get the JWT signing secret.
+ *
+ * In production: JWT_SECRET MUST be set (via wrangler secret or .dev.vars).
+ * Throws if missing — no insecure fallback in production.
+ *
+ * In dev: falls back to a hardcoded dev-only secret (NEVER in production).
+ *
+ * SECURITY: JWT_SECRET is read inside the function (not at module top-level)
+ * because in Workers/OpenNext, process.env may not be fully populated at
+ * module evaluation time.
+ */
+function getSecret(): Uint8Array {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("JWT_SECRET environment variable is required in production");
+    }
+    // Dev-only fallback — NEVER in production
+    return encoder.encode("mekanix-dev-secret-change-in-production");
+  }
+  if (
+    process.env.NODE_ENV === "production" &&
+    new TextEncoder().encode(secret).length < 32
+  ) {
+    throw new Error("JWT_SECRET must contain at least 32 bytes in production");
+  }
+  return encoder.encode(secret);
+}
+
+export type Session = {
+  userId: string;
+  role: "CUSTOMER" | "TECHNICIAN" | "ADMIN" | "FLEET_MANAGER" | "PARTNER";
+  phone: string | null;
+  isGuest: boolean;
+};
+
+// ──────────── Session DB helpers ────────────
+//
+// We NEVER store the raw JWT in the database — only a SHA-256 hash of it.
+// This way a DB read alone is never enough to authenticate as a user; an
+// attacker with read-only DB access cannot replay any session token.
+//
+// The Session table gives us:
+//   - Real logout (mark revokedAt = now → verifySession returns null)
+//   - Admin "revoke all sessions" (revokeAllUserSessions) for password
+//     change / account compromise response
+//   - Per-device tracking (device + ip columns) for the security dashboard
+//
+// Backward compatibility: if the Session table doesn't exist yet (e.g. a
+// pre-migration DB) or the DB call throws, `createSession`/`verifySession`
+// fall back to JWT-only behaviour so existing deployments keep working
+// without forcing a migration.
+
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days — matches JWT exp
+
+/** SHA-256 hex digest of the token — what we store in `Session.tokenHash`. */
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+/** Extract the User-Agent header (best-effort device label). */
+function getDeviceFromRequest(req?: Request): string | null {
+  if (!req) return null;
+  return req.headers.get("user-agent") ?? null;
+}
+
+/** Extract the client IP, preferring X-Forwarded-For (first hop). */
+function getIpFromRequest(req?: Request): string | null {
+  if (!req) return null;
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) {
+    const first = xff.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  return req.headers.get("x-real-ip") ?? null;
+}
+
+export async function createSession(payload: Session, req?: Request): Promise<string> {
+  const token = await new SignJWT({ ...payload })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("30d")
+    .sign(getSecret());
+
+  // Persist a Session DB record so the token can be revoked/tracked.
+  //
+  // SECURITY: In production, if the Session DB record cannot be created,
+  // we throw — login FAILS. This is fail-closed: a session that can't be
+  // tracked or revoked must not be issued.
+  //
+  // In dev (NODE_ENV !== 'production'), we allow fallback: the JWT is
+  // returned even if the DB is unavailable, so local dev works without DB.
+  const tokenHash = hashToken(token);
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+  const db = await getDbForLib();
+  try {
+    await db.session.create({
+      data: {
+        userId: payload.userId,
+        tokenHash,
+        device: getDeviceFromRequest(req),
+        ip: getIpFromRequest(req),
+        expiresAt,
+      },
+    });
+  } catch (e) {
+    console.error("[auth] Failed to create Session DB record:", e);
+    if (process.env.NODE_ENV === "production") {
+      // Fail-closed: if we can't persist the session, we can't allow
+      // revocation or tracking — so the login must fail.
+      throw new Error("Failed to create session record — login denied");
+    }
+    // Dev mode: fall through, return JWT (local dev without DB)
+  }
+
+  return token;
+}
+
+export async function verifySession(token: string): Promise<Session | null> {
+  // 1. Verify JWT signature + expiry first. If the JWT itself is invalid
+  //    (bad signature, expired, malformed), nothing else matters.
+  let payload;
+  try {
+    ({ payload } = await jwtVerify(token, getSecret(), { algorithms: ["HS256"] }));
+  } catch {
+    return null;
+  }
+
+  const allowedRoles = new Set<Session["role"]>([
+    "CUSTOMER",
+    "TECHNICIAN",
+    "ADMIN",
+    "FLEET_MANAGER",
+    "PARTNER",
+  ]);
+  if (typeof payload.userId !== "string" || payload.userId.length === 0) return null;
+  if (typeof payload.role !== "string" || !allowedRoles.has(payload.role as Session["role"])) return null;
+  if (payload.phone !== null && typeof payload.phone !== "string") return null;
+  if (typeof payload.isGuest !== "boolean") return null;
+
+  const session: Session = {
+    userId: payload.userId,
+    role: payload.role as Session["role"],
+    phone: payload.phone as string | null,
+    isGuest: payload.isGuest,
+  };
+
+  // 2. Check the Session DB for revocation.
+  // SECURITY: This is fail-closed — if the DB is unreachable, the session
+  // is REJECTED (return null). A DB outage must NOT silently allow revoked
+  // or unregistered sessions to pass. The previous fallback-to-JWT-only
+  // behavior was a security risk (revoked tokens could still work during
+  // DB downtime).
+  //
+  // Exception: in dev mode (NODE_ENV !== 'production'), we allow fallback
+  // to JWT-only so local development works without a DB.
+  try {
+    const db = await getDbForLib();
+    const tokenHash = hashToken(token);
+    const sessionRecord = await db.session.findUnique({
+      where: { tokenHash },
+      include: {
+        user: {
+          select: { status: true, role: true },
+        },
+      },
+    });
+
+    if (!sessionRecord) return null;                  // not in DB → revoked or never existed
+    if (sessionRecord.revokedAt) return null;         // explicitly revoked
+    if (sessionRecord.expiresAt.getTime() < Date.now()) return null; // expired
+
+    // Session validity is subordinate to the current account state. A
+    // suspended/pending/deleted account must lose API access immediately,
+    // even when its JWT and Session row have not expired or been revoked.
+    if (!sessionRecord.user || sessionRecord.user.status !== "ACTIVE") return null;
+
+    // Role changes must also take effect immediately. Do not continue to
+    // authorize using a stale role embedded in a long-lived JWT.
+    if (sessionRecord.user.role !== session.role) return null;
+  } catch (e) {
+    console.error("[auth] Failed to query Session DB:", e);
+    // Fail-closed in production: DB error → reject session.
+    // In dev: fall back to JWT-only so local dev works without DB.
+    if (process.env.NODE_ENV === "production") {
+      return null;
+    }
+  }
+
+  return session;
+}
+
+// ──────────── Session revocation ────────────
+
+/**
+ * Revoke a single session by its raw JWT token.
+ * Used by the logout endpoint: marks `revokedAt = now` so subsequent
+ * `verifySession` calls return null even though the JWT itself hasn't
+ * expired yet.
+ *
+ * `updateMany` + `revokedAt: null` filter makes this idempotent — calling
+ * logout twice on the same token is a no-op the second time.
+ */
+export async function revokeSession(token: string): Promise<void> {
+  const tokenHash = hashToken(token);
+  const db = await getDbForLib();
+  await db.session.updateMany({
+    where: { tokenHash, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  // If this throws, the caller (logout endpoint) will see the error.
+  // We do NOT swallow it — failing to revoke is a security issue.
+}
+
+/**
+ * Revoke every active session for a user.
+ * Used by:
+ *   - Admin "revoke all sessions" action (account compromise response)
+ *   - Password change (force re-login on all devices)
+ *
+ * Idempotent: only touches sessions where `revokedAt` is still null.
+ */
+export async function revokeAllUserSessions(userId: string): Promise<void> {
+  const db = await getDbForLib();
+  await db.session.updateMany({
+    where: { userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  // If this throws, the caller will see the error.
+  // We do NOT swallow it — failing to revoke is a security issue.
+}
+
+// ──────────── Session Extraction ────────────
+
+export async function getSessionFromRequest(req: Request): Promise<Session | null> {
+  // 1. Try Authorization header (Bearer token)
+  const auth = req.headers.get("authorization");
+  if (auth?.startsWith("Bearer ")) {
+    const token = auth.slice(7);
+    return verifySession(token);
+  }
+  // 2. Try cookie (for SSR)
+  const cookie = req.headers.get("cookie");
+  if (cookie) {
+    const match = cookie.match(/mekanix-token=([^;]+)/);
+    if (match) return verifySession(match[1]);
+  }
+  return null;
+}
+
+// ──────────── requireAuth ────────────
+// Returns Session if authenticated, or NextResponse(401) if not.
+
+export async function requireAuth(req: Request): Promise<Session | NextResponse> {
+  const session = await getSessionFromRequest(req);
+  if (!session) {
+    return NextResponse.json({ error: "احراز هویت نشده — لطفاً وارد شوید" }, { status: 401 });
+  }
+  return session;
+}
+
+// ──────────── requireRole ────────────
+// Check if session has one of the required roles.
+// Returns null if OK, or NextResponse(403) if forbidden.
+
+export function requireRole(
+  session: Session,
+  roles: Session["role"] | Session["role"][]
+): NextResponse | null {
+  const allowed = Array.isArray(roles) ? roles : [roles];
+  if (!allowed.includes(session.role)) {
+    return NextResponse.json(
+      { error: "دسترسی غیرمجاز — شما اجازه این عملیات را ندارید" },
+      { status: 403 }
+    );
+  }
+  return null;
+}
+
+// ──────────── requireOwnership ────────────
+// Object-level authorization (BOLA protection).
+// Resolves the authenticated user to their Customer or Technician profile.
+
+export async function getCustomerFromSession(session: Session) {
+  if (session.role !== "CUSTOMER") return null;
+  const db = await getDbForLib();
+  return db.customer.findUnique({ where: { userId: session.userId } });
+}
+
+export async function getTechnicianFromSession(session: Session) {
+  if (session.role !== "TECHNICIAN") return null;
+  const db = await getDbForLib();
+  return db.technician.findUnique({ where: { userId: session.userId } });
+}
+
+// Check if user owns a vehicle
+export async function requireVehicleOwner(session: Session, vehicleId: string): Promise<NextResponse | null> {
+  if (session.role === "ADMIN") return null; // Admin can access all
+  const customer = await getCustomerFromSession(session);
+  if (!customer) return NextResponse.json({ error: "پروفایل مشتری یافت نشد" }, { status: 403 });
+  const db = await getDbForLib();
+  const vehicle = await db.vehicle.findUnique({ where: { id: vehicleId }, select: { customerId: true } });
+  if (!vehicle) return NextResponse.json({ error: "خودرو یافت نشد" }, { status: 404 });
+  if (vehicle.customerId !== customer.id) {
+    return NextResponse.json({ error: "دسترسی به این خودرو مجاز نیست" }, { status: 403 });
+  }
+  return null;
+}
+
+// Check if user is an authorized participant in a job (customer or assigned technician).
+// Unknown and not-yet-scoped roles are denied by default. In particular,
+// FLEET_MANAGER has no persisted fleet-to-job ownership relation yet, and
+// PARTNER is read-only analytics; neither may access individual job records.
+export async function requireJobParticipant(session: Session, jobId: string): Promise<NextResponse | null> {
+  if (session.role === "ADMIN") return null;
+
+  if (session.role !== "CUSTOMER" && session.role !== "TECHNICIAN") {
+    return NextResponse.json({ error: "دسترسی به این کار مجاز نیست" }, { status: 403 });
+  }
+
+  const db = await getDbForLib();
+  const job = await db.job.findUnique({
+    where: { id: jobId },
+    select: { id: true, request: { select: { customerId: true } }, technicianId: true },
+  });
+  if (!job) return NextResponse.json({ error: "کار یافت نشد" }, { status: 404 });
+
+  if (session.role === "CUSTOMER") {
+    const customer = await getCustomerFromSession(session);
+    if (!customer || job.request.customerId !== customer.id) {
+      return NextResponse.json({ error: "دسترسی به این کار مجاز نیست" }, { status: 403 });
+    }
+    return null;
+  }
+
+  const technician = await getTechnicianFromSession(session);
+  if (!technician || job.technicianId !== technician.id) {
+    return NextResponse.json({ error: "دسترسی به این کار مجاز نیست" }, { status: 403 });
+  }
+  return null;
+}
+
+// Check if user owns a notification
+export async function requireNotificationOwner(session: Session, notificationId: string): Promise<NextResponse | null> {
+  if (session.role === "ADMIN") return null;
+  const db = await getDbForLib();
+  const notif = await db.notification.findUnique({ where: { id: notificationId }, select: { userId: true } });
+  if (!notif) return NextResponse.json({ error: "اعلان یافت نشد" }, { status: 404 });
+  if (notif.userId !== session.userId) {
+    return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
+  }
+  return null;
+}
+
+// Check if user owns a wallet (technician only)
+export async function requireWalletOwner(session: Session, walletId: string): Promise<NextResponse | null> {
+  if (session.role === "ADMIN") return null;
+  const technician = await getTechnicianFromSession(session);
+  if (!technician) return NextResponse.json({ error: "پروفایل مکانیک یافت نشد" }, { status: 403 });
+  const db = await getDbForLib();
+  const wallet = await db.wallet.findUnique({ where: { id: walletId }, select: { technicianId: true } });
+  if (!wallet) return NextResponse.json({ error: "کیف پول یافت نشد" }, { status: 404 });
+  if (wallet.technicianId !== technician.id) {
+    return NextResponse.json({ error: "دسترسی به این کیف پول مجاز نیست" }, { status: 403 });
+  }
+  return null;
+}
+
+// Check if user owns a support ticket
+export async function requireTicketOwner(session: Session, ticketId: string): Promise<NextResponse | null> {
+  if (session.role === "ADMIN") return null;
+  const db = await getDbForLib();
+  const ticket = await db.supportTicket.findUnique({ where: { id: ticketId }, select: { userId: true } });
+  if (!ticket) return NextResponse.json({ error: "تیکت یافت نشد" }, { status: 404 });
+  if (ticket.userId !== session.userId) {
+    return NextResponse.json({ error: "دسترسی به این تیکت مجاز نیست" }, { status: 403 });
+  }
+  return null;
+}
+
+// Check if user owns an insurance policy
+export async function requirePolicyOwner(session: Session, policyId: string): Promise<NextResponse | null> {
+  if (session.role === "ADMIN") return null;
+  const db = await getDbForLib();
+  const policy = await db.insurancePolicy.findUnique({ where: { id: policyId }, select: { userId: true } });
+  if (!policy) return NextResponse.json({ error: "بیمه یافت نشد" }, { status: 404 });
+  if (policy.userId !== session.userId) {
+    return NextResponse.json({ error: "دسترسی مجاز نیست" }, { status: 403 });
+  }
+  return null;
+}
+
+// ──────────── Mass Assignment Protection ────────────
+// Whitelist allowed fields for each entity type.
+
+export const ALLOWED_FIELDS = {
+  vehicle: ["type", "make", "model", "year", "plate", "engineHours", "location", "lat", "lng", "image", "notes"],
+  profile: ["name", "email", "nationalId", "address", "postalCode", "city", "province"],
+  technician: ["bio", "experienceYears", "hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy", "availableNow", "responseMins", "lat", "lng", "heading"],
+  message: ["body", "kind"],
+  review: ["rating", "comment", "tags"],
+  ticket: ["subject", "category", "priority", "message"],
+  insurance: ["provider", "policyNumber", "type", "startDate", "endDate", "premiumAmount", "coverageAmount", "vehicleId", "notes"],
+  maintenance: ["category", "title", "intervalKm", "intervalHours", "intervalDays", "lastDoneKm", "lastDoneHours", "lastDoneDate", "nextDueKm", "nextDueDate", "notes", "active", "vehicleId"],
+} as const;
+
+// Fields that should NEVER be settable by client (server-authoritative only)
+export const FORBIDDEN_FIELDS = new Set([
+  "role", "status", "verified", "rating", "reviewCount", "balance",
+  "completedJobs", "phoneVerified", "profileCompleted", "password",
+  "passwordHash", "totalEarned", "totalCommission", "totalWithdrawn",
+  "pendingBalance", "platformCommission", "netEarnings", "holdUntil",
+  "reviewerId", "adminNotes", "createdAt", "updatedAt", "id",
+]);
+
+// Filter an object to only allow whitelisted fields
+export function sanitizeInput<T extends Record<string, any>>(input: T, allowed: readonly string[]): Partial<T> {
+  const result: Record<string, any> = {};
+  for (const key of allowed) {
+    if (key in input) {
+      result[key] = input[key];
+    }
+  }
+  return result as Partial<T>;
+}
+
+// ──────────── Request ID ────────────
+
+export function generateRequestId(): string {
+  const ts = Date.now().toString(36).toUpperCase();
+  const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `MEK-${ts}-${rand}`;
+}
+
+// ──────────── Error Handler ────────────
+
+export function apiError(message: string, status: number = 400, requestId?: string) {
+  return NextResponse.json(
+    {
+      error: process.env.NODE_ENV === "production" ? "خطایی در پردازش درخواست رخ داد" : message,
+      requestId: requestId || generateRequestId(),
+    },
+    { status }
+  );
+}
+
+// Generic withIdempotency() was removed after a repository-wide call-site audit.
+// State-changing endpoints must implement operation-specific database-enforced
+// idempotency and recovery semantics; see docs/IDEMPOTENCY_CALLSITE_INVENTORY.md.

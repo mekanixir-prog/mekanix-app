@@ -1,0 +1,122 @@
+name: PostgreSQL CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, "fix/**", "feat/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-test:
+    name: PostgreSQL Migration + Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: mekanix
+          POSTGRES_PASSWORD: mekanix_test
+          POSTGRES_DB: mekanix_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+      - uses: actions/checkout@v7
+      
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      
+      - name: Switch schema to PostgreSQL
+        run: |
+          sed -i 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma
+      
+      - name: Replace migrations with PostgreSQL versions
+        run: |
+          rm -rf prisma/migrations
+          # Copy ALL migrations from migrations-postgresql/ (init + additive)
+          cp -r prisma/migrations-postgresql prisma/migrations
+          echo "Migrations structure:"
+          find prisma/migrations -type f
+          echo ""
+          echo "Lock file:"
+          cat prisma/migrations/migration_lock.toml
+      
+      - name: Generate Prisma Client
+        run: bunx prisma generate
+        env:
+          DATABASE_URL: postgresql://mekanix:mekanix_test@localhost:5432/mekanix_test
+      
+      - name: Deploy migrations to PostgreSQL
+        run: bunx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://mekanix:mekanix_test@localhost:5432/mekanix_test
+      
+      - name: Backup and restore rehearsal on isolated test database
+        run: |
+          # Ubuntu 24.04 ships PostgreSQL 16 client packages in its native
+          # repositories. Avoid adding an external apt signing key/repository
+          # to a backup-security rehearsal when the matching client is native.
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client-16
+          pg_dump --version | grep -E ' 16\.'
+          psql --version | grep -E ' 16\.'
+          PGPASSWORD=mekanix_test createdb -h 127.0.0.1 -p 5432 -U mekanix mekanix_restore_test
+          DATABASE_URL=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_test \
+          TEST_DB_URL=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_restore_test \
+          SOURCE_ENV=test ALLOW_TEST_DB_RESET=YES \
+            bash scripts/test-backup-restore.sh
+
+      - name: Verify encrypted backup and safe restore utility
+        run: |
+          set -euo pipefail
+          PGPASSWORD=mekanix_test createdb -h 127.0.0.1 -p 5432 -U mekanix mekanix_restore_utility_test
+          BACKUP_DIR="$(mktemp -d)"
+          PASSPHRASE_FILE="$(mktemp)"
+          trap 'rm -rf "$BACKUP_DIR" "$PASSPHRASE_FILE"' EXIT
+          chmod 600 "$PASSPHRASE_FILE"
+          printf '%s' 'ci-only-backup-passphrase-2026' > "$PASSPHRASE_FILE"
+          DATABASE_URL=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_test \
+          BACKUP_DIR="$BACKUP_DIR" BACKUP_PASSPHRASE_FILE="$PASSPHRASE_FILE" \
+          BACKUP_ENCRYPTION_REQUIRED=true bash scripts/backup-db.sh
+          BACKUP_FILE="$(find "$BACKUP_DIR" -maxdepth 1 -name '*.sql.gz.gpg' -print -quit)"
+          test -n "$BACKUP_FILE"
+          DATABASE_URL=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_restore_utility_test \
+          BACKUP_PASSPHRASE_FILE="$PASSPHRASE_FILE" RESTORE_CONFIRM=RESTORE \
+            bash scripts/restore-db.sh "$BACKUP_FILE"
+          source scripts/lib/pg-service.sh
+          SOURCE_URL=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_test
+          RESTORE_URL=postgresql://mekanix:mekanix_test@127.0.0.1:5432/mekanix_restore_utility_test
+          SOURCE_USERS="$(pg_exec "$SOURCE_URL" psql -v ON_ERROR_STOP=1 -Atqc 'SELECT COUNT(*) FROM public."User"')"
+          RESTORED_USERS="$(pg_exec "$RESTORE_URL" psql -v ON_ERROR_STOP=1 -Atqc 'SELECT COUNT(*) FROM public."User"')"
+          test "$SOURCE_USERS" = "$RESTORED_USERS"
+          echo "Encrypted backup/restore utility passed; User row counts match."
+
+      - name: Run TypeScript check
+        run: bunx tsc --noEmit
+        env:
+          DATABASE_URL: postgresql://mekanix:mekanix_test@localhost:5432/mekanix_test
+      
+      - name: Run tests
+        run: bun run test
+        env:
+          DATABASE_URL: postgresql://mekanix:mekanix_test@localhost:5432/mekanix_test
+      
+      - name: Build
+        run: bun run build
+        env:
+          DATABASE_URL: postgresql://mekanix:mekanix_test@localhost:5432/mekanix_test

@@ -1,0 +1,295 @@
+// @vitest-environment node
+import { describe, expect, it, vi } from "vitest";
+import {
+  updateWithdrawalWithD1,
+  updateWithdrawalWithPrisma,
+} from "@/lib/withdrawal-admin-atomic";
+
+const input = {
+  withdrawalId: "wd-1",
+  action: "REJECTED" as const,
+  adminId: "admin-1",
+  adminNotes: "اطلاعات بانکی ناقص است",
+  at: new Date("2026-10-30T10:00:00.000Z"),
+};
+
+const debitLedger = {
+  id: "debit-ledger-1",
+  walletId: "wallet-1",
+  type: "WITHDRAWAL",
+  amount: -500,
+  balanceBefore: 1000,
+  balanceAfter: 500,
+  referenceType: "Withdrawal",
+  referenceId: "wd-1",
+  financialUnitStatus: "VERIFIED_IRR",
+};
+
+describe("admin withdrawal transitions", () => {
+  it("approves only a REQUESTED withdrawal", async () => {
+    const tx = {
+      withdrawalRequest: {
+        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "REQUESTED", financialUnitStatus: "VERIFIED_IRR", idempotencyKey: "idem-1" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      wallet: { findUnique: vi.fn().mockResolvedValue({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: 0 }) },
+      walletLedger: { findUnique: vi.fn().mockResolvedValue(debitLedger) },
+    };
+    const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
+    await expect(updateWithdrawalWithPrisma(db, { ...input, action: "APPROVED" })).resolves.toBe(true);
+    expect(tx.withdrawalRequest.updateMany).toHaveBeenCalledWith({
+      where: { id: "wd-1", status: "REQUESTED", financialUnitStatus: "VERIFIED_IRR" },
+      data: { status: "APPROVED", reviewerId: "admin-1", adminNotes: input.adminNotes },
+    });
+  });
+
+  it("refuses to approve a withdrawal without its matching verified debit ledger", async () => {
+    const tx = {
+      withdrawalRequest: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "wd-1", walletId: "wallet-1", amount: 500, status: "REQUESTED",
+          financialUnitStatus: "VERIFIED_IRR", idempotencyKey: "idem-1",
+        }),
+        updateMany: vi.fn(),
+      },
+      wallet: { findUnique: vi.fn().mockResolvedValue({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: 0 }) },
+      walletLedger: { findUnique: vi.fn().mockResolvedValue(null) },
+    };
+    const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
+    await expect(updateWithdrawalWithPrisma(db, { ...input, action: "APPROVED" })).resolves.toBe(false);
+    expect(tx.withdrawalRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("refunds a rejected withdrawal and records the refund ledger in one transaction", async () => {
+    const tx = {
+      withdrawalRequest: {
+        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "APPROVED", financialUnitStatus: "VERIFIED_IRR", idempotencyKey: "idem-1" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      wallet: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUnique: vi.fn()
+          .mockResolvedValueOnce({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: 0 })
+          .mockResolvedValueOnce({ financialUnitStatus: "VERIFIED_IRR", balance: 1500 }),
+      },
+      walletLedger: { findUnique: vi.fn().mockResolvedValue(debitLedger), create: vi.fn().mockResolvedValue({}) },
+    };
+    const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
+    await expect(updateWithdrawalWithPrisma(db, input)).resolves.toBe(true);
+    expect(tx.wallet.updateMany).toHaveBeenCalledWith({
+      where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR", balance: 1000 },
+      data: { balance: { increment: 500 } },
+    });
+    expect(tx.walletLedger.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: "REFUND",
+        amount: 500,
+        balanceBefore: 1000,
+        balanceAfter: 1500,
+        referenceType: "Withdrawal",
+        referenceId: "wd-1",
+        idempotencyKey: "withdrawal:wd-1:REJECT_REFUND",
+        createdBy: "admin-1",
+      }),
+    });
+  });
+
+  it("rolls back rejection if the refund ledger cannot be written", async () => {
+    const tx = {
+      withdrawalRequest: {
+        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "REQUESTED", financialUnitStatus: "VERIFIED_IRR", idempotencyKey: "idem-1" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      wallet: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUnique: vi.fn()
+          .mockResolvedValueOnce({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: 0 })
+          .mockResolvedValueOnce({ financialUnitStatus: "VERIFIED_IRR", balance: 1500 }),
+      },
+      walletLedger: { findUnique: vi.fn().mockResolvedValue(debitLedger), create: vi.fn().mockRejectedValue(new Error("ledger failed")) },
+    };
+    const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
+    await expect(updateWithdrawalWithPrisma(db, input)).rejects.toThrow("ledger failed");
+  });
+
+  it("marks an approved request paid and records a zero-delta payout ledger event atomically", async () => {
+    const tx = {
+      withdrawalRequest: {
+        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "APPROVED", financialUnitStatus: "VERIFIED_IRR", idempotencyKey: "idem-1" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      walletTransaction: { create: vi.fn().mockResolvedValue({}) },
+      walletLedger: {
+        findUnique: vi.fn().mockResolvedValue(debitLedger),
+        create: vi.fn().mockResolvedValue({}),
+      },
+      wallet: {
+        findUnique: vi.fn().mockResolvedValue({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: 0 }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
+    await expect(updateWithdrawalWithPrisma(db, { ...input, action: "PAID", payoutReference: "BANK-TRX-2026-0001" })).resolves.toBe(true);
+    expect(tx.walletTransaction.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        walletId: "wallet-1",
+        kind: "PAYOUT",
+        status: "COMPLETED",
+        grossAmount: 500,
+        commissionAmount: 0,
+        netAmount: -500,
+        idempotencyKey: "withdrawal:wd-1:PAYOUT",
+        description: expect.stringContaining("BANK-TRX-2026-0001"),
+      }),
+    });
+    expect(tx.wallet.updateMany).toHaveBeenCalledWith({
+      where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR", totalWithdrawn: 0 },
+      data: { totalWithdrawn: { increment: 500 } },
+    });
+    expect(tx.walletLedger.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: "PAYOUT",
+        amount: 0,
+        balanceBefore: 1000,
+        balanceAfter: 1000,
+        referenceType: "Withdrawal",
+        referenceId: "wd-1",
+        idempotencyKey: "withdrawal:wd-1:PAYOUT_LEDGER",
+        financialUnitStatus: "VERIFIED_IRR",
+        createdBy: "admin-1",
+        description: expect.stringContaining("BANK-TRX-2026-0001"),
+      }),
+    });
+  });
+
+  it("rolls back the paid transition when the payout audit ledger cannot be written", async () => {
+    const tx = {
+      withdrawalRequest: {
+        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "APPROVED", financialUnitStatus: "VERIFIED_IRR", idempotencyKey: "idem-1" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      walletTransaction: { create: vi.fn().mockResolvedValue({}) },
+      walletLedger: {
+        findUnique: vi.fn().mockResolvedValue(debitLedger),
+        create: vi.fn().mockRejectedValue(new Error("payout ledger failed")),
+      },
+      wallet: {
+        findUnique: vi.fn().mockResolvedValue({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: 0 }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
+    await expect(updateWithdrawalWithPrisma(db, {
+      ...input, action: "PAID", payoutReference: "BANK-TRX-2026-0001",
+    })).rejects.toThrow("payout ledger failed");
+  });
+
+  it("does not repeat an already completed transition", async () => {
+    const tx = {
+      withdrawalRequest: {
+        findUnique: vi.fn().mockResolvedValue({ id: "wd-1", walletId: "wallet-1", amount: 500, status: "PAID", financialUnitStatus: "VERIFIED_IRR", idempotencyKey: "idem-1" }),
+        updateMany: vi.fn(),
+      },
+      wallet: { updateMany: vi.fn(), findUnique: vi.fn().mockResolvedValue({ financialUnitStatus: "VERIFIED_IRR", balance: 1000, totalWithdrawn: 0 }) },
+      walletLedger: { findUnique: vi.fn().mockResolvedValue(debitLedger), create: vi.fn() },
+      walletTransaction: { create: vi.fn() },
+    };
+    const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
+    await expect(updateWithdrawalWithPrisma(db, { ...input, action: "PAID" })).resolves.toBe(false);
+    expect(tx.wallet.updateMany).not.toHaveBeenCalled();
+    expect(tx.walletTransaction.create).not.toHaveBeenCalled();
+  });
+
+  it("uses one D1 batch for rejection and guards dependent writes with changes()", async () => {
+    const statements: Array<{ sql: string; values: unknown[] }> = [];
+    const d1 = {
+      prepare: (sql: string) => ({ bind: (...values: unknown[]) => {
+        statements.push({ sql, values });
+        return { sql, values };
+      } }),
+      batch: vi.fn().mockResolvedValue([
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+      ]),
+    };
+    await expect(updateWithdrawalWithD1(d1 as any, input)).resolves.toBe(true);
+    expect(d1.batch).toHaveBeenCalledTimes(1);
+    expect(d1.batch.mock.calls[0][0]).toHaveLength(6);
+    expect(statements[0].sql).toContain('FROM "WalletLedger" l');
+    expect(statements[1].sql).toContain("json_extract('not-json'");
+    expect(statements[2].sql).toContain("changes() = 1");
+    expect(statements[3].sql).toContain("json_extract('not-json'");
+    expect(statements[4].sql).toContain("CASE WHEN changes() = 1 THEN wr.\"amount\" ELSE NULL END");
+    expect(statements[4].values).toContain("withdrawal:wd-1:REJECT_REFUND");
+    expect(statements[5].sql).toContain("json_extract('not-json'");
+  });
+
+  it("uses the request amount for D1 payout accounting", async () => {
+    const statements: Array<{ sql: string; values: unknown[] }> = [];
+    const d1 = {
+      prepare: (sql: string) => ({ bind: (...values: unknown[]) => {
+        statements.push({ sql, values });
+        return { sql, values };
+      } }),
+      batch: vi.fn().mockResolvedValue([
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+      ]),
+    };
+    await expect(updateWithdrawalWithD1(d1 as any, { ...input, action: "PAID", payoutReference: "BANK-TRX-2026-0001" })).resolves.toBe(true);
+    expect(statements[2].sql).toContain('INSERT INTO "WalletTransaction"');
+    expect(statements[4].sql).toContain('SELECT "amount" FROM "WithdrawalRequest"');
+    expect(statements[4].sql).toContain('"totalWithdrawn" = "totalWithdrawn" + CASE WHEN changes() = 1 THEN');
+    expect(statements[4].values).toContain("wd-1");
+    expect(statements[6].sql).toContain('INSERT INTO "WalletLedger"');
+    expect(statements[6].sql).toContain("'PAYOUT', 0, w.");
+    expect(statements[6].values).toContain("withdrawal:wd-1:PAYOUT_LEDGER");
+  });
+
+  it("aborts dependent D1 writes through NOT NULL constraints if the prior statement did not change exactly one row", async () => {
+    const statements: Array<{ sql: string; values: unknown[] }> = [];
+    const d1 = {
+      prepare: (sql: string) => ({ bind: (...values: unknown[]) => {
+        statements.push({ sql, values });
+        return { sql, values };
+      } }),
+      batch: vi.fn().mockResolvedValue([
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+        { meta: { changes: 1 } }, { meta: { changes: 0 } },
+      ]),
+    };
+    await updateWithdrawalWithD1(d1 as any, input);
+    expect(statements[4].sql).toContain("ELSE NULL END");
+    expect(statements[4].sql).not.toContain("AND changes() = 1");
+    expect(statements[4].sql).toContain('FROM "WithdrawalRequest" wr');
+  });
+
+  it("requires a real payout reference before issuing any D1 batch", async () => {
+    const d1 = { prepare: vi.fn(), batch: vi.fn() };
+    await expect(updateWithdrawalWithD1(d1 as any, { ...input, action: "PAID" }))
+      .rejects.toThrow("شناسه پیگیری واقعی");
+    expect(d1.batch).not.toHaveBeenCalled();
+  });
+
+  it("does not apply D1 transitions when the conditional state update loses", async () => {
+    const d1 = {
+      prepare: (sql: string) => ({ bind: (...values: unknown[]) => ({ sql, values }) }),
+      batch: vi.fn().mockResolvedValue([
+        { meta: { changes: 0 } }, { meta: { changes: 0 } }, { meta: { changes: 0 } },
+      ]),
+    };
+    await expect(updateWithdrawalWithD1(d1 as any, input)).resolves.toBe(false);
+  });
+
+  it("propagates D1 batch failures", async () => {
+    const d1 = {
+      prepare: (sql: string) => ({ bind: (...values: unknown[]) => ({ sql, values }) }),
+      batch: vi.fn().mockRejectedValue(new Error("batch aborted")),
+    };
+    await expect(updateWithdrawalWithD1(d1 as any, input)).rejects.toThrow("batch aborted");
+  });
+});

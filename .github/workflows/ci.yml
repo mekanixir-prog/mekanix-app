@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, "fix/**", "feat/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint + TypeCheck + Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - uses: actions/checkout@v7
+      
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      
+      - name: Generate Prisma Client
+        run: bunx prisma generate
+      
+      - name: Check for forbidden artifacts
+        run: bash scripts/check-hygiene.sh
+      
+      - name: Run ESLint
+        run: bun run lint
+      
+      - name: Run TypeScript check
+        run: bunx tsc --noEmit
+      
+      - name: Run tests
+        run: bun run test
+        env:
+          DATABASE_URL: "file:./test.db"
