@@ -49,13 +49,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // Never expose exact technician coordinates, internal user IDs, service-area
   // coordinate pins, or private customer/job/vehicle records—even to profile owners.
   const { lat: _lat, lng: _lng, heading: _heading, userId: _userId, serviceAreas, user, ...safeTech } = tech;
-  return NextResponse.json(maskFinancialFields({
+  const masked = maskFinancialFields({
     ...safeTech,
     user: { name: user.name, avatar: user.avatar },
     lat: null,
     lng: null,
     serviceAreas: serviceAreas.map(({ name, radiusKm }) => ({ name, radiusKm })),
-  }, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]));
+  }, ["hourlyRate", "travelFeeBase", "inspectionFee", "inspectionFeeHeavy"]);
+  const { financialUnitStatus: _financialUnitStatus, ...publicTech } = masked;
+  return NextResponse.json(publicTech);
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
