@@ -322,6 +322,33 @@ describe("B-4 [Authz] — Non-admin cannot reach admin resource routes", () => {
     expect(mockUserFindUnique).not.toHaveBeenCalled();
   });
 
+  it("rejects an ADMIN-claiming bearer JWT when the persisted user role is not ADMIN", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("JWT_SECRET", "user-session-secret-at-least-32-bytes-long");
+    vi.stubEnv("ADMIN_JWT_SECRET", "dedicated-admin-secret-at-least-32-bytes-long");
+
+    const token = await mintUserToken("user-a", "ADMIN", "+989120000001");
+    mockSessionFindUnique.mockResolvedValueOnce({
+      id: "session-a",
+      userId: "user-a",
+      user: { id: "user-a", role: "ADMIN", status: "ACTIVE" },
+    });
+    mockUserFindUnique.mockResolvedValueOnce({
+      id: "user-a",
+      role: "CUSTOMER",
+      status: "ACTIVE",
+    });
+
+    const req = jsonReq("GET", "http://localhost/api/admin/customers", token);
+    const res = await adminResourceGET(req, {
+      params: Promise.resolve({ resource: "customers" }),
+    });
+
+    expect(res.status).toBe(401);
+    expect(mockUserFindUnique).toHaveBeenCalled();
+    expect(mockAdminUserCount).not.toHaveBeenCalled();
+  });
+
   it("rejects CUSTOMER GET /api/care/admin/packages with 403 (requireRole gate)", async () => {
     const token = await mintUserToken("user-a", "CUSTOMER", "+989120000001");
     const req = jsonReq("GET", "http://localhost/api/care/admin/packages", token);
