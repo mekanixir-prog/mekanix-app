@@ -88,6 +88,19 @@ describe("OTP send route SMS delivery handling", () => {
   });
 
 
+  it("returns a controlled conflict when another request wins the pending-phone insert", async () => {
+    mocks.createOtp.mockRejectedValue({
+      code: "P2002",
+      message: "Unique constraint failed on OtpCode_one_pending_per_phone_idx",
+    });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ code: "OTP_SEND_CONFLICT" });
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+
   it("uses the same canonical phone identity for domestic Iranian OTP requests", async () => {
     mocks.validate.mockResolvedValue({ ok: true, data: { phone: "09121234567" } });
     const response = await POST(new Request("https://mekanix.test/api/auth/otp/send", {
