@@ -31,7 +31,7 @@ describe("one pending OTP per canonical phone migration", () => {
       database.exec(migration);
 
       const oldPending = database.prepare(`
-        SELECT "id", "consumed" FROM "OtpCode" WHERE "id" IN ('old-1', 'old-2')
+        SELECT "id", "consumed" FROM "OtpCode" WHERE "id" IN ('old-1', 'old-2') ORDER BY "id"
       `).all() as Array<{ id: string; consumed: number }>;
       expect(oldPending).toEqual([
         { id: "old-1", consumed: 1 },
