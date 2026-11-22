@@ -1,3 +1,5 @@
+> **Historical threat-model snapshot (2026-10):** This document describes the pre-remediation admin token flow. The current release-candidate audit is `docs/AUDIT_SECURITY.md` (2026-11-22). In the candidate, admin login uses an HttpOnly SameSite=Strict cookie, production requires a dedicated `ADMIN_JWT_SECRET`, admin tokens are checked against the persisted admin role/session version, and the admin page does not receive a bearer token in JSON. The localStorage exfiltration scenario below is retained as historical attack rationale, not as a statement of the current candidate behavior.
+
 # Phase 3 Security Audit V2 — Independent Deep Review
 
 **Date:** 2026-10-13
