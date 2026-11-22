@@ -9,16 +9,23 @@ echo "🔍 Checking repository hygiene..."
 ERRORS=0
 
 # Check for database files
-if git ls-files | grep -qE "\.db$|\.sqlite$|\.sqlite3$"; then
+if git ls-files | grep -qE '\.db$|\.sqlite$|\.sqlite3$'; then
   echo "❌ Database files tracked by git:"
-  git ls-files | grep -E "\.db$|\.sqlite$|\.sqlite3$"
+  git ls-files | grep -E '\.db$|\.sqlite$|\.sqlite3$'
   ERRORS=$((ERRORS + 1))
 fi
 
 # Check for .env files (not .env.example)
-if git ls-files | grep -qE "^\.env$"; then
+if git ls-files | grep -qE '^\.env$'; then
   echo "❌ .env file tracked by git:"
-  git ls-files | grep -E "^\.env$"
+  git ls-files | grep -E '^\.env$'
+  ERRORS=$((ERRORS + 1))
+fi
+
+# Never publish source archives or environment bundles under public static assets.
+if git ls-files public/ | grep -Ei '\.(tar\.gz|tgz|zip)$'; then
+  echo "❌ Source/archive bundle tracked under public/:"
+  git ls-files public/ | grep -Ei '\.(tar\.gz|tgz|zip)$'
   ERRORS=$((ERRORS + 1))
 fi
 
@@ -32,15 +39,15 @@ for dir in upload download tool-results backups agent-ctx .zscripts; do
 done
 
 # Check for large binary files (>10MB)
-for file in $(git ls-files); do
+while IFS= read -r file; do
   if [ -f "$file" ]; then
     size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
     if [ "$size" -gt 10485760 ]; then
-      echo "❌ Large file (>10MB): $file (${size} bytes)"
+      echo "❌ Large file (>10MB): $file ($size bytes)"
       ERRORS=$((ERRORS + 1))
     fi
   fi
-done
+done < <(git ls-files)
 
 if [ "$ERRORS" -gt 0 ]; then
   echo ""

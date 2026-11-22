@@ -1,3 +1,38 @@
+> **Historical snapshot warning (updated 2026-11-22):** The detailed report below is the 2026-10-14 audit snapshot of branch `feature/cloudflare-d1-validation @ 1cf59e7`. It is retained as historical evidence and is **not** the current release-candidate status. The current candidate verification below supersedes the old OPEN labels for SEC-21, SEC-22 and SEC-23. Do not use the old findings table as a current release decision.
+
+## 0. Current release-candidate verification — 2026-11-22
+
+**Branch:** `fix/financial-release-candidate-2026-11-14`  
+**Verified candidate base SHA:** `931ba8277b223e20f370fb3d0f78f8aaf3ddd11e`  
+**Scope:** targeted re-verification of the historical critical/high findings and public-data paths, plus enumeration of 78 `src/app/api/**/route.ts` files. This is source review and automated test evidence, not a full penetration test or a complete 78-route manual re-audit.
+
+### Historical findings rechecked
+
+| Finding | Current status | Current evidence |
+|---|---|---|
+| SEC-21 — admin auth bypass through user JWT | **RESOLVED in candidate** | `ADMIN_JWT_SECRET` is mandatory in production (minimum 32 bytes; no fallback to `JWT_SECRET`). `verifyAdminToken` validates non-empty `adminId`, allowed `ADMIN/SUPER_ADMIN` role and safe `sessionVersion`. Cookie auth verifies the current `AdminUser` role and `sessionVersion` from DB. Bearer auth uses `verifySession` and requires both session role and persisted user role to be `ADMIN` with `ACTIVE` status. Four SEC-21 token-validation regression tests plus two production route-level bearer-token rejection tests (CUSTOMER role and persisted-role mismatch) are present in `tests/unit/security-audit-negative.test.ts`. |
+| SEC-22 — public technician list exposes phone | **RESOLVED in candidate** | Both `/api/technicians` and `/api/technicians/[id]` select only `name` and `avatar` for public user data. `tests/unit/technician-public-discovery-privacy.test.ts` asserts the list selection and exact public user payload. |
+| SEC-23 — dashboard leaks platform analytics to any authenticated user | **RESOLVED in candidate** | `/api/dashboard` requires `ADMIN` before obtaining the DB client. `tests/dashboard-route-auth.test.ts` rejects CUSTOMER, TECHNICIAN, FLEET_MANAGER and PARTNER and asserts no analytics DB access. |
+| SEC-14 — admin JWT in localStorage/JSON | **RESOLVED in candidate** | Admin login returns only the admin profile in JSON and sets an HttpOnly, Secure-in-production, SameSite=Strict cookie. The raw token is not returned to browser JavaScript, and the current admin page uses same-origin cookie requests. This PR also removes the unused legacy localStorage bearer-token helper and adds `tests/unit/admin-api-client-cookie-only.test.ts` so a future caller cannot reintroduce browser-stored admin tokens. |
+| SEC-15 — admin token revocation | **MITIGATED in candidate** | Dedicated admin tokens carry `sessionVersion`; every cookie-authenticated request compares it with the current DB `AdminUser.sessionVersion`. Incrementing the DB version invalidates prior tokens. Verify that every future password-change/recovery flow increments this version before treating credential-change revocation as complete. |
+| SEC-17 — admin secret captured at module import | **RESOLVED in candidate** | Admin and user secrets are read inside functions. Production requires the dedicated `ADMIN_JWT_SECRET`; no module-level environment capture or production fallback remains. |
+| SEC-24 — malformed admin login body causes 500 | **RESOLVED in candidate** | Admin login catches malformed JSON and validates object shape, identifier and password length before DB credential lookup; invalid bodies return 400. |
+| L-2 — spoofable forwarded-IP preference | **IMPROVED in candidate** | Session and rate-limit IP extraction prefer Cloudflare's `cf-connecting-ip`; non-Cloudflare proxies use the right-most forwarded hop rather than the spoofable left-most prefix. The `anonymous` fallback remains a low-priority operational concern if a production request bypasses the trusted edge without a client IP header. |
+
+### Remaining accepted/low-priority items
+
+- OTP verification still performs a user lookup scan after a valid one-time code is consumed. Invalid or expired codes return before the user scan, and known/unknown phone failure responses are identical. A normalized phone column and unique index remain a future data/schema optimization.
+- Admin bootstrap still checks for an existing admin before login. The route is rate-limited by both IP and account; this remains a low-priority database-cost optimization, not an authorization bypass.
+- User session cookies retain `SameSite=Lax`. The historical audit did not identify a state-changing GET route, but this targeted review is not a full re-audit of all 78 routes; verify this invariant in the remaining route-by-route review and retain the no-state-changing-GET rule.
+- `AdminSession.role` is represented as a string in the type, but the token validator and DB lookup restrict dedicated admin roles to `ADMIN` and `SUPER_ADMIN`.
+- The 78-file route inventory is not itself proof that every route has a complete positive/negative authorization matrix. Continue the full route-by-route review and staging validation before public release.
+
+### Current release security conclusion
+
+No current source evidence supports the historical SEC-21 critical admin-JWT bypass or the SEC-22/SEC-23 disclosure findings on candidate SHA `931ba827...`. The targeted regression tests and source checks above supersede the 2026-10-14 OPEN labels. The candidate is still **not approved for public production**: real provider/staging testing, complete API authorization matrix, repository ruleset enforcement and independent review remain open release gates.
+
+---
+
 # MEKANIX — Backend Security Audit Report (B-4)
 
 **Date:** 2026-10-14
