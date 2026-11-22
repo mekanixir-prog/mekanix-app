@@ -68,9 +68,14 @@ export default function loadTest() {
   responseTime.add(readyRes.timings.duration);
   sleep(0.25);
 
+  // Use a disjoint synthetic phone range per VU. Random 7-digit suffixes
+  // collide at 100 VUs and can intentionally hit OTP_SEND_CONFLICT; this
+  // load profile measures service capacity, not duplicate-phone contention.
+  const phoneIndex = ((__VU - 1) * 90_000 + (__ITER % 90_000)) % 9_000_000;
+  const phoneSuffix = String(1_000_000 + phoneIndex).padStart(7, "0");
   const otpRes = http.post(
     `${BASE_URL}/api/auth/otp/send`,
-    JSON.stringify({ phone: `+98912${Math.floor(1000000 + Math.random() * 8999999)}` }),
+    JSON.stringify({ phone: `+98912${phoneSuffix}` }),
     { headers: { "Content-Type": "application/json" } }
   );
   const otpAccepted = check(otpRes, {
