@@ -849,6 +849,12 @@ enum GatewayStatus {
 
 model PaymentGatewayLog {
   financialUnitStatus String   @default("UNVERIFIED")
+  // Server-owned target for purpose-specific gateway attempts (currently VIP plan).
+  targetPlanId String?
+  // Immutable purchase-time entitlement snapshot; null only for legacy attempts.
+  targetPlanDurationDays Int?
+  // Client-generated retry key; globally unique to prevent duplicate attempts.
+  idempotencyKey String? @unique
   id              String        @id @default(cuid())
   code            String        @unique // PG-...
   userId          String?
@@ -869,6 +875,26 @@ model PaymentGatewayLog {
 
   @@index([userId, status])
   @@index([status])
+}
+
+model PaymentOutboxEvent {
+  id             String   @id @default(cuid())
+  eventType      String
+  aggregateType  String
+  aggregateId    String
+  payload        String   // JSON snapshot; never store card secrets or OTPs
+  idempotencyKey String   @unique
+  status         String   @default("PENDING") // PENDING | PROCESSING | PROCESSED | DEAD
+  attempts       Int      @default(0)
+  availableAt    DateTime @default(now())
+  lockedAt       DateTime?
+  processedAt    DateTime?
+  lastError      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status, availableAt])
+  @@index([aggregateType, aggregateId, createdAt])
 }
 
 // ───────────────────────── Platform Settings ─────────────────────────

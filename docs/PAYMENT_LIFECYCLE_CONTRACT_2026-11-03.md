@@ -172,3 +172,26 @@ This approval does **not** classify legacy records and does not approve business
 6. Require equivalent uniqueness, idempotency and atomicity evidence for PostgreSQL and Cloudflare D1. A local Cloudflare build is not remote D1 certification.
 
 The payment design remains a safety contract, not approval to activate live money movement.
+## Implementation status — 2026-11-21
+
+This section records implementation evidence and must not be read as production approval.
+
+### Implemented on the release-candidate workstream
+
+- The candidate has server-authoritative, provenance-checked invoice amounts and keeps general payment routes fail-closed outside the explicitly enabled local simulator.
+- PR #220 adds a durable outbox for the VIP simulator path: purchase-time plan/duration snapshot, idempotent gateway initiation, atomic Payment + outbox persistence, D1 scheduled fulfillment, retry/lease/dead-letter handling, and duplicate-subscription protection.
+- PR #220 adds read-only admin monitoring. It does not expose event payloads or raw exception text.
+- SQLite and PostgreSQL migrations are additive and are exercised by CI. The Worker is validated with Wrangler dry-run only.
+
+### Still not implemented or not evidenced
+
+- No live Zarinpal/IDPay initiation or server-side provider verification is enabled.
+- No signed provider callback/webhook route has been validated end-to-end with provider sandbox credentials.
+- General invoice payment fulfillment, provider reconciliation, refunds, wallet top-up, technician settlement, escrow release and payout remain outside the VIP-only simulator outbox.
+- The exact D1 staging database, remote migration execution, Cron execution, backup/restore and rollback have not been exercised.
+- The Worker configuration intentionally contains a placeholder D1 database ID. No deployment was performed.
+- Production SMS, payment credentials, live money movement and production deployment remain disabled.
+
+### Release gate
+
+Do not enable live provider credentials or mark a payment as settled until provider initiation, callback authenticity, server-side verification, idempotency/replay handling, purpose-specific fulfillment, immutable ledger settlement, refund/reconciliation, monitoring and staging recovery tests all pass on the exact release SHA. Commercial tax, commission, escrow and payout policy must be explicitly approved before settlement behavior is implemented.

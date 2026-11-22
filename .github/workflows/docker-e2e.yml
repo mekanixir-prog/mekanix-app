@@ -45,6 +45,10 @@ jobs:
           test -f /tmp/mekanix-build/prisma/migrations/20260927000000_vip_paymentid_unique/migration.sql
           test -f /tmp/mekanix-build/prisma/migrations/20261101000000_care_booking_idempotency/migration.sql
           test -f /tmp/mekanix-build/prisma/migrations/20261101010000_request_claim_idempotency/migration.sql
+          test -f /tmp/mekanix-build/prisma/migrations/20261107000000_vip_gateway_target_plan/migration.sql
+          test -f /tmp/mekanix-build/prisma/migrations/20261107010000_gateway_initiation_idempotency/migration.sql
+          test -f /tmp/mekanix-build/prisma/migrations/20261107020000_payment_verification_outbox/migration.sql
+          test -f /tmp/mekanix-build/prisma/migrations/20261108000000_vip_gateway_duration_snapshot/migration.sql
           test -f /tmp/mekanix-build/prisma/migrations/migration_lock.toml
           
           sed -i 's/provider = "sqlite"/provider = "postgresql"/' \
