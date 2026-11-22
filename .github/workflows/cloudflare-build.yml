@@ -26,10 +26,6 @@ on:
       - 'src/lib/db-access.ts'
       - 'workers/wallet-release/**'
       - 'wrangler.wallet-release.toml'
-      - 'workers/payment-outbox/**'
-      - 'wrangler.payment-outbox.toml'
-      - 'tests/integration/payment-outbox-vip-d1.test.ts'
-      - 'docs/PAYMENT_OUTBOX_VIP_DISPATCHER.md'
       - 'docs/WALLET_ESCROW_SCHEDULED_WORKER.md'
       - '.dockerignore'
       - 'tests/unit/wallet-escrow-scheduled-worker.test.ts'
@@ -90,8 +86,13 @@ jobs:
         # build-cloudflare.sh handles: schema engineType swap, next.config.worker swap,
         # db.worker.ts swap, prisma generate, OpenNext build, and trap-based restore.
 
-      - name: Validate VIP payment outbox Worker bundle (dry-run only)
-        run: bunx wrangler deploy --dry-run --config wrangler.payment-outbox.toml
+      - name: Reject private archives and environment files from public assets
+        shell: bash
+        run: |
+          if find .open-next/assets -type f \( -iname '*.tar.gz' -o -iname '*.tgz' -o -iname '*.zip' -o -name '.env' -o -name '.env.*' \) -print -quit | grep -q .; then
+            echo "Private archive or environment file found in public Worker assets"
+            exit 1
+          fi
 
       - name: Verify Worker artifact
         run: |
