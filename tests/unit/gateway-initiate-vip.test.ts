@@ -115,6 +115,31 @@ describe("VIP gateway initiation", () => {
     expect(mockGatewayCreate).not.toHaveBeenCalled();
   });
 
+  it("replays the immutable attempt even after its plan is deactivated", async () => {
+    mockVipPlanFindUnique.mockResolvedValue({
+      id: "plan-gold", name: "Gold", priceIrr: 150_000,
+      durationDays: 365, financialUnitStatus: "VERIFIED_IRR", active: false,
+    });
+    mockGatewayFindUnique.mockResolvedValue({
+      code: "PG-original", referenceId: "SIM-original", amount: 125_000,
+      userId: "customer-1", purpose: "vip", targetPlanId: "plan-gold",
+      targetPlanDurationDays: 30,
+      currency: "IRR", financialUnitStatus: "VERIFIED_IRR", status: "REDIRECTED",
+    });
+
+    const response = await POST(request({
+      purpose: "vip", planId: "plan-gold", idempotencyKey: TEST_IDEMPOTENCY_KEY,
+    }));
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.amount).toBe(125_000);
+    expect(body.durationDays).toBe(30);
+    expect(body.reused).toBe(true);
+    expect(mockVipPlanFindUnique).not.toHaveBeenCalled();
+    expect(mockGatewayCreate).not.toHaveBeenCalled();
+  });
+
   it("rejects reuse of a key for a different user or plan", async () => {
     mockGatewayFindUnique.mockResolvedValue({
       code: "PG-existing", referenceId: "SIM-existing", amount: 125_000,
