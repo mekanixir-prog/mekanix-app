@@ -35,7 +35,34 @@ export async function POST(req: Request) {
   const idempotencyKey = input.idempotencyKey.trim();
 
   const db = await getDbForLib();
-  const plan = await db.vipPlan.findUnique({ where: { id: input.planId.trim() } });
+  const planId = input.planId.trim();
+
+  // Resolve an idempotent replay before reading the mutable plan catalog.
+  // A plan can be repriced or deactivated after the original attempt was
+  // created; an exact retry must return the original immutable purchase
+  // snapshot rather than fail or silently adopt the new price/duration.
+  const existingAttempt = await db.paymentGatewayLog.findUnique({ where: { idempotencyKey } });
+  if (existingAttempt) {
+    if (
+      existingAttempt.userId !== session.userId ||
+      existingAttempt.purpose !== "vip" ||
+      existingAttempt.targetPlanId !== planId ||
+      !Number.isSafeInteger(existingAttempt.targetPlanDurationDays) ||
+      Number(existingAttempt.targetPlanDurationDays) <= 0 ||
+      Number(existingAttempt.targetPlanDurationDays) > 36500 ||
+      !isSafeStoredIrrAmount(existingAttempt.amount) ||
+      Number(existingAttempt.amount) <= 0 ||
+      Number(existingAttempt.amount) > 100_000_000 ||
+      existingAttempt.currency !== "IRR" ||
+      existingAttempt.financialUnitStatus !== "VERIFIED_IRR" ||
+      !["REDIRECTED", "VERIFIED"].includes(existingAttempt.status)
+    ) {
+      return NextResponse.json({ error: "Idempotency key was already used for a different or closed payment attempt", code: "IDEMPOTENCY_KEY_CONFLICT" }, { status: 409 });
+    }
+    return initiationResponse(existingAttempt, planId);
+  }
+
+  const plan = await db.vipPlan.findUnique({ where: { id: planId } });
   if (!plan || !plan.active) {
     return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
   }
@@ -52,26 +79,6 @@ export async function POST(req: Request) {
   const amount = Number(plan.priceIrr);
   if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 100_000_000) {
     return NextResponse.json({ error: "مبلغ طرح خارج از محدوده مجاز است", code: "VIP_PLAN_AMOUNT_INVALID" }, { status: 409 });
-  }
-
-  const existingAttempt = await db.paymentGatewayLog.findUnique({ where: { idempotencyKey } });
-  if (existingAttempt) {
-    if (
-      existingAttempt.userId !== session.userId ||
-      existingAttempt.purpose !== "vip" ||
-      existingAttempt.targetPlanId !== plan.id ||
-      !Number.isSafeInteger(existingAttempt.targetPlanDurationDays) || Number(existingAttempt.targetPlanDurationDays) <= 0 ||
-      !isSafeStoredIrrAmount(existingAttempt.amount) ||
-      Number(existingAttempt.amount) <= 0 ||
-      Number(existingAttempt.amount) > 100_000_000 ||
-      existingAttempt.currency !== "IRR" ||
-      existingAttempt.financialUnitStatus !== "VERIFIED_IRR" ||
-      existingAttempt.status === "FAILED" ||
-      existingAttempt.status === "CANCELLED"
-    ) {
-      return NextResponse.json({ error: "Idempotency key was already used for a different or closed payment attempt", code: "IDEMPOTENCY_KEY_CONFLICT" }, { status: 409 });
-    }
-    return initiationResponse(existingAttempt, plan.id);
   }
 
   const code = `PG-${crypto.randomUUID()}`;
@@ -106,15 +113,14 @@ export async function POST(req: Request) {
       !racedAttempt ||
       racedAttempt.userId !== session.userId ||
       racedAttempt.purpose !== "vip" ||
-      racedAttempt.targetPlanId !== plan.id ||
-      !Number.isSafeInteger(racedAttempt.targetPlanDurationDays) || Number(racedAttempt.targetPlanDurationDays) <= 0 ||
+      racedAttempt.targetPlanId !== planId ||
+      !Number.isSafeInteger(racedAttempt.targetPlanDurationDays) || Number(racedAttempt.targetPlanDurationDays) <= 0 || Number(racedAttempt.targetPlanDurationDays) > 36500 ||
       !isSafeStoredIrrAmount(racedAttempt.amount) ||
       Number(racedAttempt.amount) <= 0 ||
       Number(racedAttempt.amount) > 100_000_000 ||
       racedAttempt.currency !== "IRR" ||
       racedAttempt.financialUnitStatus !== "VERIFIED_IRR" ||
-      racedAttempt.status === "FAILED" ||
-      racedAttempt.status === "CANCELLED"
+      !['REDIRECTED', 'VERIFIED'].includes(racedAttempt.status)
     ) {
       return NextResponse.json({ error: "Idempotency key conflict", code: "IDEMPOTENCY_KEY_CONFLICT" }, { status: 409 });
     }
@@ -122,7 +128,7 @@ export async function POST(req: Request) {
     reused = true;
   }
 
-  return NextResponse.json({ ok: true, code: log.code, referenceId: log.referenceId, amount: Number(log.amount), currency: "IRR", purpose: "vip", planId: plan.id, durationDays: log.targetPlanDurationDays, reused });
+  return NextResponse.json({ ok: true, code: log.code, referenceId: log.referenceId, amount: Number(log.amount), currency: "IRR", purpose: "vip", planId: planId, durationDays: log.targetPlanDurationDays, reused });
 }
 
 function initiationResponse(log: { code: string; referenceId: string | null; amount: unknown; targetPlanDurationDays: number | null }, planId: string) {
