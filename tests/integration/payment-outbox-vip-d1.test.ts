@@ -134,6 +134,18 @@ describe("VIP payment outbox dispatcher D1 integration",()=>{
     expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "UserVipSubscription" WHERE "paymentId"='payment-1'`).get()).toEqual({count:1});
     expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM "Notification" WHERE "id"='vip-activated:payment-1'`).get()).toEqual({count:1});
   });
+  it("stores only a stable error code when payload parsing fails",async()=>{
+    const {sqlite,d1}=makeD1(); dbs.push(sqlite); seed(sqlite);
+    sqlite.prepare(`UPDATE "PaymentOutboxEvent" SET "payload"='not-json' WHERE "id"='event-1'`).run();
+
+    await runWorker(d1);
+
+    const event=sqlite.prepare(`SELECT "status","lastError" FROM "PaymentOutboxEvent"`).get() as {status:string;lastError:string};
+    expect(event.status).toBe("PENDING");
+    expect(event.lastError).toBe("OUTBOX_PROCESSING_FAILED");
+    expect(event.lastError).not.toContain("not-json");
+  });
+
   it("does not complete an existing subscription when payment provenance no longer verifies",async()=>{
     const {sqlite,d1}=makeD1(); dbs.push(sqlite); seed(sqlite);
     sqlite.prepare(`INSERT INTO "UserVipSubscription" VALUES (?,?,?,?,?,?,?,?,?)`).run(
