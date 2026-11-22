@@ -4,12 +4,12 @@
 
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG="$REPO_DIR/wrangler.wallet-release.production.toml"
 EXPECTED_NAME="mekanix"
 EXPECTED_WORKER="mekanix-wallet-escrow-release-prod"
 
-if [[ "\${ALLOW_WALLET_RELEASE_PRODUCTION_DEPLOY:-}" != "YES" ]]; then
+if [[ "${ALLOW_WALLET_RELEASE_PRODUCTION_DEPLOY:-}" != "YES" ]]; then
   echo "Refusing production deployment. Set ALLOW_WALLET_RELEASE_PRODUCTION_DEPLOY=YES after reviewing the release."
   exit 1
 fi
@@ -19,12 +19,12 @@ if [[ ! -f "$CONFIG" ]]; then
   exit 1
 fi
 
-if [[ -z "\${WALLET_RELEASE_PRODUCTION_DATABASE_ID:-}" ]]; then
+if [[ -z "${WALLET_RELEASE_PRODUCTION_DATABASE_ID:-}" ]]; then
   echo "Set WALLET_RELEASE_PRODUCTION_DATABASE_ID to the production D1 ID independently verified in Cloudflare."
   exit 1
 fi
 
-if [[ -z "\${WALLET_RELEASE_PRODUCTION_ACCOUNT_ID:-}" ]] || \
+if [[ -z "${WALLET_RELEASE_PRODUCTION_ACCOUNT_ID:-}" ]] || \
    ! [[ "$WALLET_RELEASE_PRODUCTION_ACCOUNT_ID" =~ ^[a-fA-F0-9]{32}$ ]]; then
   echo "Set WALLET_RELEASE_PRODUCTION_ACCOUNT_ID to the 32-character Cloudflare account ID verified in the dashboard."
   exit 1
