@@ -173,3 +173,46 @@ PR #190 is already merged into the financial candidate branch, not directly into
 6. No production deployment, production migration, remote D1 operation, production secret change, real SMS/payment activation, DNS change or public launch has been performed.
 
 **Decision remains NO-GO for production release.** Green CI is evidence of automated checks only; it is not merge approval, staging evidence, production readiness or owner Go authorization.
+
+
+## 2026-11-22 exact-head refresh — authoritative current snapshot
+
+This addendum supersedes earlier statements in this document that say the current candidate checks are pending. The exact current RC/main-based candidate commit is `be1592780787678aeb49e1fc3812078b1a017913` (branch `fix/financial-release-candidate-2026-11-14`, PR #186). The RC branch currently points to this exact SHA.
+
+### Exact-head automated validation
+
+PR #186 exact head `be1592780787678aeb49e1fc3812078b1a017913`: all 8 workflows completed successfully — CI, Docker E2E, PostgreSQL CI, Production readiness, CodeQL Security Analysis, Secret Scan, Dependency Security Audit, and Cloudflare Build.
+
+Current RC follow-up PRs, all targeting this exact RC branch (not main):
+
+| PR | Exact head | Changed-file scope | Exact-head workflows |
+|---|---|---|---|
+| #229 | `468667ec1b0c27b55736aae27c45dffd5867864e` | Zarinpal sandbox request/verification contract tests | 6/6 success |
+| #230 | `f46934e6e594eaff86103b8a98bd8d968ffc0a5b` | Financial provenance SQL inventory + SQLite integration test | 6/6 success |
+| #231 | `6e17034ee9c50825fd4c7fcc3280a3295dd407b9` | RC list-role authorization regression tests | 6/6 success |
+| #232 | `0a16d0aec2b3d902b5cf579aa38c850ca621583a` | Guarded production escrow Worker config, deployment script, Cloudflare dry-run workflow and runbook | 7/7 success |
+| #233 | `8579b1daac26d4100db17faeba4b32260a7415d4` | Concurrent VIP gateway verification recovery regression test | 6/6 success |
+
+All five follow-up PRs are open and have no submitted human review approvals recorded. Their successful checks are not merge approvals. Do not merge them automatically or treat independent PR checks as proof that the combined post-merge RC SHA has passed; rerun all applicable checks after each integration.
+
+### Duplicate/overlap disposition
+
+- #222 and #230 both change `scripts/audit-financial-provenance.sql`; the blob is byte-identical. #230 additionally adds `tests/integration/financial-provenance-inventory-sql.test.ts` and targets the current RC. Treat #230 as the RC follow-up; keep #222 open until #230 is reviewed/merged, then close #222 as superseded.
+- #179 and #232 concern the same production escrow Worker rollout. Their `wrangler.wallet-release.production.toml` is byte-identical, but the other four shared files differ. #232 is the RC-targeted guarded extraction; it must not be described as a byte-for-byte duplicate of #179. Review the four changed files and keep #179 open until #232 is accepted; then close #179 as superseded if no unique behavior remains.
+- #167 and #231 share two test paths, but the files are not byte-identical. #231 adapts list-role regressions to the current RC contract; #167 also contains route/auth/state-machine changes beyond those tests. Do not merge #167 wholesale. Review #231 first; then assess any unique #167 behavior separately before closing it.
+- #137 and #184 remain broad historical source branches with overlapping financial/application changes. They are reference material, not safe wholesale merge candidates. The current candidate #186 contains deliberate reconciliation; review exact candidate behavior and migration tracks rather than copying old branch files.
+
+### Remaining release blockers — still NO-GO
+
+1. Independent full-diff human review and explicit owner approval for the exact final SHA are absent.
+2. Route-by-route positive/negative authorization and BOLA/IDOR matrix is not yet evidenced as complete for all owned-resource and privileged endpoints.
+3. Both SQLite/D1 and PostgreSQL migration tracks still require final human review and isolated remote staging migration rehearsal; CI migrations are not remote D1 evidence.
+4. Isolated staging deployment of the exact reviewed SHA, encrypted backup/restore, rollback rehearsal, remote D1 parity and scheduled escrow Worker/Cron observation remain outstanding.
+5. Real SMS delivery and real Zarinpal/payment sandbox request-to-verification round-trip, provider timeout/failure injection, monitoring and alert evidence remain outstanding. Adapter contract tests do not prove a real merchant sandbox transaction.
+6. Full 100-VU load test against isolated staging with retained latency, failure, CPU, memory and database metrics remains outstanding; Docker CI smoke/load checks are not staging-host evidence.
+7. Repository branch protection/ruleset enforcement must be verified by an authorized repository administrator; CI success does not prove governance controls are enabled.
+8. Commercial policy and historical financial provenance decisions remain owner gates: heavy-machinery and supported passenger-vehicle rates, tax, commission/escrow terms, VIP price/refunds, withdrawal policy and historical money-unit classification/reconciliation.
+
+### Safety boundary
+
+No PR merge, production deployment, remote D1 operation, production migration, production secret change, real SMS/payment activation, payout, DNS change or public launch is authorized by this refresh. Keep production money movement and provider activation fail-closed. **Decision remains NO-GO for merge-to-main and public production.**
