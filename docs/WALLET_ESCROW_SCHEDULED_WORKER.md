@@ -90,7 +90,7 @@ The script checks that the configured database name and Worker name are the expe
 5. Review the pending matured escrow population and establish an operational reconciliation baseline before the first Cron run.
 6. Deploy only after explicit release approval. Observe at least two 15-minute Cron cycles, inspect Worker logs and verify that matured `PENDING` rows move to `AVAILABLE` with exactly one RELEASE ledger entry each. Investigate any `failed` count before considering the rollout healthy.
 
-This repository change adds a production-specific configuration, a guarded deployment command, CI validation, and documentation. It does not execute the command or deploy the Worker. It does **not** execute the command or deploy the Worker. Production activation remains an operator-approved action after all gates above are satisfied.
+This repository change adds a production-specific configuration, a guarded deployment command, CI validation, and documentation. It does not execute the command or deploy the Worker. Production activation remains an operator-approved action after all gates above are satisfied.
 
 ## Processing behavior
 
