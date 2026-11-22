@@ -47,7 +47,13 @@ async function claimOne(db:D1Database, now:Date):Promise<OutboxRow|null> {
 async function recordFailure(db:D1Database,event:OutboxRow,now:Date,error:unknown) {
   const dead = event.attempts >= MAX_ATTEMPTS;
   const delay = Math.min(30_000 * (2 ** Math.max(0,event.attempts-1)),MAX_BACKOFF_MS);
-  const code = error instanceof Error ? error.message.slice(0,180) : "OUTBOX_PROCESSING_FAILED";
+  const rawCode = error instanceof Error ? error.message : "";
+  // Persist only stable internal error codes. Driver/SQL exception messages can
+  // contain query fragments, identifiers, connection details, or other
+  // operational data and must not be copied into the durable outbox row.
+  const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(rawCode)
+    ? rawCode
+    : "OUTBOX_PROCESSING_FAILED";
   await db.prepare(
     `UPDATE "PaymentOutboxEvent"
      SET "status"=?,"lockedAt"=NULL,"availableAt"=?,"lastError"=?,"updatedAt"=?
