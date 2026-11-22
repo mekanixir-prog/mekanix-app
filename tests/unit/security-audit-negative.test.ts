@@ -289,10 +289,9 @@ describe("B-4 [Authz] — Non-admin cannot reach admin resource routes", () => {
     // verifyAdminToken uses a DIFFERENT dev secret ("mekanix-admin-dev-secret-change-me"),
     // so jwtVerify fails → adminSession = null → 401.
     //
-    // NOTE: This test verifies DEV-mode isolation. In PRODUCTION, both secrets
-    // collapse to process.env.JWT_SECRET (see admin-auth.ts:8 SEC-17), and a
-    // user JWT WOULD pass verifyAdminToken — see SEC-21 finding in
-    // docs/AUDIT_SECURITY.md (admin auth bypass via user JWT in production).
+    // This route-level test covers the development bearer path. Production
+    // secret isolation, strict admin-token payload validation and production
+    // user-JWT rejection are covered by the SEC-21 regression tests below.
     const token = await mintUserToken("user-a", "CUSTOMER", "+989120000001");
     const req = jsonReq("GET", "http://localhost/api/admin/customers", token);
     const res = await adminResourceGET(req, {
@@ -301,6 +300,22 @@ describe("B-4 [Authz] — Non-admin cannot reach admin resource routes", () => {
 
     expect(res.status).toBe(401);
     expect(mockAdminUserCount).not.toHaveBeenCalled();
+  });
+
+  it("rejects a CUSTOMER user JWT on the admin route in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("JWT_SECRET", "user-session-secret-at-least-32-bytes-long");
+    vi.stubEnv("ADMIN_JWT_SECRET", "dedicated-admin-secret-at-least-32-bytes-long");
+
+    const token = await mintUserToken("user-a", "CUSTOMER", "+989120000001");
+    const req = jsonReq("GET", "http://localhost/api/admin/customers", token);
+    const res = await adminResourceGET(req, {
+      params: Promise.resolve({ resource: "customers" }),
+    });
+
+    expect(res.status).toBe(401);
+    expect(mockAdminUserCount).not.toHaveBeenCalled();
+    expect(mockUserFindUnique).not.toHaveBeenCalled();
   });
 
   it("rejects CUSTOMER GET /api/care/admin/packages with 403 (requireRole gate)", async () => {
@@ -467,15 +482,13 @@ describe("SEC-21: admin auth rejects user-shaped JWTs", () => {
     vi.resetModules();
   });
 
-  it("rejects a user JWT (role CUSTOMER) even when secrets collide", async () => {
-    vi.stubEnv("JWT_SECRET", "shared-secret-for-collision-test");
-    vi.stubEnv("ADMIN_JWT_SECRET", ""); // force fallback to shared JWT_SECRET
+  it("fails closed in production when ADMIN_JWT_SECRET is missing", async () => {
+    vi.stubEnv("JWT_SECRET", "shared-secret-for-collision-test-at-least-32-bytes");
+    vi.stubEnv("ADMIN_JWT_SECRET", "");
     vi.stubEnv("NODE_ENV", "production");
 
     const { createSession } = await import("@/lib/auth");
     const { verifyAdminToken } = await import("@/lib/admin-auth");
-
-    // Mint a USER session token (role CUSTOMER, signed with JWT_SECRET).
     const userToken = await createSession({
       userId: "user-123",
       phone: "09120000000",
@@ -483,10 +496,27 @@ describe("SEC-21: admin auth rejects user-shaped JWTs", () => {
       isGuest: false,
     });
 
-    // Even though the signing secret matches the admin fallback, the payload
-    // shape (no adminId, role CUSTOMER) MUST be rejected.
-    const result = await verifyAdminToken(userToken);
-    expect(result).toBeNull();
+    // Production must not fall back to the user-session secret.
+    expect(await verifyAdminToken(userToken)).toBeNull();
+  });
+
+  it("rejects a user JWT signed with the same development compatibility secret", async () => {
+    vi.stubEnv("JWT_SECRET", "shared-secret-for-collision-test-at-least-32-bytes");
+    vi.stubEnv("ADMIN_JWT_SECRET", "");
+    vi.stubEnv("NODE_ENV", "development");
+
+    const { createSession } = await import("@/lib/auth");
+    const { verifyAdminToken } = await import("@/lib/admin-auth");
+    const userToken = await createSession({
+      userId: "user-124",
+      phone: "09120000002",
+      role: "CUSTOMER",
+      isGuest: false,
+    });
+
+    // Signature verifies with the shared secret, but a user payload has no
+    // adminId and an invalid admin role, so it must still be rejected.
+    expect(await verifyAdminToken(userToken)).toBeNull();
   });
 
   it("rejects a user JWT when ADMIN_JWT_SECRET is set (full secret isolation)", async () => {
