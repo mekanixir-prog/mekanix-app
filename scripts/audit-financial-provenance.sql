@@ -50,6 +50,7 @@ WITH currency_rows(table_name, record_id, financial_unit_status, currency) AS (
   SELECT 'Invoice', id, "financialUnitStatus", "currency" FROM "Invoice"
   UNION ALL SELECT 'Payment', id, "financialUnitStatus", "currency" FROM "Payment"
   UNION ALL SELECT 'PaymentGatewayLog', id, "financialUnitStatus", "currency" FROM "PaymentGatewayLog"
+  UNION ALL SELECT 'PricingSnapshot', id, "financialUnitStatus", "currency" FROM "PricingSnapshot"
 )
 SELECT
   table_name,
