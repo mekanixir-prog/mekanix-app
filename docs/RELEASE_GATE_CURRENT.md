@@ -177,7 +177,7 @@ PR #190 is already merged into the financial candidate branch, not directly into
 
 ## 2026-11-22 exact-head refresh — authoritative current snapshot
 
-This addendum supersedes earlier statements in this document that say the current candidate checks are pending. The exact current RC/main-based candidate commit is `be1592780787678aeb49e1fc3812078b1a017913` (branch `fix/financial-release-candidate-2026-11-14`, PR #186). The RC branch currently points to this exact SHA.
+This addendum supersedes earlier statements in this document that say the current candidate checks are pending. The tested application-code baseline at this refresh is `be1592780787678aeb49e1fc3812078b1a017913` (PR #186). A documentation-only release-gate evidence refresh was committed on top of that code baseline; the new branch head must complete its own exact-SHA workflows before this snapshot is treated as current validation evidence.
 
 ### Exact-head automated validation
 
