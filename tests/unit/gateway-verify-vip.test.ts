@@ -202,4 +202,45 @@ describe("VIP gateway simulator verification", () => {
       paymentId: "payment-1",
     }));
   });
+  it("recovers a concurrent callback after another request wins the unique gatewayLogId constraint", async () => {
+    const winner = {
+      id: "payment-1",
+      code: "PAY-PG-test",
+      userId: "customer-1",
+      amount: 100_000,
+      currency: "IRR",
+      status: "SUCCEEDED",
+      financialUnitStatus: "VERIFIED_IRR",
+      gatewayLogId: "gateway-1",
+    };
+    mockPaymentFindUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(winner)
+      .mockResolvedValueOnce(winner);
+    mockRecordVerifiedPayment
+      .mockRejectedValueOnce(Object.assign(new Error("Unique constraint"), { code: "P2002" }))
+      .mockResolvedValueOnce("payment-1");
+
+    const response = await POST(request({ code: "PG-test", otp: "1234" }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      paymentId: "payment-1",
+      amount: 100_000,
+      purpose: "vip",
+    });
+    expect(mockPaymentCreate).not.toHaveBeenCalled();
+    expect(mockRecordVerifiedPayment).toHaveBeenCalledTimes(2);
+    expect(mockRecordVerifiedPayment).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
+      gatewayLogId: "gateway-1",
+      userId: "customer-1",
+      paymentId: "payment-1",
+      paymentCode: "PAY-PG-test",
+      amount: 100_000,
+      targetPlanId: "plan-1",
+      durationDays: 30,
+    }));
+  });
+
 });
