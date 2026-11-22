@@ -25,7 +25,7 @@
 //   5. Withdraw without session returns 401
 // ============================================================================
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createSession } from "@/lib/auth";
 
 // ──────────── Module-level mocks (hoisted by vitest) ────────────
@@ -153,6 +153,10 @@ async function mintUserToken(
   });
   return token;
 }
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
