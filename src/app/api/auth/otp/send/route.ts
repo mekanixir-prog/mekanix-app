@@ -117,7 +117,24 @@ export async function POST(req: Request) {
   // Invalidate any previous unconsumed codes for this phone (only the newest one is valid).
   const db = await getDbForLib();
   await db.otpCode.updateMany({ where: { phone, consumed: false }, data: { consumed: true } });
-  await db.otpCode.create({ data: { phone, code: codeHash, expiresAt } });
+  try {
+    // A partial unique index guarantees at most one pending challenge per
+    // canonical phone even when two requests interleave between the update
+    // and insert above. The request that loses that race must not send an OTP.
+    await db.otpCode.create({ data: { phone, code: codeHash, expiresAt } });
+  } catch (error) {
+    const value = error as { code?: string; message?: string } | null;
+    const isPendingPhoneConflict =
+      value?.code === "P2002" ||
+      /OtpCode_one_pending_per_phone_idx|UNIQUE constraint failed: OtpCode\.phone/i.test(value?.message ?? "");
+    if (isPendingPhoneConflict) {
+      return NextResponse.json(
+        { error: "برای این شماره هم‌زمان کد دیگری ثبت شده است؛ آخرین کد پیامک‌شده را وارد کنید", code: "OTP_SEND_CONFLICT" },
+        { status: 409 },
+      );
+    }
+    throw error;
+  }
 
   // Deliver the OTP only after provider readiness has been proven.
   // On any delivery failure, consume the newly stored hash so an undelivered
