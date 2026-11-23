@@ -4,57 +4,79 @@
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Target branch:** `main`
 
-## Current repository state
+## Verified live ruleset
 
-A repository ruleset named `main` exists (ID `24984093`), but it is currently **disabled**. Its `ref_name.include` and `exclude` lists are both empty, so it does not target `refs/heads/main`. The required status-check list is empty, required approvals are zero, stale approvals are not dismissed, review-thread resolution is not required, code-owner review is disabled, and strict required checks are disabled. The linear-history rule is configured but is not enforced while the ruleset is disabled. The bypass list is empty.
+The active repository ruleset is:
 
-The repository owner account currently has admin permission, but the connected GitHub workflow interface exposes ruleset reads and no ruleset-write operation. No settings have been changed. An administrator must apply the settings below in GitHub Settings (or through an authorized GitHub admin API client) and then re-read the ruleset to verify the result.
+- Name: `main-production-protection`
+- Ruleset ID: `27880389`
+- Enforcement: `active`
+- Target: `refs/heads/main` only
+- Bypass actors: none
 
-## Required configuration before merge to main
+An older ruleset named `main` (ID `24984093`) remains present but disabled. It is not the active protection mechanism; do not confuse it with `main-production-protection`.
 
-1. Open **Settings → Rules → Rulesets → main**.
-2. Set enforcement to **Active**.
-3. Set the branch target to include only `refs/heads/main`.
-4. Keep deletion and non-fast-forward updates blocked.
-5. Require a pull request before merging.
-6. Require at least **1 independent approving review**.
-7. Dismiss stale approvals when new commits are pushed.
-8. Require all review conversations to be resolved.
-9. Require all **8** status checks below to pass before merging and enable strict up-to-date checks.
-10. Keep bypass actors empty (no bypass).
-11. Require linear history; use squash or rebase merge if the repository workflow requires it.
+The live Rulesets API was re-read after the administrator saved the configuration. It reports:
 
-## Required GitHub Actions checks
+- Pull requests required before merging.
+- At least one approving review required.
+- Stale approvals dismissed when new commits are pushed.
+- Review-thread resolution required.
+- Strict/up-to-date required status checks enabled.
+- Branch deletion blocked.
+- Non-fast-forward updates (force pushes) blocked.
+- Empty bypass list.
 
-Use the exact check-run names emitted by GitHub Actions (these are job/check names, not the workflow display names):
+## Required status checks
 
-- `Lint + TypeCheck + Test` — CI
-- `quality` — Production readiness
-- `Docker Build + Compose + Health` — Docker E2E
-- `PostgreSQL Migration + Build` — PostgreSQL CI
-- `OpenNext → Cloudflare Worker` — Cloudflare Build
-- `Analyze JavaScript and TypeScript` — CodeQL
-- `Scan repository history for exposed secrets` — Secret Scan
-- `Audit the committed lockfile (no auto-fix)` — Dependency Security Audit
+The active ruleset contains exactly these nine unique required contexts. Each is configured once with the source integration verified from the exact-head check-run records:
 
-These are eight separate required checks. The conditional `Prepare dependency remediation branch` job belongs only to a trusted security-branch push and is not the PR audit check. Do not replace these with a single aggregate status or mark a check optional.
+| Exact check-run context | Source | Integration ID |
+|---|---|---:|
+| `CodeQL` | GitHub Advanced Security | 57789 |
+| `Scan repository history for exposed secrets` | GitHub Actions | 15368 |
+| `Analyze JavaScript and TypeScript` | GitHub Actions | 15368 |
+| `Lint + TypeCheck + Test` | GitHub Actions | 15368 |
+| `PostgreSQL Migration + Build` | GitHub Actions | 15368 |
+| `Audit the committed lockfile (no auto-fix)` | GitHub Actions | 15368 |
+| `OpenNext → Cloudflare Worker` | GitHub Actions | 15368 |
+| `Docker Build + Compose + Health` | GitHub Actions | 15368 |
+| `quality` | GitHub Actions | 15368 |
+
+The conditional `Prepare dependency remediation branch` job is intentionally not required. It is a separate trusted security-branch remediation job and is skipped on the pull-request candidate.
+
+## Exact-head evidence at this audit
+
+Candidate PR #186 head `b95aa00d24b82b7fc866d192cb949c7bae8dcd1f` has successful check runs for all nine required contexts. The check-runs API also shows repeated successful executions for two contexts; this does not create duplicate ruleset entries. The ruleset contains nine unique contexts only.
+
+This evidence is tied to the exact SHA above. Any subsequent commit changes the candidate head and requires fresh exact-head workflow results.
+
+## Separate repository security settings — not yet verified
+
+The active branch ruleset does not prove that the following repository/account settings are enabled. Track them separately under Issue #121:
+
+- Dependabot alerts and security updates.
+- Dependency graph.
+- Secret scanning and push protection (where available for this repository/plan).
+- Repository Actions default `GITHUB_TOKEN` permissions set to read-only.
+- Whether GitHub Actions is allowed to create and approve pull requests.
+
+Workflow-level permissions are also distinct from the repository default. Current workflow files declare least-privilege permissions in most workflows; `dependency-review.yml` grants `contents: write` only to its conditional `dependency-remediation` job on the trusted security branch. Review that exception periodically.
+
+## Administrator verification checklist
+
+- [x] Active ruleset targets only `refs/heads/main`.
+- [x] Enforcement is Active.
+- [x] One approving review is required.
+- [x] Stale approvals are dismissed after new commits.
+- [x] Review conversations must be resolved.
+- [x] All nine exact checks above are required with strict/up-to-date enforcement.
+- [x] Bypass list is empty.
+- [x] Deletion and force pushes are blocked.
+- [ ] Verify separate repository security settings listed above.
 
 ## Release gate
 
-- [ ] Ruleset targets `refs/heads/main`.
-- [ ] Enforcement is Active.
-- [ ] One independent approval is required.
-- [ ] Stale approvals are dismissed after new commits.
-- [ ] Review threads must be resolved.
-- [ ] All eight checks above are required and strict.
-- [ ] Bypass list is empty.
-- [ ] Final candidate head has all eight checks green after its last code change.
+Branch protection is now active, but this is only one governance control. PR #186 remains Draft and has no submitted human review. It must not be merged until an independent reviewer approves the exact final SHA and the financial, authorization, migration, staging, backup/restore, rollback, provider and owner Go/No-Go gates are evidenced.
 
-**Important:** A green CI run does not compensate for a disabled branch ruleset. Keep the release candidate in Draft and do not merge until this checklist is satisfied by a repository administrator.
-
-
-## 2026-11-23 read-only ruleset recheck
-
-The current ruleset read confirms: `enforcement=disabled`, `required_approving_review_count=0`, `required_status_checks=[]`, `require_code_owner_review=false`, `dismiss_stale_reviews_on_push=false`, `required_review_thread_resolution=false`, and `strict_required_status_checks_policy=false`. The `main` branch reports `protected=false`. The repository integration available to this workflow exposes ruleset reads but no ruleset-write operation. An authorized repository administrator must make and verify the changes; no protection settings were changed here.
-
-The eight exact check names above were verified from the active CI workflow jobs on candidate `5c5f50202869a1c3a5fb1e191a390c2b052206e1` on 2026-11-23.
+**Decision: NO-GO for merge-to-main and public production.**
