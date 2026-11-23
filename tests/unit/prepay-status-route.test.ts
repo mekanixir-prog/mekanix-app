@@ -12,6 +12,7 @@ vi.mock("@/lib/auth", () => ({ requireJobParticipant: mocks.participant }));
 vi.mock("@/lib/db-access", () => ({ getDbForLib: mocks.db }));
 
 import { GET } from "@/app/api/prepay/status/route";
+import { POST } from "@/app/api/prepay/route";
 
 const job = {
   id: "job-1",
@@ -111,6 +112,21 @@ beforeEach(() => {
 });
 
 describe("GET /api/prepay/status", () => {
+  it.each(["TECHNICIAN", "FLEET_MANAGER", "PARTNER"] as const)(
+    "denies %s from initiating the customer prepay simulator before participant or DB lookup",
+    async (role) => {
+      mocks.auth.mockResolvedValue({ userId: "non-customer", role });
+      const response = await POST(new Request("https://mekanix.test/api/prepay", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jobId: "job-1", method: "card", cardNumber: "4111111111111111" }),
+      }));
+      expect(response.status).toBe(403);
+      expect(mocks.participant).not.toHaveBeenCalled();
+      expect(mocks.db).not.toHaveBeenCalled();
+    },
+  );
+
   it("reports COMMITTED only when the job and all four financial rows reconcile", async () => {
     mocks.db.mockResolvedValue(makeDb());
     const response = await GET(request());
