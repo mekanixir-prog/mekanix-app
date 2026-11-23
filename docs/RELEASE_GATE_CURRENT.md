@@ -249,3 +249,12 @@ This is a security reduction, not implementation of the fleet dashboard or fleet
 The non-production prepay simulator now explicitly permits only `CUSTOMER` and `ADMIN` sessions before participant lookup. Previously, `requireJobParticipant` also admitted an assigned `TECHNICIAN`, which was inconsistent with the route's customer-payment contract and could let a technician trigger simulated prepay writes in non-production environments. `TECHNICIAN`, `FLEET_MANAGER` and `PARTNER` now receive 403 before participant or database access. Production remains hard-blocked by the existing 404 guard; this change does not activate real payment.
 
 Commits: `17cf9e84ae88df2817138e4302d166d7127b235a` (route guard) and `722dfb7da3466de3e4b45e2dccc7cb19a67a820b` (role regression tests).
+
+
+### CARE mission status assignment-bound concurrency — 2026-11-23
+
+The technician status PATCH now resolves the authenticated technician profile, verifies the current booking assignment, and includes that same `technicianId` in the final `updateMany` compare-and-set. If the assignment changes after the read, the write affects zero rows and returns 409 instead of allowing a former assignee to advance the mission. Unscoped roles are rejected before database access. Regression tests cover assignment mismatch and the race-losing conditional update.
+
+Commits: `b3c990706ca39b48059d79619d74d69292c69d88` (route hardening) and `7525dbc649bf2c1af43ddd03b1fa4968373cdeaf` (regression tests).
+
+Remaining consistency limitation: on D1, the status update and timeline-event insert are still sequential writes rather than one atomic batch. The existing known-issues record documents this; keep it as a staging/business-E2E verification item and do not claim the timeline write is transactionally atomic.
