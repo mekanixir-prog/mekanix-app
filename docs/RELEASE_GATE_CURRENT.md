@@ -216,3 +216,20 @@ All five follow-up PRs are open and have no submitted human review approvals rec
 ### Safety boundary
 
 No PR merge, production deployment, remote D1 operation, production migration, production secret change, real SMS/payment activation, payout, DNS change or public launch is authorized by this refresh. Keep production money movement and provider activation fail-closed. **Decision remains NO-GO for merge-to-main and public production.**
+
+
+## 2026-11-23 authorization consistency fix — FLEET_MANAGER CARE transitions
+
+A targeted route/state-machine review found a stale authorization contract in `src/lib/care-auth.ts`: the booking state-machine helper and its unit tests treated `FLEET_MANAGER` as a customer for cancellation and extra-cost approval, while `requireBookingOwner` correctly denied that role because there is no persisted fleet-membership and fleet-to-vehicle ownership relation in the current authorization path.
+
+The candidate now fails closed consistently:
+- `ROLE_TRANSITIONS.FLEET_MANAGER` is empty.
+- The customer-side transition exceptions apply only to `CUSTOMER`.
+- Unit tests assert denial for fleet-manager cancellation, approval and rejection transitions.
+- No route-level ownership rule was broadened and no role permission was granted.
+
+Commits: `5157adebc17cd57ed65999fb73255751139dce85` (authorization helper) and `11518ef051dd4e4cfa57637395454d26cf2bb388` (regression tests).
+
+This closes the specific helper/comment/test inconsistency only. It does not complete the route-by-route BOLA/IDOR matrix or implement fleet ownership. Before any future fleet-manager access is enabled, implement persisted fleet membership and fleet-to-asset ownership, then add cross-tenant positive and negative tests for create/read/update/cancel/approve/status flows.
+
+All workflows must be rerun on the final resulting candidate SHA. Release decision remains Draft / NO-GO pending independent review, staging and remaining operational gates.
