@@ -174,9 +174,8 @@ const TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
 // - ADMIN can do any transition
 // - CUSTOMER can only: CANCEL (pre-service), APPROVE (approve extra cost),
 //   and INSPECTING (reject extra cost — back to technician for re-inspection)
-// - FLEET_MANAGER mirrors CUSTOMER (they manage a fleet of vehicles on the
-//   customer side and can approve extras / cancel pre-service bookings for
-//   their fleet) — see ARCHITECTURE.md §5 Roles.
+// - FLEET_MANAGER has no booking transitions until persisted fleet membership
+//   and fleet-to-vehicle ownership are implemented and independently authorized.
 // - PARTNER is a read-only analytics viewer — no booking transitions.
 const ROLE_TRANSITIONS: Record<Session["role"], Set<BookingStatus>> = {
   ADMIN: new Set<BookingStatus>([
@@ -185,7 +184,8 @@ const ROLE_TRANSITIONS: Record<Session["role"], Set<BookingStatus>> = {
     "FINAL_CHECK", "COMPLETED", "CANCELLED", "FAILED",
   ]),
   CUSTOMER: new Set<BookingStatus>(["CANCELLED", "APPROVED", "INSPECTING"]),
-  FLEET_MANAGER: new Set<BookingStatus>(["CANCELLED", "APPROVED", "INSPECTING"]),
+  // Fail closed: a role label alone does not establish ownership of a booking.
+  FLEET_MANAGER: new Set<BookingStatus>([]),
   TECHNICIAN: new Set<BookingStatus>([
     "EN_ROUTE", "ARRIVED", "INSPECTING", "WAITING_CUSTOMER_APPROVAL",
     "IN_SERVICE", "FINAL_CHECK", "COMPLETED", "FAILED",
@@ -213,9 +213,9 @@ export function isValidTransition(
     return false;
   }
 
-  // FLEET_MANAGER mirrors CUSTOMER for the booking flow (approve extras /
-  // reject extras / cancel pre-service) — see ARCHITECTURE.md §5 Roles.
-  const actsAsCustomer = role === "CUSTOMER" || role === "FLEET_MANAGER";
+  // Fleet managers remain denied until a persisted fleet/asset ownership scope
+  // is checked by the route-level authorization helper.
+  const actsAsCustomer = role === "CUSTOMER";
 
   // Special case: customer-side role can only APPROVE when status is WAITING_CUSTOMER_APPROVAL
   if (actsAsCustomer && next === "APPROVED" && current !== "WAITING_CUSTOMER_APPROVAL") {
