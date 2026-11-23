@@ -555,12 +555,11 @@ describe("MEKANIX Business E2E Flow", () => {
       expect(can("TECHNICIAN", "customer.pay")).toBe(false);
     });
 
-    it("should support FLEET_MANAGER role (inherits customer + fleet perms)", () => {
-      expect(can("FLEET_MANAGER", "fleet.view.dashboard")).toBe(true);
-      expect(can("FLEET_MANAGER", "fleet.manage.assets")).toBe(true);
-      // Inherits customer-side perms
-      expect(can("FLEET_MANAGER", "customer.create.service")).toBe(true);
-      // Not a technician
+    it("should fail closed for FLEET_MANAGER until fleet ownership is implemented", () => {
+      expect(can("FLEET_MANAGER", "fleet.view.dashboard")).toBe(false);
+      expect(can("FLEET_MANAGER", "fleet.manage.assets")).toBe(false);
+      expect(can("FLEET_MANAGER", "customer.create.service")).toBe(false);
+      expect(can("FLEET_MANAGER", "customer.pay")).toBe(false);
       expect(can("FLEET_MANAGER", "technician.accept.mission")).toBe(false);
     });
 
