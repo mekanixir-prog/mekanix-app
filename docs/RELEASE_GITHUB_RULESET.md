@@ -1,12 +1,12 @@
 # GitHub main-branch release protection
 
-**Status checked:** 2026-11-21  
+**Status checked:** 2026-11-23  
 **Repository:** `mekanixir-prog/mekanix-app`  
 **Target branch:** `main`
 
 ## Current repository state
 
-A repository ruleset named `main` exists (ID `24984093`), but it is currently **disabled**. Its `ref_name.include` and `exclude` lists are both empty, so it does not target `refs/heads/main`. The required status-check list is empty, required approvals are zero, stale approvals are not dismissed, review-thread resolution is not required, and strict required checks are disabled. The linear-history rule is configured but is not enforced while the ruleset is disabled. The bypass list is empty.
+A repository ruleset named `main` exists (ID `24984093`), but it is currently **disabled**. Its `ref_name.include` and `exclude` lists are both empty, so it does not target `refs/heads/main`. The required status-check list is empty, required approvals are zero, stale approvals are not dismissed, review-thread resolution is not required, code-owner review is disabled, and strict required checks are disabled. The linear-history rule is configured but is not enforced while the ruleset is disabled. The bypass list is empty.
 
 The repository owner account currently has admin permission, but the connected GitHub workflow interface exposes ruleset reads and no ruleset-write operation. No settings have been changed. An administrator must apply the settings below in GitHub Settings (or through an authorized GitHub admin API client) and then re-read the ruleset to verify the result.
 
@@ -17,26 +17,27 @@ The repository owner account currently has admin permission, but the connected G
 3. Set the branch target to include only `refs/heads/main`.
 4. Keep deletion and non-fast-forward updates blocked.
 5. Require a pull request before merging.
-6. Require at least **1 approving review**.
+6. Require at least **1 independent approving review**.
 7. Dismiss stale approvals when new commits are pushed.
 8. Require all review conversations to be resolved.
-9. Require status checks to pass before merging and enable strict up-to-date checks.
+9. Require all **8** status checks below to pass before merging and enable strict up-to-date checks.
 10. Keep bypass actors empty (no bypass).
 11. Require linear history; use squash or rebase merge if the repository workflow requires it.
 
 ## Required GitHub Actions checks
 
-Use the exact check-run names emitted by GitHub Actions:
+Use the exact check-run names emitted by GitHub Actions (these are job/check names, not the workflow display names):
 
-- `Lint + TypeCheck + Test`
-- `quality`
-- `Docker Build + Compose + Health`
-- `PostgreSQL Migration + Build`
-- `OpenNext → Cloudflare Worker`
-- `Analyze JavaScript and TypeScript`
-- `Scan repository history for exposed secrets`
+- `Lint + TypeCheck + Test` — CI
+- `quality` — Production readiness
+- `Docker Build + Compose + Health` — Docker E2E
+- `PostgreSQL Migration + Build` — PostgreSQL CI
+- `OpenNext → Cloudflare Worker` — Cloudflare Build
+- `Analyze JavaScript and TypeScript` — CodeQL
+- `Scan repository history for exposed secrets` — Secret Scan
+- `Audit the committed lockfile (no auto-fix)` — Dependency Security Audit
 
-These are seven separate checks. Do not replace them with a single aggregate status or mark a check optional.
+These are eight separate required checks. The conditional `Prepare dependency remediation branch` job belongs only to a trusted security-branch push and is not the PR audit check. Do not replace these with a single aggregate status or mark a check optional.
 
 ## Release gate
 
@@ -45,8 +46,15 @@ These are seven separate checks. Do not replace them with a single aggregate sta
 - [ ] One independent approval is required.
 - [ ] Stale approvals are dismissed after new commits.
 - [ ] Review threads must be resolved.
-- [ ] All seven checks above are required and strict.
+- [ ] All eight checks above are required and strict.
 - [ ] Bypass list is empty.
-- [ ] Final candidate head has all seven checks green after its last code change.
+- [ ] Final candidate head has all eight checks green after its last code change.
 
 **Important:** A green CI run does not compensate for a disabled branch ruleset. Keep the release candidate in Draft and do not merge until this checklist is satisfied by a repository administrator.
+
+
+## 2026-11-23 read-only ruleset recheck
+
+The current ruleset read confirms: `enforcement=disabled`, `required_approving_review_count=0`, `required_status_checks=[]`, `require_code_owner_review=false`, `dismiss_stale_reviews_on_push=false`, `required_review_thread_resolution=false`, and `strict_required_status_checks_policy=false`. The `main` branch reports `protected=false`. The repository integration available to this workflow exposes ruleset reads but no ruleset-write operation. An authorized repository administrator must make and verify the changes; no protection settings were changed here.
+
+The eight exact check names above were verified from the active CI workflow jobs on candidate `5c5f50202869a1c3a5fb1e191a390c2b052206e1` on 2026-11-23.
