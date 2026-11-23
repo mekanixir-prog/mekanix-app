@@ -77,6 +77,10 @@ function applySecurityHeaders(
   isProduction: boolean,
 ): NextResponse {
   response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("Cross-Origin-Opener-Policy", "same-origin");
+  // credentialless keeps public OSM tiles and avatar images loadable without credentials.
+  response.headers.set("Cross-Origin-Embedder-Policy", "credentialless");
+  response.headers.set("Cross-Origin-Resource-Policy", "same-origin");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(self)");
   if (isProduction) {
