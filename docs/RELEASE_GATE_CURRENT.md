@@ -258,3 +258,20 @@ The technician status PATCH now resolves the authenticated technician profile, v
 Commits: `b3c990706ca39b48059d79619d74d69292c69d88` (route hardening) and `7525dbc649bf2c1af43ddd03b1fa4968373cdeaf` (regression tests).
 
 Remaining consistency limitation: on D1, the status update and timeline-event insert are still sequential writes rather than one atomic batch. The existing known-issues record documents this; keep it as a staging/business-E2E verification item and do not claim the timeline write is transactionally atomic.
+
+
+### Final Docker / PostgreSQL / browser / load / ZAP evidence — 2026-11-23
+
+Exact tested code head before the header hardening: `e7b9a1be4a1512eaef0c3ec88f695445b4cb7d95`.
+
+- Docker Compose stack reached healthy state; PostgreSQL was confirmed as the database and Redis password authentication passed.
+- Production-mode OTP failed closed without a real SMS provider.
+- Playwright browser E2E: 24/24 passed.
+- Isolated real-HTTP + PostgreSQL business flow passed: customer request, technician assignment, cross-tenant/BOLA denials, job status transitions, IRR invoice creation/approval, completion, and injected Job-insert failure with atomic rollback. Payment simulator was disabled in production mode; zero payment rows and zero warranty rows were created. No external SMS/payment provider was called.
+- k6 full-load profile reached 100 VUs over 5 minutes: 36,812 HTTP requests, 0.00% failed, HTTP p95 52.42 ms, response p99 81.76 ms, 46,015 checks passed / 0 failed. The independent summary validator confirmed request count, error rate, p95/p99 and check counts against the configured limits.
+- PostgreSQL outage injection returned health 503 / database unhealthy; after restart health recovered to 200 / database healthy.
+- PostgreSQL CI separately applied migrations, ran financial-provenance inventory against the isolated PostgreSQL schema, and completed encrypted backup/restore rehearsal.
+
+ZAP baseline report: 0 High, 0 Medium, 3 Low, 4 Informational, 65 Pass. The three Low findings were missing Cross-Origin-Embedder-Policy, Cross-Origin-Opener-Policy and Cross-Origin-Resource-Policy headers. The report artifact is `mekanix-isolated-security-performance-45101851731` (artifact ID `14786102618`). A follow-up hardening adds COOP `same-origin`, CORP `same-origin`, and COEP `credentialless` (to preserve public cross-origin map/avatar resources without credentials) in Next.js response headers and the request proxy, with unit assertions. This header change is a new code revision and requires all exact-head workflows, browser E2E and ZAP to rerun; the prior 8/8 green result does not validate it.
+
+This evidence is isolated CI/staging-style infrastructure only. It does not establish production domain behavior, live merchant settlement, real SMS delivery, real payment capture, production D1 state, or an actual production backup restore.
