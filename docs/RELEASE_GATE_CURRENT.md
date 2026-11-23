@@ -242,3 +242,10 @@ The same fail-closed rule is now applied to the general role-permission matrix. 
 Commits: `d070a6ea5c8a7beb6cbc7288c4981acc31e3d88a` (permission matrix), `66b62642639d219e3dbfc4778d0db2f5457b89b1` (unit tests), and `a77887178a6d37f80cfe201ecac737fe97ca86a6` (business-flow test).
 
 This is a security reduction, not implementation of the fleet dashboard or fleet asset management. Do not enable fleet permissions until tenant isolation and positive/negative cross-fleet tests cover all read/write flows.
+
+
+### Prepay simulator actor boundary — 2026-11-23
+
+The non-production prepay simulator now explicitly permits only `CUSTOMER` and `ADMIN` sessions before participant lookup. Previously, `requireJobParticipant` also admitted an assigned `TECHNICIAN`, which was inconsistent with the route's customer-payment contract and could let a technician trigger simulated prepay writes in non-production environments. `TECHNICIAN`, `FLEET_MANAGER` and `PARTNER` now receive 403 before participant or database access. Production remains hard-blocked by the existing 404 guard; this change does not activate real payment.
+
+Commits: `17cf9e84ae88df2817138e4302d166d7127b235a` (route guard) and `722dfb7da3466de3e4b45e2dccc7cb19a67a820b` (role regression tests).
