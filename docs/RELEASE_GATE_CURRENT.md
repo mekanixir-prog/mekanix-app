@@ -233,3 +233,12 @@ Commits: `5157adebc17cd57ed65999fb73255751139dce85` (authorization helper) and `
 This closes the specific helper/comment/test inconsistency only. It does not complete the route-by-route BOLA/IDOR matrix or implement fleet ownership. Before any future fleet-manager access is enabled, implement persisted fleet membership and fleet-to-asset ownership, then add cross-tenant positive and negative tests for create/read/update/cancel/approve/status flows.
 
 All workflows must be rerun on the final resulting candidate SHA. Release decision remains Draft / NO-GO pending independent review, staging and remaining operational gates.
+
+
+### Fleet permission-matrix hardening — 2026-11-23
+
+The same fail-closed rule is now applied to the general role-permission matrix. `FLEET_MANAGER` remains a recognized future role for compatibility/introspection, but its permission set is empty until the application has persisted fleet membership and fleet-to-asset ownership with tenant-safe scoping. The prior inherited customer permissions and fleet dashboard/asset permissions are removed from the active matrix. Unit and business-flow tests now assert that all such permissions are denied. This prevents future routes that rely on `requirePermission`/ `can` from accidentally granting customer or fleet operations based only on the role label.
+
+Commits: `d070a6ea5c8a7beb6cbc7288c4981acc31e3d88a` (permission matrix), `66b62642639d219e3dbfc4778d0db2f5457b89b1` (unit tests), and `a77887178a6d37f80cfe201ecac737fe97ca86a6` (business-flow test).
+
+This is a security reduction, not implementation of the fleet dashboard or fleet asset management. Do not enable fleet permissions until tenant isolation and positive/negative cross-fleet tests cover all read/write flows.
