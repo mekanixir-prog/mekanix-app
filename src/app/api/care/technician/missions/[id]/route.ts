@@ -6,10 +6,10 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
+import { getTechnicianFromSession } from "@/lib/auth";
 import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 import {
   requireBookingParticipant,
-  requireAssignedTechnician,
   validateTransition,
 } from "@/lib/care-auth";
 
@@ -49,14 +49,36 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const db = await getDbForLib();
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
-  const { id } = await ctx.params;
+  if (session.role !== "TECHNICIAN" && session.role !== "ADMIN") {
+    return NextResponse.json({ error: "این عملیات فقط برای مکانیک یا مدیر مجاز است" }, { status: 403 });
+  }
 
-  // BOLA + role: only ADMIN or the assigned technician may update mission status.
-  const authError = await requireAssignedTechnician(session, id);
-  if (authError) return authError;
+  const { id } = await ctx.params;
+  const db = await getDbForLib();
+
+  // Resolve the authenticated technician once and carry that identity into
+  // the conditional write. The assignment may change after the initial read.
+  let actorTechnicianId: string | null = null;
+  if (session.role === "TECHNICIAN") {
+    const technician = await getTechnicianFromSession(session);
+    if (!technician) {
+      return NextResponse.json({ error: "پروفایل مکانیک یافت نشد" }, { status: 403 });
+    }
+    actorTechnicianId = technician.id;
+  }
+
+  const existing = await db.serviceBooking.findUnique({
+    where: { id },
+    select: { id: true, status: true, technicianId: true },
+  });
+  if (!existing) {
+    return NextResponse.json({ error: "سفارش یافت نشد" }, { status: 404 });
+  }
+  if (actorTechnicianId && existing.technicianId !== actorTechnicianId) {
+    return NextResponse.json({ error: "شما به این سفارش اختصاص ندارید" }, { status: 403 });
+  }
 
   let body: unknown;
   try {
@@ -64,35 +86,33 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   } catch {
     return NextResponse.json({ error: "بدنه درخواست نامعتبر است" }, { status: 400 });
   }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "بدنه درخواست نامعتبر است" }, { status: 400 });
+  }
   const { status } = body as { status?: unknown };
   if (!status || typeof status !== "string") {
     return NextResponse.json({ error: "فیلد status الزامی است" }, { status: 400 });
   }
 
-  // Fetch current status (minimal select) for state-machine validation + optimistic concurrency.
-  const existing = await db.serviceBooking.findUnique({
-    where: { id },
-    select: { id: true, status: true },
-  });
-  if (!existing) {
-    return NextResponse.json({ error: "سفارش یافت نشد" }, { status: 404 });
-  }
-
-  // State machine validation (returns NextResponse(409) if invalid, null if OK).
   const transitionError = validateTransition(session.role, existing.status, status);
   if (transitionError) return transitionError;
 
-  // Optimistic concurrency: only update if status hasn't changed since we read it.
-  // If count === 0, another request beat us to it → 409 Conflict.
-  // (D1 has no $transaction; the updateMany + timeline create are sequential.)
+  // Include the authenticated technician's profile ID in the compare-and-set.
+  // If assignment changes after the read above, updateMany affects zero rows.
   try {
     const result = await db.serviceBooking.updateMany({
-      where: { id, status: existing.status },
+      where: {
+        id,
+        status: existing.status,
+        ...(actorTechnicianId ? { technicianId: actorTechnicianId } : {}),
+      },
       data: { status },
     });
     if (result.count === 0) {
-      // Status changed concurrently — abort.
-      throw new Error("__CONCURRENT_STATUS_CHANGE__");
+      return NextResponse.json(
+        { error: "وضعیت یا تخصیص سفارش هم‌زمان تغییر کرده است؛ صفحه را بازخوانی و دوباره تلاش کنید" },
+        { status: 409 }
+      );
     }
     await db.serviceTimelineEvent.create({
       data: {
@@ -104,16 +124,6 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     const updated = await db.serviceBooking.findUnique({ where: { id } });
     return NextResponse.json(updated);
   } catch (err) {
-    if (err instanceof Error && err.message === "__CONCURRENT_STATUS_CHANGE__") {
-      return NextResponse.json(
-        {
-          error:
-            "وضعیت سفارش همگام نیست — توسط درخواست دیگری تغییر یافته. لطفاً صفحه را بازخوانی و دوباره تلاش کنید.",
-        },
-        { status: 409 }
-      );
-    }
-    // Re-throw unexpected errors to be handled by Next.js error boundary.
     throw err;
   }
 }
