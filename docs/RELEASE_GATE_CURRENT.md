@@ -275,3 +275,14 @@ Exact tested code head before the header hardening: `e7b9a1be4a1512eaef0c3ec88f6
 ZAP baseline report: 0 High, 0 Medium, 3 Low, 4 Informational, 65 Pass. The three Low findings were missing Cross-Origin-Embedder-Policy, Cross-Origin-Opener-Policy and Cross-Origin-Resource-Policy headers. The report artifact is `mekanix-isolated-security-performance-45101851731` (artifact ID `14786102618`). A follow-up hardening adds COOP `same-origin`, CORP `same-origin`, and COEP `credentialless` (to preserve public cross-origin map/avatar resources without credentials) in Next.js response headers and the request proxy, with unit assertions. This header change is a new code revision and requires all exact-head workflows, browser E2E and ZAP to rerun; the prior 8/8 green result does not validate it.
 
 This evidence is isolated CI/staging-style infrastructure only. It does not establish production domain behavior, live merchant settlement, real SMS delivery, real payment capture, production D1 state, or an actual production backup restore.
+
+
+### Escrow ledger proof hardening — 2026-11-23
+
+A focused review of the D1 escrow release batch found that the final transaction-state predicate and guard assertion did not independently re-check the RELEASE ledger amount and arithmetic relationship. Under an already-present malformed ledger row sharing the release idempotency key, those later predicates could accept `balanceAfter = wallet.balance` without proving `ledger.amount = WalletTransaction.netAmount` and `balanceAfter = balanceBefore + netAmount`.
+
+The D1 release path now requires, in both the AVAILABLE transition predicate and final batch assertion: ledger type `RELEASE`, reference type `WalletTransaction`, exact amount equality with the escrow transaction, safe integer amount/balance values, non-negative balance-before, exact balance equation, and non-negative remaining pending balance. Two SQLite integration regressions seed malformed pre-existing ledger proofs (wrong amount; inconsistent balance equation) and assert the transaction remains `PENDING`, wallet balances remain unchanged, and the guard row is cleaned up.
+
+Commits: `fdc3186890dcff77c808c759d581be11ca854d0f` (release predicate/guard) and `992ea08ec0b35fee58cfc86601b8c5fa8fa834f3` (malformed-ledger regression tests).
+
+This is a financial integrity hardening change. It invalidates the prior exact-head check result and requires a fresh complete workflow run on the new candidate SHA before any release decision.
