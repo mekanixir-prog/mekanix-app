@@ -135,6 +135,14 @@ export async function releaseWalletTransactionWithD1(
           AND abs(ledger."balanceBefore") <= ${maxSafeIrr}
           AND ledger."balanceAfter" = CAST(ledger."balanceAfter" AS INTEGER)
           AND abs(ledger."balanceAfter") <= ${maxSafeIrr}
+          AND ledger."type" = 'RELEASE'
+          AND ledger."referenceType" = 'WalletTransaction'
+          AND ledger."amount" = wt."netAmount"
+          AND ledger."amount" = CAST(ledger."amount" AS INTEGER)
+          AND abs(ledger."amount") <= ${maxSafeIrr}
+          AND ledger."balanceBefore" >= 0
+          AND ledger."balanceAfter" = ledger."balanceBefore" + wt."netAmount"
+          AND w."pendingBalance" >= 0
           AND w."balance" = ledger."balanceAfter"
       )
   `).bind(timestamp, transactionId, walletId, timestamp, idempotencyKey);
@@ -178,6 +186,14 @@ export async function releaseWalletTransactionWithD1(
             AND abs(ledger."balanceBefore") <= ${maxSafeIrr}
             AND ledger."balanceAfter" = CAST(ledger."balanceAfter" AS INTEGER)
             AND abs(ledger."balanceAfter") <= ${maxSafeIrr}
+            AND ledger."type" = 'RELEASE'
+            AND ledger."referenceType" = 'WalletTransaction'
+            AND ledger."amount" = wt."netAmount"
+            AND ledger."amount" = CAST(ledger."amount" AS INTEGER)
+            AND abs(ledger."amount") <= ${maxSafeIrr}
+            AND ledger."balanceBefore" >= 0
+            AND ledger."balanceAfter" = ledger."balanceBefore" + wt."netAmount"
+            AND w."pendingBalance" >= 0
             AND w."balance" = ledger."balanceAfter"
         ) THEN 1
         ELSE NULL
