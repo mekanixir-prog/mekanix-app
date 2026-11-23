@@ -19,6 +19,9 @@ describe("security response headers", () => {
     expect(response.status).toBe(403);
     expect(response.headers.get("Content-Security-Policy")).toContain("frame-ancestors");
     expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(response.headers.get("Cross-Origin-Opener-Policy")).toBe("same-origin");
+    expect(response.headers.get("Cross-Origin-Embedder-Policy")).toBe("credentialless");
+    expect(response.headers.get("Cross-Origin-Resource-Policy")).toBe("same-origin");
   });
 
   it("allows same-origin cookie-authenticated mutations", () => {
