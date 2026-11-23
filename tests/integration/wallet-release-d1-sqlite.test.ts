@@ -231,6 +231,60 @@ describe("atomic escrow release D1 SQLite integration", () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
   });
 
+  it("does not mark escrow AVAILABLE when an existing RELEASE ledger has a mismatched amount", async () => {
+    const { sqlite, d1 } = makeD1(); databases.push(sqlite); seed(sqlite);
+    sqlite.prepare(`
+      INSERT INTO "WalletLedger"
+        ("id", "walletId", "financialUnitStatus", "type", "amount", "balanceBefore", "balanceAfter",
+         "referenceType", "referenceId", "idempotencyKey", "createdAt")
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "legacy-bad-amount", "wallet-1", "VERIFIED_IRR", "RELEASE", 999, 1001, 2000,
+      "WalletTransaction", "txn-1", "wallet-release:txn-1:LEDGER", "2026-10-30T09:30:00.000Z",
+    );
+
+    await expect(
+      releaseWalletTransactionWithD1(d1 as never, "wallet-1", "txn-1", new Date("2026-10-30T10:00:00.000Z"))
+    ).rejects.toThrow();
+
+    expect(sqlite.prepare('SELECT "balance", "pendingBalance" FROM "Wallet" WHERE "id" = ?').get("wallet-1")).toEqual({
+      balance: 2000, pendingBalance: 1000,
+    });
+    expect(sqlite.prepare('SELECT "status" FROM "WalletTransaction" WHERE "id" = ?').get("txn-1")).toEqual({
+      status: "PENDING",
+    });
+    expect(sqlite.prepare('SELECT "amount" FROM "WalletLedger" WHERE "id" = ?').get("legacy-bad-amount")).toEqual({ amount: 999 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletReleaseGuard"').get()).toEqual({ count: 0 });
+  });
+
+  it("does not mark escrow AVAILABLE when the existing RELEASE ledger balance equation is inconsistent", async () => {
+    const { sqlite, d1 } = makeD1(); databases.push(sqlite); seed(sqlite);
+    sqlite.prepare(`
+      INSERT INTO "WalletLedger"
+        ("id", "walletId", "financialUnitStatus", "type", "amount", "balanceBefore", "balanceAfter",
+         "referenceType", "referenceId", "idempotencyKey", "createdAt")
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "legacy-bad-balance", "wallet-1", "VERIFIED_IRR", "RELEASE", 1000, 999, 2000,
+      "WalletTransaction", "txn-1", "wallet-release:txn-1:LEDGER", "2026-10-30T09:30:00.000Z",
+    );
+
+    await expect(
+      releaseWalletTransactionWithD1(d1 as never, "wallet-1", "txn-1", new Date("2026-10-30T10:00:00.000Z"))
+    ).rejects.toThrow();
+
+    expect(sqlite.prepare('SELECT "balance", "pendingBalance" FROM "Wallet" WHERE "id" = ?').get("wallet-1")).toEqual({
+      balance: 2000, pendingBalance: 1000,
+    });
+    expect(sqlite.prepare('SELECT "status" FROM "WalletTransaction" WHERE "id" = ?').get("txn-1")).toEqual({
+      status: "PENDING",
+    });
+    expect(sqlite.prepare('SELECT "balanceBefore", "balanceAfter" FROM "WalletLedger" WHERE "id" = ?').get("legacy-bad-balance")).toEqual({
+      balanceBefore: 999, balanceAfter: 2000,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletReleaseGuard"').get()).toEqual({ count: 0 });
+  });
+
   it("rolls back the entire release when the wallet aggregate update silently affects zero rows", async () => {
     const { sqlite, d1 } = makeD1(); databases.push(sqlite); seed(sqlite);
     sqlite.exec(`CREATE TRIGGER "ignore_wallet_release" BEFORE UPDATE ON "Wallet"
