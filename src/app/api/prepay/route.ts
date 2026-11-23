@@ -42,6 +42,9 @@ export async function POST(req: Request) {
   // Require authentication
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
+  if (session.role !== "CUSTOMER" && session.role !== "ADMIN") {
+    return NextResponse.json({ error: "فقط مشتری می‌تواند پیش‌پرداخت را ثبت کند" }, { status: 403 });
+  }
 
   const policyApproved = process.env.MEKANIX_PREPAY_POLICY_APPROVED === "true";
   const commissionRate = Number(process.env.MEKANIX_PREPAY_COMMISSION_RATE);
