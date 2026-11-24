@@ -40,7 +40,7 @@ describe.skipIf(!postgresConfigured)("wallet escrow release PostgreSQL transacti
     vi.unstubAllEnvs();
   });
 
-  async function makeDueTransaction(suffix: string, netAmount = 1000, pendingBalance = 1000) {
+  async function makeDueTransaction(suffix: string, netAmount = 1000, pendingBalance = 1000, kind: "PREPAY" | "REFUND" = "PREPAY") {
     const user = await db!.user.create({
       data: {
         name: `Wallet Release PostgreSQL Test ${suffix}`,
@@ -59,7 +59,7 @@ describe.skipIf(!postgresConfigured)("wallet escrow release PostgreSQL transacti
       data: {
         walletId: wallet.id,
         financialUnitStatus: "VERIFIED_IRR",
-        kind: "PREPAY",
+        kind,
         status: "PENDING",
         grossAmount: netAmount,
         commissionAmount: 0,
@@ -185,6 +185,24 @@ describe.skipIf(!postgresConfigured)("wallet escrow release PostgreSQL transacti
     });
     expect(Number(walletAfterNegative?.balance)).toBe(2000);
     expect(Number(walletAfterNegative?.pendingBalance)).toBe(100);
+    expect(await db!.walletTransaction.findUnique({
+      where: { id: fixture.transactionId },
+      select: { status: true },
+    })).toEqual({ status: "PENDING" });
+    expect(await db!.walletLedger.count({ where: { idempotencyKey: fixture.ledgerKey } })).toBe(0);
+  });
+  it("does not release a matured REFUND transaction as PREPAY escrow", async () => {
+    const fixture = await makeDueTransaction("refund-kind", 1000, 1000, "REFUND");
+    await expect(releaseWalletTransactionWithPrisma(
+      db!, fixture.walletId, fixture.transactionId, releaseAt
+    )).resolves.toBe(false);
+
+    const wallet = await db!.wallet.findUnique({
+      where: { id: fixture.walletId },
+      select: { balance: true, pendingBalance: true },
+    });
+    expect(Number(wallet?.balance)).toBe(2000);
+    expect(Number(wallet?.pendingBalance)).toBe(1000);
     expect(await db!.walletTransaction.findUnique({
       where: { id: fixture.transactionId },
       select: { status: true },
