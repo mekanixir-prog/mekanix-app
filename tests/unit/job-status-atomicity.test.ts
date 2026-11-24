@@ -259,6 +259,25 @@ describe("atomic job status writer", () => {
     });
   });
 
+  it("rejects paid-prepay completion without a hold deadline or explicit prepay state", async () => {
+    const db = { $transaction: vi.fn() } as any;
+
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      currentStatus: "REPAIRING",
+      nextStatus: "COMPLETED",
+      prepayPaid: true,
+      holdUntil: null,
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      currentStatus: "REPAIRING",
+      nextStatus: "COMPLETED",
+      holdUntil: null,
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
   it("rolls back completion when a paid PREPAY transaction cannot be scheduled", async () => {
     const holdUntil = new Date("2026-11-03T12:00:00.000Z");
     const tx = {
