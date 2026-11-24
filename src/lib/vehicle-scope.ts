@@ -41,6 +41,6 @@ const SUPPORTED_HEAVY_TYPES = new Set([
 ]);
 
 export function isVehicleInSupportedScope(type: unknown, make: unknown): boolean {
-  if (type === "CAR") return !isExcludedPassengerMake(make);
+  if (type === "CAR") return typeof make === "string" && make.trim().length > 0 && !isExcludedPassengerMake(make);
   return typeof type === "string" && SUPPORTED_HEAVY_TYPES.has(type);
 }
