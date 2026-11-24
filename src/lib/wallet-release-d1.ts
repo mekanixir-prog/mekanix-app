@@ -26,7 +26,7 @@ export async function releaseWalletTransactionWithD1(
   const idempotencyKey = `wallet-release:${transactionId}:LEDGER`;
   const maxSafeIrr = "9007199254740991";
   const eligible = `
-    wt."id" = ? AND wt."walletId" = ? AND wt."status" = 'PENDING'
+    wt."id" = ? AND wt."walletId" = ? AND wt."status" = 'PENDING' AND wt."kind" = 'PREPAY'
     AND wt."financialUnitStatus" = 'VERIFIED_IRR'
     AND wt."netAmount" > 0
     AND wt."netAmount" = CAST(wt."netAmount" AS INTEGER)
@@ -87,7 +87,7 @@ export async function releaseWalletTransactionWithD1(
           ON ledger."referenceId" = wt."id"
          AND ledger."idempotencyKey" = ?
         WHERE wt."id" = ? AND wt."walletId" = w."id"
-          AND wt."status" = 'PENDING' AND wt."financialUnitStatus" = 'VERIFIED_IRR'
+          AND wt."status" = 'PENDING' AND wt."kind" = 'PREPAY' AND wt."financialUnitStatus" = 'VERIFIED_IRR'
           AND wt."netAmount" > 0
           AND wt."netAmount" = CAST(wt."netAmount" AS INTEGER)
           AND abs(wt."netAmount") <= ${maxSafeIrr}
@@ -161,7 +161,7 @@ export async function releaseWalletTransactionWithD1(
           SELECT 1
           FROM "WalletTransaction" wt
           JOIN "Wallet" w ON w."id" = wt."walletId"
-          WHERE wt."id" = ? AND wt."status" IN ('PENDING', 'AVAILABLE')
+          WHERE wt."id" = ? AND wt."status" IN ('PENDING', 'AVAILABLE') AND wt."kind" = 'PREPAY'
             AND wt."financialUnitStatus" = 'VERIFIED_IRR'
             AND w."financialUnitStatus" = 'VERIFIED_IRR'
         ) OR EXISTS (
@@ -172,7 +172,7 @@ export async function releaseWalletTransactionWithD1(
             ON ledger."walletId" = w."id"
            AND ledger."referenceId" = wt."id"
            AND ledger."idempotencyKey" = ?
-          WHERE wt."id" = ? AND wt."status" = 'AVAILABLE'
+          WHERE wt."id" = ? AND wt."status" = 'AVAILABLE' AND wt."kind" = 'PREPAY'
             AND wt."financialUnitStatus" = 'VERIFIED_IRR'
             AND w."financialUnitStatus" = 'VERIFIED_IRR'
             AND ledger."financialUnitStatus" = 'VERIFIED_IRR'
