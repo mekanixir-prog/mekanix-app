@@ -52,6 +52,7 @@ export type AtomicJobStatusInput = {
   updates: JobStatusScalarUpdates;
   invoice?: AtomicInvoiceInput | null;
   holdUntil?: Date | null;
+  prepayPaid?: boolean;
 };
 
 export type JobStatusActorRole = AtomicJobStatusInput["actorRole"] | "PARTNER";
@@ -160,6 +161,9 @@ function assertRoleTransition(input: AtomicJobStatusInput) {
   const estimateTransition = input.currentStatus === "REPAIRING" && input.nextStatus === "WAITING_APPROVAL";
   if (estimateTransition !== Boolean(input.invoice)) throw new JobStatusConflictError();
   if (input.invoice) assertAtomicInvoiceInput(input.invoice, input.jobId);
+  if (input.holdUntil && typeof input.prepayPaid !== "boolean") {
+    throw new JobStatusConflictError();
+  }
   const isCustomerActor = input.actorRole === "CUSTOMER";
   if (input.actorRole === "TECHNICIAN" &&
       (!input.actorTechnicianId || input.actorTechnicianId !== input.technicianId)) {
@@ -252,11 +256,12 @@ async function transitionWithPrisma(db: PrismaClient, input: AtomicJobStatusInpu
     if (input.invoice) {
       await tx.invoice.create({ data: input.invoice });
     }
-    if (input.holdUntil) {
-      await tx.walletTransaction.updateMany({
-        where: { jobId: input.jobId, status: "PENDING" },
+    if (input.holdUntil && input.prepayPaid === true) {
+      const holdUpdate = await tx.walletTransaction.updateMany({
+        where: { jobId: input.jobId, status: "PENDING", kind: "PREPAY" },
         data: { holdUntil: input.holdUntil },
       });
+      if (holdUpdate.count !== 1) throw new JobStatusConflictError();
     }
 
     if (requestTransition) {
@@ -354,10 +359,13 @@ async function transitionWithD1(
     assertOneChange(),
   ];
 
-  if (input.holdUntil) {
-    statements.push(d1.prepare(
-      'UPDATE "WalletTransaction" SET "holdUntil" = ? WHERE "jobId" = ? AND "status" = \'PENDING\''
-    ).bind(input.holdUntil.toISOString(), input.jobId));
+  if (input.holdUntil && input.prepayPaid === true) {
+    statements.push(
+      d1.prepare(
+        'UPDATE "WalletTransaction" SET "holdUntil" = ? WHERE "jobId" = ? AND "status" = \'PENDING\' AND "kind" = \'PREPAY\''
+      ).bind(input.holdUntil.toISOString(), input.jobId),
+      assertOneChange(),
+    );
   }
 
   if (input.invoice) {
