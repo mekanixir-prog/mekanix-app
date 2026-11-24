@@ -37,10 +37,10 @@ describe("wallet escrow release atomicity", () => {
     await expect(releaseWalletTransactionWithPrisma(db, "wallet-1", "txn-1", new Date())).resolves.toBe(true);
     expect(db.$transaction).toHaveBeenCalledTimes(1);
     expect(tx.walletTransaction.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ netAmount: { gt: 0 }, financialUnitStatus: "VERIFIED_IRR" }),
+      where: expect.objectContaining({ kind: "PREPAY", netAmount: { gt: 0 }, financialUnitStatus: "VERIFIED_IRR" }),
     }));
     expect(tx.walletTransaction.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ netAmount, financialUnitStatus: "VERIFIED_IRR" }),
+      where: expect.objectContaining({ kind: "PREPAY", netAmount, financialUnitStatus: "VERIFIED_IRR" }),
     }));
     expect(tx.walletTransaction.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.wallet.updateMany).toHaveBeenCalledWith({
@@ -207,7 +207,10 @@ describe("wallet escrow release atomicity", () => {
     expect(statements[0].sql).toContain('w."pendingBalance" = CAST(w."pendingBalance" AS INTEGER)');
     expect(statements[1].sql).toContain('"pendingBalance"');
     expect(statements[1].sql).toContain('"balanceBefore" = w."balance"');
+    expect(statements[0].sql).toContain('wt."kind" = \'PREPAY\'');
+    expect(statements[1].sql).toContain('wt."kind" = \'PREPAY\'');
     expect(statements[2].sql).toContain('"status" = \'PENDING\'');
+    expect(statements[2].sql).toContain('wt."kind" = \'PREPAY\'');
     expect(statements[2].sql).toContain('"balance" = ledger."balanceAfter"');
     expect(statements[3].sql).toContain('INSERT INTO "WalletReleaseGuard"');
     expect(statements[3].sql).toContain('ELSE NULL');
