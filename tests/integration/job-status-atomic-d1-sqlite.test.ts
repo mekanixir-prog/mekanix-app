@@ -40,6 +40,7 @@ function makeD1() {
     CREATE TABLE "WalletTransaction" (
       "id" TEXT PRIMARY KEY NOT NULL,
       "jobId" TEXT NOT NULL,
+      "kind" TEXT NOT NULL DEFAULT 'PREPAY',
       "status" TEXT NOT NULL,
       "holdUntil" TEXT
     );
@@ -106,6 +107,7 @@ const baseInput = {
   technicianId: "tech-1",
   actorRole: "TECHNICIAN" as const,
   actorTechnicianId: "tech-1",
+  prepayPaid: true,
   currentStatus: "REPAIRING" as const,
   expectedUpdatedAt: new Date("2026-11-02T10:00:00.000Z"),
   nextStatus: "COMPLETED" as const,
@@ -172,6 +174,33 @@ describe("job status D1 SQLite transaction", () => {
       .toEqual({ holdUntil: holdUntil.toISOString() });
     expect(sqlite.prepare('SELECT "status" FROM "Technician" WHERE "id" = ?').get("tech-1"))
       .toEqual({ status: "ONLINE" });
+  });
+
+  it("rolls back job completion if a paid prepay has no pending PREPAY escrow row to schedule", async () => {
+    sqlite.prepare('DELETE FROM "WalletTransaction" WHERE "jobId" = ?').run("job-1");
+
+    await expect(transitionJobStatusAtomically({} as any, {
+      ...baseInput,
+      holdUntil: new Date("2026-11-02T22:00:00.000Z"),
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+
+    expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
+      .toEqual({ status: "REPAIRING" });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletTransaction" WHERE "jobId" = ?').get("job-1"))
+      .toEqual({ count: 0 });
+  });
+
+  it("completes a job without scheduling an escrow hold when no prepay was paid", async () => {
+    sqlite.prepare('DELETE FROM "WalletTransaction" WHERE "jobId" = ?').run("job-1");
+
+    await expect(transitionJobStatusAtomically({} as any, {
+      ...baseInput,
+      prepayPaid: false,
+      holdUntil: new Date("2026-11-02T22:00:00.000Z"),
+    })).resolves.toBeUndefined();
+
+    expect(sqlite.prepare('SELECT "status" FROM "Job" WHERE "id" = ?').get("job-1"))
+      .toEqual({ status: "COMPLETED" });
   });
 
   it("rejects a technician transition outside the role matrix before touching D1", async () => {
