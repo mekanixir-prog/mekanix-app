@@ -22,7 +22,7 @@ export async function apiFetch<T = unknown>(
   });
 
   if (res.status === 401) {
-    if (typeof window !== "undefined") window.location.href = "/admin-panel";
+    if (typeof window !== "undefined") window.location.assign("/admin-panel");
     throw new Error("Unauthorized");
   }
 
