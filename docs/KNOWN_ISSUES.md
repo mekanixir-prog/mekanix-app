@@ -87,3 +87,35 @@ Each issue has: ID, Severity, Status, Description, Affected Files, Mitigation
 - **Affected Files:** `src/app/api/admin-panel/auth/login/route.ts`, `src/app/api/admin-panel/auth/me/route.ts`, `src/app/api/admin-panel/onboarding/[id]/route.ts`, `src/app/api/admin-panel/onboarding/route.ts`
 - **Mitigation:** These routes are excluded from TypeScript check via `tsconfig.json` exclude.
 - **Close Condition:** Decision made: migrate to `getDbForLib()`, remove from main project, or keep excluded.
+
+
+---
+
+## Current verified status overlay — 2026-11-24
+
+This section supersedes the historical status labels above where they conflict. The original entries are retained for audit history; do not use their 2026-10-11 status labels as current release evidence.
+
+| ID | Current status | Current evidence / release impact |
+|---|---|---|
+| KI-001 | **Partially mitigated — Medium** | Critical financial flows now use Prisma transactions or D1 transactional batches with row-count assertions (prepay, withdrawals, wallet release, gateway verification, CARE booking and extra-proposal decisions, job status). Remaining sequential CARE writes are tracked in Issue #235: findings, inspection, health report and mission timeline updates. |
+| KI-002 | **Open — High / production blocker** | Payment simulator paths remain disabled in production. Zarinpal/IDPay adapter contract tests are sandbox-mocked only; the complete real-provider attempt → callback → verification → ledger/outbox lifecycle is not activated or evidenced. See Issue #24. |
+| KI-003 | **Open — High / production blocker** | The current production config still uses the console SMS provider. CI verifies production OTP fails closed without a real provider; it does not prove real SMS delivery. |
+| KI-004 | **Resolved for production route consumers** | The old 34-file/7-file inventory is stale. Current route code uses `getDbForLib()`; the only code-search hit for a direct `@/lib/db` import was a stale comment in `src/lib/db.worker.ts`, corrected in this candidate. The separate `admin-panel/` package remains a separate project scope (KI-008). |
+| KI-005 | **Resolved** | Invoice creation now returns an existing invoice on idempotent retry and resolves the unique `Invoice.jobId` race by re-reading the winner instead of returning a duplicate-create 500. |
+| KI-006 | **Resolved for withdrawal debit/request/ledger** | Withdrawal creation and admin approve/reject/paid transitions now use Prisma transactions or D1 batches and validate the linked ledger evidence. Keep the separate production bank-transfer/reconciliation gates open. |
+| KI-007 | **Resolved** | The transaction inventory distinguishes actual calls from comments. |
+| KI-008 | **Partially resolved / architecture decision pending** | Main-app `src/app/api/admin-panel/*` routes inspected in this candidate use `getDbForLib()`. The standalone `admin-panel/` directory remains excluded from the main TypeScript project and still needs an explicit keep/migrate/remove decision. |
+| KI-009 | **Open — Medium** | Legacy mechanic-application phone values are not guaranteed to be normalized before raw-column uniqueness is enforced; SQLite/PostgreSQL canonicalization differs. Tracked in Issue #234. |
+| KI-010 | **Open — Medium** | CARE finding/inspection/health-report and mission state writes can commit without their timeline event if a later D1 statement fails. Tracked in Issue #235. |
+
+### Additional release gates — still NO-GO
+
+- Controlled staging/production financial provenance inventory and independent reconciliation approval. Synthetic CI fixtures prove SQL compatibility, not the state of real records. See Issue #81.
+- Real payment-provider sandbox lifecycle, webhook/callback authenticity, replay/concurrency, refunds and reconciliation. See Issue #24.
+- Real SMS provider configuration and successful delivery/expiry/rate-limit evidence.
+- Production wallet escrow Worker is now configured with a guarded deployment script and 15-minute Cron, but it has **not** been deployed or observed. Until deployment is separately approved and two Cron cycles are verified, matured production escrow may remain `PENDING`.
+- Remote D1 staging migration, backup/restore and rollback evidence. PostgreSQL CI backup/restore rehearsal is isolated test evidence only.
+- Independent human review and approval of the exact final PR #186 SHA.
+- Explicit owner Go/No-Go for the exact final SHA.
+
+**No production D1 migration, production Worker deployment, real SMS/payment activation, payout, PR merge to `main`, or public launch is authorized by this status overlay.**
