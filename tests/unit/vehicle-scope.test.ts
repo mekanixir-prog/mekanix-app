@@ -44,6 +44,13 @@ describe("MEKANIX vehicle service scope", () => {
     ]));
   });
 
+  it("fails closed for passenger cars with missing or blank makes", () => {
+    expect(isVehicleInSupportedScope("CAR", "")).toBe(false);
+    expect(isVehicleInSupportedScope("CAR", "   ")).toBe(false);
+    expect(isVehicleInSupportedScope("CAR", null)).toBe(false);
+    expect(isVehicleInSupportedScope("CAR", "Toyota")).toBe(true);
+  });
+
   it("rejects OTHER and unknown asset types before registration or service", () => {
     const other = { type: "OTHER", make: "Caterpillar", model: "Unknown", year: 2024 };
     expect(vehicleCreateSchema.safeParse(other).success).toBe(false);
