@@ -81,5 +81,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package.json bun.lock
           git commit -m "fix(deps): remediate vulnerable dependency versions"
-          git push --force origin HEAD:refs/heads/fix/dependency-audit-remediation
+          # Never overwrite an existing remediation branch. A non-fast-forward
+          # push fails closed and requires an operator to reconcile the branch.
+          git push origin HEAD:refs/heads/fix/dependency-audit-remediation
           echo "Dependency candidate pushed. PR creation is intentionally left to an authorized repository integration."
