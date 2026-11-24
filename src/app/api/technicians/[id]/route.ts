@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
-import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS, verifySession } from "@/lib/auth";
+import { sanitizeInput, ALLOWED_FIELDS, FORBIDDEN_FIELDS, getSessionFromRequest } from "@/lib/auth";
 import { maskFinancialFields, markFinancialRecordUnverifiedWhenFieldsChanged, TECHNICIAN_FEE_FIELDS } from "@/lib/money/financial-read-mask";
 
 // Public-facing technician fields — never expose sensitive data.
@@ -14,8 +14,7 @@ const PUBLIC_USER_FIELDS = {
 // Selects only safe fields.
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const auth = req.headers.get("authorization");
-  const session = auth?.startsWith("Bearer ") ? await verifySession(auth.slice(7)) : null;
+  const session = await getSessionFromRequest(req);
   const db = await getDbForLib();
   const tech = await db.technician.findUnique({
     where: { id },
