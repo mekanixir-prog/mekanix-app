@@ -22,7 +22,7 @@ export async function apiFetch<T = unknown>(
   });
 
   if (res.status === 401) {
-    if (typeof window !== "undefined") window.location.assign("/admin-panel");
+    // Keep navigation in the calling Client Component, where useRouter is available.
     throw new Error("Unauthorized");
   }
 
