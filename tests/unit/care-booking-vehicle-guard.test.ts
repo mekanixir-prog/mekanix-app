@@ -28,6 +28,7 @@ vi.mock("@/lib/care-booking-atomic", () => ({
 }));
 
 import { POST } from "@/app/api/care/bookings/route";
+import { POST as quotePOST } from "@/app/api/care/bookings/quote/route";
 
 const body = {
   vehicleId: "vehicle-1",
@@ -81,5 +82,37 @@ describe("CARE booking vehicle scope", () => {
     await expect(response.json()).resolves.toMatchObject({ code: "VEHICLE_OUT_OF_SCOPE" });
     expect(mocks.calculatePrice).not.toHaveBeenCalled();
     expect(mocks.createBooking).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("CARE quote vehicle scope", () => {
+  it("rejects excluded passenger makes before calculating a quote", async () => {
+    const response = await quotePOST(new Request("https://mekanix.test/api/care/bookings/quote", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ vehicleId: "vehicle-1", serviceType: "periodic" }),
+    }));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ code: "VEHICLE_OUT_OF_SCOPE" });
+    expect(mocks.calculatePrice).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsupported OTHER machinery before calculating a quote", async () => {
+    mocks.vehicleFind.mockResolvedValueOnce({
+      id: "vehicle-1",
+      customerId: "customer-1",
+      type: "OTHER",
+      make: "Unknown",
+      model: "Unknown",
+    });
+    const response = await quotePOST(new Request("https://mekanix.test/api/care/bookings/quote", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ vehicleId: "vehicle-1", serviceType: "periodic" }),
+    }));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ code: "VEHICLE_OUT_OF_SCOPE" });
+    expect(mocks.calculatePrice).not.toHaveBeenCalled();
   });
 });
