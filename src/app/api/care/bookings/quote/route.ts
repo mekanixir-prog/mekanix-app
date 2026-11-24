@@ -3,6 +3,7 @@ import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { getCustomerFromSession } from "@/lib/auth";
 import { calculatePrice } from "@/lib/pricing";
+import { isVehicleInSupportedScope } from "@/lib/vehicle-scope";
 
 // POST /api/care/bookings/quote — authenticated, owner-scoped CARE quote.
 // The quote uses the same server-side rate card as booking and invoice calculation.
@@ -35,6 +36,9 @@ export async function POST(req: Request) {
   const vehicle = await db.vehicle.findUnique({ where: { id: input.vehicleId } });
   if (!vehicle || vehicle.customerId !== customer.id) {
     return NextResponse.json({ error: "وسیله متعلق به شما نیست" }, { status: 403 });
+  }
+  if (!isVehicleInSupportedScope(vehicle.type, vehicle.make)) {
+    return NextResponse.json({ error: "این وسیله یا برند در محدوده خدمات و نرخ‌نامه تأییدشده MEKANIX نیست", code: "VEHICLE_OUT_OF_SCOPE" }, { status: 400 });
   }
 
   try {
