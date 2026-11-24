@@ -4,7 +4,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 const mocks = vi.hoisted(() => ({
   technicianFindMany: vi.fn(),
   technicianFindUnique: vi.fn(),
-  verifySession: vi.fn(),
+  getSessionFromRequest: vi.fn(),
   rateLimitAsync: vi.fn(),
   getClientId: vi.fn(),
 }));
@@ -23,7 +23,7 @@ vi.mock("@/lib/rate-limit", () => ({
   getClientId: mocks.getClientId,
   RATE_LIMITS: { API_DEFAULT: { max: 60, windowMs: 60_000 } },
 }));
-vi.mock("@/lib/auth", () => ({ requireRole: vi.fn(), verifySession: mocks.verifySession }));
+vi.mock("@/lib/auth", () => ({ requireRole: vi.fn(), getSessionFromRequest: mocks.getSessionFromRequest }));
 
 import { GET as listTechnicians } from "@/app/api/technicians/route";
 import { GET as getTechnician } from "@/app/api/technicians/[id]/route";
@@ -62,7 +62,7 @@ const publicTechnicianFixture = () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.verifySession.mockResolvedValue(null);
+  mocks.getSessionFromRequest.mockResolvedValue(null);
   mocks.getClientId.mockReturnValue("203.0.113.10");
   mocks.rateLimitAsync.mockResolvedValue({ success: true, resetMs: 60_000 });
 });
@@ -133,7 +133,7 @@ describe("public technician discovery privacy", () => {
     fixture.status = "OFFLINE";
     fixture.availableNow = false;
     mocks.technicianFindUnique.mockResolvedValue(fixture);
-    mocks.verifySession.mockResolvedValue({ userId: "user-1", role: "TECHNICIAN" });
+    mocks.getSessionFromRequest.mockResolvedValue({ userId: "user-1", role: "TECHNICIAN" });
 
     const response = await getTechnician(
       new Request("https://mekanix.test/api/technicians/technician-1", {
@@ -149,6 +149,29 @@ describe("public technician discovery privacy", () => {
     expect(payload.lng).toBeNull();
     expect(payload).not.toHaveProperty("heading");
     expect(payload).not.toHaveProperty("userId");
+  });
+
+  it("allows a cookie-authenticated technician owner to read their own offline profile", async () => {
+    const fixture = publicTechnicianFixture();
+    fixture.status = "OFFLINE";
+    fixture.availableNow = false;
+    mocks.technicianFindUnique.mockResolvedValue(fixture);
+    mocks.getSessionFromRequest.mockResolvedValue({ userId: "user-1", role: "TECHNICIAN" });
+
+    const response = await getTechnician(
+      new Request("https://mekanix.test/api/technicians/technician-1", {
+        headers: { cookie: "mekanix-token=opaque-session-token" },
+      }),
+      { params: Promise.resolve({ id: "technician-1" }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.getSessionFromRequest).toHaveBeenCalledWith(expect.any(Request));
+    const payload = await response.json();
+    expect(payload.user).toEqual({ name: "Technician", avatar: null });
+    expect(payload).not.toHaveProperty("userId");
+    expect(payload.lat).toBeNull();
+    expect(payload.lng).toBeNull();
   });
 
   it("hides offline technician profiles from unauthenticated public requests", async () => {
