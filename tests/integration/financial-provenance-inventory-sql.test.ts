@@ -22,7 +22,7 @@ describe("read-only financial provenance inventory SQL", () => {
     databases.push(database);
 
     for (const table of modelTables) {
-      const hasCurrency = table === "Invoice" || table === "Payment" || table === "PaymentGatewayLog";
+      const hasCurrency = table === "Invoice" || table === "Payment" || table === "PaymentGatewayLog" || table === "PricingSnapshot";
       database.exec(
         `CREATE TABLE "${table}" (
           "id" TEXT PRIMARY KEY,
@@ -43,6 +43,8 @@ describe("read-only financial provenance inventory SQL", () => {
         VALUES ('payment-verified-irr', 'VERIFIED_IRR', 'IRR');
       INSERT INTO "PaymentGatewayLog" ("id", "financialUnitStatus", "currency")
         VALUES ('gateway-verified-null-currency', 'VERIFIED_IRR', NULL);
+      INSERT INTO "PricingSnapshot" ("id", "financialUnitStatus", "currency")
+        VALUES ('pricing-snapshot-verified-wrong-currency', 'VERIFIED_IRR', 'USD');
       INSERT INTO "Job" ("id", "financialUnitStatus")
         VALUES ('job-unverified', 'UNVERIFIED');
       INSERT INTO "Wallet" ("id", "financialUnitStatus")
@@ -72,9 +74,13 @@ describe("read-only financial provenance inventory SQL", () => {
         SELECT "id" FROM "PaymentGatewayLog"
         WHERE "financialUnitStatus" = 'VERIFIED_IRR'
           AND ("currency" IS NULL OR "currency" <> 'IRR')
+        UNION ALL
+        SELECT "id" FROM "PricingSnapshot"
+        WHERE "financialUnitStatus" = 'VERIFIED_IRR'
+          AND ("currency" IS NULL OR "currency" <> 'IRR')
       )
     `).get() as { count: number };
-    expect(contradictions.count).toBe(2);
+    expect(contradictions.count).toBe(3);
 
     const worklist = database.prepare(`
       SELECT "id", "financialUnitStatus"
