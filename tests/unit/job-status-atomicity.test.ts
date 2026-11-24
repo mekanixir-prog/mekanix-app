@@ -250,12 +250,53 @@ describe("atomic job status writer", () => {
       ...input,
       currentStatus: "REPAIRING",
       nextStatus: "COMPLETED",
+      prepayPaid: true,
       holdUntil,
     })).resolves.toBeUndefined();
     expect(tx.walletTransaction.updateMany).toHaveBeenCalledWith({
-      where: { jobId: input.jobId, status: "PENDING" },
+      where: { jobId: input.jobId, status: "PENDING", kind: "PREPAY" },
       data: { holdUntil },
     });
+  });
+
+  it("rolls back completion when a paid PREPAY transaction cannot be scheduled", async () => {
+    const holdUntil = new Date("2026-11-03T12:00:00.000Z");
+    const tx = {
+      job: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      walletTransaction: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      technician: { updateMany: vi.fn() },
+      serviceRequest: { updateMany: vi.fn() },
+    };
+    const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)) } as any;
+
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      currentStatus: "REPAIRING",
+      nextStatus: "COMPLETED",
+      prepayPaid: true,
+      holdUntil,
+    })).rejects.toBeInstanceOf(JobStatusConflictError);
+    expect(tx.technician.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not require or update an escrow row when the job has no paid prepay", async () => {
+    const holdUntil = new Date("2026-11-03T12:00:00.000Z");
+    const tx = {
+      job: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      walletTransaction: { updateMany: vi.fn() },
+      technician: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      serviceRequest: { updateMany: vi.fn() },
+    };
+    const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)) } as any;
+
+    await expect(transitionJobStatusAtomically(db, {
+      ...input,
+      currentStatus: "REPAIRING",
+      nextStatus: "COMPLETED",
+      prepayPaid: false,
+      holdUntil,
+    })).resolves.toBeUndefined();
+    expect(tx.walletTransaction.updateMany).not.toHaveBeenCalled();
   });
 
   it("requires a stored customer approval before a technician can start repair", async () => {
