@@ -45,6 +45,7 @@ async function releaseDueTransactions(env: Env, now: Date): Promise<void> {
         SELECT "id", "walletId", "holdUntil"
         FROM "WalletTransaction"
         WHERE "status" = 'PENDING'
+          AND "kind" = 'PREPAY'
           AND "holdUntil" IS NOT NULL
           AND "holdUntil" <= ?
           AND ("holdUntil" > ? OR ("holdUntil" = ? AND "id" > ?))
@@ -55,6 +56,7 @@ async function releaseDueTransactions(env: Env, now: Date): Promise<void> {
         SELECT "id", "walletId", "holdUntil"
         FROM "WalletTransaction"
         WHERE "status" = 'PENDING'
+          AND "kind" = 'PREPAY'
           AND "holdUntil" IS NOT NULL
           AND "holdUntil" <= ?
         ORDER BY "holdUntil" ASC, "id" ASC
