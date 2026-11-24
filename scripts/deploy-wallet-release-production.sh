@@ -14,6 +14,19 @@ if [[ "${ALLOW_WALLET_RELEASE_PRODUCTION_DEPLOY:-}" != "YES" ]]; then
   exit 1
 fi
 
+require_evidence_ref() {
+  local label="$1"
+  local value="$2"
+  if [[ -z "$value" || "$value" == "TODO" || "$value" == "TBD" || "$value" == "CHANGE_ME" ]]; then
+    echo "Refusing production deployment: provide a verified $label evidence reference."
+    exit 1
+  fi
+}
+
+require_evidence_ref "recoverable D1 backup" "${WALLET_RELEASE_PRODUCTION_BACKUP_REF:-}"
+require_evidence_ref "matured escrow reconciliation" "${WALLET_RELEASE_PRODUCTION_RECONCILIATION_REF:-}"
+require_evidence_ref "independent owner/finance approval" "${WALLET_RELEASE_PRODUCTION_APPROVAL_REF:-}"
+
 if [[ ! -f "$CONFIG" ]]; then
   echo "Production Wrangler config is missing: $CONFIG"
   exit 1
@@ -88,6 +101,11 @@ fi
 
 echo "Target Worker: $WORKER_NAME"
 echo "Target D1: $CONFIG_NAME ($CONFIG_ID)"
+echo "Backup evidence reference: $WALLET_RELEASE_PRODUCTION_BACKUP_REF"
+echo "Escrow reconciliation reference: $WALLET_RELEASE_PRODUCTION_RECONCILIATION_REF"
+echo "Owner/finance approval reference: $WALLET_RELEASE_PRODUCTION_APPROVAL_REF"
 echo "No migrations will be applied by this script."
+echo "Validating production Worker build (dry run)..."
+bunx wrangler deploy --dry-run --config "$CONFIG"
 echo "Deploying scheduled Worker..."
 bunx wrangler deploy --config "$CONFIG"
