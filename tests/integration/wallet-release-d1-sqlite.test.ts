@@ -18,6 +18,7 @@ function makeD1() {
       "id" TEXT PRIMARY KEY,
       "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "walletId" TEXT NOT NULL REFERENCES "Wallet"("id"),
+      "kind" TEXT NOT NULL DEFAULT 'PREPAY',
       "netAmount" REAL NOT NULL,
       "status" TEXT NOT NULL,
       "holdUntil" TEXT,
@@ -122,6 +123,25 @@ describe("atomic escrow release D1 SQLite integration", () => {
     expect(sqlite.prepare('SELECT "status" FROM "WalletTransaction" WHERE "id" = ?').get("txn-1")).toEqual({ status: "PENDING" });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletReleaseGuard"').get()).toEqual({ count: 0 });
+  });
+
+  it("does not release a matured REFUND transaction as PREPAY escrow", async () => {
+    const { sqlite, d1 } = makeD1(); databases.push(sqlite);
+    sqlite.prepare('INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance", "pendingBalance") VALUES (?, ?, ?, ?)').run(
+      "wallet-1", "VERIFIED_IRR", 2000, 1000
+    );
+    sqlite.prepare('INSERT INTO "WalletTransaction" ("id", "financialUnitStatus", "walletId", "kind", "netAmount", "status", "holdUntil") VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+      "txn-refund", "VERIFIED_IRR", "wallet-1", "REFUND", 1000, "PENDING", "2026-10-30T09:00:00.000Z"
+    );
+
+    expect(await releaseWalletTransactionWithD1(
+      d1 as never, "wallet-1", "txn-refund", new Date("2026-10-30T10:00:00.000Z")
+    )).toBe(false);
+    expect(sqlite.prepare('SELECT "balance", "pendingBalance" FROM "Wallet" WHERE "id" = ?').get("wallet-1"))
+      .toEqual({ balance: 2000, pendingBalance: 1000 });
+    expect(sqlite.prepare('SELECT "status" FROM "WalletTransaction" WHERE "id" = ?').get("txn-refund"))
+      .toEqual({ status: "PENDING" });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
   });
 
   it("does not release a transaction whose IRR provenance is unverified", async () => {
