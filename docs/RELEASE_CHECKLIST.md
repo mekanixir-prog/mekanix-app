@@ -1,3 +1,5 @@
+> **Historical snapshot — superseded on 2026-11-24.** This document records an earlier release state and must not be used as the current Go/No-Go decision. The authoritative current status is [`docs/RELEASE_GATE_CURRENT.md`](RELEASE_GATE_CURRENT.md) and PR #186. Current decision: **NO-GO for merge to main and public production** until the exact-head checks, independent review, financial provenance, provider, remote D1, backup/restore, rollback and operational gates are evidenced.
+
 # MEKANIX — Release Checklist
 
 **Status date:** 2026-11-07  
