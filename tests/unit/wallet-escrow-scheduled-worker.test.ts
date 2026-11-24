@@ -77,6 +77,7 @@ describe("scheduled wallet escrow worker", () => {
     await runWorker(env);
 
     expect(env.pageQueries).toHaveLength(1);
+    expect(env.pageQueries[0]).toContain('"kind" = \'PREPAY\'');
     expect(env.pageBinds[0]).toEqual(["2026-10-30T12:00:00.000Z", 100]);
     expect(release).toHaveBeenCalledTimes(2);
     expect(release).toHaveBeenNthCalledWith(
