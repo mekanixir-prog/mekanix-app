@@ -286,3 +286,33 @@ The D1 release path now requires, in both the AVAILABLE transition predicate and
 Commits: `fdc3186890dcff77c808c759d581be11ca854d0f` (release predicate/guard) and `992ea08ec0b35fee58cfc86601b8c5fa8fa834f3` (malformed-ledger regression tests).
 
 This is a financial integrity hardening change. It invalidates the prior exact-head check result and requires a fresh complete workflow run on the new candidate SHA before any release decision.
+
+
+---
+
+## Integrated release-candidate audit update — 2026-11-24
+
+This section is the current workstream overlay. Exact current SHA and exact-head check status are maintained in PR #186.
+
+### Completed in the integrated candidate
+
+- Repository ruleset `main-production-protection` (ID `27880389`) was independently re-read from the live Rulesets API: Active, targets only `main`, one approval required, stale approvals dismissed, conversations resolved, strict/up-to-date checks, no bypass actors, deletion and force-push blocked. Exactly nine unique required contexts are configured once each, with CodeQL from GitHub Advanced Security and the other eight from GitHub Actions.
+- The current code-search/migration inventory was refreshed. The historical 34-file/7-file sync Prisma inventory is stale; production route consumers use `getDbForLib()`. The stale `db.worker.ts` comment was corrected.
+- The read-only financial provenance inventory now includes `PricingSnapshot.currency` in the VERIFIED_IRR currency contradiction query. A regression fixture asserts the third contradiction is found; no historical data is changed.
+- CARE periodic quote now applies the same supported vehicle/make scope guard as booking creation. Excluded passenger makes and unsupported `OTHER` equipment are rejected before pricing.
+- Technician detail reads now use `getSessionFromRequest()`, so an offline technician owner can access their own safe profile with the app's HttpOnly session cookie; unauthenticated offline profiles remain hidden.
+- Test-only Zarinpal sandbox adapter contracts, VIP callback race recovery, and Jobs/Service Request role-scope regressions from PRs #229, #231 and #233 were integrated after verifying the relevant production source files were unchanged from their common base.
+- PR #232's guarded production wallet escrow Worker config, 15-minute Cron, no-migrations deploy script, negative guard tests, Cloudflare dry-run and operator runbook were integrated. **The deploy script was not executed and no Worker was deployed.**
+- Known-issues and D1 migration inventory documentation was refreshed. KI-005 invoice duplicate handling and KI-006 withdrawal ledger atomicity are now marked resolved; CARE sequential timeline writes and phone identity canonicalization remain tracked in Issues #235 and #234.
+
+### Current remaining gates
+
+- All exact-head workflows must pass on the final PR #186 SHA after these integrations. Prior green results on earlier SHAs are superseded.
+- Independent human review/approval is still absent and required by the active ruleset.
+- Historical financial provenance must be reconciled from a controlled real-data snapshot; synthetic CI database checks do not establish real record provenance. See Issue #81.
+- Real SMS provider delivery and the complete real payment-provider sandbox lifecycle remain unverified; production remains fail-closed. See Issues #24 and the current production configuration.
+- The production wallet escrow Worker is configured but not deployed or observed. Deployment requires separately verified Cloudflare account/database IDs, recoverable backup, schema verification, reconciliation baseline, explicit approval, and observation of at least two 15-minute Cron cycles.
+- Remote D1 staging migration, real D1 runtime/rollback evidence, production backup/restore, monitoring and owner Go/No-Go remain outstanding.
+- CARE findings/inspection/health-report/mission timeline writes remain sequential on D1 and require atomic remediation (Issue #235). Legacy mechanic-application phone identity normalization requires a forward-only migration and cross-database tests (Issue #234).
+
+**Decision remains NO-GO for merging PR #186 into `main` or public production.** No merge, production deploy, remote D1 migration, real SMS/payment activation, payout or public launch was performed.
