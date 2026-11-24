@@ -12,8 +12,9 @@
 //   - In build time (Node.js): a PrismaClient with a mock adapter that
 //     satisfies the "adapter required" check without actually connecting
 //
-// The 63 consumers of sync `db` continue to import from "@/lib/db" — they
-// just get this proxy instead. Only /api/test/d1 uses async getDb().
+// Main-app production routes use getDbForLib() from "@/lib/db-access",
+// which resolves the request-scoped D1 client via getDb(). The sync db
+// export is retained for Node development/build compatibility only.
 
 import { PrismaClient } from "@prisma/client";
 
