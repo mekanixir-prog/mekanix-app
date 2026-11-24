@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type Asset = "passenger" | "heavy";
 type Card = {
@@ -16,9 +17,10 @@ const names:Record<string,string>={diagnostic:"دیاگ و عیب‌یابی",el
 const toToman=(v:number)=>Math.round(v/10), toIrr=(v:number)=>Math.round(v)*10;
 const fmt=(v:number)=>new Intl.NumberFormat("fa-IR").format(v);
 export default function PricingAdminPage(){
+ const router = useRouter();
  const [card,setCard]=useState<Card|null>(null),[history,setHistory]=useState<Card[]>([]);
  const [loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(""),[message,setMessage]=useState("");
- const load=useCallback(async()=>{setLoading(true);try{const r=await fetch("/api/admin-panel/pricing",{credentials:"same-origin",cache:"no-store"});if(r.status===401){window.location.href="/admin-panel";return;}const d=await r.json();if(!r.ok)throw new Error(d.error);setCard(d.current);setHistory(d.history||[]);}catch(e){setError(e instanceof Error?e.message:"خطای دریافت نرخ‌نامه");}finally{setLoading(false);}},[]);
+ const load=useCallback(async()=>{setLoading(true);try{const r=await fetch("/api/admin-panel/pricing",{credentials:"same-origin",cache:"no-store"});if(r.status===401){router.replace("/admin-panel");return;}const d=await r.json();if(!r.ok)throw new Error(d.error);setCard(d.current);setHistory(d.history||[]);}catch(e){setError(e instanceof Error?e.message:"خطای دریافت نرخ‌نامه");}finally{setLoading(false);}},[router]);
  useEffect(()=>{void load();},[load]);
  const setFee=(a:Asset,k:string,v:number)=>{if(card)setCard({...card,fees:{...card.fees,[a]:{...card.fees[a],[k]:k==="includedKm"?v:toIrr(v)}}});};
  const setService=(a:Asset,k:string,v:number)=>{if(card)setCard({...card,serviceFeesIrr:{...card.serviceFeesIrr,[a]:{...card.serviceFeesIrr[a],[k]:toIrr(v)}}});};
