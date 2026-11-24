@@ -71,6 +71,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     select: {
       status: true,
       customerApproved: true,
+      prepayPaid: true,
       updatedAt: true,
       technicianId: true,
       technician: {
@@ -317,6 +318,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       actorTechnicianId: actorTechnician?.id ?? null,
       invoice: invoiceInput,
       holdUntil,
+      prepayPaid: existing.prepayPaid,
       currentStatus: existing.status as PrismaJobStatus,
       expectedUpdatedAt: existing.updatedAt,
       nextStatus: (status ?? existing.status) as PrismaJobStatus,
