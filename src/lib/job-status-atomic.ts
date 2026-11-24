@@ -161,6 +161,12 @@ function assertRoleTransition(input: AtomicJobStatusInput) {
   const estimateTransition = input.currentStatus === "REPAIRING" && input.nextStatus === "WAITING_APPROVAL";
   if (estimateTransition !== Boolean(input.invoice)) throw new JobStatusConflictError();
   if (input.invoice) assertAtomicInvoiceInput(input.invoice, input.jobId);
+  if (input.nextStatus === "COMPLETED" && typeof input.prepayPaid !== "boolean") {
+    throw new JobStatusConflictError();
+  }
+  if (input.nextStatus === "COMPLETED" && input.prepayPaid === true && !input.holdUntil) {
+    throw new JobStatusConflictError();
+  }
   if (input.holdUntil && typeof input.prepayPaid !== "boolean") {
     throw new JobStatusConflictError();
   }
