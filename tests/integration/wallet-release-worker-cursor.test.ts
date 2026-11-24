@@ -15,6 +15,7 @@ function makeD1() {
     CREATE TABLE "WalletTransaction" (
       "id" TEXT PRIMARY KEY,
       "walletId" TEXT NOT NULL,
+      "kind" TEXT NOT NULL DEFAULT 'PREPAY',
       "status" TEXT NOT NULL,
       "holdUntil" TEXT
     );
@@ -59,6 +60,27 @@ describe("wallet release worker durable cursor — SQLite integration", () => {
   afterEach(() => {
     for (const database of databases.splice(0)) database.close();
     vi.clearAllMocks();
+  });
+
+  it("scans only PREPAY escrow and skips matured REFUND transactions", async () => {
+    const { sqlite, DB } = makeD1();
+    databases.push(sqlite);
+    const insert = sqlite.prepare(
+      'INSERT INTO "WalletTransaction" ("id", "walletId", "kind", "status", "holdUntil") VALUES (?, ?, ?, ?, ?)'
+    );
+    insert.run("txn-prepay", "wallet-prepay", "PREPAY", "PENDING", "2026-10-30T11:00:00.000Z");
+    insert.run("txn-refund", "wallet-refund", "REFUND", "PENDING", "2026-10-30T11:00:00.000Z");
+    release.mockResolvedValue(true);
+
+    await scheduledRun(DB);
+
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(release).toHaveBeenCalledWith(
+      DB, "wallet-prepay", "txn-prepay", new Date("2026-10-30T12:00:00.000Z")
+    );
+    expect(release).not.toHaveBeenCalledWith(
+      DB, "wallet-refund", "txn-refund", new Date("2026-10-30T12:00:00.000Z")
+    );
   });
 
   it("continues beyond the first 1,000 rows even when the oldest row keeps failing", async () => {
