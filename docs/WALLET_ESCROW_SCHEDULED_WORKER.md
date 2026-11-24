@@ -69,11 +69,14 @@ Before a production deployment, an operator must independently verify the produc
 ```bash
 export WALLET_RELEASE_PRODUCTION_DATABASE_ID="<independently verified production D1 database ID>"
 export WALLET_RELEASE_PRODUCTION_ACCOUNT_ID="<32-character Cloudflare account ID>"
+export WALLET_RELEASE_PRODUCTION_BACKUP_REF="<verified recoverable D1 backup reference>"
+export WALLET_RELEASE_PRODUCTION_RECONCILIATION_REF="<reviewed matured-escrow reconciliation reference>"
+export WALLET_RELEASE_PRODUCTION_APPROVAL_REF="<independent owner/finance approval reference>"
 export ALLOW_WALLET_RELEASE_PRODUCTION_DEPLOY=YES
 bun run deploy:wallet-release:production
 ```
 
-The script checks that the configured database name and Worker name are the expected production values, that the configured D1 ID exactly matches the operator-supplied confirmation, and that `wrangler whoami` reports the expected Cloudflare account ID. Only then does it run `wrangler deploy`. It does not run migrations, execute SQL, seed fixtures, or change application environment variables.
+The script requires non-placeholder references for the recoverable backup, matured-escrow reconciliation and independent owner/finance approval; it prints these evidence pointers in the deployment transcript (never secrets). It checks that the configured database name and Worker name are the expected production values, that the configured D1 ID exactly matches the operator-supplied confirmation, and that `wrangler whoami` reports the expected Cloudflare account ID. It then runs `wrangler deploy --dry-run` before the actual `wrangler deploy`. It does not run migrations, execute SQL, seed fixtures, or change application environment variables. The evidence references are operator confirmations, not automated proof that the artifacts are valid; verify them independently.
 
 **Pre-deployment gates (must be completed manually before setting the opt-in variable):**
 
