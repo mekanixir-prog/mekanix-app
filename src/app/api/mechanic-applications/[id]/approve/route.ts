@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { verifySession, requireRole } from "@/lib/auth";
 import { getPhoneLookupVariants } from "@/lib/phone-normalization";
+import { finalizeMechanicApprovalWithAudit, writeMechanicReviewClaimAudit } from "@/lib/admin-audit-atomic";
 
 function isUniqueConflict(error: unknown): boolean {
   const value = error as { code?: string; message?: string } | null;
@@ -76,11 +77,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   let reviewStatus = app.status;
   if (reviewStatus === "PENDING") {
-    const claim = await db.mechanicApplication.updateMany({
-      where: { id, status: "PENDING" },
-      data: { status: "APPROVING", reviewerId: session.userId },
+    const claimCount = await writeMechanicReviewClaimAudit(db, {
+      applicationId: id,
+      expectedStatus: "PENDING",
+      nextStatus: "APPROVING",
+      actor: { id: session.userId, role: session.role },
+      req,
     });
-    if (claim.count === 1) {
+    if (claimCount === 1) {
       reviewStatus = "APPROVING";
     } else {
       app = await db.mechanicApplication.findUnique({ where: { id } });
@@ -168,55 +172,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
   }
 
-  let finalizedByThisRequest = false;
-  if (reviewStatus === "APPROVING") {
-    const finalized = await db.mechanicApplication.updateMany({
-      where: { id, status: "APPROVING" },
-      data: {
-        status: "APPROVED",
-        userId: user.id,
-        reviewerId: session.userId,
-        reviewedAt: new Date(),
-        adminNotes: notes,
+  const finalizedResult = await finalizeMechanicApprovalWithAudit(db, {
+    applicationId: id,
+    userId: user.id,
+    actor: { id: session.userId, role: session.role },
+    req,
+    notes,
+  });
+  if (!finalizedResult.ok) {
+    app = await db.mechanicApplication.findUnique({ where: { id } });
+    return NextResponse.json(
+      {
+        error: "Application approval or technician provisioning could not be finalized",
+        code: "ACCOUNT_PROMOTION_CONFLICT",
+        status: app?.status ?? "MISSING",
       },
-    });
-    finalizedByThisRequest = finalized.count === 1;
-    if (!finalizedByThisRequest) {
-      app = await db.mechanicApplication.findUnique({ where: { id } });
-      if (app?.status !== "APPROVED") {
-        return NextResponse.json(
-          { error: "Application approval could not be finalized", status: app?.status ?? "MISSING" },
-          { status: 409 }
-        );
-      }
-    }
-  } else if (!app.userId) {
-    await db.mechanicApplication.updateMany({
-      where: { id, status: "APPROVED", userId: null },
-      data: { userId: user.id },
-    });
+      { status: 409 }
+    );
   }
-
-  // Promote only after the application is durably APPROVED. The conditional
-  // update prevents a concurrent account suspension or role change being lost.
-  if (user.role === "CUSTOMER") {
-    const promoted = await db.user.updateMany({
-      where: { id: user.id, role: "CUSTOMER", status: { not: "SUSPENDED" } },
-      data: { role: "TECHNICIAN" },
-    });
-    if (promoted.count !== 1) {
-      user = await db.user.findUnique({ where: { id: user.id }, select: AUTH_USER_SELECT });
-      if (!user || user.role !== "TECHNICIAN" || user.status === "SUSPENDED") {
-        return NextResponse.json(
-          { error: "Application approved but account promotion needs administrator review", code: "ACCOUNT_PROMOTION_CONFLICT" },
-          { status: 409 }
-        );
-      }
-    } else {
-      user = await db.user.findUnique({ where: { id: user.id }, select: AUTH_USER_SELECT });
-    }
-  }
-
+  const finalizedByThisRequest = finalizedResult.finalized;
+  user = await db.user.findUnique({ where: { id: user.id }, select: AUTH_USER_SELECT });
   if (!user || user.role !== "TECHNICIAN" || user.status === "SUSPENDED") {
     return NextResponse.json(
       { error: "Application approved but technician account is not ready", code: "ACCOUNT_PROMOTION_CONFLICT" },

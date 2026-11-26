@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { verifySession, requireRole } from "@/lib/auth";
+import { finalizeMechanicRejectionWithAudit, writeMechanicReviewClaimAudit } from "@/lib/admin-audit-atomic";
 
 // POST /api/mechanic-applications/[id]/reject — ADMIN ONLY.
 //
@@ -33,11 +34,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   if (app.status === "PENDING") {
-    const claim = await db.mechanicApplication.updateMany({
-      where: { id, status: "PENDING" },
-      data: { status: "REJECTING", reviewerId: session.userId },
+    const claimCount = await writeMechanicReviewClaimAudit(db, {
+      applicationId: id,
+      expectedStatus: "PENDING",
+      nextStatus: "REJECTING",
+      actor: { id: session.userId, role: session.role },
+      req,
     });
-    if (claim.count !== 1) {
+    if (claimCount !== 1) {
       app = await db.mechanicApplication.findUnique({ where: { id } });
       if (!app || app.status !== "REJECTING") {
         return NextResponse.json(
@@ -53,24 +57,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     );
   }
 
-  const finalized = await db.mechanicApplication.updateMany({
-    where: { id, status: "REJECTING" },
-    data: {
-      status: "REJECTED",
-      reviewerId: session.userId,
-      reviewedAt: new Date(),
-      adminNotes: notes,
-    },
+  const finalized = await finalizeMechanicRejectionWithAudit(db, {
+    applicationId: id,
+    actor: { id: session.userId, role: session.role },
+    req,
+    notes,
   });
-
-  if (finalized.count !== 1) {
+  if (!finalized.ok) {
     app = await db.mechanicApplication.findUnique({ where: { id } });
-    if (app?.status !== "REJECTED") {
-      return NextResponse.json(
-        { error: "Application rejection could not be finalized", status: app?.status ?? "MISSING" },
-        { status: 409 }
-      );
-    }
+    return NextResponse.json(
+      { error: "Application rejection could not be finalized", status: app?.status ?? "MISSING" },
+      { status: 409 }
+    );
   }
 
   const updated = await db.mechanicApplication.findUnique({ where: { id } });

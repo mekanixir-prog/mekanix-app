@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   technicianFindUnique: vi.fn(),
   technicianCreate: vi.fn(),
   notificationCreate: vi.fn(),
+  auditCreate: vi.fn(),
+  auditUpsert: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -20,6 +22,22 @@ vi.mock("@/lib/auth", () => ({
 }));
 vi.mock("@/lib/db-access", () => ({
   getDbForLib: vi.fn(async () => ({
+    $transaction: (callback: (tx: any) => Promise<unknown>) => callback({
+      mechanicApplication: {
+        updateMany: mocks.applicationUpdateMany,
+        findUnique: mocks.applicationFindUnique,
+      },
+      user: {
+        findUnique: mocks.userFindUnique,
+        updateMany: mocks.userUpdateMany,
+      },
+      auditLog: {
+        create: mocks.auditCreate,
+        upsert: mocks.auditUpsert,
+        findUnique: vi.fn(async () => null),
+      },
+    }),
+    auditLog: { create: mocks.auditCreate },
     mechanicApplication: {
       findUnique: mocks.applicationFindUnique,
       updateMany: mocks.applicationUpdateMany,
@@ -101,6 +119,8 @@ beforeEach(() => {
     return { ...currentTechnician };
   });
   mocks.notificationCreate.mockResolvedValue({ id: "notification-1" });
+  mocks.auditCreate.mockResolvedValue({ id: "audit-1" });
+  mocks.auditUpsert.mockImplementation(async ({ create }) => ({ id: create.id }));
 });
 
 describe("mechanic application review state machine", () => {
@@ -138,6 +158,14 @@ describe("mechanic application review state machine", () => {
       where: { id: "application-1", status: "PENDING" },
       data: { status: "APPROVING", reviewerId: "admin-1" },
     });
+    expect(mocks.auditCreate).toHaveBeenCalledTimes(1);
+    expect(mocks.auditUpsert).toHaveBeenCalledTimes(1);
+    const claimEvent = JSON.parse(mocks.auditCreate.mock.calls[0][0].data.after);
+    const completedEvent = JSON.parse(mocks.auditUpsert.mock.calls[0][0].create.after);
+    expect(claimEvent.actor).toEqual({ id: "admin-1", role: "ADMIN" });
+    expect(claimEvent.outcome).toBe("IN_PROGRESS");
+    expect(completedEvent.outcome).toBe("SUCCESS");
+    expect(completedEvent.snapshot).toMatchObject({ id: "application-1", status: "APPROVED", technicianUserId: "user-1" });
   });
 
   it("resumes an interrupted approval that was already claimed", async () => {
