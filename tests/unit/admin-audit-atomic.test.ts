@@ -19,8 +19,8 @@ const req = new Request("https://mekanix.test/api/admin/write", {
 
 function prismaMock(overrides: Record<string, unknown> = {}) {
   const tx = {
-    servicePackage: { create: vi.fn(async ({ data }) => ({ id: "pkg-1", ...data })) },
-    maintenanceRule: { create: vi.fn(async ({ data }) => ({ id: "rule-1", ...data })) },
+    servicePackage: { create: vi.fn(async ({ data }) => ({ id: data.id, ...data })) },
+    maintenanceRule: { create: vi.fn(async ({ data }) => ({ id: data.id, ...data })) },
     mechanicApplication: {
       updateMany: vi.fn(async () => ({ count: 1 })),
       findUnique: vi.fn()
@@ -64,14 +64,17 @@ describe("durable admin audit events", () => {
 
   it("commits a CARE package and its audit event in one Prisma transaction", async () => {
     const { db, tx } = prismaMock();
-    await createCarePackageWithAudit(db as never, {
+    const created = await createCarePackageWithAudit(db as never, {
       name: "Periodic", nameFa: "دوره‌ای", description: null, category: "periodic", basePrice: 1200, order: 2,
     }, actor, req);
 
     expect(db.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.servicePackage.create.mock.calls[0][0].data.id).toBe(created.id);
     expect(tx.servicePackage.create).toHaveBeenCalledTimes(1);
     expect(tx.auditLog.create).toHaveBeenCalledTimes(1);
     const event = tx.auditLog.create.mock.calls[0][0].data;
+    expect(event.entityId).toBe(created.id);
+    expect(event.id).toBe(`audit_care_package_${created.id}`);
     const envelope = JSON.parse(event.after);
     expect(envelope.actor).toEqual(actor);
     expect(envelope.requestId).toBe("req-audit-test-001");

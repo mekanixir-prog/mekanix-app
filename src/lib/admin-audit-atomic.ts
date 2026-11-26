@@ -94,7 +94,7 @@ export async function createCarePackageWithAudit(
     return created;
   }
   return db.$transaction(async (tx) => {
-    const created = await tx.servicePackage.create({ data: input });
+    const created = await tx.servicePackage.create({ data: { id, ...input } });
     await tx.auditLog.create({ data: {
       id: auditId, adminId: actor.id, action: context.action, entity: context.entity, entityId: id,
       before: null, after: auditEnvelope(context, "SUCCESS"), ipAddress: req.headers.get("cf-connecting-ip"),
@@ -128,7 +128,7 @@ export async function createMaintenanceRuleWithAudit(
     return created;
   }
   return db.$transaction(async (tx) => {
-    const created = await tx.maintenanceRule.create({ data: input });
+    const created = await tx.maintenanceRule.create({ data: { id, ...input } });
     await tx.auditLog.create({ data: {
       id: auditId, adminId: actor.id, action: context.action, entity: context.entity, entityId: id,
       before: null, after: auditEnvelope(context, "SUCCESS"), ipAddress: req.headers.get("cf-connecting-ip"),
