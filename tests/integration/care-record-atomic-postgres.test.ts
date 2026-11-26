@@ -96,6 +96,27 @@ describe.skipIf(!postgresConfigured)("CARE record PostgreSQL atomicity integrati
     }
   }
 
+  async function withCareProfileFailure(action: () => Promise<unknown>) {
+    const token = crypto.randomUUID().replace(/-/g, "");
+    const functionName = `care_profile_fail_${token}`;
+    const triggerName = `care_profile_fail_trigger_${token}`;
+    await db!.$executeRawUnsafe(`
+      CREATE FUNCTION "${functionName}"() RETURNS trigger AS $$
+      BEGIN RAISE EXCEPTION 'injected CARE profile failure'; END;
+      $$ LANGUAGE plpgsql;
+    `);
+    await db!.$executeRawUnsafe(`
+      CREATE TRIGGER "${triggerName}" BEFORE INSERT OR UPDATE ON "VehicleCareProfile"
+      FOR EACH ROW EXECUTE FUNCTION "${functionName}"();
+    `);
+    try {
+      await action();
+    } finally {
+      await db!.$executeRawUnsafe(`DROP TRIGGER IF EXISTS "${triggerName}" ON "VehicleCareProfile"`);
+      await db!.$executeRawUnsafe(`DROP FUNCTION IF EXISTS "${functionName}"()`);
+    }
+  }
+
   function findingInput(bookingId: string) {
     return {
       bookingId, ...actor,
@@ -184,6 +205,17 @@ describe.skipIf(!postgresConfigured)("CARE record PostgreSQL atomicity integrati
     await withTimelineFailure(async () => {
       await expect(upsertCareHealthReportAtomically(db as never, healthInput(bookingId)))
         .rejects.toThrow("injected CARE record timeline failure");
+    });
+    expect(await db!.vehicleHealthReport.count({ where: { bookingId } })).toBe(0);
+    expect(await db!.vehicleCareProfile.count({ where: { vehicleId } })).toBe(0);
+    expect(await db!.serviceTimelineEvent.count({ where: { bookingId } })).toBe(0);
+  });
+
+  it("rolls back the health report when the PostgreSQL care-profile upsert fails", async () => {
+    const bookingId = await createBooking("health-profile-rollback");
+    await withCareProfileFailure(async () => {
+      await expect(upsertCareHealthReportAtomically(db as never, healthInput(bookingId)))
+        .rejects.toThrow("injected CARE profile failure");
     });
     expect(await db!.vehicleHealthReport.count({ where: { bookingId } })).toBe(0);
     expect(await db!.vehicleCareProfile.count({ where: { vehicleId } })).toBe(0);
