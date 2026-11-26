@@ -70,6 +70,12 @@ Configure these only in the protected production deployment environment; never c
 
 The guard derives the expected commit SHA from the checked-out Git revision. The signed manifest and signed approval must both bind to that exact SHA and the configured production D1 database ID.
 
+### Cryptographic key separation
+
+The manifest-signing key and every independent approver key MUST be distinct key pairs. The verifier compares their DER SubjectPublicKeyInfo SHA-256 fingerprints and rejects a configuration that assigns the same public key to both roles, even when both protected fingerprint values are internally correct.
+
+Key separation is also an operational custody requirement: the release-evidence private key and the independent approver private key must be generated, stored, and controlled separately. The approver key must remain under the control of the named independent owner/finance approver; it must not be shared with, copied into, or accessible to the release-manifest signer or deployment automation. Separate public-key fingerprints prove cryptographic key distinction, but cannot by themselves prove separate human custody or prevent one operator from controlling both private keys.
+
 ## Test policy
 
 Tests generate ephemeral key pairs and synthetic backup/report files in temporary directories. These keys and fixtures are test-only and are not trusted by production. The PostgreSQL CARE transaction integration test requires an isolated PostgreSQL `DATABASE_URL`; it must never be pointed at Production. The D1 SQLite integration tests use in-memory databases.

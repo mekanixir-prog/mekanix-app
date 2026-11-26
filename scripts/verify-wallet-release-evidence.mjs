@@ -218,6 +218,10 @@ export function verifyWalletReleaseEvidence({
   if (approverFingerprint !== trustedApprover.sha256?.toLowerCase()) {
     fail("independent approver public key fingerprint does not match the protected trust configuration");
   }
+
+  if (approverFingerprint === fingerprint) {
+    fail("manifest signing key and independent approver key must be different keys");
+  }
   const approvalSignaturePath = artifactPath(
     root, manifest.approval.signatureFile, "independent approval signature"
   );

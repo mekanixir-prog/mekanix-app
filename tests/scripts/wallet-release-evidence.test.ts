@@ -232,6 +232,18 @@ describe("signed wallet release evidence verification", () => {
       .toThrow(/independent approval must be issued after backup, restore and reconciliation are complete/);
   });
 
+  it("rejects reuse of the manifest signing key as the independent approver key", () => {
+    const evidence = createBundle();
+    evidence.approverKeys["independent-finance-reviewer"] = {
+      publicKeyPem: evidence.publicKeyPem,
+      sha256: evidence.expectedPublicKeySha256,
+      role: "FINANCE",
+    };
+
+    expect(() => verifyWalletReleaseEvidence(evidence))
+      .toThrow(/manifest signing key and independent approver key must be different keys/);
+  });
+
   it("rejects an approval signed by a key that is not the trusted approver key", () => {
     const evidence = createBundle();
     const attacker = generateKeyPairSync("rsa", { modulusLength: 2048 });
