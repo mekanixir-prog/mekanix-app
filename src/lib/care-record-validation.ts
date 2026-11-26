@@ -13,8 +13,8 @@ export async function getCareRecordIdempotency(
   bookingId: string,
   payload: unknown,
 ) {
-  const idempotencyKey = readIdempotencyKey(req) ?? `care-${kind}:${crypto.randomUUID()}`;
   const fingerprint = await requestFingerprint({ kind, bookingId, payload });
+  const idempotencyKey = readIdempotencyKey(req) ?? `care-${kind}:${fingerprint}`;
   return { idempotencyKey, requestFingerprint: fingerprint };
 }
 

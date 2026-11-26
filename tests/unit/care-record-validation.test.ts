@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CareRecordValidationError,
+  getCareRecordIdempotency,
   readCareJsonRequest,
   validateFindingPayload,
   validateHealthReportPayload,
@@ -8,6 +9,21 @@ import {
 } from "@/lib/care-record-validation";
 
 describe("CARE record request validation", () => {
+  it("derives stable replay keys from the payload and honors explicit Idempotency-Key headers", async () => {
+    const payload = { title: "Oil leak", severity: "HIGH" };
+    const request = new Request("https://local.test", { method: "POST" });
+    const first = await getCareRecordIdempotency(request, "finding", "booking-1", payload);
+    const replay = await getCareRecordIdempotency(request, "finding", "booking-1", payload);
+    expect(replay).toEqual(first);
+
+    const explicit = await getCareRecordIdempotency(new Request("https://local.test", {
+      method: "POST",
+      headers: { "Idempotency-Key": "client-retry-001" },
+    }), "finding", "booking-1", payload);
+    expect(explicit.idempotencyKey).toBe("client-retry-001");
+    expect(explicit.requestFingerprint).toBe(first.requestFingerprint);
+  });
+
   it("rejects malformed and oversized request bodies before writes", async () => {
     await expect(readCareJsonRequest(new Request("https://local.test", {
       method: "POST",
