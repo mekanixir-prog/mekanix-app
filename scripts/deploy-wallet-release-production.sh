@@ -14,18 +14,19 @@ if [[ "${ALLOW_WALLET_RELEASE_PRODUCTION_DEPLOY:-}" != "YES" ]]; then
   exit 1
 fi
 
-require_evidence_ref() {
-  local label="$1"
-  local value="$2"
-  if [[ -z "$value" || "$value" == "TODO" || "$value" == "TBD" || "$value" == "CHANGE_ME" ]]; then
-    echo "Refusing production deployment: provide a verified $label evidence reference."
+require_evidence_setting() {
+  local name="$1"
+  if [[ -z "${!name:-}" ]]; then
+    echo "Refusing production deployment: protected evidence setting $name is required."
     exit 1
   fi
 }
 
-require_evidence_ref "recoverable D1 backup" "${WALLET_RELEASE_PRODUCTION_BACKUP_REF:-}"
-require_evidence_ref "matured escrow reconciliation" "${WALLET_RELEASE_PRODUCTION_RECONCILIATION_REF:-}"
-require_evidence_ref "independent owner/finance approval" "${WALLET_RELEASE_PRODUCTION_APPROVAL_REF:-}"
+require_evidence_setting "WALLET_RELEASE_EVIDENCE_DIR"
+require_evidence_setting "WALLET_RELEASE_EVIDENCE_PUBLIC_KEY_PEM"
+require_evidence_setting "WALLET_RELEASE_EVIDENCE_PUBLIC_KEY_SHA256"
+require_evidence_setting "WALLET_RELEASE_ALLOWED_APPROVER_IDS"
+require_evidence_setting "WALLET_RELEASE_APPROVER_KEYS_JSON"
 
 if [[ ! -f "$CONFIG" ]]; then
   echo "Production Wrangler config is missing: $CONFIG"
@@ -36,6 +37,12 @@ if [[ -z "${WALLET_RELEASE_PRODUCTION_DATABASE_ID:-}" ]]; then
   echo "Set WALLET_RELEASE_PRODUCTION_DATABASE_ID to the production D1 ID independently verified in Cloudflare."
   exit 1
 fi
+
+cd "$REPO_DIR"
+WALLET_RELEASE_EXPECTED_COMMIT_SHA="$(git rev-parse HEAD)"
+export WALLET_RELEASE_EXPECTED_COMMIT_SHA
+echo "Verifying signed backup, restore, reconciliation and independent approval evidence..."
+bun "$REPO_DIR/scripts/verify-wallet-release-evidence.mjs"
 
 if [[ -z "${WALLET_RELEASE_PRODUCTION_ACCOUNT_ID:-}" ]] || \
    ! [[ "$WALLET_RELEASE_PRODUCTION_ACCOUNT_ID" =~ ^[a-fA-F0-9]{32}$ ]]; then
@@ -101,9 +108,7 @@ fi
 
 echo "Target Worker: $WORKER_NAME"
 echo "Target D1: $CONFIG_NAME ($CONFIG_ID)"
-echo "Backup evidence reference: $WALLET_RELEASE_PRODUCTION_BACKUP_REF"
-echo "Escrow reconciliation reference: $WALLET_RELEASE_PRODUCTION_RECONCILIATION_REF"
-echo "Owner/finance approval reference: $WALLET_RELEASE_PRODUCTION_APPROVAL_REF"
+echo "Signed evidence bundle verified for commit $WALLET_RELEASE_EXPECTED_COMMIT_SHA."
 echo "No migrations will be applied by this script."
 echo "Validating production Worker build (dry run)..."
 bunx wrangler deploy --dry-run --config "$CONFIG"

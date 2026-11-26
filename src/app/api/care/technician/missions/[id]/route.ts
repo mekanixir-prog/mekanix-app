@@ -12,6 +12,7 @@ import {
   requireBookingParticipant,
   validateTransition,
 } from "@/lib/care-auth";
+import { recordCareStatusTransition } from "@/lib/care-status-atomic";
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const db = await getDbForLib();
@@ -71,7 +72,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
   const existing = await db.serviceBooking.findUnique({
     where: { id },
-    select: { id: true, status: true, technicianId: true },
+    select: { id: true, status: true, technicianId: true, updatedAt: true },
   });
   if (!existing) {
     return NextResponse.json({ error: "سفارش یافت نشد" }, { status: 404 });
@@ -97,33 +98,31 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const transitionError = validateTransition(session.role, existing.status, status);
   if (transitionError) return transitionError;
 
-  // Include the authenticated technician's profile ID in the compare-and-set.
-  // If assignment changes after the read above, updateMany affects zero rows.
+  // The status update and audit event are committed as one transaction.
+  // The expected timestamp prevents stale transitions from being replayed.
   try {
-    const result = await db.serviceBooking.updateMany({
-      where: {
-        id,
-        status: existing.status,
-        ...(actorTechnicianId ? { technicianId: actorTechnicianId } : {}),
-      },
-      data: { status },
+    const updated = await recordCareStatusTransition(db as never, {
+      bookingId: id,
+      expectedStatus: existing.status,
+      expectedUpdatedAt: existing.updatedAt,
+      nextStatus: status,
+      technicianId: actorTechnicianId,
+      actorId: session.userId,
     });
-    if (result.count === 0) {
+    if (!updated) {
       return NextResponse.json(
         { error: "وضعیت یا تخصیص سفارش هم‌زمان تغییر کرده است؛ صفحه را بازخوانی و دوباره تلاش کنید" },
         { status: 409 }
       );
     }
-    await db.serviceTimelineEvent.create({
-      data: {
-        bookingId: id,
-        eventType: status.toLowerCase(),
-        actor: session.userId,
-      },
-    });
-    const updated = await db.serviceBooking.findUnique({ where: { id } });
     return NextResponse.json(updated);
   } catch (err) {
+    if (err instanceof Error && /unique|constraint|malformed JSON/i.test(err.message)) {
+      return NextResponse.json(
+        { error: "ثبت تغییر وضعیت انجام نشد؛ سفارش را بازخوانی و دوباره تلاش کنید" },
+        { status: 409 }
+      );
+    }
     throw err;
   }
 }

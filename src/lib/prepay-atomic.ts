@@ -282,12 +282,12 @@ export async function recordPrepayWithD1(
       "INSERT INTO \"WalletLedger\" (\"id\", \"walletId\", \"type\", \"amount\", \"balanceBefore\", " +
       "\"balanceAfter\", \"referenceType\", \"referenceId\", \"description\", \"idempotencyKey\", " +
       "\"financialUnitStatus\", \"createdAt\") " +
-      "SELECT ?, w.\"id\", 'COMMISSION', ?, w.\"pendingBalance\", w.\"pendingBalance\", " +
+      "SELECT ?, w.\"id\", 'COMMISSION', ?, w.\"pendingBalance\" + ?, w.\"pendingBalance\" + ?, " +
       "'Job', j.\"id\", ?, ?, 'VERIFIED_IRR', ? FROM \"Wallet\" w " +
       "JOIN \"Job\" j ON j.\"technicianId\" = ? " +
       "WHERE w.\"technicianId\" = ? AND w.\"financialUnitStatus\" = 'VERIFIED_IRR' " +
       "AND j.\"id\" = ? AND j.\"prepayPaid\" = 1 AND j.\"prepayPaidAt\" = ?"
-    ).bind(crypto.randomUUID(), -input.commission,
+    ).bind(crypto.randomUUID(), -input.commission, input.net, input.net,
       "Platform commission — " + input.jobCode, commissionLedgerKey, at,
       input.technicianId, input.technicianId, input.jobId, at),
     assertOneChange(),

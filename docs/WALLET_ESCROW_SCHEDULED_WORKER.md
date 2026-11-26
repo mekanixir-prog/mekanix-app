@@ -64,19 +64,23 @@ A production-specific configuration and guarded deployment script are now includ
 - Public `workers.dev` endpoint: disabled
 - D1 migration runner: intentionally not configured. The deploy command must not apply migrations.
 
-Before a production deployment, an operator must independently verify the production D1 database ID and Cloudflare account ID in the Cloudflare dashboard. The script requires all of the following and aborts if any check fails:
+Before a production deployment, an operator must independently verify the production D1 database ID and Cloudflare account ID in the Cloudflare dashboard. The signed-evidence settings below are mandatory and the guard fails closed if any are absent or invalid:
+
+The deploy guard now requires a signed evidence bundle rather than free-form reference strings. Configure the protected deployment settings described in [WALLET_RELEASE_SIGNED_EVIDENCE.md](./WALLET_RELEASE_SIGNED_EVIDENCE.md), including the pinned release-evidence public-key fingerprint, the independent approver allowlist and public-key fingerprints, the evidence directory, and the independently confirmed Cloudflare database/account IDs.
 
 ```bash
 export WALLET_RELEASE_PRODUCTION_DATABASE_ID="<independently verified production D1 database ID>"
 export WALLET_RELEASE_PRODUCTION_ACCOUNT_ID="<32-character Cloudflare account ID>"
-export WALLET_RELEASE_PRODUCTION_BACKUP_REF="<verified recoverable D1 backup reference>"
-export WALLET_RELEASE_PRODUCTION_RECONCILIATION_REF="<reviewed matured-escrow reconciliation reference>"
-export WALLET_RELEASE_PRODUCTION_APPROVAL_REF="<independent owner/finance approval reference>"
+export WALLET_RELEASE_EVIDENCE_DIR="<signed evidence bundle directory>"
+export WALLET_RELEASE_EVIDENCE_PUBLIC_KEY_PEM="<protected release evidence public key PEM>"
+export WALLET_RELEASE_EVIDENCE_PUBLIC_KEY_SHA256="<pinned SPKI SHA-256 fingerprint>"
+export WALLET_RELEASE_ALLOWED_APPROVER_IDS="<approved independent owner/finance IDs>"
+export WALLET_RELEASE_APPROVER_KEYS_JSON="<protected JSON map of approver public keys, fingerprints and roles>"
 export ALLOW_WALLET_RELEASE_PRODUCTION_DEPLOY=YES
 bun run deploy:wallet-release:production
 ```
 
-The script requires non-placeholder references for the recoverable backup, matured-escrow reconciliation and independent owner/finance approval; it prints these evidence pointers in the deployment transcript (never secrets). It checks that the configured database name and Worker name are the expected production values, that the configured D1 ID exactly matches the operator-supplied confirmation, and that `wrangler whoami` reports the expected Cloudflare account ID. It then runs `wrangler deploy --dry-run` before the actual `wrangler deploy`. It does not run migrations, execute SQL, seed fixtures, or change application environment variables. The evidence references are operator confirmations, not automated proof that the artifacts are valid; verify them independently.
+Before Cloudflare authentication or deployment, the guard verifies the signed manifest, exact commit SHA, production D1 identity, non-empty backup and digest, restore report, recent successful escrow reconciliation, and a separately signed approval from an allowlisted owner/finance identity. Evidence paths cannot escape the bundle. The script then checks the expected Worker/database configuration and active Cloudflare account, runs `wrangler deploy --dry-run`, and only then reaches the deploy command. It does not run migrations, execute SQL, seed fixtures, or change application environment variables.
 
 **Pre-deployment gates (must be completed manually before setting the opt-in variable):**
 

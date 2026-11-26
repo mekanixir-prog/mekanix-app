@@ -2,6 +2,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { recordPrepayWithD1 } from "@/lib/prepay-atomic";
+import { validatePrepayRecordSet, type PrepayRecordSet } from "@/lib/prepay-reconciliation";
 
 function makeD1() {
   const sqlite = new DatabaseSync(":memory:");
@@ -204,5 +205,86 @@ describe("atomic prepay D1 SQLite integration", () => {
       .toEqual({ pendingBalance: 100, totalEarned: 0, totalCommission: 0 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletTransaction"').get()).toEqual({ count: 0 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "WalletLedger"').get()).toEqual({ count: 0 });
+  });
+
+  it("reconciles the actual committed D1 rows and rejects a corrupted commission balance", async () => {
+    const { sqlite, d1 } = makeD1(); databases.push(sqlite); seed(sqlite);
+    expect(await recordPrepayWithD1(d1 as never, input)).toBe(true);
+
+    const job = sqlite.prepare('SELECT * FROM "Job" WHERE "id" = ?').get("job-1") as any;
+    const transactions = sqlite.prepare('SELECT * FROM "WalletTransaction" ORDER BY "kind"').all() as any[];
+    const ledgers = sqlite.prepare('SELECT * FROM "WalletLedger" ORDER BY "type"').all() as any[];
+    const recordSet: PrepayRecordSet = {
+      job: {
+        id: job.id,
+        prepayPaid: Boolean(job.prepayPaid),
+        prepayPaidAt: job.prepayPaidAt,
+        inspectionFee: job.inspectionFee,
+        travelFee: job.travelFee,
+        platformCommission: job.platformCommission,
+        netEarnings: job.netEarnings,
+        financialUnitStatus: job.financialUnitStatus,
+      },
+      prepayTransaction: {
+        walletId: transactions.find((row) => row.kind === "PREPAY")?.walletId,
+        jobId: transactions.find((row) => row.kind === "PREPAY")?.jobId,
+        kind: transactions.find((row) => row.kind === "PREPAY")?.kind,
+        status: transactions.find((row) => row.kind === "PREPAY")?.status,
+        grossAmount: transactions.find((row) => row.kind === "PREPAY")?.grossAmount,
+        commissionAmount: transactions.find((row) => row.kind === "PREPAY")?.commissionAmount,
+        netAmount: transactions.find((row) => row.kind === "PREPAY")?.netAmount,
+        idempotencyKey: transactions.find((row) => row.kind === "PREPAY")?.idempotencyKey,
+        financialUnitStatus: transactions.find((row) => row.kind === "PREPAY")?.financialUnitStatus,
+      },
+      commissionTransaction: {
+        walletId: transactions.find((row) => row.kind === "COMMISSION")?.walletId,
+        jobId: transactions.find((row) => row.kind === "COMMISSION")?.jobId,
+        kind: transactions.find((row) => row.kind === "COMMISSION")?.kind,
+        status: transactions.find((row) => row.kind === "COMMISSION")?.status,
+        grossAmount: transactions.find((row) => row.kind === "COMMISSION")?.grossAmount,
+        commissionAmount: transactions.find((row) => row.kind === "COMMISSION")?.commissionAmount,
+        netAmount: transactions.find((row) => row.kind === "COMMISSION")?.netAmount,
+        idempotencyKey: transactions.find((row) => row.kind === "COMMISSION")?.idempotencyKey,
+        financialUnitStatus: transactions.find((row) => row.kind === "COMMISSION")?.financialUnitStatus,
+      },
+      holdLedger: {
+        walletId: ledgers.find((row) => row.type === "HOLD")?.walletId,
+        type: ledgers.find((row) => row.type === "HOLD")?.type,
+        amount: ledgers.find((row) => row.type === "HOLD")?.amount,
+        balanceBefore: ledgers.find((row) => row.type === "HOLD")?.balanceBefore,
+        balanceAfter: ledgers.find((row) => row.type === "HOLD")?.balanceAfter,
+        referenceType: ledgers.find((row) => row.type === "HOLD")?.referenceType,
+        referenceId: ledgers.find((row) => row.type === "HOLD")?.referenceId,
+        idempotencyKey: ledgers.find((row) => row.type === "HOLD")?.idempotencyKey,
+        financialUnitStatus: ledgers.find((row) => row.type === "HOLD")?.financialUnitStatus,
+      },
+      commissionLedger: {
+        walletId: ledgers.find((row) => row.type === "COMMISSION")?.walletId,
+        type: ledgers.find((row) => row.type === "COMMISSION")?.type,
+        amount: ledgers.find((row) => row.type === "COMMISSION")?.amount,
+        balanceBefore: ledgers.find((row) => row.type === "COMMISSION")?.balanceBefore,
+        balanceAfter: ledgers.find((row) => row.type === "COMMISSION")?.balanceAfter,
+        referenceType: ledgers.find((row) => row.type === "COMMISSION")?.referenceType,
+        referenceId: ledgers.find((row) => row.type === "COMMISSION")?.referenceId,
+        idempotencyKey: ledgers.find((row) => row.type === "COMMISSION")?.idempotencyKey,
+        financialUnitStatus: ledgers.find((row) => row.type === "COMMISSION")?.financialUnitStatus,
+      },
+    };
+
+    expect(recordSet.holdLedger).toMatchObject({ balanceBefore: 100, balanceAfter: 1000 });
+    expect(recordSet.commissionLedger).toMatchObject({ balanceBefore: 1000, balanceAfter: 1000 });
+    expect(validatePrepayRecordSet(recordSet)).toEqual({ ok: true });
+
+    sqlite.prepare('UPDATE "WalletLedger" SET "balanceBefore" = 100, "balanceAfter" = 100 WHERE "type" = ?')
+      .run("COMMISSION");
+    const corrupted = sqlite.prepare('SELECT * FROM "WalletLedger" WHERE "type" = ?').get("COMMISSION") as any;
+    expect(validatePrepayRecordSet({
+      ...recordSet,
+      commissionLedger: {
+        ...recordSet.commissionLedger!,
+        balanceBefore: corrupted.balanceBefore,
+        balanceAfter: corrupted.balanceAfter,
+      },
+    })).toMatchObject({ ok: false, reason: "COMMISSION_LEDGER_MISMATCH" });
   });
 });
