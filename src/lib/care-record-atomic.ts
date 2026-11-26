@@ -195,11 +195,17 @@ async function runD1CareBatch(
   db: PrismaClient,
   input: BookingInput,
   d1: D1Database,
+  kind: CareRecordKind,
   statements: D1Statement[],
 ) {
   try {
     await d1.batch(statements);
+    return null;
   } catch (error) {
+    // A concurrent request with the same key may have committed first.
+    // Re-read the durable event before returning a conflict to the caller.
+    const replay = await findCareRecordReplay(db, input, kind);
+    if (replay) return replay;
     await throwD1BookingGuardError(db, input, error);
   }
 }
@@ -214,7 +220,7 @@ export async function createCareFindingAtomically(db: PrismaClient, input: Creat
 
   if (d1) {
     const timestamp = now.toISOString();
-    await runD1CareBatch(db, input, d1, [
+    const d1Replay = await runD1CareBatch(db, input, d1, "finding", [
       ...await d1BookingClaim(db, d1, input, timestamp),
       d1.prepare(`
         INSERT INTO "Finding"
@@ -243,6 +249,7 @@ export async function createCareFindingAtomically(db: PrismaClient, input: Creat
       ),
       assertOneChange(d1),
     ]);
+    if (d1Replay) return d1Replay;
     const created = await db.finding.findUnique({ where: { id: findingId } });
     if (!created) throw new Error("CARE finding could not be loaded after D1 batch");
     return created;
@@ -294,7 +301,7 @@ export async function upsertCareInspectionAtomically(db: PrismaClient, input: Up
 
   if (d1) {
     const timestamp = now.toISOString();
-    await runD1CareBatch(db, input, d1, [
+    const d1Replay = await runD1CareBatch(db, input, d1, "inspection", [
       ...await d1BookingClaim(db, d1, input, timestamp),
       d1.prepare(`
         INSERT INTO "Inspection"
@@ -329,6 +336,7 @@ export async function upsertCareInspectionAtomically(db: PrismaClient, input: Up
       ),
       assertOneChange(d1),
     ]);
+    if (d1Replay) return d1Replay;
     const inspection = await db.inspection.findUnique({ where: { bookingId: input.bookingId } });
     if (!inspection) throw new Error("CARE inspection could not be loaded after D1 batch");
     return inspection;
@@ -411,7 +419,7 @@ export async function upsertCareHealthReportAtomically(db: PrismaClient, input: 
       input.coolingScore, input.beltScore, input.leakScore, input.diagnosticScore,
       input.categories, input.evidence, input.actorUserId,
     ];
-    await runD1CareBatch(db, input, d1, [
+    const d1Replay = await runD1CareBatch(db, input, d1, "health-report", [
       ...await d1BookingClaim(db, d1, input, timestamp),
       d1.prepare(`
         INSERT INTO "VehicleHealthReport"
@@ -466,6 +474,7 @@ export async function upsertCareHealthReportAtomically(db: PrismaClient, input: 
       ),
       assertOneChange(d1),
     ]);
+    if (d1Replay) return d1Replay;
     const report = await db.vehicleHealthReport.findUnique({ where: { bookingId: input.bookingId } });
     if (!report) throw new Error("CARE health report could not be loaded after D1 batch");
     return report;

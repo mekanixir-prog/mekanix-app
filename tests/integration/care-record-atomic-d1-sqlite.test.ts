@@ -203,7 +203,9 @@ describe("CARE record D1 atomicity — SQLite integration", () => {
       createCareFindingAtomically(db, findingInput),
       createCareFindingAtomically(db, findingInput),
     ]);
-    expect(outcomes.filter((item) => item.status === "fulfilled").length).toBeGreaterThanOrEqual(1);
+    expect(outcomes.every((item) => item.status === "fulfilled")).toBe(true);
+    const replayed = outcomes.map((item) => item.status === "fulfilled" ? item.value : null);
+    expect(replayed[0]?.id).toBe(replayed[1]?.id);
     await createCareFindingAtomically(db, findingInput);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "Finding"').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceTimelineEvent"').get()).toEqual({ count: 1 });
@@ -234,7 +236,9 @@ describe("CARE record D1 atomicity — SQLite integration", () => {
       upsertCareInspectionAtomically(db, inspectionInput),
       upsertCareInspectionAtomically(db, inspectionInput),
     ]);
-    expect(outcomes.filter((item) => item.status === "fulfilled").length).toBeGreaterThanOrEqual(1);
+    expect(outcomes.every((item) => item.status === "fulfilled")).toBe(true);
+    const replayed = outcomes.map((item) => item.status === "fulfilled" ? item.value : null);
+    expect(replayed[0]?.id).toBe(replayed[1]?.id);
     await upsertCareInspectionAtomically(db, inspectionInput);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "Inspection"').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceTimelineEvent"').get()).toEqual({ count: 1 });
@@ -268,7 +272,9 @@ describe("CARE record D1 atomicity — SQLite integration", () => {
       upsertCareHealthReportAtomically(db, healthInput),
       upsertCareHealthReportAtomically(db, healthInput),
     ]);
-    expect(outcomes.filter((item) => item.status === "fulfilled").length).toBeGreaterThanOrEqual(1);
+    expect(outcomes.every((item) => item.status === "fulfilled")).toBe(true);
+    const replayed = outcomes.map((item) => item.status === "fulfilled" ? item.value : null);
+    expect(replayed[0]?.id).toBe(replayed[1]?.id);
     await upsertCareHealthReportAtomically(db, healthInput);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "VehicleHealthReport"').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "VehicleCareProfile"').get()).toEqual({ count: 1 });

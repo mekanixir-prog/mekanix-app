@@ -147,7 +147,9 @@ describe.skipIf(!postgresConfigured)("CARE record PostgreSQL atomicity integrati
       createCareFindingAtomically(db as never, findingInput(bookingId)),
       createCareFindingAtomically(db as never, findingInput(bookingId)),
     ]);
-    expect(outcomes.filter((item) => item.status === "fulfilled").length).toBeGreaterThanOrEqual(1);
+    expect(outcomes.every((item) => item.status === "fulfilled")).toBe(true);
+    const replayed = outcomes.map((item) => item.status === "fulfilled" ? item.value : null);
+    expect(replayed[0]?.id).toBe(replayed[1]?.id);
     await createCareFindingAtomically(db as never, findingInput(bookingId));
     expect(await db!.finding.count({ where: { bookingId } })).toBe(1);
     expect(await db!.serviceTimelineEvent.count({ where: { bookingId } })).toBe(1);
@@ -169,7 +171,9 @@ describe.skipIf(!postgresConfigured)("CARE record PostgreSQL atomicity integrati
       upsertCareInspectionAtomically(db as never, inspectionInput(bookingId)),
       upsertCareInspectionAtomically(db as never, inspectionInput(bookingId)),
     ]);
-    expect(outcomes.filter((item) => item.status === "fulfilled").length).toBeGreaterThanOrEqual(1);
+    expect(outcomes.every((item) => item.status === "fulfilled")).toBe(true);
+    const replayed = outcomes.map((item) => item.status === "fulfilled" ? item.value : null);
+    expect(replayed[0]?.id).toBe(replayed[1]?.id);
     await upsertCareInspectionAtomically(db as never, inspectionInput(bookingId));
     expect(await db!.inspection.count({ where: { bookingId } })).toBe(1);
     expect(await db!.serviceTimelineEvent.count({ where: { bookingId } })).toBe(1);
@@ -192,7 +196,9 @@ describe.skipIf(!postgresConfigured)("CARE record PostgreSQL atomicity integrati
       upsertCareHealthReportAtomically(db as never, healthInput(bookingId)),
       upsertCareHealthReportAtomically(db as never, healthInput(bookingId)),
     ]);
-    expect(outcomes.filter((item) => item.status === "fulfilled").length).toBeGreaterThanOrEqual(1);
+    expect(outcomes.every((item) => item.status === "fulfilled")).toBe(true);
+    const replayed = outcomes.map((item) => item.status === "fulfilled" ? item.value : null);
+    expect(replayed[0]?.id).toBe(replayed[1]?.id);
     await upsertCareHealthReportAtomically(db as never, healthInput(bookingId));
     expect(await db!.vehicleHealthReport.count({ where: { bookingId } })).toBe(1);
     expect(await db!.vehicleCareProfile.count({ where: { vehicleId } })).toBe(1);
