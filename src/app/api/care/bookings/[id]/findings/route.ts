@@ -2,18 +2,18 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireBookingParticipant, requireAssignedTechnician } from "@/lib/care-auth";
+import { getTechnicianFromSession } from "@/lib/auth";
 import { maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { CareRecordConflictError, CareRecordIdempotencyConflictError, CareRecordNotFoundError, createCareFindingAtomically } from "@/lib/care-record-atomic";
+import { CareRecordValidationError, getCareRecordIdempotency, readCareJsonRequest, validateFindingPayload } from "@/lib/care-record-validation";
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const db = await getDbForLib();
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
   const { id } = await ctx.params;
-
-  // BOLA: verify caller is a participant of this booking (customer-owner, assigned technician, or admin)
   const authErr = await requireBookingParticipant(session, id);
   if (authErr) return authErr;
-
   const findings = await db.finding.findMany({ where: { bookingId: id }, include: { approvals: true } });
   return NextResponse.json(findings.map((finding) => ({
     ...finding,
@@ -26,34 +26,27 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const session = await requireAuth(req);
   if (session instanceof NextResponse) return session;
   const { id } = await ctx.params;
-
-  // BOLA: only the ASSIGNED technician (or admin) may create findings for this booking
   const authErr = await requireAssignedTechnician(session, id);
   if (authErr) return authErr;
 
-  const body = await req.json();
-
-  // Create finding + timeline event sequentially
-  // (D1 has no $transaction; earlier writes stay if a later one throws).
-  const created = await db.finding.create({
-    data: {
+  try {
+    const payload = validateFindingPayload(await readCareJsonRequest(req, 48 * 1024));
+    const idempotency = await getCareRecordIdempotency(req, "finding", id, payload);
+    const technician = session.role === "TECHNICIAN" ? await getTechnicianFromSession(session) : null;
+    const created = await createCareFindingAtomically(db, {
       bookingId: id,
-      category: body.category,
-      title: body.title,
-      description: body.description,
-      severity: body.severity || "MEDIUM",
-      evidence: JSON.stringify(body.evidence || {}),
-      recommendedAction: body.recommendedAction || null,
-    },
-  });
-  await db.serviceTimelineEvent.create({
-    data: {
-      bookingId: id,
-      eventType: "extra_proposal",
-      actor: session.userId,
-      metadata: JSON.stringify({ findingId: created.id }),
-    },
-  });
-
-  return NextResponse.json(created);
+      actorRole: session.role === "ADMIN" ? "ADMIN" : "TECHNICIAN",
+      actorUserId: session.userId,
+      actorTechnicianId: technician?.id ?? null,
+      ...idempotency,
+      ...payload,
+    });
+    return NextResponse.json(created);
+  } catch (error) {
+    if (error instanceof CareRecordValidationError) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (error instanceof CareRecordIdempotencyConflictError) return NextResponse.json({ error: error.message }, { status: 409 });
+    if (error instanceof CareRecordNotFoundError) return NextResponse.json({ error: "سفارش یافت نشد" }, { status: 404 });
+    if (error instanceof CareRecordConflictError) return NextResponse.json({ error: "تخصیص سفارش هم‌زمان تغییر کرده است؛ صفحه را بازخوانی و دوباره تلاش کنید" }, { status: 409 });
+    throw error;
+  }
 }
