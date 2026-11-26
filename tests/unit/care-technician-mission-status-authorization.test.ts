@@ -34,12 +34,20 @@ beforeEach(() => {
   mocks.auth.mockResolvedValue({ userId: "tech-user", role: "TECHNICIAN" });
   mocks.technician.mockResolvedValue({ id: "tech-1", userId: "tech-user" });
   mocks.validateTransition.mockReturnValue(null);
-  mocks.findUnique.mockResolvedValue({ id: "booking-1", status: "ASSIGNED", technicianId: "tech-1" });
+  mocks.findUnique.mockResolvedValue({
+    id: "booking-1",
+    status: "ASSIGNED",
+    technicianId: "tech-1",
+    updatedAt: new Date("2026-11-26T10:00:00.000Z"),
+  });
   mocks.updateMany.mockResolvedValue({ count: 1 });
   mocks.timelineCreate.mockResolvedValue({});
   mocks.db.mockResolvedValue({
-    serviceBooking: { findUnique: mocks.findUnique, updateMany: mocks.updateMany },
-    serviceTimelineEvent: { create: mocks.timelineCreate },
+    serviceBooking: { findUnique: mocks.findUnique },
+    $transaction: vi.fn(async (callback) => callback({
+      serviceBooking: { findUnique: mocks.findUnique, updateMany: mocks.updateMany },
+      serviceTimelineEvent: { create: mocks.timelineCreate },
+    })),
   });
 });
 
@@ -50,8 +58,13 @@ describe("PATCH /api/care/technician/missions/[id] assignment-bound CAS", () => 
 
     expect(response.status).toBe(409);
     expect(mocks.updateMany).toHaveBeenCalledWith({
-      where: { id: "booking-1", status: "ASSIGNED", technicianId: "tech-1" },
-      data: { status: "EN_ROUTE" },
+      where: {
+        id: "booking-1",
+        status: "ASSIGNED",
+        updatedAt: new Date("2026-11-26T10:00:00.000Z"),
+        technicianId: "tech-1",
+      },
+      data: { status: "EN_ROUTE", updatedAt: expect.any(Date) },
     });
     expect(mocks.timelineCreate).not.toHaveBeenCalled();
   });
