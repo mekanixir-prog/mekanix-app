@@ -4,11 +4,11 @@ import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 
 const previousMigration = readFileSync(
-  new URL("../../prisma/migrations/20261111000000_mechanic_application_phone_unique/migration.sql", import.meta.url),
+  new URL("../../prisma/migrations-sqlite/20261111000000_mechanic_application_phone_unique/migration.sql", import.meta.url),
   "utf8",
 );
 const canonicalMigration = readFileSync(
-  new URL("../../prisma/migrations/20261126000000_canonicalize_mechanic_application_phones/migration.sql", import.meta.url),
+  new URL("../../prisma/migrations-sqlite/20261126000000_canonicalize_mechanic_application_phones/migration.sql", import.meta.url),
   "utf8",
 );
 
