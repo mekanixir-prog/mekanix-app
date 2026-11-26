@@ -14,6 +14,50 @@ function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+function canonicalJson(value) {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  return `{${Object.keys(value).sort().map((key) =>
+    `${JSON.stringify(key)}:${canonicalJson(value[key])}`
+  ).join(",")}}`;
+}
+
+export function createWalletReleaseEvidenceStatement({
+  expectedCommitSha,
+  expectedDatabaseId,
+  manifest,
+  backup,
+  restore,
+  reconciliation,
+}) {
+  return {
+    schemaVersion: 1,
+    scope: "wallet-release-production",
+    commitSha: expectedCommitSha,
+    databaseId: expectedDatabaseId,
+    backup: {
+      file: manifest.backup.file,
+      sha256: backup.digest,
+      createdAt: manifest.backup.createdAt,
+    },
+    restore: {
+      file: manifest.backup.restoreReport.file,
+      sha256: restore.digest,
+      backupSha256: restore.data.backupSha256,
+      restoredAt: restore.data.restoredAt,
+    },
+    reconciliation: {
+      file: manifest.reconciliation.file,
+      sha256: reconciliation.digest,
+      completedAt: reconciliation.data.completedAt,
+    },
+  };
+}
+
+export function walletReleaseEvidenceStatementSha256(statement) {
+  return sha256(Buffer.from(canonicalJson(statement), "utf8"));
+}
+
 function readJson(path, label) {
   let value;
   try {
@@ -143,6 +187,21 @@ export function verifyWalletReleaseEvidence({
     fail("reconciliation report is incomplete, stale, failed, or references another database");
   }
 
+  const evidenceStatement = createWalletReleaseEvidenceStatement({
+    expectedCommitSha,
+    expectedDatabaseId,
+    manifest,
+    backup,
+    restore,
+    reconciliation,
+  });
+  const expectedEvidenceDigests = {
+    backupSha256: backup.digest,
+    restoreReportSha256: restore.digest,
+    reconciliationReportSha256: reconciliation.digest,
+    statementSha256: walletReleaseEvidenceStatementSha256(evidenceStatement),
+  };
+
   const approval = verifyArtifact(root, manifest.approval, "independent approval");
   const approvalData = approval.data;
   const approvers = new Set(allowedApproverIds);
@@ -176,6 +235,16 @@ export function verifyWalletReleaseEvidence({
       )) {
     fail("independent approver signature is invalid");
   }
+
+  const suppliedEvidenceDigests = approvalData.evidenceDigests;
+  if (!suppliedEvidenceDigests ||
+      Object.entries(expectedEvidenceDigests).some(([key, digest]) =>
+        typeof suppliedEvidenceDigests[key] !== "string" ||
+        suppliedEvidenceDigests[key].toLowerCase() !== digest
+      )) {
+    fail("independent approval does not bind the exact backup, restore, reconciliation and evidence statement digests");
+  }
+
   const approvedAt = Date.parse(approvalData.approvedAt);
   if (approvalData.approved !== true ||
       approvalData.scope !== "wallet-release-production" ||
@@ -186,6 +255,9 @@ export function verifyWalletReleaseEvidence({
       now.getTime() - approvedAt > 24 * 60 * 60_000) {
     fail("approval does not authorize this exact commit and production database within the required freshness window");
   }
+  if (approvedAt < Math.max(backupCreatedAt, restoredAt, reconciledAt)) {
+    fail("independent approval must be issued after backup, restore and reconciliation are complete");
+  }
   if (manifest.commitSha !== expectedCommitSha) {
     fail("signed evidence is not bound to the exact commit being deployed");
   }
@@ -195,7 +267,9 @@ export function verifyWalletReleaseEvidence({
     databaseId: expectedDatabaseId,
     commitSha: expectedCommitSha,
     backupSha256: backup.digest,
+    restoreReportSha256: restore.digest,
     reconciliationSha256: reconciliation.digest,
+    evidenceStatementSha256: expectedEvidenceDigests.statementSha256,
     approverId: approvalData.approverId,
     approverRole: approvalData.approverRole,
   };
