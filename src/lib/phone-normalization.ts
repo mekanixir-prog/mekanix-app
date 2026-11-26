@@ -1,9 +1,11 @@
 /**
  * Phone identity helpers shared by public applications and OTP account lookup.
  * Iranian domestic and international, plus common +1 formats map to one stored key.
+ * The compacting character set is intentionally ASCII and mirrors the SQLite/D1
+ * and PostgreSQL migration contract exactly (whitespace, hyphen, parentheses).
  */
 export function normalizePhoneForStorage(input: string): string {
-  const compact = input.replace(/[\s\-()]/g, "");
+  const compact = input.replace(/[ \t\n\v\f\r\-()]/g, "");
   const digits = compact.replace(/\D/g, "");
 
   if (digits.startsWith("98") && digits.length === 12) return `+${digits}`;
@@ -14,7 +16,7 @@ export function normalizePhoneForStorage(input: string): string {
 }
 
 export function getPhoneLookupVariants(input: string): string[] {
-  const compact = input.replace(/[\s\-()]/g, "");
+  const compact = input.replace(/[ \t\n\v\f\r\-()]/g, "");
   const digits = compact.replace(/\D/g, "");
   const canonical = normalizePhoneForStorage(input);
   const variants = new Set<string>([input, compact, digits, `+${digits}`, canonical]);
