@@ -209,7 +209,7 @@ jobs:
       - name: Run k6 smoke load against isolated Docker stack
         run: |
           mkdir -p k6-reports
-          docker run --rm --network host --user 0:0 \
+          docker run --rm --network host --user "$(id -u):$(id -g)" \
             -e BASE_URL=http://127.0.0.1:3000 \
             -e K6_SMOKE=true \
             -v "$PWD/k6-reports:/out" \
@@ -238,7 +238,7 @@ jobs:
           SAMPLER_PID=$!
           cleanup_sampler() { kill "$SAMPLER_PID" 2>/dev/null || true; wait "$SAMPLER_PID" 2>/dev/null || true; }
           trap cleanup_sampler EXIT
-          docker run --rm --network host --user 0:0 \
+          docker run --rm --network host --user "$(id -u):$(id -g)" \
             -e BASE_URL=http://127.0.0.1:3000 \
             -v "$PWD/k6-reports:/out" \
             -v "$PWD/scripts/load-test.js:/work/load-test.js:ro" \
