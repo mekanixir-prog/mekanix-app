@@ -59,6 +59,7 @@ jobs:
       
       - name: Validate staging compose and operational shell scripts
         run: |
+          python3 -m unittest discover -s tests/scripts -p 'test_*.py'
           bash -n scripts/lib/pg-service.sh scripts/backup-db.sh scripts/restore-db.sh scripts/test-backup-restore.sh scripts/deploy.sh scripts/deploy-staging.sh scripts/zap-scan.sh tests/scripts/zap-scan.test.sh tests/scripts/compose-secrets.test.sh
           bash tests/scripts/zap-scan.test.sh
           bash tests/scripts/compose-secrets.test.sh
