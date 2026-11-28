@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 import {
   requireBookingOwner,
   isValidTransition,
@@ -46,6 +47,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: "این تأییدیه متعلق به این سفارش نیست" }, { status: 403 });
   }
 
+  if (approval.financialUnitStatus !== "VERIFIED_IRR") {
+    return NextResponse.json({ error: "واحد و منشأ مالی این پیشنهاد تأیید نشده است", code: "CARE_EXTRA_PRICE_PROVENANCE_UNVERIFIED" }, { status: 409 });
+  }
   if (!isValidApprovalTransition(approval.status, "CUSTOMER_APPROVED")) {
     return NextResponse.json(
       {
@@ -74,7 +78,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       actorUserId: session.userId,
       decision: "CUSTOMER_APPROVED",
     });
-    return NextResponse.json({ ok: true, approval: updatedApproval });
+    return NextResponse.json({ ok: true, approval: maskFinancialFields(updatedApproval, ["partPrice", "laborPrice", "totalPrice"]) });
   } catch (error) {
     if (error instanceof CareExtraApprovalConflictError) {
       return NextResponse.json(

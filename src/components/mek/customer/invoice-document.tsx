@@ -11,12 +11,19 @@ import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/use-t";
 import { toast } from "sonner";
 import { toPersianDigits } from "@/lib/format";
+import { formatTomanFromIrr } from "@/lib/money/irr";
 
 export function InvoiceDocument({ customer }: { customer: DemoUser }) {
   const { params, back } = useApp();
-  const { t, isFa, money } = useT();
+  const { t, isFa } = useT();
   const [inv, setInv] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
+  const invoiceFinancialReady = inv?.financialUnitStatus === "VERIFIED_IRR" && inv.currency === "IRR";
+  const money = (value: number) => {
+    const amount = Number(value);
+    if (!invoiceFinancialReady || !Number.isSafeInteger(amount)) return "—";
+    return `${formatTomanFromIrr(amount, isFa ? "fa-IR" : "en-US")} ${isFa ? "تومان" : "Toman"}`;
+  };
 
   useEffect(() => {
     if (!params.jobId) return;
@@ -38,7 +45,6 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
   const parts = job?.parts ?? [];
   const tech = job?.technician;
   const cust = job?.request?.customer;
-  const fmtHours = (n: number) => (isFa ? toPersianDigits(n) : String(n));
 
   return (
     <div className="mx-auto max-w-3xl space-y-4" dir={isFa ? "rtl" : "ltr"}>
@@ -124,13 +130,13 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
             <tbody>
               <tr className="border-t border-border">
                 <td className="px-4 py-2.5">
-                  <span className="font-medium">{t("invoice.document.laborRow")}</span>
-                  <span className="ml-2 text-[11px] text-muted-foreground">{t("invoice.document.laborLine").replace("{hours}", fmtHours(inv.laborHours)).replace("{rate}", money(Number(inv.laborRate)))}</span>
+                  <span className="font-medium">{t("invoice.laborFixed")}</span>
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{fmtHours(inv.laborHours)}{t("common.hourShort")}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.laborRate))}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{isFa ? toPersianDigits(1) : "1"}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.laborTotal))}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.laborTotal))}</td>
               </tr>
+              {Number(inv.emergencyFee) > 0 && <tr className="border-t border-border"><td className="px-4 py-2.5"><span className="font-medium">{t("invoice.emergencyFee")}</span></td><td className="px-4 py-2.5 text-right tabular-nums">1</td><td className="px-4 py-2.5 text-right tabular-nums">—</td><td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.emergencyFee))}</td></tr>}
               {parts.map((p: any) => (
                 <tr key={p.id} className="border-t border-border">
                   <td className="px-4 py-2.5">
@@ -148,10 +154,17 @@ export function InvoiceDocument({ customer }: { customer: DemoUser }) {
                 <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.travelFee))}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.travelFee))}</td>
               </tr>
+              <tr className="border-t border-border">
+                <td className="px-4 py-2.5"><span className="font-medium">{t("invoice.inspectionFee")}</span></td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{isFa ? toPersianDigits(1) : "1"}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.inspectionFee))}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums">{money(Number(inv.inspectionFee))}</td>
+              </tr>
             </tbody>
           </table>
         </div>
 
+        {!invoiceFinancialReady && <div role="alert" className="mt-4 rounded-lg border border-amber/30 bg-amber/5 p-3 text-xs leading-6 text-muted-foreground">{isFa ? "واحد پول این فاکتور تأیید نشده است؛ مبالغ تا زمان تطبیق نمایش داده نمی‌شوند." : "Invoice currency provenance is unverified; amounts are hidden until reconciliation."}</div>}
         {/* Totals */}
         <div className="mt-4 flex justify-end">
           <div className="w-full max-w-xs space-y-1.5 text-sm">

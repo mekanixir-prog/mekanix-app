@@ -9,6 +9,7 @@ vi.mock("@opennextjs/cloudflare", () => ({
 
 import {
   CareBookingIdempotencyConflict,
+  CareBookingVehicleError,
   createCareBookingAtomically,
 } from "@/lib/care-booking-atomic";
 
@@ -29,6 +30,8 @@ const input = {
   pricing: {
     labor: 50000,
     travel: 15000,
+    inspection: 0,
+    emergency: 0,
     parts: 0,
     discount: 0,
     taxRate: 0.09,
@@ -39,10 +42,12 @@ const input = {
   },
 };
 
-function makeD1() {
+function makeD1(onBeforeBatch?: (sqlite: DatabaseSync) => void) {
   const sqlite = new DatabaseSync(":memory:");
   sqlite.exec(`
     PRAGMA foreign_keys = ON;
+    CREATE TABLE "Customer" ("id" TEXT PRIMARY KEY, "userId" TEXT NOT NULL UNIQUE);
+    CREATE TABLE "Vehicle" ("id" TEXT PRIMARY KEY, "customerId" TEXT NOT NULL, "type" TEXT NOT NULL, "make" TEXT NOT NULL);
     CREATE TABLE "ServiceBooking" (
       "id" TEXT PRIMARY KEY,
       "code" TEXT NOT NULL UNIQUE,
@@ -68,6 +73,8 @@ function makeD1() {
       "bookingId" TEXT UNIQUE,
       "servicePrice" REAL NOT NULL,
       "visitPrice" REAL NOT NULL,
+      "inspectionPrice" REAL NOT NULL,
+      "emergencyPrice" REAL NOT NULL,
       "laborPrice" REAL NOT NULL,
       "partsPrice" REAL NOT NULL,
       "discount" REAL NOT NULL,
@@ -76,6 +83,7 @@ function makeD1() {
       "total" REAL NOT NULL,
       "currency" TEXT NOT NULL,
       "pricingVersion" TEXT NOT NULL,
+      "financialUnitStatus" TEXT NOT NULL,
       "createdAt" TEXT NOT NULL,
       FOREIGN KEY ("bookingId") REFERENCES "ServiceBooking"("id")
     );
@@ -89,6 +97,9 @@ function makeD1() {
       FOREIGN KEY ("bookingId") REFERENCES "ServiceBooking"("id")
     );
   `);
+  sqlite.prepare('INSERT INTO "Customer" ("id", "userId") VALUES (?, ?)').run("customer-1", "user-1");
+  sqlite.prepare('INSERT INTO "Vehicle" ("id", "customerId", "type", "make") VALUES (?, ?, ?, ?)')
+    .run("vehicle-1", "customer-1", "EXCAVATOR", "Caterpillar");
   const d1 = {
     prepare(sql: string) {
       return {
@@ -98,6 +109,7 @@ function makeD1() {
       };
     },
     async batch(statements: Array<{ sql: string; values: unknown[] }>) {
+      onBeforeBatch?.(sqlite);
       sqlite.exec("BEGIN");
       try {
         const results = statements.map(({ sql, values }) => {
@@ -151,6 +163,7 @@ describe("CARE D1 booking atomicity — SQLite integration", () => {
     expect(new Set(results.map((booking) => booking.id)).size).toBe(1);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceBooking"').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "PricingSnapshot"').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT "emergencyPrice" FROM "PricingSnapshot"').get()).toEqual({ emergencyPrice: 0 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceTimelineEvent"').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT "pricingSnapshotId" FROM "ServiceBooking"').get()).toEqual({
       pricingSnapshotId: sqlite.prepare('SELECT "id" FROM "PricingSnapshot"').get()?.id,
@@ -173,6 +186,33 @@ describe("CARE D1 booking atomicity — SQLite integration", () => {
     expect(first.id).toBe(replay.id);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceBooking"').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "PricingSnapshot"').get()).toEqual({ count: 1 });
+  });
+
+  it("rejects an asset that changes to OTHER between preflight and the atomic D1 batch", async () => {
+    const { sqlite, d1 } = makeD1((database) => {
+      database.prepare('UPDATE "Vehicle" SET "type" = ? WHERE "id" = ?')
+        .run("OTHER", "vehicle-1");
+    });
+    databases.push(sqlite);
+    mocks.getCloudflareContext.mockResolvedValue({ env: { DB: d1 } });
+
+    await expect(createCareBookingAtomically(makeDb(sqlite), input))
+      .rejects.toBeInstanceOf(CareBookingVehicleError);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceBooking"').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "PricingSnapshot"').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceTimelineEvent"').get()).toEqual({ count: 0 });
+  });
+
+  it("rejects a vehicle owned by a different user at the D1 write boundary", async () => {
+    const { sqlite, d1 } = makeD1();
+    databases.push(sqlite);
+    sqlite.prepare('UPDATE "Customer" SET "userId" = ? WHERE "id" = ?')
+      .run("another-user", "customer-1");
+    mocks.getCloudflareContext.mockResolvedValue({ env: { DB: d1 } });
+
+    await expect(createCareBookingAtomically(makeDb(sqlite), input))
+      .rejects.toBeInstanceOf(CareBookingVehicleError);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM "ServiceBooking"').get()).toEqual({ count: 0 });
   });
 
   it("rolls back the booking when the pricing snapshot insert fails", async () => {

@@ -19,7 +19,7 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 10_000 },
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     locale: "fa-IR",
@@ -32,12 +32,19 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
-  webServer: {
-    command: "bun run dev",
-    url: "http://localhost:3000",
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-    stdout: "ignore",
-    stderr: "pipe",
-  },
+  // When PLAYWRIGHT_BASE_URL is supplied, tests target an already-running
+  // isolated environment (for example the PostgreSQL Docker E2E stack).
+  // Otherwise Playwright starts the local Next.js dev server as before.
+  ...(process.env.PLAYWRIGHT_BASE_URL
+    ? {}
+    : {
+        webServer: {
+          command: "bun run dev",
+          url: "http://localhost:3000",
+          reuseExistingServer: !process.env.CI,
+          timeout: 120_000,
+          stdout: "ignore" as const,
+          stderr: "pipe" as const,
+        },
+      }),
 });

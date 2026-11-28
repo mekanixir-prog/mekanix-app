@@ -1,0 +1,1 @@
+ALTER TABLE "Invoice" ADD COLUMN "inspectionFee" DECIMAL NOT NULL DEFAULT 0;

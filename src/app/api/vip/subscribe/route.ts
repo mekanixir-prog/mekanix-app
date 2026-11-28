@@ -1,7 +1,9 @@
+import { isPaymentSimulatorRouteEnabled } from "@/lib/payment-simulator-guard";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { createVipSubscriptionAtomically } from "@/lib/vip-subscription-atomic";
+import { isSafeStoredIrrAmount, maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 // Subscribe the authenticated user to a VIP plan.
 // userId is derived from the session — NEVER from the request body (BOLA fix).
@@ -16,7 +18,7 @@ import { createVipSubscriptionAtomically } from "@/lib/vip-subscription-atomic";
 export async function POST(req: Request) {
   // 1. Production guard — fail closed. This route is dev-only simulation
   //    until a real payment gateway integration exists.
-  if (process.env.NODE_ENV === "production") {
+  if (!isPaymentSimulatorRouteEnabled()) {
     return new NextResponse(null, { status: 404 });
   }
 
@@ -39,9 +41,11 @@ export async function POST(req: Request) {
 
   const db = await getDbForLib();
 
+  // The payment attempt is the authoritative purchase snapshot. A plan may be
+  // deactivated or edited after payment; that must not invalidate an already-paid entitlement.
   const plan = await db.vipPlan.findUnique({ where: { id: planId } });
-  if (!plan || !plan.active) {
-    return NextResponse.json({ error: "Plan not found or inactive" }, { status: 404 });
+  if (!plan) {
+    return NextResponse.json({ error: "Plan not found" }, { status: 404 });
   }
 
   // 3. Validate paymentId — must be a real SUCCEEDED payment by this user
@@ -55,9 +59,10 @@ export async function POST(req: Request) {
     !payment ||
     payment.userId !== userId ||
     payment.status !== "SUCCEEDED" ||
+    payment.financialUnitStatus !== "VERIFIED_IRR" ||
+    !isSafeStoredIrrAmount(payment.amount) ||
     payment.currency !== "IRR" ||
-    !payment.gatewayLogId ||
-    Number(payment.amount) < Number(plan.priceIrr)
+    !payment.gatewayLogId
   ) {
     return NextResponse.json({ error: "Invalid or insufficient payment" }, { status: 400 });
   }
@@ -72,7 +77,10 @@ export async function POST(req: Request) {
     !gatewayLog ||
     gatewayLog.userId !== userId ||
     gatewayLog.status !== "VERIFIED" ||
+    gatewayLog.financialUnitStatus !== "VERIFIED_IRR" ||
+    !isSafeStoredIrrAmount(gatewayLog.amount) ||
     gatewayLog.purpose !== "vip" ||
+    gatewayLog.targetPlanId !== planId ||
     gatewayLog.paymentId !== payment.id ||
     gatewayLog.currency !== payment.currency ||
     Number(gatewayLog.amount) !== Number(payment.amount)
@@ -80,17 +88,47 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Payment is not a verified VIP payment" }, { status: 400 });
   }
 
-  // Check if this payment has already been used for a VIP subscription
+  // Entitlement duration is immutable: use the value captured at payment initiation,
+  // never the mutable VipPlan.durationDays field.
+  const durationSnapshot = gatewayLog.targetPlanDurationDays;
+  if (typeof durationSnapshot !== "number" || !Number.isSafeInteger(durationSnapshot) || durationSnapshot <= 0 || durationSnapshot > 36500) {
+    return NextResponse.json({ error: "مدت ثبت‌شده برای این پرداخت معتبر نیست و نیاز به بررسی دارد", code: "VIP_DURATION_SNAPSHOT_MISSING" }, { status: 409 });
+  }
+  const durationDays = durationSnapshot;
+
+  // The paymentId unique constraint is the final replay guard. Return the
+  // already-created subscription for a retry instead of reporting a false
+  // failure or attempting to consume the same payment again.
   const existingSub = await db.userVipSubscription.findFirst({
     where: { paymentId, status: { in: ["ACTIVE", "CANCELLED", "EXPIRED"] } },
+    include: { plan: true },
   });
   if (existingSub) {
-    return NextResponse.json({ error: "این پرداخت قبلاً برای اشتراک VIP استفاده شده است" }, { status: 409 });
+    if (existingSub.userId !== userId || existingSub.planId !== planId) {
+      return NextResponse.json({ error: "پرداخت قبلاً به اشتراک دیگری متصل شده است" }, { status: 409 });
+    }
+    const existingStart = existingSub.startedAt instanceof Date ? existingSub.startedAt.getTime() : Date.parse(String(existingSub.startedAt ?? ""));
+    const existingExpiry = existingSub.expiresAt instanceof Date ? existingSub.expiresAt.getTime() : Date.parse(String(existingSub.expiresAt ?? ""));
+    if (!Number.isFinite(existingStart) || !Number.isFinite(existingExpiry) || existingExpiry - existingStart !== durationDays * 24 * 60 * 60 * 1000) {
+      return NextResponse.json({ error: "مدت اشتراک ثبت‌شده با مدت خرید تطبیق ندارد و نیاز به بررسی دارد", code: "VIP_EXISTING_DURATION_MISMATCH" }, { status: 409 });
+    }
+    return NextResponse.json({
+      ok: true,
+      alreadyProcessed: true,
+      subscription: {
+        ...existingSub,
+        plan: maskFinancialFields(existingSub.plan, ["priceIrr"]),
+      },
+    });
   }
 
   const startedAt = new Date();
-  const expiresAt = new Date(startedAt.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(startedAt.getTime() + durationDays * 24 * 60 * 60 * 1000);
 
+  // Simulator-preview initial fulfillment only. The scheduled outbox Worker
+  // independently retries/reconciles this same payment; both paths share the
+  // unique paymentId binding and atomic entitlement checks. Before live-provider
+  // activation, move to a single Worker-owned fulfillment path.
   // Replace the previous active subscription and consume this payment in one
   // database transaction (Prisma) or one transactional D1 batch. If creation
   // fails, the prior ACTIVE subscription remains intact.
@@ -110,6 +148,22 @@ export async function POST(req: Request) {
     if (!sub) throw new Error("VIP subscription could not be loaded after atomic creation");
   } catch (e: any) {
     if (e?.code === "P2002" || /unique constraint/i.test(String(e?.message ?? ""))) {
+      // A concurrent request may have consumed this payment after the initial
+      // read. Recover only the exact same payment/user/plan binding.
+      const racedSub = await db.userVipSubscription.findFirst({
+        where: { paymentId, status: { in: ["ACTIVE", "CANCELLED", "EXPIRED"] } },
+        include: { plan: true },
+      });
+      if (racedSub && racedSub.userId === userId && racedSub.planId === planId) {
+        return NextResponse.json({
+          ok: true,
+          alreadyProcessed: true,
+          subscription: {
+            ...racedSub,
+            plan: maskFinancialFields(racedSub.plan, ["priceIrr"]),
+          },
+        });
+      }
       return NextResponse.json(
         { error: "پرداخت قبلاً استفاده شده یا اشتراک فعال دیگری ثبت شده است" },
         { status: 409 }
@@ -122,10 +176,11 @@ export async function POST(req: Request) {
   try {
     await db.notification.create({
       data: {
+        id: `vip-activated:${paymentId}`,
         userId,
         type: "vip_activated",
-        title: "VIP activated",
-        body: `Your ${plan.name} plan is active until ${expiresAt.toLocaleDateString()}`,
+        title: "اشتراک VIP فعال شد",
+        body: "اشتراک VIP شما ثبت و فعال‌سازی شد.",
         category: "system",
         link: "customer/settings",
       },
@@ -134,5 +189,5 @@ export async function POST(req: Request) {
     console.error("[vip/subscribe] Failed to create notification (subscription still created):", e);
   }
 
-  return NextResponse.json({ ok: true, subscription: sub });
+  return NextResponse.json({ ok: true, subscription: sub ? { ...sub, plan: maskFinancialFields(sub.plan, ["priceIrr"]) } : sub });
 }

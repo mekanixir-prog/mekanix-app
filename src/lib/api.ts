@@ -10,6 +10,13 @@ export type Customer = Prisma.CustomerGetPayload<{ include: { user: true } }>;
 export type Technician = Prisma.TechnicianGetPayload<{
   include: { user: true; specialties: true; certifications: true; serviceAreas: true; };
 }>;
+export type PublicTechnician = Omit<Technician, "userId" | "user" | "serviceAreas"> & {
+  user: Pick<Technician["user"], "name" | "avatar">;
+  lat: null;
+  lng: null;
+  serviceAreas: Array<Pick<Technician["serviceAreas"][number], "name" | "radiusKm">>;
+  distanceKm?: number | null;
+};
 export type Vehicle = VehicleModel;
 export type ServiceRequest = Prisma.ServiceRequestGetPayload<{
   include: {
@@ -19,6 +26,19 @@ export type ServiceRequest = Prisma.ServiceRequestGetPayload<{
     job: { include: { technician: { include: { user: true } }; invoice: true; reviews: true } };
   };
 }>;
+export type CreateServiceRequestInput = {
+  vehicleId: string;
+  customerId?: string;
+  category: string;
+  urgency: string;
+  title: string;
+  description?: string;
+  mediaUrls?: string[];
+  voiceNote?: string | null;
+  address: string;
+  lat: number;
+  lng: number;
+};
 export type Job = Prisma.JobGetPayload<{
   include: {
     request: { include: { customer: { include: { user: true } }; vehicle: true } };
@@ -71,9 +91,14 @@ export const api = {
     if (params?.lat != null) q.set("lat", String(params.lat));
     if (params?.lng != null) q.set("lng", String(params.lng));
     if (params?.category) q.set("category", params.category);
-    return req<Technician[]>(`/api/technicians?${q.toString()}`);
+    return req<PublicTechnician[]>(`/api/technicians?${q.toString()}`);
   },
-  getTechnician: (id: string) => req<Technician>(`/api/technicians/${id}`),
+  getTechnician: (id: string) => req<PublicTechnician>(`/api/technicians/${id}`),
+  updateTechnicianAvailability: (id: string, availableNow: boolean, location?: { lat: number; lng: number }) =>
+    req<{ ok: boolean; status: "ONLINE" | "OFFLINE"; availableNow: boolean }>(
+      `/api/technicians/${id}/availability`,
+      { method: "PATCH", body: JSON.stringify({ availableNow, ...location }) }
+    ),
   listVehicles: (customerId: string) => req<Vehicle[]>(`/api/vehicles?customerId=${customerId}`).catch(() => []),
   createVehicle: (data: Partial<Vehicle> & { customerId: string }) =>
     req<Vehicle>(`/api/vehicles`, { method: "POST", body: JSON.stringify(data) }),
@@ -84,11 +109,16 @@ export const api = {
     if (technicianId) q.set("technicianId", technicianId);
     return req<{ data: ServiceRequest[]; total: number; page: number; limit: number } | ServiceRequest[]>(`/api/service-requests?${q.toString()}`).then((r: any) => Array.isArray(r) ? r : (r?.data ?? []));
   },
-  createRequest: (data: any, idempotencyKey: string) =>
+  createRequest: (data: CreateServiceRequestInput, idempotencyKey: string) =>
     req<ServiceRequest>(`/api/service-requests`, {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify(data),
+    }),
+  assignServiceRequest: (requestId: string, technicianId: string) =>
+    req<Job>(`/api/service-requests/${requestId}/assign`, {
+      method: "POST",
+      body: JSON.stringify({ technicianId }),
     }),
   listJobs: (params?: { technicianId?: string; customerId?: string; status?: string }) => {
     const q = new URLSearchParams();
@@ -122,6 +152,10 @@ export const api = {
   markAllRead: (userId: string) =>
     req<{ ok: boolean }>(`/api/notifications?userId=${userId}`, { method: "PATCH", body: JSON.stringify({ read: true }) }),
   adminList: (resource: string) => req<any[]>(`/api/admin/${resource}`),
+  approveMechanicApplication: (id: string, notes?: string) =>
+    req<any>(`/api/mechanic-applications/${id}/approve`, { method: "POST", body: JSON.stringify({ notes }) }),
+  rejectMechanicApplication: (id: string, notes?: string) =>
+    req<any>(`/api/mechanic-applications/${id}/reject`, { method: "POST", body: JSON.stringify({ notes }) }),
   adminUpdate: (resource: string, id: string, data: any) =>
     req<any>(`/api/admin/${resource}/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   getProfile: () => req<User>("/api/profile"),

@@ -60,12 +60,6 @@ describe("care-auth — isValidTransition (valid forward workflow)", () => {
     ).toBe(true);
   });
 
-  it("WAITING_CUSTOMER_APPROVAL → APPROVED is valid for FLEET_MANAGER", () => {
-    expect(
-      isValidTransition("FLEET_MANAGER", "WAITING_CUSTOMER_APPROVAL", "APPROVED")
-    ).toBe(true);
-  });
-
   it("APPROVED → IN_SERVICE is valid for TECHNICIAN", () => {
     expect(isValidTransition("TECHNICIAN", "APPROVED", "IN_SERVICE")).toBe(true);
   });
@@ -199,15 +193,16 @@ describe("care-auth — isValidTransition respects role", () => {
     expect(isValidTransition("PARTNER", "FINAL_CHECK", "COMPLETED")).toBe(false);
   });
 
-  it("FLEET_MANAGER mirrors CUSTOMER for the booking flow", () => {
-    // Can cancel pre-service
-    expect(isValidTransition("FLEET_MANAGER", "REQUESTED", "CANCELLED")).toBe(true);
-    expect(isValidTransition("FLEET_MANAGER", "ASSIGNED", "CANCELLED")).toBe(true);
-    // Can approve extras
+  it("FLEET_MANAGER has no booking transitions until fleet ownership is implemented", () => {
+    // A role label is not sufficient proof of ownership of an individual booking.
+    expect(isValidTransition("FLEET_MANAGER", "REQUESTED", "CANCELLED")).toBe(false);
+    expect(isValidTransition("FLEET_MANAGER", "ASSIGNED", "CANCELLED")).toBe(false);
     expect(
       isValidTransition("FLEET_MANAGER", "WAITING_CUSTOMER_APPROVAL", "APPROVED")
-    ).toBe(true);
-    // Cannot drive the workflow
+    ).toBe(false);
+    expect(
+      isValidTransition("FLEET_MANAGER", "WAITING_CUSTOMER_APPROVAL", "INSPECTING")
+    ).toBe(false);
     expect(isValidTransition("FLEET_MANAGER", "ASSIGNED", "EN_ROUTE")).toBe(false);
   });
 

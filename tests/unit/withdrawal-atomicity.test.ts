@@ -26,7 +26,9 @@ describe("atomic withdrawal creation", () => {
       },
       wallet: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-        findUnique: vi.fn().mockResolvedValue({ balance: 1500 }),
+        findUnique: vi.fn()
+          .mockResolvedValueOnce({ balance: 2000, financialUnitStatus: "VERIFIED_IRR" })
+          .mockResolvedValueOnce({ balance: 1500, financialUnitStatus: "VERIFIED_IRR" }),
       },
       walletLedger: { create: vi.fn().mockResolvedValue({}) },
     };
@@ -37,7 +39,7 @@ describe("atomic withdrawal creation", () => {
     await expect(createWithdrawalWithPrisma(db, input)).resolves.toBe(true);
     expect(db.$transaction).toHaveBeenCalledTimes(1);
     expect(tx.wallet.updateMany).toHaveBeenCalledWith({
-      where: { id: "wallet-1", balance: { gte: 500 } },
+      where: { id: "wallet-1", financialUnitStatus: "VERIFIED_IRR", balance: { gte: 500 } },
       data: { balance: { decrement: 500 } },
     });
     expect(tx.withdrawalRequest.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -69,7 +71,7 @@ describe("atomic withdrawal creation", () => {
   it("does not create a withdrawal when the conditional debit loses the race", async () => {
     const tx = {
       withdrawalRequest: { findUnique: vi.fn().mockResolvedValue(null), create: vi.fn() },
-      wallet: { updateMany: vi.fn().mockResolvedValue({ count: 0 }), findUnique: vi.fn() },
+      wallet: { updateMany: vi.fn().mockResolvedValue({ count: 0 }), findUnique: vi.fn().mockResolvedValue({ balance: 2000, financialUnitStatus: "VERIFIED_IRR" }) },
       walletLedger: { create: vi.fn() },
     };
     const db = { $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx)) } as any;
@@ -86,7 +88,9 @@ describe("atomic withdrawal creation", () => {
       },
       wallet: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-        findUnique: vi.fn().mockResolvedValue({ balance: 1500 }),
+        findUnique: vi.fn()
+          .mockResolvedValueOnce({ balance: 2000, financialUnitStatus: "VERIFIED_IRR" })
+          .mockResolvedValueOnce({ balance: 1500, financialUnitStatus: "VERIFIED_IRR" }),
       },
       walletLedger: { create: vi.fn().mockRejectedValue(new Error("ledger failed")) },
     };

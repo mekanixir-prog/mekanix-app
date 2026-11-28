@@ -4,7 +4,18 @@ import { fmtMoney } from "@/lib/format";
 describe("fmtMoney", () => {
   it("formats IRR as the stored amount without applying an exchange rate", () => {
     expect(fmtMoney(125_000, "IRR", "en")).toBe("﷼125,000");
-    expect(fmtMoney(125_000, "IRR", "fa")).toBe("﷼۱۲۵،۰۰۰");
+    expect(fmtMoney(125_000, "IRR", "fa")).toBe("۱۲،۵۰۰ تومان");
+  });
+
+  it("formats serialized Prisma decimal strings without changing the declared unit", () => {
+    expect(fmtMoney("125000", "IRR", "fa")).toBe("۱۲،۵۰۰ تومان");
+    expect(fmtMoney("1250.5", "USD", "en")).toBe("$1,250.5");
+    expect(fmtMoney(125_005, "IRR", "fa")).toBe("۱۲،۵۰۰.۵ تومان");
+  });
+
+  it("does not guess a currency for unknown currency codes", () => {
+    expect(fmtMoney(125000, "UNKNOWN", "en")).toBe("Unknown currency");
+    expect(fmtMoney(125000, "UNKNOWN", "fa")).toBe("واحد نامشخص");
   });
 
   it("preserves the declared USD currency for Persian and English users", () => {
@@ -12,10 +23,25 @@ describe("fmtMoney", () => {
     expect(fmtMoney(1_250.5, "USD", "fa")).toBe("$۱،۲۵۰.۵");
   });
 
+  it("uses the exact 10 IRR to 1 Toman presentation ratio", () => {
+    expect(fmtMoney(10, "IRR", "fa")).toBe("۱ تومان");
+    expect(fmtMoney(1, "IRR", "fa")).toBe("۰.۱ تومان");
+  });
+
+  it("preserves exact tenths of Toman at the safe-integer boundary", () => {
+    expect(fmtMoney(Number.MAX_SAFE_INTEGER, "IRR", "fa"))
+      .toBe("۹۰۰،۷۱۹،۹۲۵،۴۷۴،۰۹۹.۱ تومان");
+    expect(fmtMoney(-1, "IRR", "fa")).toBe("-۰.۱ تومان");
+  });
+
   it("does not silently coerce missing, non-finite, fractional, or unsafe IRR values", () => {
     expect(fmtMoney(Number.NaN, "IRR", "en")).toBe("—");
     expect(fmtMoney(Number.POSITIVE_INFINITY, "IRR", "en")).toBe("—");
     expect(fmtMoney(1_250.5, "IRR", "en")).toBe("—");
+    expect(fmtMoney("1250.5", "IRR", "en")).toBe("—");
+    expect(fmtMoney("1.00000000000000001", "IRR", "en")).toBe("—");
+    expect(fmtMoney("9007199254740991.0000000000000001", "IRR", "en")).toBe("—");
+    expect(fmtMoney("9007199254740992", "IRR", "en")).toBe("—");
     expect(fmtMoney(Number.MAX_SAFE_INTEGER + 1, "IRR", "en")).toBe("—");
   });
 });

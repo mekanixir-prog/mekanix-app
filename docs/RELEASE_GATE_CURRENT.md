@@ -1,47 +1,318 @@
-# Current Release Gate — 2026-10-30
+# MEKANIX — Current Release Gate
 
-This file supersedes older release-status summaries where they conflict with the current branch and open pull requests. It is a readiness record, not permission to deploy or activate production services.
+**Last verified:** 2026-11-14  
+**Repository:** `mekanixir-prog/mekanix-app`  
+**Purpose:** Current evidence-based Go/No-Go record. This document does not authorize merge, deployment, migrations, or production provider activation.
 
-## Current release blockers
+## 1. Current financial PRs
 
-1. **Financial correctness changes are still Draft PRs.**
-   - PR #10 — gateway verification idempotency.
-   - PR #17 — canonical USD accounting, stacked on PR #10.
-   - PR #12 — atomic wallet escrow release.
-   - PR #16 — scheduled escrow release worker, stacked on PR #12.
-   - PR #13 — atomic/idempotent prepay ledger.
-   - PR #14 — atomic withdrawal request creation, stacked on PR #13.
-   - PR #15 — admin withdrawal review and payout operations, stacked on PR #14.
-   None of these PRs has been merged by this work.
+| PR | Current head | State | Exact-head workflows |
+|---|---|---|---|
+| [#137 — versioned IRR rate card](https://github.com/mekanixir-prog/mekanix-app/pull/137) | documentation-only refresh after tested code head below | Open, Draft, not merged | All seven workflows succeeded on code head `8272400f85ed6eacca2eb457f9b42b18baabbde9`; Docker E2E browser specs completed successfully |
+| [#184 — financial read provenance and escrow release](https://github.com/mekanixir-prog/mekanix-app/pull/184) | `74e8fb914194f314458a247d38222730d8874fb8` | Open, Draft, not merged | All seven workflows — success |
+| [#182 — reject generic payment status mutation](https://github.com/mekanixir-prog/mekanix-app/pull/182) | `a87b1070d97683a9da7773fdef9b86d533ba8463` | Open, Draft, not merged | All seven workflows — success |
+| [#183 — prepay ownership and D1 ledger parity](https://github.com/mekanixir-prog/mekanix-app/pull/183) | `36e4d9b072592abc71d3c9207d3884be948ba7da` | Open, Draft, not merged | All seven workflows — success |
+| [#186 — clean integrated financial candidate](https://github.com/mekanixir-prog/mekanix-app/pull/186) | Current clean branch `fix/financial-release-candidate-2026-11-14` | Open, Draft, not merged | Seven workflows are running on the latest integration head; no result is claimed until each finishes |
 
-2. **Real D1 integration validation is still required.**
-   Unit tests mock D1 batch behavior. Before merge/rollout, run the migration and financial transaction paths against an isolated D1 database, including concurrency and rollback scenarios.
+The #137 Docker E2E run on code head `8272400f85ed6eacca2eb457f9b42b18baabbde9` successfully built and started the Compose stack, passed health checks, verified PostgreSQL, verified production OTP fails closed without a real SMS provider, installed Bun/dependencies/Chromium, and completed the four Playwright browser specs (health, home, login, navigation) successfully. The Docker job completed successfully, including its cleanup step. Subsequent commits on the PR branch changed only this release-gate document; comparing the tested code head to the current branch head confirms that no application source or test files changed. PostgreSQL CI has now completed successfully, including migrations, isolated backup/restore rehearsal, TypeScript, tests, and build.
 
-3. **Real payment checkout is not wired.**
-   Zarinpal and IDPay adapter code exists, but the production gateway flow remains simulator-only and returns 404 in production. NextPay is still a stub. Do not set payment credentials and assume checkout is live.
+A clean integration candidate now exists in [PR #186](https://github.com/mekanixir-prog/mekanix-app/pull/186), based directly on `main`. It contains the #137 rate-card changes plus deliberate reconciliation of #184's per-record financial provenance and escrow controls, #182's admin payment-status guard, and #183's technician ownership CAS / D1 ledger ordering. The candidate preserves the #137 rate-card invoice path rather than replacing it with the older technician-fee-only flow from #184. The 14 #137/#184 overlapping paths and the #137/#182/#183 overlaps have been reconciled in the candidate code and tests. The earlier conflict-probe PRs were closed after GitHub confirmed they were not directly mergeable. PR #186 remains Draft and is not approved for merge; its complete CI and diff review are still required.
 
-4. **Real SMS delivery needs complete credentials and a live phone test.**
-   Provider names alone are not enough. Kavenegar requires its API key; MeliPayamak and Farapayamak require username, password, and sender. A successful configuration check is not a substitute for a real delivery test.
+No merge, production deployment, remote D1 operation, production migration, production secret change, or provider activation is included in this status update.
 
-5. **Production infrastructure remains intentionally deferred.**
-   Domain, production hosting, SMS activation, payment credentials, and deployment are to be activated near release. No production database, secret, DNS, provider credential, or deployment was changed by these code changes.
+## 2. What exact-head CI proves
 
-## Readiness endpoint contract
+The seven workflows on #137/#184/#182/#183 passed independently on their listed heads. PR #186 is the first candidate that tests the reconciled code together; its seven workflows must pass on one exact SHA. PostgreSQL CI includes migrations, an isolated backup/restore rehearsal, TypeScript, tests, and build. Docker E2E now includes Playwright browser smoke tests, a real HTTP + PostgreSQL business journey, BOLA checks, an injected transaction rollback, PostgreSQL outage/recovery, a k6 smoke profile, and a ZAP baseline. These new candidate steps are pending their first complete run on the latest #186 head.
 
-In production, GET /api/ready must return HTTP 503 until all of these are true:
-- a real SMS provider is selected and all required credentials are present;
-- a real payment provider is configured and production checkout/callback/verification routes are wired;
-- the database is reachable and is not a local file: SQLite database.
+Even a green #186 workflow does not prove a live staging deployment, a real SMS/payment provider round-trip, the full 100-VU staging load target, production D1 parity, or production operational readiness.
 
-The provider status returned by GET /api/health is diagnostic only. It does not prove a live transaction or SMS delivery succeeded.
+## 3. Confirmed remaining code/test gaps
 
-## Required Go/No-Go evidence
+### Business E2E
 
-- All dependency PRs reviewed and merged in dependency order, with CI green on the resulting main commit.
-- Isolated D1 migration and transaction tests pass.
-- A real SMS delivery test succeeds on a controlled Iranian phone.
-- A real payment sandbox round-trip succeeds, including callback verification, locked amount/currency checks, duplicate callbacks, and refund/reconciliation behavior.
-- Production backups, restore rehearsal, monitoring, domain/TLS, and rollback plan are verified.
-- Explicit owner Go/No-Go approval.
+- `tests/e2e/business-flow.test.ts` remains a logical state-machine/library test with mocked DB, Redis, and rate-limit dependencies.
+- New `scripts/e2e/business-http-flow.mjs` seeds real PostgreSQL test users/sessions and drives service request creation, technician assignment, job status transitions, rate-card invoice creation, customer approval, and completion over the live HTTP server.
+- The HTTP flow also tests cross-customer request isolation, foreign invoice approval denial, cross-technician job mutation denial, technician wallet isolation, and production payment-simulator fail-closed behavior with zero Payment/Warranty rows.
+- The workflow now includes four Playwright browser specs (health, home, login, navigation). The full HTTP journey is added but its first run on the candidate is pending.
 
-Until then, the release remains **blocked / not production-ready**.
+**Gate:** complete the first exact-head run, fix any integration failures, and retain the HTTP test output. Real payment success and warranty creation remain outside this test because no real gateway is configured and the production simulator is intentionally disabled; the unit suite covers the simulated success/warranty path.
+
+### Failure and resilience testing
+
+- `tests/e2e/failure-scenarios.test.ts` still contains mocked Redis/rate-limit scenarios.
+- Docker E2E now injects a real PostgreSQL outage, checks health fails closed, restarts PostgreSQL, and waits for health recovery.
+- The HTTP business flow installs a temporary PostgreSQL trigger that rejects Job insertion after assignment claims, then verifies the transaction rolled back the ServiceRequest claim, technician claim, and Job write. The trigger is removed in a `finally` block.
+- SMS/payment provider timeouts cannot yet be exercised against real adapters because no provider credentials or staging endpoints are configured. Production OTP and payment remain fail-closed.
+
+**Gate:** complete the first candidate run; add provider-timeout fault injection when isolated provider adapters/endpoints are available; retain evidence for idempotent retry and recovery.
+
+### Security validation
+
+- CI runs dependency audit, repository hygiene, static security checks, and mocked BOLA/IDOR helper tests.
+- `scripts/security-audit.sh` is a static heuristic gate; its pass is not a route-by-route authorization audit.
+- The HTTP business flow adds real route-level BOLA checks for customer request isolation, invoice approval ownership, technician job ownership, and wallet role/tenant isolation.
+- The Docker E2E workflow now runs `scripts/zap-scan.sh` using the maintained official ZAP container against the isolated local Docker stack and uploads its report. The first candidate scan is pending; this is not yet a staging ZAP report.
+- Four Playwright browser smoke specs run in the same workflow but do not constitute a full route authorization suite.
+
+**Gate:** complete the route inventory and positive/negative authorization matrix for all owned-resource and privileged endpoints; run and retain the staging ZAP report; triage Medium findings and block on High findings.
+
+### Performance
+
+- `scripts/load-test.js` exists and defines a staged ramp up to 100 virtual users with p95 < 500 ms, p99 < 1,000 ms, and request failure rate < 1%.
+- The Docker E2E workflow now runs a 40-second, 5-VU k6 smoke profile and uploads `k6-summary.json`. Its first candidate result is pending. This is a smoke check only; the full script still defines the 100-VU staged ramp and p95/p99/failure thresholds.
+
+**Gate:** run the full k6 profile against isolated staging and retain exact SHA, command, p95/p99, failure rate, CPU, memory, and database metrics. Do not treat the short CI smoke as a full load test.
+
+### Staging, backup, restore, and rollback
+
+- `docker-compose.staging.yml`, `scripts/deploy-staging.sh`, backup/restore scripts, and `docs/STAGING-DEPLOY.md` are present.
+- CI validates staging Compose syntax and shell syntax, but does not deploy the isolated staging profile to a real staging host.
+- PostgreSQL CI rehearses backup/restore in an ephemeral test environment. It is not a staging operations drill and does not establish production D1 backup/restore readiness.
+- The staging readiness endpoint is intentionally expected to remain HTTP 503 while SMS is console and payment is simulator.
+
+**Gate:** deploy the exact reviewed candidate SHA to isolated staging; verify health/readiness semantics; perform encrypted backup/restore to a separate disposable database; rehearse rollback to the previous known-good SHA; retain logs and evidence. Do not use production credentials or production data.
+
+## 4. Release sequence
+
+1. Finish reconciliation and review the clean main-based candidate in PR #186.
+2. Review the complete combined diff and both SQLite/D1 and PostgreSQL migration tracks.
+3. Run all CI workflows on the exact combined SHA and fix every failure.
+4. Close the route-level authorization matrix and retain the local + staging security scan reports.
+5. Complete the real HTTP business E2E and transactional/DB failure-injection tests; add real provider-timeout tests when test adapters are available.
+6. Run and record the full k6 staging performance test.
+7. Complete isolated staging, encrypted backup/restore, and rollback rehearsal.
+8. Produce a Release Candidate tag tied to the exact approved SHA.
+9. Only near release, configure real host/domain/TLS, SMS, payment, routing credentials, monitoring, and production backup; execute live smoke tests.
+10. Obtain explicit owner Go/No-Go approval before public launch.
+
+## 5. Go/No-Go
+
+**Current decision: NO-GO for merge-to-release and public launch.**
+
+The four original financial PRs have been consolidated into the clean Draft candidate #186; its latest CI run must complete successfully before it can be considered a valid combined code baseline. The candidate now contains the real HTTP business journey, route-level BOLA checks, transactional rollback injection, PostgreSQL outage/recovery, local ZAP baseline, and k6 smoke steps, but their first exact-head results are pending. Full staging deployment, full 100-VU performance evidence, real SMS/payment provider round-trips, production D1 operations, and final route-by-route authorization review remain open. Hosting, domain, live SMS, and payment activation are intentionally deferred until the Release Candidate stage; their absence does not justify enabling insecure fallbacks.
+
+No historical financial records may be bulk-converted or re-labelled as part of this work. Do not enable production provenance or pricing flags merely to make readiness checks green.
+
+
+## 6. Superseding status update — 2026-11-21
+This section supersedes the historical PR table and readiness snapshot above where they differ. The older sections remain as the 2026-11-14 audit record.
+
+### Current main baseline
+- Repository: `mekanixir-prog/mekanix-app`
+- Current main after the latest merged fixes: `86af27b8d424edae8a328b53553bcb71d25aecb4`
+- PR #180 merged: wallet lazy initialization now uses an atomic Prisma `upsert`.
+- PR #201 merged: Next.js 16.4.6 and Effect 3.22.1; Bun lockfile regenerated with Bun 1.4.4. All eight required workflows passed on the merge candidate, including Dependency Security Audit (1,272 packages; no vulnerabilities).
+
+### Active stacked release candidate
+| PR | Purpose | Latest reviewed head | Status at this update |
+|---|---|---|---|
+| [#186](https://github.com/mekanixir-prog/mekanix-app/pull/186) | Integrated financial candidate (#137/#184/#182/#183) | `86f238f9e28b12cc29de8975c079772221d20f30` | Draft; exact-head checks not yet returned |
+| [#190](https://github.com/mekanixir-prog/mekanix-app/pull/190) | ZAP report handling/permissions | `b84a1d5d99a1adc2a39625a45f9dca2af73367c6` | Draft; Production readiness and PostgreSQL CI passed; CI, Cloudflare Build and Docker E2E running |
+| [#191](https://github.com/mekanixir-prog/mekanix-app/pull/191) | ZAP/k6 validation and regression tests | `54d9cd4a05571beb5ee57b4ec5dadf876cc82ebf` | Draft; workflows queued/running |
+| [#195](https://github.com/mekanixir-prog/mekanix-app/pull/195) | CSP nonce and security headers | `49b29cc3f294579ea3a1f51c7628983871b433f0` | Draft; Docker E2E running, other checks queued |
+| [#197](https://github.com/mekanixir-prog/mekanix-app/pull/197) | Staging Compose, secrets and Redis authentication | `dde427bdfaba0450cf18ecbc4d4a6b4f4a0bdd4c` | Draft; Cloudflare Build passed, PostgreSQL CI running, other checks queued |
+
+The stack order is main → #186 → #190 → #191 → (#195 and #197). Do not merge child PRs independently into main or merge overlapping financial changes separately. Review and integrate in dependency order, retaining exact-SHA evidence.
+
+### New hardening performed
+- The financial candidate's wallet GET path now uses atomic `upsert` while preserving `UNVERIFIED` provenance and read-side masking.
+- The ZAP wrapper now treats exit code 2 as a WARN-level result, not automatically as a Medium finding. High findings remain blocking; Medium findings require explicit human review; Low/Info alerts remain in the reports. Regression coverage includes WARN-only/Low findings.
+- Removed an unused ZAP generated-config path outside the mounted work directory.
+- Redis negative authentication testing now uses a fresh credential-free client container on the same Docker network. The previous in-container `redis-cli` test returned PONG despite the server command showing `--requirepass`; the new test must pass before Redis authentication is considered verified.
+
+### Current release blockers
+1. **Financial provenance:** issue #81 remains open for historical row classification, writer validation, wallet/ledger reconciliation, and reversible migration/quarantine. No blanket conversions.
+2. **Commercial policy:** issue #99 remains open for approved rate card (heavy machinery separately), tax, commission/escrow, VIP pricing/benefits/refunds and withdrawal limits. Do not enable pricing/settlement flags.
+3. **Payment lifecycle:** issue #24 remains open. Zarinpal/IDPay adapter code exists, but production routes do not call it; simulator payment, gateway initiation/verification and VIP/prepay simulator paths remain unavailable in production. Readiness correctly reports the integration as unwired.
+4. **Persian money display:** main no longer uses FX conversion, but the shared money helper still displays the IRR symbol rather than the approved Toman-only presentation. Do not wire Toman display until every financial read path applies provenance masking.
+5. **Security/CI:** complete ZAP report triage, Redis authentication, route-by-route BOLA/IDOR matrix, and all exact-head workflows on the integrated candidate.
+6. **Cloudflare D1:** Cloudflare Build/local D1 tests do not prove a remote D1 staging deployment, migrations, concurrency or rollback. No remote D1 operation has been performed.
+7. **Operations:** real SMS phone test, payment sandbox round-trip, encrypted backup/restore in isolated staging, rollback rehearsal, monitoring and final launch review remain outstanding.
+
+### Deployment boundary
+The selected direction remains Cloudflare Free/Workers + D1 for the app path. Do not introduce paid VPS/domain or live provider credentials in this engineering phase. Cloudflare Build success is not a deployment. No production database, secret, DNS, SMS, payment, payout or public deployment has been changed.
+
+**Decision: NO-GO for public production.** Keep all live money movement and production provider activation fail-closed until the financial provenance, commercial policy, payment lifecycle, D1 staging and operational evidence above are complete, followed by explicit owner Go/No-Go approval.
+
+### 2026-11-21 stack synchronization
+The financial candidate now descends from current main and includes the validated ZAP report-hardening child PR #190. The wallet GET path uses atomic upsert while retaining per-record provenance masking. The wallet-read unit tests were updated to mock and assert the upsert contract. Exact-head CI evidence is required before this draft can be marked ready.
+
+
+Validation rerun requested after the wallet-read test was corrected to mock both the atomic upsert and the refreshed read. Do not mark ready until CI, PostgreSQL CI, Docker E2E, Production readiness, CodeQL and Secret Scan pass on the same head.
+
+
+## 2026-11-21 verification addendum — supersedes older pending-run statements above
+
+This addendum records the exact GitHub state checked on 2026-11-21. It does not change the release decision or authorize a merge/deployment.
+
+### Exact-head workflow evidence
+
+| PR | Exact head checked | Workflow result | Additional evidence / qualification |
+|---|---|---|---|
+| #186 | `2a0a7993294b5a0680de12426e16e7310603587f` | 7/7 success: CI, PostgreSQL CI, Production readiness, Docker E2E, Cloudflare Build, CodeQL, Secret Scan | Docker E2E passed real HTTP business flow, k6 smoke, ZAP baseline, PostgreSQL outage/recovery and artifact upload. |
+| #191 | `540c1f66f43112eb55d52dc5757ec0dbaab06a68` | 4/4 success: CI, PostgreSQL CI, Production readiness, Docker E2E | Docker E2E additionally passed full 10/50/100-VU load profile, ZAP baseline, real HTTP business flow, Redis password/NOAUTH checks and PostgreSQL outage/recovery. This is a CI isolated Docker run, not a staging-host load test. |
+| #195 | `19fde9e29e0b157dfa9ceebda20b7c29ed45d3e9` | 5/5 success: CI, PostgreSQL CI, Production readiness, Docker E2E, Cloudflare Build | CSP/security-header branch; full 10/50/100-VU step was skipped by the workflow condition on this child PR. |
+| #197 | `dffe4877cb7982001cc3bd335a1bbd9ae978d965` | 4/4 success: CI, PostgreSQL CI, Production readiness, Docker E2E | Required-secret/Compose checks and authenticated Redis tests passed; full 10/50/100-VU step was skipped by the workflow condition on this child PR. |
+| #192, #193, #194, #196 | Current PR heads as of 2026-11-21 | Their recorded CI, PostgreSQL CI, Production readiness, Docker E2E and Cloudflare Build runs succeeded on their listed heads | These runs are older than the latest #186/#191/#195/#197 runs. Re-run after rebasing/retargeting onto the final integration base. |
+
+The #191 Docker E2E job explicitly completed the full-load step successfully; the #195 and #197 child-PR Docker jobs explicitly skipped that step. Do not describe the child PRs as independently re-running the full-load profile.
+
+### Open PR inventory and merge eligibility
+
+At this check, the repository has 38 open PRs; all 38 are Draft and none is marked Ready for review. The four main release-train PRs (#186, #191, #195, #197) also have no submitted review approvals or unresolved review threads recorded by GitHub. Therefore no open PR is currently merge-ready, even where its visible checks are green.
+
+PR #190 is already merged into the financial candidate branch, not directly into `main`. PR #191 is stacked on the PR #190 head branch; PRs #192–#197 are stacked on the #191 branch. The dependency order must be preserved. After an owner-reviewed #186 merge, retarget/rebase #191 onto `main`, validate it on its exact new head, then retarget/rebase each dependent child PR onto the validated base and rerun checks. Do not merge the children against an obsolete branch base or treat the green parent run as proof for changed child code.
+
+### Remaining release blockers
+
+1. The PRs remain Draft and have no human approval; complete full-diff review and obtain owner approval before marking any PR ready.
+2. #186's exact-head CI is green, but its documented release gates remain: complete route-by-route BOLA/IDOR matrix; review both SQLite/D1 and PostgreSQL migration tracks; staging-host deployment; encrypted staging backup/restore and rollback rehearsal; real SMS/payment sandbox round-trips; provider timeout/failure injection; production D1 parity and operational sign-off.
+3. #191's CI full-load profile is useful evidence, but does not replace a measured isolated-staging run with CPU, memory, database and latency/failure metrics.
+4. #195 and #197 have green child-branch checks, but their full-load step was skipped. Their exact final combined head must be revalidated after stack integration.
+5. #192, #193, #194 and #196 must be revalidated on the final base. In particular, verify the trusted-proxy deployment boundary for session IP headers before treating the #196 change as a security control.
+6. No production deployment, production migration, remote D1 operation, production secret change, real SMS/payment activation, DNS change or public launch has been performed.
+
+**Decision remains NO-GO for production release.** Green CI is evidence of automated checks only; it is not merge approval, staging evidence, production readiness or owner Go authorization.
+
+
+## 2026-11-22 exact-head refresh — authoritative current snapshot
+
+This addendum supersedes earlier statements in this document that say the current candidate checks are pending. The tested application-code baseline at this refresh is `be1592780787678aeb49e1fc3812078b1a017913` (PR #186). A documentation-only release-gate evidence refresh was committed on top of that code baseline; the new branch head must complete its own exact-SHA workflows before this snapshot is treated as current validation evidence.
+
+### Exact-head automated validation
+
+PR #186 exact head `be1592780787678aeb49e1fc3812078b1a017913`: all 8 workflows completed successfully — CI, Docker E2E, PostgreSQL CI, Production readiness, CodeQL Security Analysis, Secret Scan, Dependency Security Audit, and Cloudflare Build.
+
+Current RC follow-up PRs, all targeting this exact RC branch (not main):
+
+| PR | Exact head | Changed-file scope | Exact-head workflows |
+|---|---|---|---|
+| #229 | `468667ec1b0c27b55736aae27c45dffd5867864e` | Zarinpal sandbox request/verification contract tests | 6/6 success |
+| #230 | `f46934e6e594eaff86103b8a98bd8d968ffc0a5b` | Financial provenance SQL inventory + SQLite integration test | 6/6 success |
+| #231 | `6e17034ee9c50825fd4c7fcc3280a3295dd407b9` | RC list-role authorization regression tests | 6/6 success |
+| #232 | `0a16d0aec2b3d902b5cf579aa38c850ca621583a` | Guarded production escrow Worker config, deployment script, Cloudflare dry-run workflow and runbook | 7/7 success |
+| #233 | `8579b1daac26d4100db17faeba4b32260a7415d4` | Concurrent VIP gateway verification recovery regression test | 6/6 success |
+
+All five follow-up PRs are open and have no submitted human review approvals recorded. Their successful checks are not merge approvals. Do not merge them automatically or treat independent PR checks as proof that the combined post-merge RC SHA has passed; rerun all applicable checks after each integration.
+
+### Duplicate/overlap disposition
+
+- #222 and #230 both change `scripts/audit-financial-provenance.sql`; the blob is byte-identical. #230 additionally adds `tests/integration/financial-provenance-inventory-sql.test.ts` and targets the current RC. Treat #230 as the RC follow-up; keep #222 open until #230 is reviewed/merged, then close #222 as superseded.
+- #179 and #232 concern the same production escrow Worker rollout. Their `wrangler.wallet-release.production.toml` is byte-identical, but the other four shared files differ. #232 is the RC-targeted guarded extraction; it must not be described as a byte-for-byte duplicate of #179. Review the four changed files and keep #179 open until #232 is accepted; then close #179 as superseded if no unique behavior remains.
+- #167 and #231 share two test paths, but the files are not byte-identical. #231 adapts list-role regressions to the current RC contract; #167 also contains route/auth/state-machine changes beyond those tests. Do not merge #167 wholesale. Review #231 first; then assess any unique #167 behavior separately before closing it.
+- #137 and #184 remain broad historical source branches with overlapping financial/application changes. They are reference material, not safe wholesale merge candidates. The current candidate #186 contains deliberate reconciliation; review exact candidate behavior and migration tracks rather than copying old branch files.
+
+### Remaining release blockers — still NO-GO
+
+1. Independent full-diff human review and explicit owner approval for the exact final SHA are absent.
+2. Route-by-route positive/negative authorization and BOLA/IDOR matrix is not yet evidenced as complete for all owned-resource and privileged endpoints.
+3. Both SQLite/D1 and PostgreSQL migration tracks still require final human review and isolated remote staging migration rehearsal; CI migrations are not remote D1 evidence.
+4. Isolated staging deployment of the exact reviewed SHA, encrypted backup/restore, rollback rehearsal, remote D1 parity and scheduled escrow Worker/Cron observation remain outstanding.
+5. Real SMS delivery and real Zarinpal/payment sandbox request-to-verification round-trip, provider timeout/failure injection, monitoring and alert evidence remain outstanding. Adapter contract tests do not prove a real merchant sandbox transaction.
+6. Full 100-VU load test against isolated staging with retained latency, failure, CPU, memory and database metrics remains outstanding; Docker CI smoke/load checks are not staging-host evidence.
+7. Repository branch protection/ruleset enforcement must be verified by an authorized repository administrator; CI success does not prove governance controls are enabled.
+8. Commercial policy and historical financial provenance decisions remain owner gates: heavy-machinery and supported passenger-vehicle rates, tax, commission/escrow terms, VIP price/refunds, withdrawal policy and historical money-unit classification/reconciliation.
+
+### Safety boundary
+
+No PR merge, production deployment, remote D1 operation, production migration, production secret change, real SMS/payment activation, payout, DNS change or public launch is authorized by this refresh. Keep production money movement and provider activation fail-closed. **Decision remains NO-GO for merge-to-main and public production.**
+
+
+## 2026-11-23 authorization consistency fix — FLEET_MANAGER CARE transitions
+
+A targeted route/state-machine review found a stale authorization contract in `src/lib/care-auth.ts`: the booking state-machine helper and its unit tests treated `FLEET_MANAGER` as a customer for cancellation and extra-cost approval, while `requireBookingOwner` correctly denied that role because there is no persisted fleet-membership and fleet-to-vehicle ownership relation in the current authorization path.
+
+The candidate now fails closed consistently:
+- `ROLE_TRANSITIONS.FLEET_MANAGER` is empty.
+- The customer-side transition exceptions apply only to `CUSTOMER`.
+- Unit tests assert denial for fleet-manager cancellation, approval and rejection transitions.
+- No route-level ownership rule was broadened and no role permission was granted.
+
+Commits: `5157adebc17cd57ed65999fb73255751139dce85` (authorization helper) and `11518ef051dd4e4cfa57637395454d26cf2bb388` (regression tests).
+
+This closes the specific helper/comment/test inconsistency only. It does not complete the route-by-route BOLA/IDOR matrix or implement fleet ownership. Before any future fleet-manager access is enabled, implement persisted fleet membership and fleet-to-asset ownership, then add cross-tenant positive and negative tests for create/read/update/cancel/approve/status flows.
+
+All workflows must be rerun on the final resulting candidate SHA. Release decision remains Draft / NO-GO pending independent review, staging and remaining operational gates.
+
+
+### Fleet permission-matrix hardening — 2026-11-23
+
+The same fail-closed rule is now applied to the general role-permission matrix. `FLEET_MANAGER` remains a recognized future role for compatibility/introspection, but its permission set is empty until the application has persisted fleet membership and fleet-to-asset ownership with tenant-safe scoping. The prior inherited customer permissions and fleet dashboard/asset permissions are removed from the active matrix. Unit and business-flow tests now assert that all such permissions are denied. This prevents future routes that rely on `requirePermission`/ `can` from accidentally granting customer or fleet operations based only on the role label.
+
+Commits: `d070a6ea5c8a7beb6cbc7288c4981acc31e3d88a` (permission matrix), `66b62642639d219e3dbfc4778d0db2f5457b89b1` (unit tests), and `a77887178a6d37f80cfe201ecac737fe97ca86a6` (business-flow test).
+
+This is a security reduction, not implementation of the fleet dashboard or fleet asset management. Do not enable fleet permissions until tenant isolation and positive/negative cross-fleet tests cover all read/write flows.
+
+
+### Prepay simulator actor boundary — 2026-11-23
+
+The non-production prepay simulator now explicitly permits only `CUSTOMER` and `ADMIN` sessions before participant lookup. Previously, `requireJobParticipant` also admitted an assigned `TECHNICIAN`, which was inconsistent with the route's customer-payment contract and could let a technician trigger simulated prepay writes in non-production environments. `TECHNICIAN`, `FLEET_MANAGER` and `PARTNER` now receive 403 before participant or database access. Production remains hard-blocked by the existing 404 guard; this change does not activate real payment.
+
+Commits: `17cf9e84ae88df2817138e4302d166d7127b235a` (route guard) and `722dfb7da3466de3e4b45e2dccc7cb19a67a820b` (role regression tests).
+
+
+### CARE mission status assignment-bound concurrency — 2026-11-23
+
+The technician status PATCH now resolves the authenticated technician profile, verifies the current booking assignment, and includes that same `technicianId` in the final `updateMany` compare-and-set. If the assignment changes after the read, the write affects zero rows and returns 409 instead of allowing a former assignee to advance the mission. Unscoped roles are rejected before database access. Regression tests cover assignment mismatch and the race-losing conditional update.
+
+Commits: `b3c990706ca39b48059d79619d74d69292c69d88` (route hardening) and `7525dbc649bf2c1af43ddd03b1fa4968373cdeaf` (regression tests).
+
+Remaining consistency limitation: on D1, the status update and timeline-event insert are still sequential writes rather than one atomic batch. The existing known-issues record documents this; keep it as a staging/business-E2E verification item and do not claim the timeline write is transactionally atomic.
+
+
+### Final Docker / PostgreSQL / browser / load / ZAP evidence — 2026-11-23
+
+Exact tested code head before the header hardening: `e7b9a1be4a1512eaef0c3ec88f695445b4cb7d95`.
+
+- Docker Compose stack reached healthy state; PostgreSQL was confirmed as the database and Redis password authentication passed.
+- Production-mode OTP failed closed without a real SMS provider.
+- Playwright browser E2E: 24/24 passed.
+- Isolated real-HTTP + PostgreSQL business flow passed: customer request, technician assignment, cross-tenant/BOLA denials, job status transitions, IRR invoice creation/approval, completion, and injected Job-insert failure with atomic rollback. Payment simulator was disabled in production mode; zero payment rows and zero warranty rows were created. No external SMS/payment provider was called.
+- k6 full-load profile reached 100 VUs over 5 minutes: 36,812 HTTP requests, 0.00% failed, HTTP p95 52.42 ms, response p99 81.76 ms, 46,015 checks passed / 0 failed. The independent summary validator confirmed request count, error rate, p95/p99 and check counts against the configured limits.
+- PostgreSQL outage injection returned health 503 / database unhealthy; after restart health recovered to 200 / database healthy.
+- PostgreSQL CI separately applied migrations, ran financial-provenance inventory against the isolated PostgreSQL schema, and completed encrypted backup/restore rehearsal.
+
+ZAP baseline report: 0 High, 0 Medium, 3 Low, 4 Informational, 65 Pass. The three Low findings were missing Cross-Origin-Embedder-Policy, Cross-Origin-Opener-Policy and Cross-Origin-Resource-Policy headers. The report artifact is `mekanix-isolated-security-performance-45101851731` (artifact ID `14786102618`). A follow-up hardening adds COOP `same-origin`, CORP `same-origin`, and COEP `credentialless` (to preserve public cross-origin map/avatar resources without credentials) in Next.js response headers and the request proxy, with unit assertions. This header change is a new code revision and requires all exact-head workflows, browser E2E and ZAP to rerun; the prior 8/8 green result does not validate it.
+
+This evidence is isolated CI/staging-style infrastructure only. It does not establish production domain behavior, live merchant settlement, real SMS delivery, real payment capture, production D1 state, or an actual production backup restore.
+
+
+### Escrow ledger proof hardening — 2026-11-23
+
+A focused review of the D1 escrow release batch found that the final transaction-state predicate and guard assertion did not independently re-check the RELEASE ledger amount and arithmetic relationship. Under an already-present malformed ledger row sharing the release idempotency key, those later predicates could accept `balanceAfter = wallet.balance` without proving `ledger.amount = WalletTransaction.netAmount` and `balanceAfter = balanceBefore + netAmount`.
+
+The D1 release path now requires, in both the AVAILABLE transition predicate and final batch assertion: ledger type `RELEASE`, reference type `WalletTransaction`, exact amount equality with the escrow transaction, safe integer amount/balance values, non-negative balance-before, exact balance equation, and non-negative remaining pending balance. Two SQLite integration regressions seed malformed pre-existing ledger proofs (wrong amount; inconsistent balance equation) and assert the transaction remains `PENDING`, wallet balances remain unchanged, and the guard row is cleaned up.
+
+Commits: `fdc3186890dcff77c808c759d581be11ca854d0f` (release predicate/guard) and `992ea08ec0b35fee58cfc86601b8c5fa8fa834f3` (malformed-ledger regression tests).
+
+This is a financial integrity hardening change. It invalidates the prior exact-head check result and requires a fresh complete workflow run on the new candidate SHA before any release decision.
+
+
+---
+
+## Integrated release-candidate audit update — 2026-11-24
+
+This section is the current workstream overlay. Exact current SHA and exact-head check status are maintained in PR #186.
+
+### Completed in the integrated candidate
+
+- Repository ruleset `main-production-protection` (ID `27880389`) was independently re-read from the live Rulesets API: Active, targets only `main`, one approval required, stale approvals dismissed, conversations resolved, strict/up-to-date checks, no bypass actors, deletion and force-push blocked. Exactly nine unique required contexts are configured once each, with CodeQL from GitHub Advanced Security and the other eight from GitHub Actions.
+- The current code-search/migration inventory was refreshed. The historical 34-file/7-file sync Prisma inventory is stale; production route consumers use `getDbForLib()`. The stale `db.worker.ts` comment was corrected.
+- The read-only financial provenance inventory now includes `PricingSnapshot.currency` in the VERIFIED_IRR currency contradiction query. A regression fixture asserts the third contradiction is found; no historical data is changed.
+- CARE periodic quote now applies the same supported vehicle/make scope guard as booking creation. Excluded passenger makes and unsupported `OTHER` equipment are rejected before pricing.
+- Technician detail reads now use `getSessionFromRequest()`, so an offline technician owner can access their own safe profile with the app's HttpOnly session cookie; unauthenticated offline profiles remain hidden.
+- Test-only Zarinpal sandbox adapter contracts, VIP callback race recovery, and Jobs/Service Request role-scope regressions from PRs #229, #231 and #233 were integrated after verifying the relevant production source files were unchanged from their common base.
+- PR #232's guarded production wallet escrow Worker config, 15-minute Cron, no-migrations deploy script, negative guard tests, Cloudflare dry-run and operator runbook were integrated. **The deploy script was not executed and no Worker was deployed.**
+- Known-issues and D1 migration inventory documentation was refreshed. KI-005 invoice duplicate handling and KI-006 withdrawal ledger atomicity are now marked resolved; CARE sequential timeline writes and phone identity canonicalization remain tracked in Issues #235 and #234.
+
+### Current remaining gates
+
+- All exact-head workflows must pass on the final PR #186 SHA after these integrations. Prior green results on earlier SHAs are superseded.
+- Independent human review/approval is still absent and required by the active ruleset.
+- Historical financial provenance must be reconciled from a controlled real-data snapshot; synthetic CI database checks do not establish real record provenance. See Issue #81.
+- Real SMS provider delivery and the complete real payment-provider sandbox lifecycle remain unverified; production remains fail-closed. See Issues #24 and the current production configuration.
+- The production wallet escrow Worker is configured but not deployed or observed. Deployment requires separately verified Cloudflare account/database IDs, recoverable backup, schema verification, reconciliation baseline, explicit approval, and observation of at least two 15-minute Cron cycles.
+- Remote D1 staging migration, real D1 runtime/rollback evidence, production backup/restore, monitoring and owner Go/No-Go remain outstanding.
+- CARE findings/inspection/health-report/mission timeline writes remain sequential on D1 and require atomic remediation (Issue #235). Legacy mechanic-application phone identity normalization requires a forward-only migration and cross-database tests (Issue #234).
+
+**Decision remains NO-GO for merging PR #186 into `main` or public production.** No merge, production deploy, remote D1 migration, real SMS/payment activation, payout or public launch was performed.

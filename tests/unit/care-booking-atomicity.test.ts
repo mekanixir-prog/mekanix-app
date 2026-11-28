@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CareBookingIdempotencyConflict,
+  CareBookingVehicleError,
   createCareBookingAtomically,
 } from "@/lib/care-booking-atomic";
 
@@ -24,7 +25,7 @@ const input = {
   timeWindow: "09:00-11:00",
   currentMileage: 12000,
   pricing: {
-    labor: 50000, travel: 15000, parts: 0, discount: 0,
+    labor: 50000, travel: 15000, inspection: 0, emergency: 0, parts: 0, discount: 0,
     taxRate: 0.09, taxTotal: 5850, total: 70850,
     currency: "IRR", pricingVersion: "2.1",
   },
@@ -46,6 +47,13 @@ afterEach(() => {
 describe("CARE booking idempotency", () => {
   it("commits booking, frozen pricing, link, and creation event in one Prisma transaction", async () => {
     const tx = {
+      vehicle: {
+        findUnique: vi.fn().mockResolvedValue({
+          type: "EXCAVATOR",
+          make: "Caterpillar",
+          customer: { userId: "user-1" },
+        }),
+      },
       serviceBooking: {
         findUnique: vi.fn().mockResolvedValue(null),
         create: vi.fn().mockResolvedValue(booking),
@@ -65,19 +73,46 @@ describe("CARE booking idempotency", () => {
 
     expect(result).toEqual(booking);
     expect(db.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.vehicle.findUnique).toHaveBeenCalledWith({
+      where: { id: input.vehicleId },
+      select: { type: true, make: true, customer: { select: { userId: true } } },
+    });
     expect(tx.serviceBooking.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         idempotencyKey: input.idempotencyKey,
         requestFingerprint: input.requestFingerprint,
       }),
     }));
-    expect(tx.pricingSnapshot.create).toHaveBeenCalledTimes(1);
+    expect(tx.pricingSnapshot.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ emergencyPrice: input.pricing.emergency }),
+    }));
     expect(tx.serviceBooking.update).toHaveBeenCalledTimes(1);
     expect(tx.serviceTimelineEvent.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         idempotencyKey: `care-booking:${input.idempotencyKey}:created`,
       }),
     }));
+  });
+
+  it.each([
+    [{ type: "OTHER", make: "Caterpillar", customer: { userId: "user-1" } }, "unsupported type"],
+    [{ type: "EXCAVATOR", make: "Caterpillar", customer: { userId: "another-user" } }, "wrong owner"],
+  ])("rejects a CARE booking when the atomic Prisma vehicle check fails (%s)", async (vehicle) => {
+    const tx = {
+      vehicle: { findUnique: vi.fn().mockResolvedValue(vehicle) },
+      serviceBooking: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn(),
+      },
+    };
+    const db = {
+      serviceBooking: { findUnique: vi.fn().mockResolvedValueOnce(null) },
+      $transaction: vi.fn(async (callback: (value: typeof tx) => Promise<unknown>) => callback(tx)),
+    } as any;
+
+    await expect(createCareBookingAtomically(db, input))
+      .rejects.toBeInstanceOf(CareBookingVehicleError);
+    expect(tx.serviceBooking.create).not.toHaveBeenCalled();
   });
 
   it("replays the existing booking without recalculating or writing dependent rows", async () => {
@@ -132,6 +167,8 @@ describe("CARE booking idempotency", () => {
     expect(result).toEqual(booking);
     expect(d1.batch).toHaveBeenCalledTimes(1);
     expect(d1.batch.mock.calls[0][0]).toHaveLength(4);
+    expect(statements[0].sql).toContain('JOIN "Customer" c ON c."id" = v."customerId"');
+    expect(statements[0].sql).toContain('v."type" IN (\'TRUCK\', \'BUS\', \'EXCAVATOR\'');
     expect(statements.map((item) => item.sql).join("\n")).toContain('INSERT INTO "PricingSnapshot"');
     expect(statements.map((item) => item.sql).join("\n")).toContain('INSERT INTO "ServiceTimelineEvent"');
     expect(statements.every((item) => item.values.includes(input.idempotencyKey) ||

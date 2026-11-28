@@ -2,7 +2,9 @@
 
 ## Purpose
 
-Wallet escrow is currently released when the technician wallet is read. That makes a GET request perform financial writes and means a matured hold can remain pending if nobody opens the wallet. This dedicated Worker moves the release job to a 15-minute Cloudflare Cron Trigger.
+The dedicated Worker is intended to release matured wallet escrow every 15 minutes. The production application currently **does not release escrow from wallet GET requests**: `shouldUseLegacyWalletReleaseFallback` always returns false when `NODE_ENV=production`, regardless of `WALLET_RELEASE_SCHEDULED`. The staging Worker configuration remains isolated and contains a placeholder D1 ID. A separate production config now exists, but it has not been deployed or verified in the target Cloudflare account. Therefore, until a separately configured production Worker is deployed and verified, matured production escrow transactions can remain `PENDING`.
+
+This is an intentional fail-closed financial safety posture. Do not re-enable GET-triggered financial writes as a workaround. Wallet reads must remain read-only with respect to escrow release.
 
 ## Deployment order
 
@@ -46,8 +48,56 @@ Wallet escrow is currently released when the technician wallet is read. That mak
    ```
 
    This fixture is synthetic and does not initiate a payment, payout, or bank transfer.
-8. Keep `WALLET_RELEASE_SCHEDULED` unset in production. Production Worker configuration and rollout require a separate launch change, explicit target-account verification, backup, and approval; do not copy a staging ID into production or reuse the committed staging config.
-9. Keep the GET fallback enabled until a separately approved production scheduled Worker has been deployed and observed successfully. Do not set the variable early.
+8. Production rollout remains incomplete even though a production-specific Worker config and guarded deploy command are now included. It still requires independent Cloudflare account/database verification, a verified backup and restore plan, confirmation that the required schema is already present, explicit release approval, a controlled rollout, and monitoring evidence. Do not copy a staging ID into production or reuse the staging config.
+9. The application currently has no production GET fallback to keep enabled or disable: the policy always returns false in production. `WALLET_RELEASE_SCHEDULED` does not change that production behavior. Do not change this policy or enable GET-triggered financial writes as a substitute for the scheduled Worker.
+
+
+## Guarded production Worker deployment
+
+A production-specific configuration and guarded deployment script are now included:
+
+- Config: `wrangler.wallet-release.production.toml`
+- Command: `bun run deploy:wallet-release:production`
+- Worker name: `mekanix-wallet-escrow-release-prod`
+- D1 binding: `mekanix`, using the same database ID currently declared by the production application in `wrangler.toml`
+- Cron: every 15 minutes
+- Public `workers.dev` endpoint: disabled
+- D1 migration runner: intentionally not configured. The deploy command must not apply migrations.
+
+Before a production deployment, an operator must independently verify the production D1 database ID and Cloudflare account ID in the Cloudflare dashboard. The signed-evidence settings below are mandatory and the guard fails closed if any are absent or invalid:
+
+The deploy guard now requires a signed evidence bundle rather than free-form reference strings. Configure the protected deployment settings described in [WALLET_RELEASE_SIGNED_EVIDENCE.md](./WALLET_RELEASE_SIGNED_EVIDENCE.md), including the pinned release-evidence public-key fingerprint, the independent approver allowlist and public-key fingerprints, the evidence directory, and the independently confirmed Cloudflare database/account IDs.
+
+```bash
+export WALLET_RELEASE_PRODUCTION_DATABASE_ID="<independently verified production D1 database ID>"
+export WALLET_RELEASE_PRODUCTION_ACCOUNT_ID="<32-character Cloudflare account ID>"
+export WALLET_RELEASE_EVIDENCE_DIR="<signed evidence bundle directory>"
+export WALLET_RELEASE_EVIDENCE_PUBLIC_KEY_PEM="<protected release evidence public key PEM>"
+export WALLET_RELEASE_EVIDENCE_PUBLIC_KEY_SHA256="<pinned SPKI SHA-256 fingerprint>"
+export WALLET_RELEASE_ALLOWED_APPROVER_IDS="<approved independent owner/finance IDs>"
+export WALLET_RELEASE_APPROVER_KEYS_JSON="<protected JSON map of approver public keys, fingerprints and roles>"
+export ALLOW_WALLET_RELEASE_PRODUCTION_DEPLOY=YES
+bun run deploy:wallet-release:production
+```
+
+Before Cloudflare authentication or deployment, the guard verifies the signed manifest, exact commit SHA, production D1 identity, non-empty backup and digest, restore report, recent successful escrow reconciliation, and a separately signed approval from an allowlisted owner/finance identity. Evidence paths cannot escape the bundle. The script then checks the expected Worker/database configuration and active Cloudflare account, runs `wrangler deploy --dry-run`, and only then reaches the deploy command. It does not run migrations, execute SQL, seed fixtures, or change application environment variables.
+
+**Pre-deployment gates (must be completed manually before setting the opt-in variable):**
+
+1. Confirm `bunx wrangler whoami` reports the intended Cloudflare account.
+2. Confirm the production D1 database ID in the Cloudflare dashboard matches both `wrangler.toml` and `wrangler.wallet-release.production.toml`.
+3. Take and verify a recoverable production D1 backup using the approved Cloudflare backup procedure.
+4. Run a read-only schema check against the production database and confirm both `WalletReleaseWorkerState` and the wallet hold-scan index exist. For example:
+
+   ```bash
+   bunx wrangler d1 execute mekanix --remote --command "SELECT type, name FROM sqlite_master WHERE (type='table' AND name='WalletReleaseWorkerState') OR (type='index' AND name='WalletTransaction_status_holdUntil_id_idx');"
+   ```
+
+   Confirm the exact index name against the applied migration history before deployment; do not create or alter schema as part of this Worker rollout.
+5. Review the pending matured escrow population and establish an operational reconciliation baseline before the first Cron run.
+6. Deploy only after explicit release approval. Observe at least two 15-minute Cron cycles, inspect Worker logs and verify that matured `PENDING` rows move to `AVAILABLE` with exactly one RELEASE ledger entry each. Investigate any `failed` count before considering the rollout healthy.
+
+This repository change adds a production-specific configuration, a guarded deployment command, CI validation, and documentation. It does not execute the command or deploy the Worker. Production activation remains an operator-approved action after all gates above are satisfied.
 
 ## Processing behavior
 
@@ -65,5 +115,6 @@ Wallet escrow is currently released when the technician wallet is read. That mak
 - Run a real isolated D1 integration test before production rollout.
 - Confirm Cron Trigger execution and D1 binding in the target Cloudflare account.
 - Monitor failed counts and compare matured PENDING rows with released AVAILABLE rows during a controlled rollout.
+- Until the production Worker is deployed and observed, track matured production `PENDING` escrow rows as a release blocker and reconcile them operationally. Do not assume that the staging Worker or CI build provides production coverage.
 
 No production Worker was deployed and no production environment variable was changed while preparing this change.

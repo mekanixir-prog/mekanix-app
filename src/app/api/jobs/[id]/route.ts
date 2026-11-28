@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import { requireJobParticipant } from "@/lib/auth";
+import { maskJobFinancialData } from "@/lib/money/financial-read-mask";
 
 const include = {
   request: { include: { customer: { include: { user: { select: PARTICIPANT_USER_SELECT } } }, vehicle: true } },
@@ -26,5 +27,5 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const db = await getDbForLib();
   const job = await db.job.findUnique({ where: { id }, include });
   if (!job) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(job);
+  return NextResponse.json(maskJobFinancialData(job as unknown as Record<string, unknown>));
 }

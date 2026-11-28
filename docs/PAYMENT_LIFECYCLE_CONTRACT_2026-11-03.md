@@ -152,3 +152,46 @@ No commission percentage, release hold, refund policy, VIP entitlement, or price
 - No weakening or removal of production 404/fail-closed guards to make a demo work.
 
 **Decision:** design ready for technical review; implementation remains blocked by the monetary-unit decision and purpose-specific settlement approval.
+
+
+## 10. Owner-approved unit decision and updated gates — 2026-11-21
+The owner-approved monetary-unit decision recorded on 2026-11-03 resolves the unit-selection dependency described in section 8:
+
+- Persisted/accounting unit: integer IRR.
+- Persian display convention: Toman only, exact `10 IRR = 1 Toman`.
+- No FX rate, USD base, hidden multiplier, or implicit conversion is allowed.
+
+This approval does **not** classify legacy records and does not approve business prices or settlement policy. Issue #81 remains open for per-record provenance, writer validation, wallet/ledger reconciliation, and a reversible migration/quarantine plan. Issue #99 remains open for service rates (especially heavy machinery), tax, commission, escrow, VIP pricing/benefits/refunds, and withdrawal limits.
+
+### Implementation consequences
+1. Every new PaymentAttempt source amount must be an integer IRR copied from an authoritative business record whose own row-level provenance is verified. Unknown or legacy amounts must be rejected or moved to manual review; do not infer units from magnitude or a currency label alone.
+2. Provider-facing amounts must equal the persisted integer IRR amount exactly. No USD/Toman conversion is permitted at the gateway boundary.
+3. Keep Zarinpal/IDPay adapters sandbox-only until initiation, persisted attempt, callback reconciliation, server-side verification, and purpose-specific fulfillment are connected and tested.
+4. Keep production payment, VIP activation, prepay settlement, wallet top-up, withdrawal and payout fail-closed. The current production routes still return 404 for simulator checkout, and adapter readiness remains `integrationWired: false`.
+5. Do not create or backfill historical amount fields until source provenance and migration treatment are reviewed. Schema additions for new, explicitly verified IRR attempts can be considered separately from any historical conversion.
+6. Require equivalent uniqueness, idempotency and atomicity evidence for PostgreSQL and Cloudflare D1. A local Cloudflare build is not remote D1 certification.
+
+The payment design remains a safety contract, not approval to activate live money movement.
+## Implementation status — 2026-11-21
+
+This section records implementation evidence and must not be read as production approval.
+
+### Implemented on the release-candidate workstream
+
+- The candidate has server-authoritative, provenance-checked invoice amounts and keeps general payment routes fail-closed outside the explicitly enabled local simulator.
+- PR #220 adds a durable outbox for the VIP simulator path: purchase-time plan/duration snapshot, idempotent gateway initiation, atomic Payment + outbox persistence, D1 scheduled fulfillment, retry/lease/dead-letter handling, and duplicate-subscription protection.
+- PR #220 adds read-only admin monitoring. It does not expose event payloads or raw exception text.
+- SQLite and PostgreSQL migrations are additive and are exercised by CI. The Worker is validated with Wrangler dry-run only.
+
+### Still not implemented or not evidenced
+
+- No live Zarinpal/IDPay initiation or server-side provider verification is enabled.
+- No signed provider callback/webhook route has been validated end-to-end with provider sandbox credentials.
+- General invoice payment fulfillment, provider reconciliation, refunds, wallet top-up, technician settlement, escrow release and payout remain outside the VIP-only simulator outbox.
+- The exact D1 staging database, remote migration execution, Cron execution, backup/restore and rollback have not been exercised.
+- The Worker configuration intentionally contains a placeholder D1 database ID. No deployment was performed.
+- Production SMS, payment credentials, live money movement and production deployment remain disabled.
+
+### Release gate
+
+Do not enable live provider credentials or mark a payment as settled until provider initiation, callback authenticity, server-side verification, idempotency/replay handling, purpose-specific fulfillment, immutable ledger settlement, refund/reconciliation, monitoring and staging recovery tests all pass on the exact release SHA. Commercial tax, commission, escrow and payout policy must be explicitly approved before settlement behavior is implemented.

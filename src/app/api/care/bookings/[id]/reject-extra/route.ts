@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
 import {
@@ -74,7 +75,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       actorUserId: session.userId,
       decision: "CUSTOMER_REJECTED",
     });
-    return NextResponse.json({ ok: true, approval: updatedApproval });
+    return NextResponse.json({ ok: true, approval: maskFinancialFields(updatedApproval, ["partPrice", "laborPrice", "totalPrice"]) });
   } catch (error) {
     if (error instanceof CareExtraApprovalConflictError) {
       return NextResponse.json(

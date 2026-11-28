@@ -1,36 +1,28 @@
-export const TOKEN_KEY = "mekanix_admin_token";
-
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function setToken(token: string) {
-  if (typeof window !== "undefined") localStorage.setItem(TOKEN_KEY, token);
-}
-
-export function clearToken() {
-  if (typeof window !== "undefined") localStorage.removeItem(TOKEN_KEY);
-}
-
-export async function apiFetch<T = unknown>(path: string, opts: { method?: string; body?: unknown; headers?: Record<string, string> } = {}): Promise<T> {
-  const token = getToken();
+/**
+ * Same-origin admin API client.
+ *
+ * Admin authentication is carried only by the HttpOnly admin session cookie.
+ * Never read, write, or attach an admin bearer token from browser storage.
+ */
+export async function apiFetch<T = unknown>(
+  path: string,
+  opts: { method?: string; body?: unknown; headers?: Record<string, string> } = {},
+): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(opts.headers || {}),
   };
-  if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(path, {
     method: opts.method || "GET",
     headers,
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     credentials: "same-origin",
+    cache: "no-store",
   });
 
   if (res.status === 401) {
-    clearToken();
-    if (typeof window !== "undefined") window.location.href = "/admin-panel";
+    // Keep navigation in the calling Client Component, where useRouter is available.
     throw new Error("Unauthorized");
   }
 

@@ -1,3 +1,4 @@
+import { isExcludedPassengerMake } from "@/lib/vehicle-scope";
 // MEKANIX — Iranian vehicle database (comprehensive)
 // Includes ALL Iranian assemblers (مونتاژ) + importers with their full model
 // catalogs and rich per-model metadata (years, segment, engine, fuel, notes).
@@ -45,7 +46,7 @@ export interface VehicleMake {
 // Iranian assemblers / manufacturers FIRST, then importers,
 // then major foreign brands commonly seen on Iranian roads.
 
-export const PASSENGER_MAKES: VehicleMake[] = [
+const PASSENGER_MAKES_ALL: VehicleMake[] = [
   // ═══════════ Iranian Manufacturers / Assemblers ═══════════
   {
     make: "ایران خودرو",
@@ -596,6 +597,14 @@ export const PASSENGER_MAKES: VehicleMake[] = [
   { make: "Jaguar", country: "انگلیس", models: ["XE", "XF", "F-Pace", "E-Pace", "I-Pace"] },
 ];
 
+// Public passenger catalog is filtered at the export boundary so direct
+// imports cannot accidentally re-expose excluded assembler groups.
+export const PASSENGER_MAKES: VehicleMake[] = PASSENGER_MAKES_ALL.filter((make) =>
+  !isExcludedPassengerMake(make.make) &&
+  !isExcludedPassengerMake(make.makeEn) &&
+  !isExcludedPassengerMake(make.assembler)
+);
+
 // ─── Heavy Machinery & Commercial (ماشین‌آلات سنگین) ───
 export const HEAVY_MAKES: VehicleMake[] = [
   // Trucks
@@ -704,14 +713,14 @@ export function getIranianMakes(mode: "passenger" | "heavy" = "passenger"): Vehi
 // Get the rich catalog entry for a specific make+model
 export function getModelMeta(make: string, modelName: string): VehicleModel | undefined {
   // Match by Persian make OR English makeEn
-  const makeObj = PASSENGER_MAKES.find((m) => m.make === make || (m.makeEn && m.makeEn === make))
+  const makeObj = getMakesForMode("passenger").find((m) => m.make === make || (m.makeEn && m.makeEn === make))
     || HEAVY_MAKES.find((m) => m.make === make || (m.makeEn && m.makeEn === make));
   return makeObj?.catalog?.find((c) => c.name === modelName);
 }
 
 // Find a make by name (Persian or English) — useful for backward compatibility
 export function findMake(makeName: string): VehicleMake | undefined {
-  return PASSENGER_MAKES.find((m) => m.make === makeName || (m.makeEn && m.makeEn === makeName))
+  return getMakesForMode("passenger").find((m) => m.make === makeName || (m.makeEn && m.makeEn === makeName))
     || HEAVY_MAKES.find((m) => m.make === makeName || (m.makeEn && m.makeEn === makeName));
 }
 

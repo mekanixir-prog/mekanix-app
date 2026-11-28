@@ -5,6 +5,7 @@ import { rateLimitAsync, getClientId } from "@/lib/rate-limit";
 import { otpSendSchema } from "@/lib/schemas";
 import { generateOtpCode, hashOtpCode, hashOtpPhone } from "@/lib/otp-crypto";
 import { assertSmsProviderReady, sendOtp } from "@/lib/sms-provider";
+import { normalizePhoneForStorage } from "@/lib/phone-normalization";
 
 // Send an OTP code to a phone number.
 // - Rate-limited per-phone (5 / 10min) AND per-IP (20 / hour).
@@ -26,7 +27,9 @@ export async function POST(req: Request) {
   // Normalize phone: strip spaces, dashes, parentheses before storing/lookup.
   // The schema already proved the input is well-formed, so this only sanitizes
   // formatting — it can no longer reject a previously-accepted payload.
-  const phone = body.data.phone.replace(/[\s\-()]/g, "");
+  const phone = normalizePhoneForStorage(body.data.phone);
+  // Keep the provider-facing receptor format compatible with the existing SMS adapter.
+  const deliveryPhone = body.data.phone.replace(/[\s\-()]/g, "");
 
   if (!phone || phone.length < 8) {
     // Defensive: schema should already prevent this, but keep the guard in case
@@ -114,14 +117,31 @@ export async function POST(req: Request) {
   // Invalidate any previous unconsumed codes for this phone (only the newest one is valid).
   const db = await getDbForLib();
   await db.otpCode.updateMany({ where: { phone, consumed: false }, data: { consumed: true } });
-  await db.otpCode.create({ data: { phone, code: codeHash, expiresAt } });
+  try {
+    // A partial unique index guarantees at most one pending challenge per
+    // canonical phone even when two requests interleave between the update
+    // and insert above. The request that loses that race must not send an OTP.
+    await db.otpCode.create({ data: { phone, code: codeHash, expiresAt } });
+  } catch (error) {
+    const value = error as { code?: string; message?: string } | null;
+    const isPendingPhoneConflict =
+      value?.code === "P2002" ||
+      /OtpCode_one_pending_per_phone_idx|UNIQUE constraint failed: OtpCode\.phone/i.test(value?.message ?? "");
+    if (isPendingPhoneConflict) {
+      return NextResponse.json(
+        { error: "برای این شماره هم‌زمان کد دیگری ثبت شده است؛ آخرین کد پیامک‌شده را وارد کنید", code: "OTP_SEND_CONFLICT" },
+        { status: 409 },
+      );
+    }
+    throw error;
+  }
 
   // Deliver the OTP only after provider readiness has been proven.
   // On any delivery failure, consume the newly stored hash so an undelivered
   // code cannot remain usable. Never log the phone number or plaintext OTP.
   let smsResult: Awaited<ReturnType<typeof sendOtp>>;
   try {
-    smsResult = await sendOtp(phone, code);
+    smsResult = await sendOtp(deliveryPhone, code);
   } catch {
     await db.otpCode.updateMany({
       where: { phone, code: codeHash, consumed: false },

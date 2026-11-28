@@ -9,6 +9,7 @@ function makeD1() {
     PRAGMA foreign_keys = ON;
     CREATE TABLE "Wallet" (
       "id" TEXT PRIMARY KEY,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "balance" REAL NOT NULL,
       "updatedAt" TEXT
     );
@@ -17,6 +18,7 @@ function makeD1() {
       "code" TEXT NOT NULL,
       "walletId" TEXT NOT NULL REFERENCES "Wallet"("id"),
       "amount" REAL NOT NULL,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "method" TEXT NOT NULL,
       "cardNumber" TEXT,
       "bankName" TEXT,
@@ -36,6 +38,7 @@ function makeD1() {
       "referenceId" TEXT NOT NULL,
       "description" TEXT NOT NULL,
       "idempotencyKey" TEXT UNIQUE,
+      "financialUnitStatus" TEXT NOT NULL DEFAULT 'UNVERIFIED',
       "createdAt" TEXT NOT NULL
     );
   `);
@@ -47,7 +50,12 @@ function makeD1() {
       try {
         sqlite.exec("BEGIN");
         const results = items.map(({ sql, values }) => {
-          const result = sqlite.prepare(sql).run(...(values as never[]));
+          const statement = sqlite.prepare(sql);
+          if (/^\s*SELECT/i.test(sql)) {
+            statement.get(...(values as never[]));
+            return { meta: { changes: 0 } };
+          }
+          const result = statement.run(...(values as never[]));
           return { meta: { changes: Number(result.changes) } };
         });
         sqlite.exec("COMMIT");
@@ -62,7 +70,7 @@ function makeD1() {
 }
 
 function seed(sqlite: DatabaseSync, balance = 1000) {
-  sqlite.prepare('INSERT INTO "Wallet" ("id", "balance") VALUES (?, ?)').run("wallet-1", balance);
+  sqlite.prepare('INSERT INTO "Wallet" ("id", "financialUnitStatus", "balance") VALUES (?, ?, ?)').run("wallet-1", "VERIFIED_IRR", balance);
 }
 
 const input = {

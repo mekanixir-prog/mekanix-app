@@ -19,7 +19,7 @@ vi.mock("@/lib/idempotency", () => {
 });
 
 import { IdempotencyConflictError } from "@/lib/idempotency";
-import { createServiceRequestAtomically } from "@/lib/service-request-atomic";
+import { createServiceRequestAtomically, ServiceRequestVehicleError } from "@/lib/service-request-atomic";
 import { createInsuranceClaimAtomically } from "@/lib/insurance-claim-atomic";
 
 const serviceInput = {
@@ -28,10 +28,8 @@ const serviceInput = {
   code: "SR-550E8400-E29B-41D4-A716-446655440000",
   customerId: "customer-1",
   actorUserId: "user-1",
-  vehicleId: null,
-  machineType: "EXCAVATOR",
-  make: "CAT",
-  model: "320",
+  actorRole: "CUSTOMER" as const,
+  vehicleId: "vehicle-1",
   category: "engine",
   urgency: "URGENT" as const,
   title: "Engine fault",
@@ -57,13 +55,13 @@ afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 beforeEach(() => mocks.getD1Binding.mockResolvedValue(null));
 
 describe("service request atomic writer", () => {
-  it("creates an ad-hoc vehicle and request in one Prisma transaction", async () => {
+  it("creates a request against an existing registered vehicle in one Prisma transaction", async () => {
     const tx = {
       serviceRequest: {
         findUnique: vi.fn().mockResolvedValue(null),
         create: vi.fn().mockResolvedValue({ id: "request-1" }),
       },
-      vehicle: { create: vi.fn().mockResolvedValue({ id: "vehicle-1" }) },
+      vehicle: { findUnique: vi.fn().mockResolvedValue({ id: "vehicle-1", customerId: "customer-1", type: "EXCAVATOR", make: "CAT", customer: { userId: "user-1" } }) },
     };
     const db = {
       serviceRequest: { findUnique: vi.fn().mockResolvedValue(null) },
@@ -73,7 +71,13 @@ describe("service request atomic writer", () => {
     await expect(createServiceRequestAtomically(db, serviceInput))
       .resolves.toEqual({ id: "request-1", created: true });
     expect(db.$transaction).toHaveBeenCalledTimes(1);
-    expect(tx.vehicle.create).toHaveBeenCalledTimes(1);
+    expect(tx.vehicle.findUnique).toHaveBeenCalledWith({
+      where: { id: "vehicle-1" },
+      select: {
+        id: true, customerId: true, type: true, make: true,
+        customer: { select: { userId: true } },
+      },
+    });
     expect(tx.serviceRequest.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         vehicleId: "vehicle-1",
@@ -81,6 +85,58 @@ describe("service request atomic writer", () => {
         requestFingerprint: serviceInput.requestFingerprint,
       }),
     }));
+  });
+
+  it("rejects a customer profile that no longer belongs to the authenticated actor", async () => {
+    const tx = {
+      serviceRequest: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn(),
+      },
+      vehicle: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "vehicle-1",
+          customerId: "customer-1",
+          type: "EXCAVATOR",
+          make: "CAT",
+          customer: { userId: "another-user" },
+        }),
+      },
+    };
+    const db = {
+      serviceRequest: { findUnique: vi.fn().mockResolvedValue(null) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
+    } as any;
+
+    await expect(createServiceRequestAtomically(db, serviceInput))
+      .rejects.toBeInstanceOf(ServiceRequestVehicleError);
+    expect(tx.serviceRequest.create).not.toHaveBeenCalled();
+  });
+
+  it("allows an authenticated admin to create a request for the selected customer", async () => {
+    const tx = {
+      serviceRequest: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({ id: "admin-request-1" }),
+      },
+      vehicle: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "vehicle-1",
+          customerId: "customer-1",
+          type: "EXCAVATOR",
+          make: "CAT",
+          customer: { userId: "another-user" },
+        }),
+      },
+    };
+    const db = {
+      serviceRequest: { findUnique: vi.fn().mockResolvedValue(null) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
+    } as any;
+
+    await expect(createServiceRequestAtomically(db, {
+      ...serviceInput, actorRole: "ADMIN",
+    })).resolves.toEqual({ id: "admin-request-1", created: true });
   });
 
   it("replays the same request and rejects key reuse with a different payload", async () => {
@@ -101,7 +157,6 @@ describe("service request atomic writer", () => {
 
   it("deduplicates 100 concurrent identical requests in the transaction model", async () => {
     const records = new Map<string, { id: string; requestFingerprint: string }>();
-    let vehicleCreates = 0;
     let requestCreates = 0;
     let tail = Promise.resolve();
     const tx = {
@@ -115,10 +170,9 @@ describe("service request atomic writer", () => {
         }),
       },
       vehicle: {
-        create: vi.fn(async () => {
-          vehicleCreates++;
-          return { id: "vehicle-1" };
-        }),
+        findUnique: vi.fn(async () => ({
+          id: "vehicle-1", customerId: "customer-1", type: "EXCAVATOR", make: "Caterpillar", customer: { userId: "user-1" },
+        })),
       },
     };
     const db = {
@@ -139,10 +193,10 @@ describe("service request atomic writer", () => {
     );
     expect(new Set(results.map((item) => item.id))).toEqual(new Set(["request-1"]));
     expect(requestCreates).toBe(1);
-    expect(vehicleCreates).toBe(1);
+    expect(tx.vehicle.findUnique).toHaveBeenCalled();
   });
 
-  it("uses one D1 batch for the ad-hoc vehicle and service request", async () => {
+  it("uses one D1 insert guarded by the registered vehicle", async () => {
     const statements: Array<{ sql: string; values: unknown[] }> = [];
     const d1 = {
       prepare: (sql: string) => ({
@@ -151,11 +205,16 @@ describe("service request atomic writer", () => {
           return { sql, values };
         },
       }),
-      batch: vi.fn(async (_statements: unknown[]) => [{ meta: { changes: 1 } }, { meta: { changes: 1 } }]),
+      batch: vi.fn(async (_statements: unknown[]) => [{ meta: { changes: 1 } }]),
     };
     mocks.getD1Binding.mockResolvedValue(d1);
-    vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValueOnce("request-d1").mockReturnValueOnce("vehicle-d1") });
+    vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValueOnce("request-d1") });
     const db = {
+      vehicle: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "vehicle-1", customerId: "customer-1", type: "EXCAVATOR", make: "CAT", customer: { userId: "user-1" },
+        }),
+      },
       serviceRequest: {
         findUnique: vi.fn()
           .mockResolvedValueOnce(null)
@@ -166,9 +225,10 @@ describe("service request atomic writer", () => {
     await expect(createServiceRequestAtomically(db, serviceInput))
       .resolves.toEqual({ id: "request-d1", created: true });
     expect(d1.batch).toHaveBeenCalledTimes(1);
-    expect(d1.batch.mock.calls[0][0]).toHaveLength(2);
-    expect(statements[0].sql).toContain('INSERT INTO "Vehicle"');
-    expect(statements[1].sql).toContain('INSERT INTO "ServiceRequest"');
+    expect(d1.batch.mock.calls[0][0]).toHaveLength(1);
+    expect(statements[0].sql).toContain('INSERT INTO "ServiceRequest"');
+    expect(statements[0].sql).toContain('FROM "Vehicle"');
+    expect(statements[0].values).toContain("vehicle-1");
   });
 });
 
@@ -190,7 +250,7 @@ describe("insurance claim atomic writer", () => {
       .resolves.toEqual({ id: "claim-1", code: claimInput.code, created: true });
     expect(tx.insuranceClaim.create).toHaveBeenCalledTimes(1);
     expect(tx.insurancePolicy.updateMany).toHaveBeenCalledWith({
-      where: { id: claimInput.policyId, status: { notIn: ["expired", "cancelled"] } },
+      where: { id: claimInput.policyId, status: { notIn: ["expired", "cancelled"] }, financialUnitStatus: "VERIFIED_IRR" },
       data: { status: "claimed" },
     });
   });

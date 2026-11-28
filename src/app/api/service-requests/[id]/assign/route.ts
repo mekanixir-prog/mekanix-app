@@ -2,6 +2,7 @@ import { PARTICIPANT_USER_SELECT } from "@/lib/user-select";
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { requireAuth } from "@/lib/api-helpers";
+import { maskJobFinancialData } from "@/lib/money/financial-read-mask";
 import {
   assignServiceRequestAtomically,
   ServiceRequestAssignmentConflictError,
@@ -154,5 +155,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     );
   }
 
-  return NextResponse.json(job);
+  return NextResponse.json(maskJobFinancialData(job));
 }

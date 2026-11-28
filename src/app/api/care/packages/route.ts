@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 // GET /api/care/packages — list available service packages
 export async function GET(req: Request) {
@@ -13,5 +14,5 @@ export async function GET(req: Request) {
     orderBy: { order: "asc" },
   });
 
-  return NextResponse.json(packages);
+  return NextResponse.json(packages.map((pkg) => maskFinancialFields(pkg, ["basePrice"])));
 }

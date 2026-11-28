@@ -1,12 +1,22 @@
 import { NextResponse } from "next/server";
 import { getDbForLib } from "@/lib/db-access";
 import { getSessionFromRequest } from "@/lib/auth";
+import { maskTechnicianFinancialData } from "@/lib/money/financial-read-mask";
 
 const TECHNICIAN_INCLUDE = {
   specialties: true,
   certifications: true,
   serviceAreas: true,
 } as const;
+
+function maskSessionFinancialData<T extends { technician?: unknown }>(user: T): T {
+  const technician = user.technician;
+  if (!technician || typeof technician !== "object") return user;
+  return {
+    ...user,
+    technician: maskTechnicianFinancialData(technician as Record<string, unknown>),
+  };
+}
 
 // Safe user select — NEVER expose password
 const SAFE_USER_SELECT = {
@@ -59,11 +69,11 @@ export async function POST(req: Request) {
           technician: { include: TECHNICIAN_INCLUDE },
         },
       });
-      if (fresh) return NextResponse.json({ user: fresh });
+      if (fresh) return NextResponse.json({ user: maskSessionFinancialData(fresh) });
     } catch {}
   }
 
-  return NextResponse.json({ user });
+  return NextResponse.json({ user: maskSessionFinancialData(user) });
 }
 
 // GET also requires JWT
@@ -87,5 +97,5 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "کاربر یافت نشد" }, { status: 404 });
   }
 
-  return NextResponse.json({ user });
+  return NextResponse.json({ user: maskSessionFinancialData(user) });
 }

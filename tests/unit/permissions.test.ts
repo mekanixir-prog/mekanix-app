@@ -6,7 +6,7 @@
 //     pay / review, but cannot accept missions, inspect, or propose extras
 //   - TECHNICIAN can accept missions / update status / inspect / propose extras /
 //     write health reports / withdraw, but cannot create services or pay
-//   - FLEET_MANAGER inherits CUSTOMER permissions (fleet B2B)
+//   - FLEET_MANAGER is recognized but has no permissions until fleet ownership exists
 //   - PARTNER is read-only analytics viewer (single permission)
 //   - Unknown role → deny by default
 //   - requirePermission returns a 403 NextResponse for denied, null for allowed
@@ -67,24 +67,18 @@ describe("permissions — can()", () => {
     expect(can("TECHNICIAN", PERMISSIONS.CUSTOMER_REVIEW)).toBe(false);
   });
 
-  it("FLEET_MANAGER inherits all customer permissions + has fleet-specific ones", () => {
-    // Customer permissions inherited
-    expect(can("FLEET_MANAGER", PERMISSIONS.CUSTOMER_CREATE_SERVICE)).toBe(true);
-    expect(can("FLEET_MANAGER", PERMISSIONS.CUSTOMER_MANAGE_VEHICLES)).toBe(true);
-    expect(can("FLEET_MANAGER", PERMISSIONS.CUSTOMER_BOOK_CARE)).toBe(true);
-    expect(can("FLEET_MANAGER", PERMISSIONS.CUSTOMER_APPROVE_EXTRA)).toBe(true);
-    expect(can("FLEET_MANAGER", PERMISSIONS.CUSTOMER_PAY)).toBe(true);
-    expect(can("FLEET_MANAGER", PERMISSIONS.CUSTOMER_REVIEW)).toBe(true);
-
-    // Fleet-specific permissions
-    expect(can("FLEET_MANAGER", PERMISSIONS.FLEET_VIEW_DASHBOARD)).toBe(true);
-    expect(can("FLEET_MANAGER", PERMISSIONS.FLEET_MANAGE_ASSETS)).toBe(true);
-
-    // Fleet manager is NOT a technician
+  it("FLEET_MANAGER is recognized but has no permissions before ownership is implemented", () => {
+    expect(isKnownRole("FLEET_MANAGER")).toBe(true);
+    expect(permissionsForRole("FLEET_MANAGER").size).toBe(0);
+    expect(can("FLEET_MANAGER", PERMISSIONS.CUSTOMER_CREATE_SERVICE)).toBe(false);
+    expect(can("FLEET_MANAGER", PERMISSIONS.CUSTOMER_MANAGE_VEHICLES)).toBe(false);
+    expect(can("FLEET_MANAGER", PERMISSIONS.CUSTOMER_BOOK_CARE)).toBe(false);
+    expect(can("FLEET_MANAGER", PERMISSIONS.CUSTOMER_APPROVE_EXTRA)).toBe(false);
+    expect(can("FLEET_MANAGER", PERMISSIONS.CUSTOMER_PAY)).toBe(false);
+    expect(can("FLEET_MANAGER", PERMISSIONS.CUSTOMER_REVIEW)).toBe(false);
+    expect(can("FLEET_MANAGER", PERMISSIONS.FLEET_VIEW_DASHBOARD)).toBe(false);
+    expect(can("FLEET_MANAGER", PERMISSIONS.FLEET_MANAGE_ASSETS)).toBe(false);
     expect(can("FLEET_MANAGER", PERMISSIONS.TECHNICIAN_ACCEPT_MISSION)).toBe(false);
-    expect(can("FLEET_MANAGER", PERMISSIONS.TECHNICIAN_INSPECT)).toBe(false);
-
-    // And NOT a partner
     expect(can("FLEET_MANAGER", PERMISSIONS.PARTNER_VIEW_ANALYTICS)).toBe(false);
   });
 

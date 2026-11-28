@@ -5,10 +5,12 @@ import { getCustomerFromSession } from "@/lib/auth";
 import { careBookingSchema } from "@/lib/schemas";
 import { requestFingerprint } from "@/lib/idempotency";
 import { calculatePrice } from "@/lib/pricing";
-import { checkVipStatus } from "@/lib/vip";
 import { wantsLite, liteResponse } from "@/lib/lite-response";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
+import { isVehicleInSupportedScope } from "@/lib/vehicle-scope";
 import {
   CareBookingIdempotencyConflict,
+  CareBookingVehicleError,
   createCareBookingAtomically,
 } from "@/lib/care-booking-atomic";
 
@@ -33,7 +35,7 @@ export async function POST(req: Request) {
   if (!body.ok) return body.response;
 
   const {
-    vehicleId, packageId, serviceType, location, lat, lng,
+    vehicleId, packageId, serviceType, expectedPricingVersion, location, lat, lng,
     date, timeWindow, currentMileage,
   } = body.data;
 
@@ -46,12 +48,15 @@ export async function POST(req: Request) {
   if (!vehicle || vehicle.customerId !== customer.id) {
     return NextResponse.json({ error: "خودرو متعلق به شما نیست" }, { status: 403 });
   }
+  if (!isVehicleInSupportedScope(vehicle.type, vehicle.make)) {
+    return NextResponse.json({ error: "این وسیله یا برند در محدوده خدمات و نرخ‌نامه تأییدشده MEKANIX نیست", code: "VEHICLE_OUT_OF_SCOPE" }, { status: 400 });
+  }
 
   const normalized = {
     userId: session.userId,
     vehicleId,
     packageId: packageId || null,
-    serviceType: serviceType || "periodic",
+    serviceType,
     location,
     lat: lat ?? null,
     lng: lng ?? null,
@@ -59,7 +64,7 @@ export async function POST(req: Request) {
     timeWindow: timeWindow || null,
     currentMileage: currentMileage ?? null,
   };
-  const fingerprint = await requestFingerprint(normalized);
+  const fingerprint = await requestFingerprint({ ...normalized, expectedPricingVersion: expectedPricingVersion ?? null });
 
   // Fast replay path avoids recalculating a frozen historical price.
   const existing = await db.serviceBooking.findUnique({
@@ -75,16 +80,28 @@ export async function POST(req: Request) {
     return NextResponse.json(existing);
   }
 
-  const vipStatus = await checkVipStatus(session.userId);
-  const pricing = await calculatePrice({
-    packageId: packageId || undefined,
-    vehicleType: vehicle.type,
-    laborHours: 1,
-    partsCost: 0,
-    travelDistanceKm: 0,
-    isEmergency: serviceType === "emergency",
-    vipDiscountPercent: vipStatus.active ? vipStatus.discountPercent : 0,
-  });
+  let pricing: Awaited<ReturnType<typeof calculatePrice>>;
+  try {
+    pricing = await calculatePrice({
+      vehicleType: vehicle.type,
+      serviceCode: "periodic",
+      laborHours: 0,
+      partsCost: 0,
+      travelDistanceKm: 0,
+      isEmergency: false,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "محاسبه تعرفه ممکن نیست", code: "PRICING_NOT_AVAILABLE" },
+      { status: 409 },
+    );
+  }
+  if (expectedPricingVersion !== pricing.pricingVersion) {
+    return NextResponse.json(
+      { error: "نرخ‌نامه پس از نمایش پیش‌فاکتور تغییر کرده است؛ لطفاً مبلغ جدید را بررسی کنید", code: "PRICING_VERSION_CHANGED" },
+      { status: 409 },
+    );
+  }
 
   try {
     const booking = await createCareBookingAtomically(db, {
@@ -101,6 +118,12 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "این کلید قبلاً برای اطلاعات متفاوتی استفاده شده است" },
         { status: 409 }
+      );
+    }
+    if (error instanceof CareBookingVehicleError) {
+      return NextResponse.json(
+        { error: "مالکیت یا محدوده مجاز وسیله هنگام ثبت رزرو تغییر کرده است؛ اطلاعات وسیله را بررسی کنید", code: "VEHICLE_SCOPE_CHANGED" },
+        { status: 409 },
       );
     }
     throw error;
@@ -123,5 +146,9 @@ export async function GET(req: Request) {
   });
 
   const lite = wantsLite(req);
-  return NextResponse.json(liteResponse(bookings, lite));
+  const maskedBookings = bookings.map((booking) => ({
+    ...booking,
+    package: booking.package ? maskFinancialFields(booking.package, ["basePrice"]) : booking.package,
+  }));
+  return NextResponse.json(liteResponse(maskedBookings, lite));
 }

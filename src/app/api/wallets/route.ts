@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/api-helpers";
 import { getTechnicianFromSession } from "@/lib/auth";
 import { releaseWalletTransaction } from "@/lib/wallet-release";
 import { shouldUseLegacyWalletReleaseFallback } from "@/lib/wallet-release-policy";
+import { maskWalletMoney } from "@/lib/money/read-provenance";
 
 // GET /api/wallets
 // Returns the wallet + recent transactions for the authenticated technician.
@@ -30,12 +31,12 @@ export async function GET(req: Request) {
     technicianId = tech.id;
   }
 
-  // Idempotently initialize a missing wallet. A read can race with prepay
-  // initialization or another first-time wallet read, so avoid find-then-create.
+  // Atomically initialize a missing wallet. A find-then-create sequence can
+  // race with prepay initialization or another first-time wallet read.
   const db = await getDbForLib();
   const wallet = await db.wallet.upsert({
     where: { technicianId },
-    create: { technicianId },
+    create: { technicianId, financialUnitStatus: "UNVERIFIED" },
     update: {},
     include: {
       transactions: { orderBy: { createdAt: "desc" }, take: 50 },
@@ -53,6 +54,9 @@ export async function GET(req: Request) {
       (t) => t.status === "PENDING" && t.holdUntil && t.holdUntil.getTime() <= now.getTime()
     );
     for (const transaction of releasable) {
+      // A GET request must never promote or release legacy/unverified money.
+      if (wallet.financialUnitStatus !== "VERIFIED_IRR" ||
+          transaction.financialUnitStatus !== "VERIFIED_IRR") continue;
       await releaseWalletTransaction(db, wallet.id, transaction.id, now);
     }
   }
@@ -65,5 +69,5 @@ export async function GET(req: Request) {
     },
   });
 
-  return NextResponse.json(fresh);
+  return NextResponse.json(fresh ? maskWalletMoney(fresh) : null);
 }

@@ -13,12 +13,19 @@ describe("validateExtraProposalInput", () => {
       ok: true,
       value: {
         proposedItem: "تعویض فیلتر",
-        partPrice: 125000,
+        partPrice: 1250000,
         quantity: 2,
-        laborPrice: 50000,
+        laborPrice: 500000,
         findingId: "finding-1",
       },
     });
+  });
+
+  it("rejects Toman values that overflow when converted to integer IRR", () => {
+    expect(validateExtraProposalInput({
+      proposedItem: "قطعه",
+      partPrice: Math.floor(Number.MAX_SAFE_INTEGER / 10) + 1,
+    })).toMatchObject({ ok: false });
   });
 
   it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1, "1000"])(

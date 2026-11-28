@@ -20,16 +20,26 @@ const responseTime = new Trend("response_time_ms");
 // statuses remain failures and are caught by the global failure threshold.
 http.setResponseCallback(http.expectedStatuses(200, 429, 503));
 
+const fullLoadStages = [
+  { duration: "30s", target: 10 },
+  { duration: "1m", target: 10 },
+  { duration: "30s", target: 50 },
+  { duration: "1m", target: 50 },
+  { duration: "30s", target: 100 },
+  { duration: "1m", target: 100 },
+  { duration: "30s", target: 0 },
+];
+
+const smokeStages = [
+  { duration: "10s", target: 5 },
+  { duration: "20s", target: 5 },
+  { duration: "10s", target: 0 },
+];
+
 export const options = {
-  stages: [
-    { duration: "30s", target: 10 },
-    { duration: "1m", target: 10 },
-    { duration: "30s", target: 50 },
-    { duration: "1m", target: 50 },
-    { duration: "30s", target: 100 },
-    { duration: "1m", target: 100 },
-    { duration: "30s", target: 0 },
-  ],
+  // Include p(99) in summary-export JSON so the artifact can be validated offline.
+  summaryTrendStats: ["avg", "min", "med", "max", "p(90)", "p(95)", "p(99)"],
+  stages: __ENV.K6_SMOKE === "true" ? smokeStages : fullLoadStages,
   thresholds: {
     http_req_duration: ["p(95)<500"],
     http_req_failed: ["rate<0.01"],
@@ -58,19 +68,24 @@ export default function loadTest() {
   responseTime.add(readyRes.timings.duration);
   sleep(0.25);
 
+  // Use a disjoint synthetic phone range per VU. Random 7-digit suffixes
+  // collide at 100 VUs and can intentionally hit OTP_SEND_CONFLICT; this
+  // load profile measures service capacity, not duplicate-phone contention.
+  const phoneIndex = ((__VU - 1) * 90_000 + (__ITER % 90_000)) % 9_000_000;
+  const phoneSuffix = String(1_000_000 + phoneIndex).padStart(7, "0");
   const otpRes = http.post(
     `${BASE_URL}/api/auth/otp/send`,
-    JSON.stringify({ phone: `+98912${Math.floor(1000000 + Math.random() * 8999999)}` }),
+    JSON.stringify({ phone: `+98912${phoneSuffix}` }),
     { headers: { "Content-Type": "application/json" } }
   );
   const otpAccepted = check(otpRes, {
     "OTP is delivered only by a configured provider or rate-limited": (r) =>
       r.status === 200 || r.status === 429 || r.status === 503,
-    "fail-closed OTP never returns a code": (r) => {
-      if (r.status !== 503) return true;
+    "OTP never returns a plaintext code": (r) => {
       try {
         const body = r.json();
-        return body.ok !== true && !("code" in body);
+        if (r.status === 503) return body.ok !== true && !("code" in body);
+        return !("code" in body);
       } catch {
         return false;
       }

@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/api-helpers";
 import { requirePolicyOwner } from "@/lib/auth";
 import { IdempotencyConflictError, readIdempotencyKey, requestFingerprint } from "@/lib/idempotency";
 import { createInsuranceClaimAtomically, InsurancePolicyInactiveError } from "@/lib/insurance-claim-atomic";
+import { maskFinancialFields } from "@/lib/money/financial-read-mask";
 
 // Claim + policy status are one atomic business operation. Notifications are
 // post-commit best-effort side effects and cannot change the claim result.
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
   if (typeof description !== "string" || description.trim().length < 5) {
     return NextResponse.json({ error: "توضیحات حداقل ۵ نویسه باشد" }, { status: 400 });
   }
-  if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
+  if (typeof amount !== "number" || !Number.isSafeInteger(amount) || amount <= 0) {
     return NextResponse.json({ error: "amount باید بیشتر از صفر باشد" }, { status: 400 });
   }
 
@@ -40,9 +41,12 @@ export async function POST(req: Request) {
   const db = await getDbForLib();
   const policy = await db.insurancePolicy.findUnique({
     where: { id: policyId },
-    select: { id: true, userId: true, status: true },
+    select: { id: true, userId: true, status: true, financialUnitStatus: true },
   });
   if (!policy) return NextResponse.json({ error: "بیمه‌نامه یافت نشد" }, { status: 404 });
+  if (policy.financialUnitStatus !== "VERIFIED_IRR") {
+    return NextResponse.json({ error: "منشأ مالی بیمه‌نامه تأیید نشده است؛ ثبت خسارت مالی تا زمان تطبیق مسدود است", code: "INSURANCE_POLICY_PROVENANCE_UNVERIFIED" }, { status: 409 });
+  }
   if (policy.status === "expired" || policy.status === "cancelled") {
     return NextResponse.json({ error: "این بیمه‌نامه فعال نیست" }, { status: 400 });
   }
@@ -97,7 +101,7 @@ export async function POST(req: Request) {
             userId: policy.userId,
             type: "insurance_claim",
             title: `Claim ${claim.code} submitted`,
-            body: `Your claim for ${claim.amount} is under review.`,
+            body: `Your claim ${claim.code} is under review.`,
             category: "system",
             link: "customer/insurance",
           },
@@ -107,7 +111,7 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ ok: true, claim }, { status: result.created ? 201 : 200 });
+    return NextResponse.json({ ok: true, claim: maskFinancialFields(claim, ["amount"]) }, { status: result.created ? 201 : 200 });
   } catch (error) {
     if (error instanceof InsurancePolicyInactiveError) {
       return NextResponse.json({ error: "این بیمه‌نامه دیگر فعال نیست" }, { status: 409 });

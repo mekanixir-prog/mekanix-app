@@ -87,6 +87,34 @@ describe("OTP send route SMS delivery handling", () => {
     await expect(response.json()).resolves.not.toHaveProperty("code");
   });
 
+
+  it("returns a controlled conflict when another request wins the pending-phone insert", async () => {
+    mocks.createOtp.mockRejectedValue({
+      code: "P2002",
+      message: "Unique constraint failed on OtpCode_one_pending_per_phone_idx",
+    });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ code: "OTP_SEND_CONFLICT" });
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+
+  it("uses the same canonical phone identity for domestic Iranian OTP requests", async () => {
+    mocks.validate.mockResolvedValue({ ok: true, data: { phone: "09121234567" } });
+    const response = await POST(new Request("https://mekanix.test/api/auth/otp/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone: "09121234567" }),
+    }));
+    expect(response.status).toBe(200);
+    expect(mocks.createOtp).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ phone: "+989121234567" }),
+    }));
+    expect(mocks.send).toHaveBeenCalledWith("09121234567", "123456");
+  });
+
   it("returns a success response without exposing the OTP in production", async () => {
     vi.stubEnv("NODE_ENV", "production");
     const response = await POST(request());

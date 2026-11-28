@@ -1,8 +1,11 @@
 import type { PrismaClient } from "@prisma/client";
+import { isVehicleInSupportedScope } from "@/lib/vehicle-scope";
 
 type Pricing = {
   labor: number;
   travel: number;
+  inspection: number;
+  emergency: number;
   parts: number;
   discount: number;
   taxRate: number;
@@ -43,6 +46,13 @@ export class CareBookingIdempotencyConflict extends Error {
   }
 }
 
+export class CareBookingVehicleError extends Error {
+  constructor() {
+    super("A registered, owned, supported vehicle is required for CARE booking");
+    this.name = "CareBookingVehicleError";
+  }
+}
+
 function assertSameRequest(booking: { requestFingerprint: string | null }, fingerprint: string) {
   if (booking.requestFingerprint !== fingerprint) throw new CareBookingIdempotencyConflict();
 }
@@ -55,6 +65,20 @@ async function createWithPrisma(db: PrismaClient, input: CareBookingInput) {
     if (existing) {
       assertSameRequest(existing, input.requestFingerprint);
       return existing;
+    }
+
+    // Re-check owner and supported rate-card class inside the same transaction
+    // as booking creation; the route preflight alone is vulnerable to races.
+    const vehicle = await tx.vehicle.findUnique({
+      where: { id: input.vehicleId },
+      select: { type: true, make: true, customer: { select: { userId: true } } },
+    });
+    if (
+      !vehicle ||
+      vehicle.customer?.userId !== input.userId ||
+      !isVehicleInSupportedScope(vehicle.type, vehicle.make)
+    ) {
+      throw new CareBookingVehicleError();
     }
 
     const booking = await tx.serviceBooking.create({
@@ -81,6 +105,9 @@ async function createWithPrisma(db: PrismaClient, input: CareBookingInput) {
         bookingId: booking.id,
         servicePrice: input.pricing.labor,
         visitPrice: input.pricing.travel,
+        inspectionPrice: input.pricing.inspection,
+        emergencyPrice: input.pricing.emergency,
+        financialUnitStatus: "VERIFIED_IRR",
         laborPrice: input.pricing.labor,
         partsPrice: input.pricing.parts,
         discount: input.pricing.discount,
@@ -129,26 +156,51 @@ async function createWithD1(d1: D1Database, input: CareBookingInput) {
         ("id", "code", "userId", "vehicleId", "packageId", "serviceType",
          "location", "lat", "lng", "date", "timeWindow", "currentMileage",
          "status", "idempotencyKey", "requestFingerprint", "createdAt", "updatedAt")
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'REQUESTED', ?, ?, ?, ?)
+      SELECT ?, ?, ?, v."id", ?, ?, ?, ?, ?, ?, ?, ?, 'REQUESTED', ?, ?, ?, ?
+      FROM "Vehicle" v
+      JOIN "Customer" c ON c."id" = v."customerId"
+      WHERE v."id" = ? AND c."userId" = ?
+        AND (
+          v."type" IN ('TRUCK', 'BUS', 'EXCAVATOR', 'LOADER', 'BULLDOZER', 'GRADER', 'AGRI', 'INDUSTRIAL')
+          OR (
+            v."type" = 'CAR'
+            AND lower(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(v."make", ' ', ''), '-', ''), '_', ''), '.', ''), '(', ''), ')', ''), '‌', ''), '‏', ''), 'ي', 'ی'), 'ك', 'ک')) NOT IN (
+              'ایرانخودرو', 'گروهایرانخودرو', 'irankhodro', 'irankhodroikco', 'ikco',
+              'سایپا', 'گروهسایپا', 'saipa', 'پارسخودرو', 'parskhodro', 'گروهسایپاپارسخودرو'
+            )
+            AND lower(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(v."make", ' ', ''), '-', ''), '_', ''), '.', ''), '(', ''), ')', ''), '‌', ''), '‏', ''), 'ي', 'ی'), 'ك', 'ک')) NOT LIKE 'ایرانخودرو%'
+            AND lower(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(v."make", ' ', ''), '-', ''), '_', ''), '.', ''), '(', ''), ')', ''), '‌', ''), '‏', ''), 'ي', 'ی'), 'ك', 'ک')) NOT LIKE '%گروهایرانخودرو%'
+            AND lower(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(v."make", ' ', ''), '-', ''), '_', ''), '.', ''), '(', ''), ')', ''), '‌', ''), '‏', ''), 'ي', 'ی'), 'ك', 'ک')) NOT LIKE 'سایپا%'
+            AND lower(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(v."make", ' ', ''), '-', ''), '_', ''), '.', ''), '(', ''), ')', ''), '‌', ''), '‏', ''), 'ي', 'ی'), 'ك', 'ک')) NOT LIKE '%گروهسایپا%'
+            AND lower(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(v."make", ' ', ''), '-', ''), '_', ''), '.', ''), '(', ''), ')', ''), '‌', ''), '‏', ''), 'ي', 'ی'), 'ك', 'ک')) NOT LIKE 'پارسخودرو%'
+            AND lower(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(v."make", ' ', ''), '-', ''), '_', ''), '.', ''), '(', ''), ')', ''), '‌', ''), '‏', ''), 'ي', 'ی'), 'ك', 'ک')) NOT LIKE 'irankhodro%'
+            AND lower(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(v."make", ' ', ''), '-', ''), '_', ''), '.', ''), '(', ''), ')', ''), '‌', ''), '‏', ''), 'ي', 'ی'), 'ك', 'ک')) NOT LIKE 'saipa%'
+            AND lower(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(v."make", ' ', ''), '-', ''), '_', ''), '.', ''), '(', ''), ')', ''), '‌', ''), '‏', ''), 'ي', 'ی'), 'ك', 'ک')) NOT LIKE 'parskhodro%'
+          )
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM "ServiceBooking" existing
+          WHERE existing."idempotencyKey" = ?
+        )
       ON CONFLICT("idempotencyKey") DO NOTHING
     `).bind(
-      bookingId, input.code, input.userId, input.vehicleId, input.packageId,
-      input.serviceType, input.location, input.lat, input.lng, date,
-      input.timeWindow, input.currentMileage, input.idempotencyKey,
-      input.requestFingerprint, now, now
+      bookingId, input.code, input.userId, input.packageId, input.serviceType,
+      input.location, input.lat, input.lng, date, input.timeWindow,
+      input.currentMileage, input.idempotencyKey, input.requestFingerprint,
+      now, now, input.vehicleId, input.userId, input.idempotencyKey
     ),
     d1.prepare(`
       INSERT INTO "PricingSnapshot"
-        ("id", "bookingId", "servicePrice", "visitPrice", "laborPrice",
+        ("id", "bookingId", "servicePrice", "visitPrice", "inspectionPrice", "emergencyPrice", "laborPrice",
          "partsPrice", "discount", "taxRate", "taxTotal", "total",
-         "currency", "pricingVersion", "createdAt")
-      SELECT ?, "id", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+         "currency", "pricingVersion", "financialUnitStatus", "createdAt")
+      SELECT ?, "id", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       FROM "ServiceBooking"
       WHERE "idempotencyKey" = ? AND "requestFingerprint" = ?
       ON CONFLICT("bookingId") DO NOTHING
     `).bind(
-      snapshotId, p.labor, p.travel, p.labor, p.parts, p.discount,
-      p.taxRate, p.taxTotal, p.total, p.currency, p.pricingVersion, now,
+      snapshotId, p.labor, p.travel, p.inspection, p.emergency, p.labor, p.parts, p.discount,
+      p.taxRate, p.taxTotal, p.total, p.currency, p.pricingVersion, "VERIFIED_IRR", now,
       input.idempotencyKey, input.requestFingerprint
     ),
     d1.prepare(`
@@ -214,7 +266,7 @@ export async function createCareBookingAtomically(
   const booking = await db.serviceBooking.findUnique({
     where: { idempotencyKey: input.idempotencyKey },
   });
-  if (!booking) throw new Error("CARE booking batch completed without a readable booking");
+  if (!booking) throw new CareBookingVehicleError();
   assertSameRequest(booking, input.requestFingerprint);
   return booking;
 }

@@ -177,11 +177,21 @@ export async function GET() {
   }
 
   const ok = Object.values(checks).every(Boolean);
+  // Keep detailed gate failures server-side. Public readiness consumers need
+  // the ready/not-ready signal, not internal secret names or deployment policy.
+  const publicErrors =
+    process.env.NODE_ENV === "production" && errors.length > 0
+      ? ["One or more readiness checks failed"]
+      : errors;
+
+  const publicChecks = process.env.NODE_ENV === "production"
+    ? { database: checks.database }
+    : checks;
   return NextResponse.json(
     {
       ok,
-      checks,
-      errors,
+      checks: publicChecks,
+      errors: publicErrors,
       timestamp: new Date().toISOString(),
     },
     { status: ok ? 200 : 503 }

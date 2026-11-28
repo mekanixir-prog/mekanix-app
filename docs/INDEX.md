@@ -1,10 +1,11 @@
 # MEKANIX Engineering Documentation
 
-> **Current audited code baseline:** `db0f3361c3158764c47cfeb48d5b9dafadc90610` (2026-11-04). The [2026-11-04 Release Readiness Audit](RELEASE_READINESS_AUDIT_2026-11-04.md) is the current source of truth for mainline and release status.
+> **Current main branch:** `10080473dd6b87ec725a5c6c22803f5d5d872342` (2026-11-04). The [2026-11-04 mainline Release Readiness Audit](RELEASE_READINESS_AUDIT_2026-11-04.md) remains the mainline baseline. For the open pricing candidate, use the [2026-11-07 Release Candidate Audit](RELEASE_CANDIDATE_AUDIT_2026-11-07.md) and PR #137; do not confuse the feature branch with merged mainline.
 
 ## Start here
 
-1. [Release Readiness Audit — 2026-11-04](RELEASE_READINESS_AUDIT_2026-11-04.md) — exact mainline baseline, current PR/issue disposition, CI evidence, repository governance, financial blockers, and launch gates.
+1. [Release Candidate Audit — 2026-11-07](RELEASE_CANDIDATE_AUDIT_2026-11-07.md) — PR #137 pricing implementation, latest validation evidence, and remaining NO-GO gates.
+2. [Release Readiness Audit — 2026-11-04](RELEASE_READINESS_AUDIT_2026-11-04.md) — mainline baseline, issue disposition, CI evidence, repository governance, financial blockers, and launch gates.
 2. [Historical Release Readiness Audit — 2026-11-01, updated 2026-11-03](RELEASE_READINESS_AUDIT_2026-11-01.md) — prior point-in-time findings; superseded by the 2026-11-04 audit.
 3. [Release Checklist](RELEASE_CHECKLIST.md) — operational gates split between work to finish now and services to activate shortly before launch.
 4. [Production Deployment Runbook](PRODUCTION_DEPLOYMENT_RUNBOOK.md) — staging, configuration, deployment, smoke tests, and rollback sequence.

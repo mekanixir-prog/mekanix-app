@@ -7,9 +7,8 @@
 // The pricing engine returns a structured breakdown + persists a frozen
 // snapshot at booking time so historical prices are immutable.
 //
-// VIP discounts are wired via `@/lib/vip` — callers pass
-// `vipDiscountPercent` into `calculatePrice()` to apply the discount
-// server-side.
+// VIP periodic-visit benefits are handled by the subscription/booking flow.
+// Repair labor and parts are never discounted by VIP.
 
 export {
   calculatePrice,
@@ -18,9 +17,7 @@ export {
   type PricingBreakdown,
 } from "@/lib/pricing";
 
-// VIP discount helpers live in `@/lib/vip` — re-exported here so the
-// pricing module is a one-stop import site for callers that want to
-// compute a price including VIP treatment.
+// VIP status helpers remain available to booking flows; they do not discount repair invoices.
 export {
   checkVipStatus,
   getVipDiscount,

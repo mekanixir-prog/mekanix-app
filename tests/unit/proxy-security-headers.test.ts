@@ -19,6 +19,9 @@ describe("security response headers", () => {
     expect(response.status).toBe(403);
     expect(response.headers.get("Content-Security-Policy")).toContain("frame-ancestors");
     expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(response.headers.get("Cross-Origin-Opener-Policy")).toBe("same-origin");
+    expect(response.headers.get("Cross-Origin-Embedder-Policy")).toBe("credentialless");
+    expect(response.headers.get("Cross-Origin-Resource-Policy")).toBe("same-origin");
   });
 
   it("allows same-origin cookie-authenticated mutations", () => {
@@ -61,20 +64,57 @@ describe("security response headers", () => {
   });
 
 
-  it("restricts production framing to the application and approved preview gateway", () => {
+  it("restricts production framing to same-origin by default", () => {
     vi.stubEnv("NODE_ENV", "production");
     const response = proxy(new NextRequest("https://mekanix.ir/admin-panel"));
     const csp = response.headers.get("Content-Security-Policy") ?? "";
 
-    expect(csp).toContain("frame-ancestors 'self' https://*.space-z.ai");
+    expect(csp).toContain("frame-ancestors 'self'");
+    expect(csp).not.toContain("https://*.space-z.ai");
     expect(csp).not.toContain("frame-ancestors *");
     expect(csp).not.toContain("'unsafe-eval'");
+    expect(csp).toMatch(/script-src[^;]*'nonce-[A-Za-z0-9+/=]+'/);
+    expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+    expect(csp).not.toMatch(/style-src 'self' 'unsafe-inline'/);
+    expect(csp).toContain("style-src-attr 'unsafe-inline'");
+    expect(csp).toContain("https://a.tile.openstreetmap.org");
+    expect(csp).toContain("https://i.pravatar.cc");
+    expect(csp).toContain("https://nominatim.openstreetmap.org");
+    expect(csp).not.toMatch(/(?:img-src|connect-src)[^;]*\shttps:\s*(?:;|$)/);
+    expect(csp).not.toMatch(/(?:img-src|connect-src)[^;]*\shttp:\s*(?:;|$)/);
     expect(csp).toContain("object-src 'none'");
     expect(csp).toContain("base-uri 'self'");
     expect(csp).toContain("form-action 'self'");
-    expect(csp).not.toContain("connect-src 'self' ws:");
+    expect(csp).toContain("wss://mekanix.ir");
+    expect(csp).not.toMatch(/connect-src[^;]*\bwss:\\s*(?:;|$)/);
     expect(response.headers.get("Strict-Transport-Security"))
       .toContain("max-age=31536000");
+  });
+
+  it("generates a fresh CSP nonce for each rendered document request", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const first = proxy(new NextRequest("https://mekanix.ir/"));
+    const second = proxy(new NextRequest("https://mekanix.ir/"));
+    const firstNonce = first.headers.get("Content-Security-Policy")?.match(/'nonce-([^']+)'/)?.[1];
+    const secondNonce = second.headers.get("Content-Security-Policy")?.match(/'nonce-([^']+)'/)?.[1];
+    expect(firstNonce).toBeTruthy();
+    expect(secondNonce).toBeTruthy();
+    expect(firstNonce).not.toBe(secondNonce);
+  });
+
+  it("uses a non-executable restrictive CSP for API responses", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const response = proxy(new NextRequest("https://mekanix.ir/api/wallets"));
+    expect(response.headers.get("Content-Security-Policy")).toBe("default-src 'none'; frame-ancestors 'none'");
+  });
+
+  it("allows the preview gateway only with an explicit production opt-in", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("MEKANIX_ALLOW_PREVIEW_EMBEDDING", "true");
+    const response = proxy(new NextRequest("https://mekanix.ir/"));
+    const csp = response.headers.get("Content-Security-Policy") ?? "";
+    expect(csp).toContain("frame-ancestors 'self' https://*.space-z.ai");
+    expect(csp).toContain("wss://*.space-z.ai");
   });
 
   it("keeps local preview development usable without allowing arbitrary production framing", () => {
@@ -85,6 +125,8 @@ describe("security response headers", () => {
     expect(csp).toContain("frame-ancestors 'self' https://*.space-z.ai");
     expect(csp).toContain("http://localhost:*");
     expect(csp).toContain("'unsafe-eval'");
+    expect(csp).toMatch(/script-src[^;]*'nonce-[A-Za-z0-9+/=]+'/);
+    expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
     expect(response.headers.get("Strict-Transport-Security")).toBeNull();
   });
 });

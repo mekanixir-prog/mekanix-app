@@ -37,17 +37,17 @@ function request(body: Record<string, unknown>, key = "withdrawal-request-0001")
 beforeEach(() => {
   vi.clearAllMocks();
   rateLimit.mockResolvedValue({ success: true, resetMs: 60000 });
-  db.wallet.findUnique.mockResolvedValue({ id: "wallet-1", balance: 1000 });
+  db.wallet.findUnique.mockResolvedValue({ id: "wallet-1", balance: 1000, financialUnitStatus: "VERIFIED_IRR" });
   db.withdrawalRequest.findUnique.mockResolvedValue(null);
 });
 
 describe("atomic withdrawal route", () => {
   it("commits a withdrawal and returns the updated balance", async () => {
-    const withdrawal = { id: "wd-1", walletId: "wallet-1", amount: 500, method: "bank", cardNumber: null, bankName: null, shebaNumber: "IR062960000000100324200001", status: "REQUESTED" };
+    const withdrawal = { id: "wd-1", walletId: "wallet-1", amount: 500, method: "bank", cardNumber: null, bankName: null, shebaNumber: "IR062960000000100324200001", status: "REQUESTED", financialUnitStatus: "VERIFIED_IRR" };
     atomic.mockResolvedValue(true);
     db.withdrawalRequest.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(withdrawal);
-    db.wallet.findUnique.mockResolvedValueOnce({ id: "wallet-1", balance: 1000 })
-      .mockResolvedValueOnce({ id: "wallet-1", balance: 500 });
+    db.wallet.findUnique.mockResolvedValueOnce({ id: "wallet-1", balance: 1000, financialUnitStatus: "VERIFIED_IRR" })
+      .mockResolvedValueOnce({ id: "wallet-1", balance: 500, financialUnitStatus: "VERIFIED_IRR" });
     const response = await POST(request({ amount: 500 }));
     expect(response.status).toBe(200);
     expect((await response.json()).newBalance).toBe(500);
@@ -107,4 +107,19 @@ describe("atomic withdrawal route", () => {
     expect(response.status).toBe(400);
     expect(db.notification.create).not.toHaveBeenCalled();
   });
+  it("does not expose internal persistence errors when withdrawal processing fails", async () => {
+    atomic.mockRejectedValue(new Error("Prisma P2002: private_table constraint details"));
+    db.withdrawalRequest.findUnique.mockResolvedValue(null);
+
+    const response = await POST(request({ amount: 500 }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(payload.code).toBe("WITHDRAWAL_PROCESSING_FAILED");
+    expect(payload.error).toContain("پردازش درخواست برداشت");
+    expect(JSON.stringify(payload)).not.toContain("Prisma");
+    expect(JSON.stringify(payload)).not.toContain("private_table");
+    expect(db.notification.create).not.toHaveBeenCalled();
+  });
+
 });

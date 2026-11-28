@@ -90,19 +90,9 @@ const ROLE_PERMISSIONS: Record<string, Set<Permission>> = {
     PERMISSIONS.TECHNICIAN_WITHDRAW,
   ]),
 
-  FLEET_MANAGER: new Set<Permission>([
-    PERMISSIONS.FLEET_VIEW_DASHBOARD,
-    PERMISSIONS.FLEET_MANAGE_ASSETS,
-    // Fleet managers are a specialized customer for B2B accounts; they also
-    // inherit customer-side actions so they can book CARE services for their
-    // fleet vehicles, approve extras, and pay invoices.
-    PERMISSIONS.CUSTOMER_CREATE_SERVICE,
-    PERMISSIONS.CUSTOMER_MANAGE_VEHICLES,
-    PERMISSIONS.CUSTOMER_BOOK_CARE,
-    PERMISSIONS.CUSTOMER_APPROVE_EXTRA,
-    PERMISSIONS.CUSTOMER_PAY,
-    PERMISSIONS.CUSTOMER_REVIEW,
-  ]),
+  // Recognized as a future product role, but intentionally granted no
+  // permissions until persisted fleet membership and asset ownership exist.
+  FLEET_MANAGER: new Set<Permission>(),
 
   PARTNER: new Set<Permission>([
     PERMISSIONS.PARTNER_VIEW_ANALYTICS,

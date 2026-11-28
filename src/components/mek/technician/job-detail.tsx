@@ -13,6 +13,7 @@ import { JobStatusTimeline } from "@/components/mek/shared/job-status-timeline";
 import { StatusBadge, UrgencyBadge } from "@/components/mek/shared/status-badge";
 import { MekIcon, iconForMachineType, iconForCategory } from "@/components/mek/shared/icons";
 import { fmtDistance, fmtDuration, fmtRelative, toPersianDigits } from "@/lib/format";
+import { formatTomanFromIrr } from "@/lib/money/irr";
 import { useT } from "@/lib/use-t";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,7 +47,7 @@ const NEXT_ACTION_KEYS: Record<string, { key: string; icon: any }> = {
 
 export function TechnicianJobDetail({ user }: { user: DemoUser }) {
   const { go, params, back } = useApp();
-  const { t, isFa, money, cat, type: typeLabel } = useT();
+  const { t, isFa, cat, type: typeLabel } = useT();
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [advancing, setAdvancing] = useState(false);
@@ -59,6 +60,12 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
   const [partPrice, setPartPrice] = useState("");
   const [addingPart, setAddingPart] = useState(false);
   const [showInvoice, setShowInvoice] = useState(false);
+  const locale = isFa ? "fa-IR" : "en-US";
+  const money = (value: unknown) => {
+    const amount = safeInteger(value);
+    return amount === null ? "—" : `${formatTomanFromIrr(amount, locale)} ${isFa ? "تومان" : "Toman"}`;
+  };
+  const invoiceFinancialReady = job?.invoice?.financialUnitStatus === "VERIFIED_IRR" && job.invoice.currency === "IRR";
 
   const load = useCallback(async () => {
     if (!params.jobId) return;
@@ -82,7 +89,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
 
   const advance = async () => {
     if (!job) return;
-    const next = NEXT_STATUS[job.status];
+    const next = getNextJobStatus(job);
     if (next === job.status) return;
     setAdvancing(true);
     try {
@@ -114,13 +121,14 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
   const addPart = async () => {
     if (!job || !partName.trim()) { toast.error(t("tech.jobDetail.errorPartName")); return; }
     const quantity = Number(partQty);
-    const unitPrice = Number(partPrice);
+    const priceToman = Number(partPrice);
+    const unitPriceIrr = priceToman * 10;
     if (!Number.isSafeInteger(quantity) || quantity <= 0) {
       toast.error(isFa ? "تعداد قطعه باید عدد صحیح مثبت باشد" : "Part quantity must be a positive integer");
       return;
     }
-    if (partPrice.trim() === "" || !Number.isSafeInteger(unitPrice) || unitPrice < 0) {
-      toast.error(isFa ? "قیمت واحد را به‌صورت عدد صحیح نامنفی به ریال وارد کنید" : "Enter a non-negative integer unit price in IRR");
+    if (partPrice.trim() === "" || !Number.isSafeInteger(priceToman) || priceToman < 0 || !Number.isSafeInteger(unitPriceIrr)) {
+      toast.error(isFa ? "قیمت واحد را به‌صورت عدد صحیح نامنفی به تومان وارد کنید" : "Enter a non-negative integer unit price in Toman");
       return;
     }
     setAddingPart(true);
@@ -128,7 +136,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
       await api.addPart(job.id, {
         name: partName.trim(),
         quantity,
-        unitPrice,
+        unitPrice: unitPriceIrr,
       });
       const fresh = await api.getJob(job.id);
       setJob(fresh);
@@ -182,8 +190,14 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
   if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="size-8 animate-spin text-amber" /></div>;
   if (!job) return null;
 
-  const next = NEXT_STATUS[job.status];
-  const nextMeta = NEXT_ACTION_KEYS[job.status];
+  const next = getNextJobStatus(job);
+  const nextMeta = job.status === "WAITING_APPROVAL" && job.customerApproved && job.invoice
+    ? NEXT_ACTION_KEYS.DIAGNOSING
+    : job.status === "REPAIRING" && job.invoice && job.customerApproved
+      ? { key: "tech.jobDetail.action.completeRepair", icon: CircleCheck }
+      : job.status === "REPAIRING" && job.invoice
+        ? NEXT_ACTION_KEYS.WAITING_APPROVAL
+        : NEXT_ACTION_KEYS[job.status];
   const canAdvance = job.status !== "COMPLETED" && job.status !== "CANCELLED" && next !== job.status;
   const techLoc = { lat: user.technician?.lat ?? 37.77, lng: user.technician?.lng ?? -122.42 };
   const custLoc = { lat: job.request.lat, lng: job.request.lng };
@@ -208,7 +222,9 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
             <h1 className="font-display text-base font-semibold">{job.request.title}</h1>
           </div>
         </div>
-        <StatusBadge status={job.status} />
+        {job.status === "REPAIRING" && !job.invoice
+          ? <Badge variant="outline" className="border-amber/40 text-amber">{t("tech.jobDetail.estimatePreparation")}</Badge>
+          : <StatusBadge status={job.status} />}
       </div>
 
       {/* Action bar */}
@@ -318,28 +334,38 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                 <Package className="size-4 text-amber" />
                 <h3 className="font-display text-sm font-semibold">{t("tech.jobDetail.parts")}</h3>
               </div>
+              {job.status === "REPAIRING" && !job.invoice && (
+                <p className="mt-2 rounded-lg bg-amber/5 p-2 text-[11px] leading-6 text-muted-foreground">
+                  {t("tech.jobDetail.estimatePreparationHint")}
+                </p>
+              )}
               {job.parts.length > 0 && (
                 <div className="mt-3 space-y-1.5">
                   {job.parts.map((p) => (
                     <div key={p.id} className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm">
                       <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
                       <span className="text-[11px] text-muted-foreground">×{isFa ? toPersianDigits(p.quantity) : p.quantity}</span>
-                      <span className="tabular-nums text-amber">{money(Number(p.unitPrice))}</span>
-                      <button onClick={() => removePart(p.id)} className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
+                      <span className="tabular-nums text-amber">{p.financialUnitStatus === "VERIFIED_IRR" ? money(p.unitPrice) : "—"}</span>
+                      {job.status === "REPAIRING" && !job.invoice && <button onClick={() => removePart(p.id)} className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
                         <Trash2 className="size-3" />
-                      </button>
+                      </button>}
                     </div>
                   ))}
                 </div>
               )}
-              <div className="mt-3 grid grid-cols-[1fr_60px_80px_auto] gap-2">
-                <Input value={partName} onChange={(e) => setPartName(e.target.value)} placeholder={t("tech.jobDetail.partName")} className="h-8 text-xs" />
-                <Input value={partQty} onChange={(e) => setPartQty(e.target.value)} type="number" min={1} step={1} placeholder={t("tech.jobDetail.qty")} className="h-8 text-xs" />
-                <Input value={partPrice} onChange={(e) => setPartPrice(e.target.value)} type="number" min={0} step={1} placeholder={t("tech.jobDetail.price")} className="h-8 text-xs" />
-                <Button onClick={addPart} disabled={addingPart} size="sm" className="bg-amber text-black hover:bg-amber/90">
-                  {addingPart ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
-                </Button>
-              </div>
+              {job.status === "REPAIRING" && !job.invoice ? <>
+                <div className="mt-3 grid grid-cols-[1fr_60px_110px_auto] gap-2">
+                  <Input value={partName} onChange={(e) => setPartName(e.target.value)} placeholder={t("tech.jobDetail.partName")} className="h-8 text-xs" />
+                  <Input value={partQty} onChange={(e) => setPartQty(e.target.value)} type="number" min={1} step={1} placeholder={t("tech.jobDetail.qty")} className="h-8 text-xs" />
+                  <Input value={partPrice} onChange={(e) => setPartPrice(e.target.value)} type="number" min={0} step={1} placeholder={isFa ? "قیمت واحد (تومان)" : "Unit price (Toman)"} className="h-8 text-xs" />
+                  <Button onClick={addPart} disabled={addingPart} size="sm" className="bg-amber text-black hover:bg-amber/90">
+                    {addingPart ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+                  </Button>
+                </div>
+                <p className="mt-1 text-[10px] text-muted-foreground">{isFa ? "قیمت به تومان وارد می‌شود و در فاکتور به ریال صحیح ذخیره خواهد شد." : "Enter Toman; the server stores the exact IRR amount."}</p>
+              </> : <p className="mt-3 rounded-lg bg-muted/40 p-3 text-[11px] leading-6 text-muted-foreground">
+                {isFa ? "پس از صدور پیش‌فاکتور، ثبت یا حذف قطعه قفل می‌شود. تغییرات بعدی به برآورد جداگانه و تأیید مشتری نیاز دارد." : "Parts are locked after the estimate is issued. Later changes require a separate estimate and customer approval."}
+              </p>}
             </div>
           )}
         </div>
@@ -360,18 +386,27 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                 {job.invoice && <StatusBadge status={job.invoice.status === "PAID" ? "COMPLETED" : "WAITING_APPROVAL"} />}
               </div>
               <div className="mt-3 space-y-1.5 text-sm">
-                <EstLine label={t("tech.jobDetail.labor").replace("{hours}", isFa ? toPersianDigits(String(job.invoice?.laborHours ?? 1.5)) : String(job.invoice?.laborHours ?? 1.5))} amount={(job.invoice?.laborHours ?? 1.5) * Number(job.technician.hourlyRate)} moneyFn={money} />
-                <EstLine label={t("tech.jobDetail.partsShort")} amount={job.parts.reduce((s, p) => s + Number(p.unitPrice) * p.quantity, 0)} moneyFn={money} />
-                <EstLine label={t("tech.jobDetail.travelFee")} amount={Number(job.technician.travelFeeBase)} moneyFn={money} />
-                <div className="border-t border-border pt-1.5" />
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{t("tech.jobDetail.estTotal")}</span>
-                  <span className="font-display text-lg font-bold text-amber">
-                    {money(Number(job.invoice?.total ?? (1.5 * Number(job.technician.hourlyRate) + job.parts.reduce((s, p) => s + Number(p.unitPrice) * p.quantity, 0) + Number(job.technician.travelFeeBase)) * 1.09))}
-                  </span>
-                </div>
+                {job.invoice && invoiceFinancialReady ? <>
+                  <EstLine label={isFa ? "دستمزد ثابت" : "Fixed labor"} amount={Number(job.invoice.laborTotal)} moneyFn={money} />
+                  <EstLine label={t("tech.jobDetail.partsShort")} amount={Number(job.invoice.partsTotal)} moneyFn={money} />
+                  <EstLine label={t("tech.jobDetail.travelFee")} amount={Number(job.invoice.travelFee)} moneyFn={money} />
+                  <EstLine label={isFa ? "بازدید و عیب‌یابی" : "Inspection"} amount={Number(job.invoice.inspectionFee)} moneyFn={money} />
+                  {Number(job.invoice.emergencyFee) > 0 && <EstLine label={isFa ? "هزینه فوریت" : "Emergency surcharge"} amount={Number(job.invoice.emergencyFee)} moneyFn={money} />}
+                  {Number(job.invoice.discount) > 0 && <EstLine label={isFa ? "تخفیف" : "Discount"} amount={-Number(job.invoice.discount)} moneyFn={money} />}
+                  {Number(job.invoice.taxTotal) > 0 && <EstLine label={isFa ? "مالیات" : "Tax"} amount={Number(job.invoice.taxTotal)} moneyFn={money} />}
+                  <div className="border-t border-border pt-1.5" />
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{t("tech.jobDetail.estTotal")}</span>
+                    <span className="font-display text-lg font-bold text-amber">{money(job.invoice.total)}</span>
+                  </div>
+                  {job.invoice.pricingVersion && <p className="pt-1 text-[10px] text-muted-foreground">{isFa ? "نسخه نرخ‌نامه" : "Rate-card version"}: {job.invoice.pricingVersion}</p>}
+                </> : job.invoice ? <p role="alert" className="rounded-lg border border-amber/30 bg-amber/5 p-3 text-xs leading-6 text-muted-foreground">
+                  {isFa ? "واحد پول فاکتور تأیید نشده است؛ مبلغ تا زمان تطبیق نمایش داده نمی‌شود." : "Invoice currency provenance is unverified; amounts are hidden until reconciled."}
+                </p> : <p className="rounded-lg bg-muted/40 p-3 text-xs leading-6 text-muted-foreground">
+                  {isFa ? "پیش‌فاکتور پس از ثبت قطعات و ارسال برای تأیید مشتری، با نرخ‌نامه ثابت مکانیکس محاسبه می‌شود." : "The fixed-rate estimate is calculated when parts are recorded and the estimate is sent for customer approval."}
+                </p>}
               </div>
-              {job.status === "REPAIRING" && (
+              {job.status === "REPAIRING" && !job.invoice && (
                 <Button onClick={advance} className="mt-3 w-full bg-amber text-black hover:bg-amber/90">
                   <FileText className="mr-2 size-4" /> {t("tech.jobDetail.sendEstimate")}
                 </Button>
@@ -386,7 +421,7 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
                   <FileText className="mr-1.5 size-3.5" /> {t("tech.jobDetail.issueInvoice").replace("{code}", isFa ? toPersianDigits(job.invoice.code) : job.invoice.code)}
                 </Button>
               )}
-              {!job.invoice && (
+              {!job.invoice && ["WAITING_APPROVAL", "COMPLETED"].includes(job.status) && (
                 <Button onClick={issueInvoice} variant="outline" size="sm" className="mt-2 w-full">
                   <FileText className="mr-1.5 size-3.5" /> {t("tech.jobDetail.sendEstimate")}
                 </Button>
@@ -417,7 +452,25 @@ export function TechnicianJobDetail({ user }: { user: DemoUser }) {
   );
 }
 
-function EstLine({ label, amount, moneyFn }: { label: string; amount: number; moneyFn: (n: number) => string }) {
+function getNextJobStatus(job: Job): string {
+  if (job.status === "REPAIRING") {
+    if (!job.invoice) return "WAITING_APPROVAL";
+    return job.customerApproved ? "COMPLETED" : "REPAIRING";
+  }
+  if (job.status === "WAITING_APPROVAL") return job.customerApproved && job.invoice ? "REPAIRING" : "WAITING_APPROVAL";
+  return NEXT_STATUS[job.status] ?? job.status;
+}
+
+function safeInteger(value: unknown): number | null {
+  if (typeof value === "number") return Number.isSafeInteger(value) ? value : null;
+  if (typeof value === "string" && /^-?\d+(?:\.0+)?$/.test(value)) {
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function EstLine({ label, amount, moneyFn }: { label: string; amount: number; moneyFn: (n: unknown) => string }) {
   return (
     <div className="flex items-center justify-between text-muted-foreground">
       <span>{label}</span>

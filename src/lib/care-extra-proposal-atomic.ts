@@ -92,6 +92,7 @@ async function createWithPrisma(db: PrismaClient, input: CreateCareExtraProposal
         partPrice: input.proposal.partPrice,
         laborPrice: input.proposal.laborPrice,
         totalPrice,
+        financialUnitStatus: "VERIFIED_IRR",
         imageUrl: input.details.imageUrl,
         technicianNote: input.details.technicianNote,
         status: "PROPOSED",
@@ -222,8 +223,8 @@ async function createWithD1(
       INSERT INTO "CustomerApproval"
         ("id", "bookingId", "findingId", "proposedItem", "description",
          "partName", "partBrand", "partNumber", "partType", "quantity",
-         "partPrice", "laborPrice", "totalPrice", "imageUrl", "technicianNote", "status")
-      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PROPOSED'
+         "partPrice", "laborPrice", "totalPrice", "imageUrl", "technicianNote", "financialUnitStatus", "status")
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'VERIFIED_IRR', 'PROPOSED'
       WHERE EXISTS (
         SELECT 1 FROM "ServiceBooking" b
         WHERE b."id" = ? AND b."status" = 'WAITING_CUSTOMER_APPROVAL'
@@ -276,11 +277,24 @@ async function createWithD1(
   return approval;
 }
 
+function assertCanonicalIrrProposal(input: CreateCareExtraProposalInput): void {
+  const { partPrice, laborPrice, quantity } = input.proposal;
+  if (
+    !Number.isSafeInteger(partPrice) || partPrice < 0 ||
+    !Number.isSafeInteger(laborPrice) || laborPrice < 0 ||
+    !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 100 ||
+    !Number.isSafeInteger(partPrice * quantity + laborPrice)
+  ) {
+    throw new Error("CARE extra proposal amounts must be safe non-negative integer IRR values");
+  }
+}
+
 export async function createCareExtraProposalAtomically(
   db: PrismaClient,
   input: CreateCareExtraProposalInput,
 ) {
   assertActor(input);
+  assertCanonicalIrrProposal(input);
   const d1 = await getD1Binding();
   if (d1) return createWithD1(db, d1, input);
   return createWithPrisma(db, input);

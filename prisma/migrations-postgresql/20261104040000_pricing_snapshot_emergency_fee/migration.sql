@@ -1,0 +1,1 @@
+ALTER TABLE "PricingSnapshot" ADD COLUMN "emergencyPrice" DECIMAL NOT NULL DEFAULT 0;

@@ -163,7 +163,7 @@ describe("production readiness gates", () => {
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toMatchObject({
       ok: false,
-      checks: { database: true, productionGates: false },
+      checks: { database: true },
     });
   });
 
@@ -181,8 +181,9 @@ describe("production readiness gates", () => {
     const body = await response.json();
 
     expect(response.status).toBe(503);
-    expect(body.checks.sharedRateLimitStore).toBe(false);
-    expect(body.errors).toContain("Shared rate-limit store is unavailable");
+    expect(body.checks).toEqual({ database: true });
+    expect(body.checks).not.toHaveProperty("sharedRateLimitStore");
+    expect(body.errors).toEqual(["One or more readiness checks failed"]);
   });
 
   it("blocks production readiness when no admin exists and bootstrap password is weak", async () => {
@@ -193,10 +194,9 @@ describe("production readiness gates", () => {
     const body = await response.json();
 
     expect(response.status).toBe(503);
-    expect(body.checks.adminProvisioning).toBe(false);
-    expect(body.errors).toContain(
-      "No valid admin exists and ADMIN_BOOTSTRAP_PASSWORD is missing or shorter than 16 characters"
-    );
+    expect(body.checks).toEqual({ database: true });
+    expect(body.checks).not.toHaveProperty("adminProvisioning");
+    expect(body.errors).toEqual(["One or more readiness checks failed"]);
   });
 
   it("allows admin provisioning readiness with a valid existing admin or strong bootstrap secret", async () => {
@@ -206,7 +206,8 @@ describe("production readiness gates", () => {
     const response = await readyGET();
     const body = await response.json();
 
-    expect(body.checks.adminProvisioning).toBe(true);
+    expect(body.checks).toEqual({ database: true });
+    expect(body.checks).not.toHaveProperty("adminProvisioning");
     expect(body.errors).not.toContain(
       "No valid admin exists and ADMIN_BOOTSTRAP_PASSWORD is missing or shorter than 16 characters"
     );
@@ -222,7 +223,7 @@ describe("production readiness gates", () => {
     const response = await readyGET();
     const body = await response.json();
     expect(response.status).toBe(503);
-    expect(body.errors).toContain("Database is unavailable");
+    expect(body.errors).toEqual(["One or more readiness checks failed"]);
     expect(JSON.stringify(body)).not.toContain("secret-host.internal");
     expect(JSON.stringify(body)).not.toContain("private-db");
   });

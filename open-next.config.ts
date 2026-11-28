@@ -38,7 +38,7 @@ const cloudflareConfig = defineCloudflareConfig({
   // Accessed via env.DB in Workers runtime.
 });
 
-export default {
+const openNextConfig = {
   ...cloudflareConfig,
   // Override the default `bun run build` (which includes the harmful
   // post-build asset copy) with a plain `next build`. OpenNext sets
@@ -46,3 +46,5 @@ export default {
   // tracing + middleware-manifest.json are still produced.
   buildCommand: "bunx next build",
 };
+
+export default openNextConfig;
